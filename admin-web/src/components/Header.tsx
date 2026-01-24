@@ -114,8 +114,8 @@ export default function Header() {
             <div className="h-full px-4 sm:px-8 flex items-center justify-between relative">
                 {/* Logo Section - Hidden on Mobile */}
                 <div className="hidden lg:flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                        <img src="/logo-icon.png" alt="Logo" className="w-8 h-8 object-contain" />
+                    <div className="w-12 h-12 flex items-center justify-center overflow-hidden">
+                        <img src="/logo-icon.png" alt="Logo" className="w-11 h-11 object-contain drop-shadow-sm" />
                     </div>
                     <div className="flex flex-col">
                         <span className="text-lg font-black tracking-tight text-slate-900 dark:text-white leading-none">Grace Note</span>

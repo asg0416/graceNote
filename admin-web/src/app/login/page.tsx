@@ -74,8 +74,8 @@ export default function LoginPage() {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[400px] h-[400px] bg-purple-400/20 rounded-full blur-[80px]" />
 
                 <div className="relative z-10 max-w-lg space-y-8">
-                    <div className="w-24 h-24 bg-white/20 backdrop-blur-xl rounded-[32px] flex items-center justify-center shadow-2xl border border-white/30 overflow-hidden">
-                        <img src="/logo-icon.png" alt="Logo" className="w-16 h-16 object-contain" />
+                    <div className="w-32 h-32 flex items-center justify-center overflow-hidden">
+                        <img src="/logo-icon.png" alt="Logo" className="w-32 h-32 object-contain drop-shadow-2xl" />
                     </div>
                     <div className="space-y-4">
                         <h2 className="text-5xl font-black text-white leading-tight tracking-tighter uppercase">
@@ -115,8 +115,8 @@ export default function LoginPage() {
 
                 <div className="w-full max-w-[440px] space-y-10">
                     <div className="space-y-2 lg:hidden">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 mb-2 overflow-hidden">
-                            <img src="/logo-icon.png" alt="Logo" className="w-10 h-10 object-contain" />
+                        <div className="inline-flex items-center justify-center w-20 h-20 mb-2 overflow-hidden">
+                            <img src="/logo-icon.png" alt="Logo" className="w-20 h-20 object-contain drop-shadow-xl" />
                         </div>
                         <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">Grace Note Admin</h1>
                     </div>
