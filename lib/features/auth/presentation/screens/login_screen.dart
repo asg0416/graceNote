@@ -117,10 +117,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               ),
                             ],
                           ),
-                          child: const Icon(
-                            Icons.auto_awesome,
-                            size: 64,
-                            color: AppTheme.primaryIndigo,
+                          child: Image.asset(
+                            'assets/images/logo.png',
+                            width: 100,
+                            height: 100,
                           ),
                         ),
                         const SizedBox(height: 32),
