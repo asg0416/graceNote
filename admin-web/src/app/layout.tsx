@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Grace Note Admin",
   description: "Grace Note Church Management System",
+  icons: {
+    icon: "/favicon.png",
+  },
 };
 
 import { ThemeProvider } from "@/components/ThemeProvider";

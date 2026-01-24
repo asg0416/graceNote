@@ -74,8 +74,8 @@ export default function LoginPage() {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[400px] h-[400px] bg-purple-400/20 rounded-full blur-[80px]" />
 
                 <div className="relative z-10 max-w-lg space-y-8">
-                    <div className="w-24 h-24 bg-white/20 backdrop-blur-xl rounded-[32px] flex items-center justify-center shadow-2xl border border-white/30">
-                        <Church className="w-12 h-12 text-white" />
+                    <div className="w-24 h-24 bg-white/20 backdrop-blur-xl rounded-[32px] flex items-center justify-center shadow-2xl border border-white/30 overflow-hidden">
+                        <img src="/logo-icon.png" alt="Logo" className="w-16 h-16 object-contain" />
                     </div>
                     <div className="space-y-4">
                         <h2 className="text-5xl font-black text-white leading-tight tracking-tighter uppercase">
@@ -115,8 +115,8 @@ export default function LoginPage() {
 
                 <div className="w-full max-w-[440px] space-y-10">
                     <div className="space-y-2 lg:hidden">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-600/20 mb-2">
-                            <Church className="w-8 h-8 text-white" />
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 mb-2 overflow-hidden">
+                            <img src="/logo-icon.png" alt="Logo" className="w-10 h-10 object-contain" />
                         </div>
                         <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">Grace Note Admin</h1>
                     </div>

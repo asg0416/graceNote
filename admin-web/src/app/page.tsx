@@ -235,7 +235,11 @@ export default function DashboardPage() {
                 title="등록 교회"
                 value={stats.totalChurches.toLocaleString()}
                 change="Active"
-                icon={Church}
+                icon={() => (
+                  <div className="w-6 h-6 flex items-center justify-center overflow-hidden">
+                    <img src="/logo-icon.png" alt="Church" className="w-5 h-5 object-contain" />
+                  </div>
+                )}
                 color="slate"
                 onClick={() => router.push('/churches')}
               />
