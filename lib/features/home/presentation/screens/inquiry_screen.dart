@@ -819,19 +819,24 @@ class _InquiryDetailSheetState extends State<_InquiryDetailSheet> {
   Widget build(BuildContext context) {
     final isCompleted = _currentInquiry['status'] == 'completed';
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      decoration: const BoxDecoration(
-        color: AppTheme.background,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 12),
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: AppTheme.divider, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 24),
-          
-          // Header: Original Inquiry Information (Isolated Section)
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.9,
+        decoration: const BoxDecoration(
+          color: AppTheme.background,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          resizeToAvoidBottomInset: true,
+          body: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: AppTheme.divider, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 24),
+              
+              // Header: Original Inquiry Information (Isolated Section)
           Container(
             width: double.infinity,
             margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -1093,11 +1098,15 @@ class _InquiryDetailSheetState extends State<_InquiryDetailSheet> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Container(
-                            decoration: const BoxDecoration(color: AppTheme.primaryIndigo, shape: BoxShape.circle),
-                            child: IconButton(
-                              onPressed: _isSending ? null : _sendReply,
-                              icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                          InkWell(
+                            onTap: _isSending ? null : _sendReply,
+                            borderRadius: BorderRadius.circular(24),
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: const BoxDecoration(color: AppTheme.primaryIndigo, shape: BoxShape.circle),
+                              child: _isSending 
+                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
                             ),
                           ),
                         ],
