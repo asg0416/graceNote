@@ -187,29 +187,42 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
                   _buildSwitchTile(
                     title: '이름 양옆 기호 설정',
                     subtitle: '성도 이름 앞뒤에 붙을 아이콘을 지정하세요.',
-                    value: true, // Always show for text field
+                    value: true, 
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        SizedBox(
-                          width: 60,
+                        Container(
+                          width: 80,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppTheme.divider, width: 1),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))
+                            ],
+                          ),
                           child: TextField(
                             controller: _shareIconController,
                             textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                             decoration: const InputDecoration(
-                              hintText: '🩵',
+                              hintText: '💙',
                               border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
                               filled: false,
+                              contentPadding: EdgeInsets.zero,
                             ),
-                            onSubmitted: (val) {
+                            onChanged: (val) {
                               if (val.trim().isNotEmpty) {
                                 ref.read(aiSettingsProvider.notifier).setShareHeaderIcon(val.trim());
-                                SnackBarUtil.showSnackBar(context, message: '공유 기호가 변경되었습니다.');
                               }
                             },
                           ),
                         ),
-                        const Icon(Icons.edit_rounded, size: 14, color: AppTheme.textLight),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.edit_rounded, size: 16, color: AppTheme.textLight),
                       ],
                     ),
                     onChanged: (v) {},

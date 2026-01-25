@@ -445,7 +445,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       final note = (m['prayerNote'] as String).trim();
       if (note.isEmpty) continue;
       
-      // Member Header: 🩵정원나영🩵
+      // Member Header: 💙정원나영💙
       buffer.writeln('$icon${m['name']}$icon');
       
       // Fixed: Numbered list for prayer points when sharing

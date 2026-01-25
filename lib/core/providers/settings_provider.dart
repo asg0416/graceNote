@@ -33,7 +33,7 @@ class AISettings {
     AIEndingStyle? endingStyle,
     this.showDateInShare = true,
     this.showFamilyInShare = true,
-    this.shareHeaderIcon = '🩵',
+    this.shareHeaderIcon = '💙',
     this.customEndingStyle = '',
   }) : endingStyle = endingStyle ?? AIEndingStyle.pray;
 
@@ -78,7 +78,7 @@ class AISettingsNotifier extends StateNotifier<AISettings> {
     final customEndingStyle = _prefs.getString(_getKey('ai_custom_ending_style')) ?? '';
     final showDateInShare = _prefs.getBool(_getKey('share_show_date')) ?? true;
     final showFamilyInShare = _prefs.getBool(_getKey('share_show_family')) ?? true;
-    final shareHeaderIcon = _prefs.getString(_getKey('share_header_icon')) ?? '🩵';
+    final shareHeaderIcon = _prefs.getString(_getKey('share_header_icon')) ?? '💙';
     
     state = AISettings(
       indicatorType: AIIndicatorType.values[typeIndex],

@@ -38,11 +38,11 @@ class AppTheme {
         background: background,
         error: error,
       ),
-      textTheme: GoogleFonts.notoSansTextTheme().copyWith(
-        displayLarge: GoogleFonts.notoSans(fontWeight: FontWeight.bold, color: textMain, letterSpacing: -1.0),
-        titleLarge: GoogleFonts.notoSans(fontSize: 22, fontWeight: FontWeight.w800, color: textMain, letterSpacing: -0.5),
-        bodyLarge: GoogleFonts.notoSans(fontSize: 16, color: textMain, height: 1.6),
-        bodyMedium: GoogleFonts.notoSans(fontSize: 14, color: textSub, height: 1.5),
+      textTheme: GoogleFonts.notoSansKrTextTheme().copyWith(
+        displayLarge: GoogleFonts.notoSansKr(fontWeight: FontWeight.bold, color: textMain, letterSpacing: -1.0),
+        titleLarge: GoogleFonts.notoSansKr(fontSize: 22, fontWeight: FontWeight.w800, color: textMain, letterSpacing: -0.5),
+        bodyLarge: GoogleFonts.notoSansKr(fontSize: 16, color: textMain, height: 1.6),
+        bodyMedium: GoogleFonts.notoSansKr(fontSize: 14, color: textSub, height: 1.5),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.white,
