@@ -139,8 +139,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         _isLoading = false;
         _isFetching = false;
 
-        // 출석 기록이 전혀 없다면 출석체크 화면 바로 띄우기 (강제 이동)
-        if (existingAttendance.isEmpty && _members.isNotEmpty && !_isCheckScreenShowing) {
+        // 출석 기록이 전혀 없거나, 참석 인원이 0명인 경우 출석체크 화면 강제 유도
+        final hasAnyPresence = _members.any((m) => m['isPresent'] == true);
+        if ((existingAttendance.isEmpty || !hasAnyPresence) && _members.isNotEmpty && !_isCheckScreenShowing) {
            _isCheckScreenShowing = true;
            Future.microtask(() => _launchAttendanceCheck());
         }
@@ -285,7 +286,29 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       }
 
       if (rawNotes.isEmpty) {
-        SnackBarUtil.showSnackBar(context, message: '정리할 기도제목이 없습니다.', isError: true);
+        final hasAnyPresence = _members.any((m) => m['isPresent'] == true);
+        if (!hasAnyPresence) {
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('출석체크 미완료'),
+              content: const Text('현재 참석으로 표시된 조원이 없습니다. 출석체크를 먼저 진행하시겠습니까?'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true), 
+                  child: const Text('출석체크 하기', style: TextStyle(fontWeight: FontWeight.bold))
+                ),
+              ],
+            ),
+          );
+
+          if (confirm == true) {
+            _launchAttendanceCheck();
+          }
+        } else {
+          SnackBarUtil.showSnackBar(context, message: '정리할 기도제목이 없습니다.', isError: true);
+        }
         return;
       }
 
