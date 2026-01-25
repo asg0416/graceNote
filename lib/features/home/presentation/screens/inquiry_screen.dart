@@ -827,9 +827,7 @@ class _InquiryDetailSheetState extends State<_InquiryDetailSheet> {
           color: AppTheme.background,
           borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
-        child: GestureDetector(
-          onTap: () => FocusScope.of(context).unfocus(),
-          child: Scaffold(
+        child: Scaffold(
             backgroundColor: Colors.transparent,
             resizeToAvoidBottomInset: false, // Handle manually
             body: Column(
@@ -922,60 +920,64 @@ class _InquiryDetailSheetState extends State<_InquiryDetailSheet> {
                                 child: Text('아직 관리자의 답변이 없습니다.', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w600)),
                               ));
                             }
-                            return ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                              itemCount: responses.length,
-                              itemBuilder: (context, index) {
-                                final res = responses[index];
-                                final isAdmin = res['admin_id'] != null;
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 16),
-                                  child: Align(
-                                    alignment: isAdmin ? Alignment.centerLeft : Alignment.centerRight,
-                                    child: Column(
-                                      crossAxisAlignment: isAdmin ? CrossAxisAlignment.start : CrossAxisAlignment.end,
-                                      children: [
-                                        if (res['content'] != null && res['content'].toString().trim().isNotEmpty)
-                                          Container(
-                                            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
-                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                            decoration: BoxDecoration(
-                                              color: isAdmin ? Colors.white : AppTheme.primaryIndigo,
-                                              borderRadius: BorderRadius.only(
-                                                topLeft: const Radius.circular(20),
-                                                topRight: const Radius.circular(20),
-                                                bottomLeft: isAdmin ? Radius.zero : const Radius.circular(20),
-                                                bottomRight: isAdmin ? const Radius.circular(20) : Radius.zero,
-                                              ),
-                                              boxShadow: isAdmin ? [BoxShadow(color: Colors.black12, blurRadius: 4)] : null,
-                                              border: isAdmin ? Border.all(color: AppTheme.divider.withOpacity(0.5)) : null,
-                                            ),
-                                            child: Text(res['content'], style: TextStyle(fontWeight: FontWeight.w600, height: 1.5, color: isAdmin ? AppTheme.textMain : Colors.white, fontSize: 14)),
-                                          ),
-                                        if (res['images'] != null && (res['images'] as List).isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          Wrap(
-                                            spacing: 4, runSpacing: 4,
-                                            alignment: isAdmin ? WrapAlignment.start : WrapAlignment.end,
-                                            children: (res['images'] as List).map<Widget>((img) {
-                                              return GestureDetector(
-                                                onTap: () => _showFullScreenImage(img, isNetwork: true),
-                                                child: ClipRRect(
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  child: Image.network(img, width: 100, height: 100, fit: BoxFit.cover),
+                            return GestureDetector(
+                              onTap: () {}, // Prevent tap bubble-up to unfocus logic
+                              behavior: HitTestBehavior.opaque,
+                              child: ListView.builder(
+                                controller: _scrollController,
+                                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                                itemCount: responses.length,
+                                itemBuilder: (context, index) {
+                                  final res = responses[index];
+                                  final isAdmin = res['admin_id'] != null;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 16),
+                                    child: Align(
+                                      alignment: isAdmin ? Alignment.centerLeft : Alignment.centerRight,
+                                      child: Column(
+                                        crossAxisAlignment: isAdmin ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+                                        children: [
+                                          if (res['content'] != null && res['content'].toString().trim().isNotEmpty)
+                                            Container(
+                                              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
+                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                              decoration: BoxDecoration(
+                                                color: isAdmin ? Colors.white : AppTheme.primaryIndigo,
+                                                borderRadius: BorderRadius.only(
+                                                  topLeft: const Radius.circular(20),
+                                                  topRight: const Radius.circular(20),
+                                                  bottomLeft: isAdmin ? Radius.zero : const Radius.circular(20),
+                                                  bottomRight: isAdmin ? const Radius.circular(20) : Radius.zero,
                                                 ),
-                                              );
-                                            }).toList(),
-                                          ),
+                                                boxShadow: isAdmin ? [BoxShadow(color: Colors.black12, blurRadius: 4)] : null,
+                                                border: isAdmin ? Border.all(color: AppTheme.divider.withOpacity(0.5)) : null,
+                                              ),
+                                              child: Text(res['content'], style: TextStyle(fontWeight: FontWeight.w600, height: 1.5, color: isAdmin ? AppTheme.textMain : Colors.white, fontSize: 14)),
+                                            ),
+                                          if (res['images'] != null && (res['images'] as List).isNotEmpty) ...[
+                                            const SizedBox(height: 8),
+                                            Wrap(
+                                              spacing: 4, runSpacing: 4,
+                                              alignment: isAdmin ? WrapAlignment.start : WrapAlignment.end,
+                                              children: (res['images'] as List).map<Widget>((img) {
+                                                return GestureDetector(
+                                                  onTap: () => _showFullScreenImage(img, isNetwork: true),
+                                                  child: ClipRRect(
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    child: Image.network(img, width: 100, height: 100, fit: BoxFit.cover),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ],
+                                          const SizedBox(height: 4),
+                                          Text(DateFormat('HH:mm').format(DateTime.parse(res['created_at'])), style: const TextStyle(fontSize: 10, color: AppTheme.textSub, fontWeight: FontWeight.w500)),
                                         ],
-                                        const SizedBox(height: 4),
-                                        Text(DateFormat('HH:mm').format(DateTime.parse(res['created_at'])), style: const TextStyle(fontSize: 10, color: AppTheme.textSub, fontWeight: FontWeight.w500)),
-                                      ],
+                                      ),
                                     ),
-                                  ),
-                                );
-                              },
+                                  );
+                                },
+                              ),
                             );
                           },
                         ),
@@ -1083,7 +1085,6 @@ class _InquiryDetailSheetState extends State<_InquiryDetailSheet> {
             ),
           ),
         ),
-      ),
     );
   }
 }
