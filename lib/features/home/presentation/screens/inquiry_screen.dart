@@ -596,7 +596,7 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
   InputDecoration _buildInputDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: AppTheme.divider, fontWeight: FontWeight.w500),
+      hintStyle: const TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w500),
       filled: true,
       fillColor: Colors.white,
       contentPadding: const EdgeInsets.all(20),
