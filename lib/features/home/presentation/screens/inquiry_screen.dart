@@ -580,11 +580,11 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
     }
 
     if (mounted) {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (context) => _InquiryDetailSheet(inquiry: inquiry),
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => _InquiryDetailScreen(inquiry: inquiry),
+        ),
       );
     }
   }
@@ -638,15 +638,16 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
   }
 }
 
-class _InquiryDetailSheet extends StatefulWidget {
+class _InquiryDetailScreen extends StatefulWidget {
   final Map<String, dynamic> inquiry;
-  const _InquiryDetailSheet({required this.inquiry});
+  const _InquiryDetailScreen({required this.inquiry});
 
   @override
-  State<_InquiryDetailSheet> createState() => _InquiryDetailSheetState();
+  State<_InquiryDetailScreen> createState() => _InquiryDetailScreenState();
 }
 
-class _InquiryDetailSheetState extends State<_InquiryDetailSheet> {
+class _InquiryDetailScreenState extends State<_InquiryDetailScreen> {
+  bool _isHeaderExpanded = false;
   final _replyController = TextEditingController();
   final _scrollController = ScrollController();
   bool _isSending = false;
@@ -819,272 +820,286 @@ class _InquiryDetailSheetState extends State<_InquiryDetailSheet> {
   Widget build(BuildContext context) {
     final isCompleted = _currentInquiry['status'] == 'completed';
 
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: Container(
-        height: MediaQuery.of(context).size.height * 0.9,
-        decoration: const BoxDecoration(
-          color: AppTheme.background,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        title: const Text('문의 상담', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain, size: 20),
+          onPressed: () => Navigator.pop(context),
         ),
-        child: Scaffold(
-            backgroundColor: Colors.transparent,
-            resizeToAvoidBottomInset: false, // Handle manually
-            body: Column(
+      ),
+      body: Column(
+        children: [
+          // Collapsible Header: Original Inquiry Information
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            width: double.infinity,
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 12),
-                Container(width: 40, height: 4, decoration: BoxDecoration(color: AppTheme.divider, borderRadius: BorderRadius.circular(2))),
-                const SizedBox(height: 24),
-                
-                // Header & Chat History (Expanded)
-                Expanded(
-                  child: Column(
+                InkWell(
+                  onTap: () => setState(() => _isHeaderExpanded = !_isHeaderExpanded),
+                  child: Row(
                     children: [
-                      // Header: Original Inquiry Information
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.symmetric(horizontal: 20),
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.help_outline_rounded, size: 16, color: AppTheme.primaryIndigo),
-                                const SizedBox(width: 6),
-                                const Text('문의 원본 내용', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: AppTheme.primaryIndigo)),
-                                const Spacer(),
-                                Text(DateFormat('yyyy.MM.dd HH:mm').format(DateTime.parse(_currentInquiry['created_at'])), style: const TextStyle(fontSize: 11, color: AppTheme.textSub)),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(_currentInquiry['title'], style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppTheme.textMain)),
-                            const SizedBox(height: 12),
-                            Text(_currentInquiry['content'], style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14, color: AppTheme.textMain, height: 1.6)),
-                            if (_currentInquiry['images'] != null && (_currentInquiry['images'] as List).isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              SizedBox(
-                                height: 80,
-                                child: ListView.separated(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: (_currentInquiry['images'] as List).length,
-                                  separatorBuilder: (context, index) => const SizedBox(width: 8),
-                                  itemBuilder: (context, index) {
-                                    return GestureDetector(
-                                      onTap: () => _showFullScreenImage((_currentInquiry['images'] as List)[index], isNetwork: true),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.network(
-                                          (_currentInquiry['images'] as List)[index],
-                                          width: 80, height: 80, fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 24),
-                        child: Row(
-                          children: [
-                            Expanded(child: Divider(color: AppTheme.divider)),
-                            Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 12),
-                              child: Text('상담 이력', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppTheme.textSub)),
-                            ),
-                            Expanded(child: Divider(color: AppTheme.divider)),
-                          ],
-                        ),
-                      ),
-                      
-                      // Chat History
-                      Expanded(
-                        child: StreamBuilder<List<Map<String, dynamic>>>(
-                          stream: _responsesStream,
-                          builder: (context, snapshot) {
-                            final responses = snapshot.data ?? [];
-                            if (responses.isEmpty) {
-                              return const Center(child: Padding(
-                                padding: EdgeInsets.symmetric(vertical: 40),
-                                child: Text('아직 관리자의 답변이 없습니다.', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w600)),
-                              ));
-                            }
-                            return GestureDetector(
-                              onTap: () {}, // Prevent tap bubble-up to unfocus logic
-                              behavior: HitTestBehavior.opaque,
-                              child: ListView.builder(
-                                controller: _scrollController,
-                                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                                itemCount: responses.length,
-                                itemBuilder: (context, index) {
-                                  final res = responses[index];
-                                  final isAdmin = res['admin_id'] != null;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 16),
-                                    child: Align(
-                                      alignment: isAdmin ? Alignment.centerLeft : Alignment.centerRight,
-                                      child: Column(
-                                        crossAxisAlignment: isAdmin ? CrossAxisAlignment.start : CrossAxisAlignment.end,
-                                        children: [
-                                          if (res['content'] != null && res['content'].toString().trim().isNotEmpty)
-                                            Container(
-                                              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                              decoration: BoxDecoration(
-                                                color: isAdmin ? Colors.white : AppTheme.primaryIndigo,
-                                                borderRadius: BorderRadius.only(
-                                                  topLeft: const Radius.circular(20),
-                                                  topRight: const Radius.circular(20),
-                                                  bottomLeft: isAdmin ? Radius.zero : const Radius.circular(20),
-                                                  bottomRight: isAdmin ? const Radius.circular(20) : Radius.zero,
-                                                ),
-                                                boxShadow: isAdmin ? [BoxShadow(color: Colors.black12, blurRadius: 4)] : null,
-                                                border: isAdmin ? Border.all(color: AppTheme.divider.withOpacity(0.5)) : null,
-                                              ),
-                                              child: Text(res['content'], style: TextStyle(fontWeight: FontWeight.w600, height: 1.5, color: isAdmin ? AppTheme.textMain : Colors.white, fontSize: 14)),
-                                            ),
-                                          if (res['images'] != null && (res['images'] as List).isNotEmpty) ...[
-                                            const SizedBox(height: 8),
-                                            Wrap(
-                                              spacing: 4, runSpacing: 4,
-                                              alignment: isAdmin ? WrapAlignment.start : WrapAlignment.end,
-                                              children: (res['images'] as List).map<Widget>((img) {
-                                                return GestureDetector(
-                                                  onTap: () => _showFullScreenImage(img, isNetwork: true),
-                                                  child: ClipRRect(
-                                                    borderRadius: BorderRadius.circular(8),
-                                                    child: Image.network(img, width: 100, height: 100, fit: BoxFit.cover),
-                                                  ),
-                                                );
-                                              }).toList(),
-                                            ),
-                                          ],
-                                          const SizedBox(height: 4),
-                                          Text(DateFormat('HH:mm').format(DateTime.parse(res['created_at'])), style: const TextStyle(fontSize: 10, color: AppTheme.textSub, fontWeight: FontWeight.w500)),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            );
-                          },
-                        ),
+                      const Icon(Icons.help_outline_rounded, size: 16, color: AppTheme.primaryIndigo),
+                      const SizedBox(width: 6),
+                      const Text('문의 원본 내용', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: AppTheme.primaryIndigo)),
+                      const Spacer(),
+                      Icon(
+                        _isHeaderExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        size: 20,
+                        color: AppTheme.textSub,
                       ),
                     ],
                   ),
                 ),
-                
-                // Chat Input - Responsive to Keyboard
-                Padding(
-                  padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -2))],
-                    ),
-                    child: isCompleted
-                      ? Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(16)),
-                          child: const Text('해당 문의는 답변이 완료되어 종료되었습니다.', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.bold)),
-                        )
-                      : Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_selectedImages.isNotEmpty)
-                              Container(
-                                height: 80,
-                                margin: const EdgeInsets.only(bottom: 12),
-                                child: ListView.separated(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: _selectedImages.length,
-                                  separatorBuilder: (context, index) => const SizedBox(width: 8),
-                                  itemBuilder: (context, index) {
-                                    return Stack(
-                                      clipBehavior: Clip.none,
-                                      children: [
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(8),
-                                          child: kIsWeb
-                                              ? Image.network(_selectedImages[index].path, width: 80, height: 80, fit: BoxFit.cover)
-                                              : Image.file(File(_selectedImages[index].path), width: 80, height: 80, fit: BoxFit.cover),
-                                        ),
-                                        Positioned(
-                                          top: -4, right: -4,
-                                          child: InkWell(
-                                            onTap: () => setState(() => _selectedImages.removeAt(index)),
-                                            child: Container(
-                                              padding: const EdgeInsets.all(2),
-                                              decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]),
-                                              child: const Icon(Icons.close, size: 14, color: AppTheme.textMain),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                ),
+                if (_isHeaderExpanded) ...[
+                  const SizedBox(height: 16),
+                  Text(_currentInquiry['title'], style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: AppTheme.textMain)),
+                  const SizedBox(height: 8),
+                  Text(_currentInquiry['content'], style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14, color: AppTheme.textMain, height: 1.6)),
+                  if (_currentInquiry['images'] != null && (_currentInquiry['images'] as List).isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 80,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: (_currentInquiry['images'] as List).length,
+                        separatorBuilder: (context, index) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          return GestureDetector(
+                            onTap: () => _showFullScreenImage((_currentInquiry['images'] as List)[index], isNetwork: true),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
+                                (_currentInquiry['images'] as List)[index],
+                                width: 80, height: 80, fit: BoxFit.cover,
                               ),
-                            Row(
-                              children: [
-                                IconButton(
-                                  onPressed: _pickImage,
-                                  icon: const Icon(Icons.add_photo_alternate_outlined, color: AppTheme.primaryIndigo),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: TextField(
-                                    controller: _replyController,
-                                    decoration: InputDecoration(
-                                      hintText: '추가적인 궁금증이 있나요?',
-                                      hintStyle: const TextStyle(fontSize: 14, color: AppTheme.divider),
-                                      filled: true,
-                                      fillColor: AppTheme.background,
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                    ),
-                                    maxLines: null,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                InkWell(
-                                  onTap: _isSending ? null : _sendReply,
-                                  borderRadius: BorderRadius.circular(24),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: const BoxDecoration(color: AppTheme.primaryIndigo, shape: BoxShape.circle),
-                                    child: _isSending 
-                                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                      : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                                  ),
-                                ),
-                              ],
                             ),
-                          ],
-                        ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      DateFormat('yyyy.MM.dd HH:mm').format(DateTime.parse(_currentInquiry['created_at'])),
+                      style: const TextStyle(fontSize: 11, color: AppTheme.textSub),
+                    ),
+                  ),
+                ],
+                if (!_isHeaderExpanded)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _currentInquiry['title'],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppTheme.textMain),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          
+          Expanded(
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  child: Row(
+                    children: [
+                      Expanded(child: Divider(color: AppTheme.divider)),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('상담 이력', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppTheme.textSub)),
+                      ),
+                      Expanded(child: Divider(color: AppTheme.divider)),
+                    ],
+                  ),
+                ),
+                
+                // Chat History
+                Expanded(
+                  child: StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: _responsesStream,
+                    builder: (context, snapshot) {
+                      final responses = snapshot.data ?? [];
+                      if (responses.isEmpty) {
+                        return const Center(child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: Text('아직 관리자의 답변이 없습니다.', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w600)),
+                        ));
+                      }
+                      return ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+                        itemCount: responses.length,
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                        itemBuilder: (context, index) {
+                          final res = responses[index];
+                          final isAdmin = res['admin_id'] != null;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Align(
+                              alignment: isAdmin ? Alignment.centerLeft : Alignment.centerRight,
+                              child: Column(
+                                crossAxisAlignment: isAdmin ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+                                children: [
+                                  if (res['content'] != null && res['content'].toString().trim().isNotEmpty)
+                                    Container(
+                                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      decoration: BoxDecoration(
+                                        color: isAdmin ? Colors.white : AppTheme.primaryIndigo,
+                                        borderRadius: BorderRadius.only(
+                                          topLeft: const Radius.circular(20),
+                                          topRight: const Radius.circular(20),
+                                          bottomLeft: isAdmin ? Radius.zero : const Radius.circular(20),
+                                          bottomRight: isAdmin ? const Radius.circular(20) : Radius.zero,
+                                        ),
+                                        boxShadow: isAdmin ? [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 5, offset: const Offset(0, 2))] : null,
+                                        border: isAdmin ? Border.all(color: AppTheme.divider.withOpacity(0.5)) : null,
+                                      ),
+                                      child: Text(res['content'], style: TextStyle(fontWeight: FontWeight.w600, height: 1.5, color: isAdmin ? AppTheme.textMain : Colors.white, fontSize: 14)),
+                                    ),
+                                  if (res['images'] != null && (res['images'] as List).isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 4, runSpacing: 4,
+                                      alignment: isAdmin ? WrapAlignment.start : WrapAlignment.end,
+                                      children: (res['images'] as List).map<Widget>((img) {
+                                        return GestureDetector(
+                                          onTap: () => _showFullScreenImage(img, isNetwork: true),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(8),
+                                            child: Image.network(img, width: 120, height: 120, fit: BoxFit.cover),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 4),
+                                  Text(DateFormat('HH:mm').format(DateTime.parse(res['created_at'])), style: const TextStyle(fontSize: 10, color: AppTheme.textSub, fontWeight: FontWeight.w500)),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
                   ),
                 ),
               ],
             ),
           ),
-        ),
+          
+          // Chat Input
+          Container(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, 12 + MediaQuery.of(context).padding.bottom),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -2))],
+            ),
+            child: isCompleted
+              ? Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(16)),
+                  child: const Text('해당 문의는 답변이 완료되어 종료되었습니다.', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.bold)),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_selectedImages.isNotEmpty)
+                      Container(
+                        height: 80,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _selectedImages.length,
+                          separatorBuilder: (context, index) => const SizedBox(width: 8),
+                          itemBuilder: (context, index) {
+                            return Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: kIsWeb
+                                      ? Image.network(_selectedImages[index].path, width: 80, height: 80, fit: BoxFit.cover)
+                                      : Image.file(File(_selectedImages[index].path), width: 80, height: 80, fit: BoxFit.cover),
+                                ),
+                                Positioned(
+                                  top: -4, right: -4,
+                                  child: InkWell(
+                                    onTap: () => setState(() => _selectedImages.removeAt(index)),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(2),
+                                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]),
+                                      child: const Icon(Icons.close, size: 14, color: AppTheme.textMain),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: _pickImage,
+                          icon: const Icon(Icons.add_photo_alternate_outlined, color: AppTheme.primaryIndigo),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _replyController,
+                            decoration: InputDecoration(
+                              hintText: '추가적인 궁금증이 있나요?',
+                              hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textSub, fontWeight: FontWeight.w600),
+                              filled: true,
+                              fillColor: AppTheme.background,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                            ),
+                            maxLines: null,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: _isSending ? null : _sendReply,
+                          borderRadius: BorderRadius.circular(24),
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: const BoxDecoration(color: AppTheme.primaryIndigo, shape: BoxShape.circle),
+                            child: _isSending 
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+          ),
+        ],
+      ),
     );
   }
 }
