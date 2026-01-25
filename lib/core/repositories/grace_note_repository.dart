@@ -878,36 +878,54 @@ class GraceNoteRepository {
 
   // SMS 인증 요청
   Future<void> sendVerificationSMS(String phone) async {
-    final response = await _supabase.functions.invoke(
-      'send-sms',
-      body: {'phone': phone},
-    );
+    try {
+      final response = await _supabase.functions.invoke(
+        'send-sms',
+        body: {'phone': phone},
+      );
 
-    if (response.status != 200) {
-      if (response.data != null && response.data['error'] == 'account_exists') {
-        throw AccountExistsException(
-          message: response.data['message'] ?? '이미 가입된 전화번호입니다.',
-          maskedEmail: response.data['masked_email'],
-          fullName: response.data['full_name'],
-        );
+      if (response.status != 200) {
+        final error = response.data['message'] ?? response.data['error'] ?? '인증번호 발송 실패';
+        throw Exception(error);
       }
-      final error = response.data['message'] ?? response.data['error'] ?? '인증번호 발송 실패';
-      throw Exception(error);
+    } on FunctionException catch (e) {
+      _handleFunctionException(e);
     }
   }
 
   // SMS 인증 확인 및 매칭 조회
   Future<Map<String, dynamic>> verifySMS(String phone, String code) async {
-    final response = await _supabase.functions.invoke(
-      'verify-sms',
-      body: {'phone': phone, 'code': code},
-    );
+    try {
+      final response = await _supabase.functions.invoke(
+        'verify-sms',
+        body: {'phone': phone, 'code': code},
+      );
 
-    if (response.status != 200) {
-      final error = response.data['error'] ?? '인증 확인 실패';
+      if (response.status != 200) {
+        final error = response.data['error'] ?? '인증 확인 실패';
+        throw Exception(error);
+      }
+
+      return Map<String, dynamic>.from(response.data);
+    } on FunctionException catch (e) {
+      _handleFunctionException(e);
+      rethrow; // Should not reach here due to helper throwing
+    }
+  }
+
+  void _handleFunctionException(FunctionException e) {
+    if (e.details is Map) {
+      final details = e.details as Map;
+      if (details['error'] == 'account_exists') {
+        throw AccountExistsException(
+          message: details['message'] ?? '이미 가입된 전화번호입니다.',
+          maskedEmail: details['masked_email'],
+          fullName: details['full_name'],
+        );
+      }
+      final error = details['message'] ?? details['error'] ?? '서버 오류가 발생했습니다.';
       throw Exception(error);
     }
-
-    return Map<String, dynamic>.from(response.data);
+    throw Exception(e.toString());
   }
 }

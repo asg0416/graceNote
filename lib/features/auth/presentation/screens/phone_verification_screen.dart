@@ -81,7 +81,11 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
       }
     } catch (e) {
       if (mounted) {
-        String msg = e.toString().replaceFirst('Exception: ', '');
+        String msg = e.toString()
+            .replaceFirst('Exception: ', '')
+            .replaceFirst('FunctionException: ', '');
+        // Strip out brackets and raw data if any remain
+        if (msg.contains('{')) msg = msg.split('{')[0].trim();
         SnackBarUtil.showSnackBar(context, message: msg, isError: true);
       }
     } finally {
