@@ -55,11 +55,44 @@ class GraceNoteApp extends StatelessWidget {
   }
 }
 
-class AuthGate extends ConsumerWidget {
+class AuthGate extends ConsumerStatefulWidget {
   const AuthGate({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('App resumed: Refreshing auth and profile data...');
+      _refreshAllData();
+    }
+  }
+
+  void _refreshAllData() {
+    ref.invalidate(authStateProvider);
+    ref.invalidate(userProfileProvider);
+    ref.invalidate(userProfileFutureProvider);
+    ref.invalidate(userGroupsProvider);
+    ref.invalidate(weekIdProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // 1. Watch Auth State Reactive (IMPORTANT: Rebuilds on login/signup)
     final authStateAsync = ref.watch(authStateProvider);
 
@@ -92,7 +125,7 @@ class AuthGate extends ConsumerWidget {
 
             // 2. 관리자 권한 신청 중이거나 승인 대기인 경우 (마스터 계정은 예외)
             final bool isPendingAdmin = profile.adminStatus == 'pending' || 
-                                      (profile.role == 'admin' && profile.adminStatus != 'approved');
+                                       (profile.role == 'admin' && profile.adminStatus != 'approved');
             
             if (isPendingAdmin && !profile.isMaster) {
               return const AdminPendingScreen();
@@ -113,11 +146,27 @@ class AuthGate extends ConsumerWidget {
               },
             );
           },
-          error: (e, _) => _buildErrorScreen(context, ref, e),
+          error: (e, _) => _AutoRetryErrorScreen(
+            error: e, 
+            onRetry: _refreshAllData,
+            onLogout: () async {
+              await Supabase.instance.client.auth.signOut();
+              ref.invalidate(userProfileProvider);
+              ref.invalidate(userGroupsProvider);
+            },
+          ),
         );
       },
       loading: () => _buildLoadingScreen(),
-      error: (e, _) => _buildErrorScreen(context, ref, e),
+      error: (e, _) => _AutoRetryErrorScreen(
+        error: e, 
+        onRetry: _refreshAllData,
+        onLogout: () async {
+          await Supabase.instance.client.auth.signOut();
+          ref.invalidate(userProfileProvider);
+          ref.invalidate(userGroupsProvider);
+        },
+      ),
     );
   }
 
@@ -183,13 +232,50 @@ class AuthGate extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _buildErrorScreen(BuildContext context, WidgetRef ref, Object error) {
-    // 에러 메시지 분석 (Realtime 관련 에러인 경우 사용자 친화적 메시지 제공)
-    final errorMessage = error.toString();
+class _AutoRetryErrorScreen extends StatefulWidget {
+  final Object error;
+  final VoidCallback onRetry;
+  final VoidCallback onLogout;
+
+  const _AutoRetryErrorScreen({
+    required this.error,
+    required this.onRetry,
+    required this.onLogout,
+  });
+
+  @override
+  State<_AutoRetryErrorScreen> createState() => _AutoRetryErrorScreenState();
+}
+
+class _AutoRetryErrorScreenState extends State<_AutoRetryErrorScreen> {
+  DateTime? _lastRetryTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _startAutoRetry();
+  }
+
+  void _startAutoRetry() async {
+    while (mounted) {
+      await Future.delayed(const Duration(seconds: 5));
+      if (mounted) {
+        debugPrint('Auto-retrying connection...');
+        _lastRetryTime = DateTime.now();
+        widget.onRetry();
+        setState(() {}); // Update last retry time display if needed
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final errorMessage = widget.error.toString();
     final isRealtimeError = errorMessage.contains('Realtime');
     final displayMessage = isRealtimeError 
-        ? '서버와의 연결이 원활하지 않습니다.\n잠시 후 다시 시도해 주세요.' 
+        ? '서버와의 연결이 원활하지 않습니다.\n자동으로 재연결을 시도하고 있습니다.' 
         : '로그인 정보를 불러오는 중 오류가 발생했습니다.';
 
     return Scaffold(
@@ -215,6 +301,14 @@ class AuthGate extends ConsumerWidget {
                   height: 1.5,
                 ),
               ),
+              if (_lastRetryTime != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    '마지막 재시도: ${DateFormat('HH:mm:ss').format(_lastRetryTime!)}',
+                    style: const TextStyle(fontSize: 11, color: AppTheme.textSub),
+                  ),
+                ),
               if (!isRealtimeError)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -230,30 +324,18 @@ class AuthGate extends ConsumerWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    // [RETRY LOGIC] 강력한 초기화 및 재시도
-                    ref.invalidate(authStateProvider);
-                    ref.invalidate(userProfileProvider);
-                    ref.invalidate(userProfileFutureProvider);
-                    ref.invalidate(userGroupsProvider);
-                    ref.invalidate(weekIdProvider);
-                  },
+                  onPressed: widget.onRetry,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryIndigo,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('다시 시도', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text('즉시 재시도', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ),
               const SizedBox(height: 12),
               TextButton(
-                onPressed: () async {
-                  await Supabase.instance.client.auth.signOut();
-                  // 로그아웃 시에도 데이터 클리어
-                  ref.invalidate(userProfileProvider);
-                  ref.invalidate(userGroupsProvider);
-                },
+                onPressed: widget.onLogout,
                 child: const Text('로그아웃 및 계정 전환', style: TextStyle(color: AppTheme.textSub)),
               ),
             ],
