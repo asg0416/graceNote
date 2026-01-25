@@ -14,6 +14,7 @@ import 'package:grace_note/features/auth/presentation/screens/admin_pending_scre
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
 import 'package:grace_note/core/widgets/droplet_loader.dart';
+import 'package:intl/intl.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
