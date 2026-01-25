@@ -139,7 +139,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         _isLoading = false;
         _isFetching = false;
 
-        // 이번 주 출석 기록이 전혀 없다면 출석체크 화면 바로 띄우기
+        // 출석 기록이 전혀 없다면 출석체크 화면 바로 띄우기 (강제 이동)
         if (existingAttendance.isEmpty && _members.isNotEmpty && !_isCheckScreenShowing) {
            _isCheckScreenShowing = true;
            Future.microtask(() => _launchAttendanceCheck());
@@ -245,6 +245,32 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   Future<void> _refineAllPrayers() async {
+    // 0. 출석체크 여부 확인
+    final hasAttendance = _members.any((m) => m['isPresent'] == true) || 
+                         _members.any((m) => m['source'] == 'snapshot');
+    
+    if (!hasAttendance) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('출석체크 미완료'),
+          content: const Text('출석체크가 되지 않았습니다. 출석체크를 먼저 진행하시겠습니까?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true), 
+              child: const Text('출석체크 하기', style: TextStyle(fontWeight: FontWeight.bold))
+            ),
+          ],
+        ),
+      );
+
+      if (confirm == true) {
+        _launchAttendanceCheck();
+      }
+      return;
+    }
+
     setState(() => _isRefining = true);
     try {
       List<String> rawNotes = [];
