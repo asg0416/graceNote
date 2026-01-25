@@ -1116,6 +1116,8 @@ class _InquiryDetailSheetState extends State<_InquiryDetailSheet> {
           ),
         ],
       ),
-    );
+    ),
+  ),
+);
   }
 }

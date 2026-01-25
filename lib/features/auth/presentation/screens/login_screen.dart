@@ -104,11 +104,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Center(
                     child: Column(
                       children: [
-                        Image.asset(
-                          'assets/images/logo.png',
-                          width: 140,
-                          height: 140,
-                        ),
                         const SizedBox(height: 32),
                         Text(
                           AppConstants.appName,
