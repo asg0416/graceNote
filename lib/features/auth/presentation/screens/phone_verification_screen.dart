@@ -230,11 +230,12 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('이미 등록된 전화번호입니다.', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('등록된 휴대폰 번호로 가입된 다른 계정이 있습니다.', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            Text('가입된 계정: ${e.fullName} (${e.maskedEmail ?? "존재하지 않거나 비공개"})', style: const TextStyle(color: AppTheme.textSub)),
-            const SizedBox(height: 8),
-            const Text('해당 계정으로 로그인 후 이용해 주세요.', style: TextStyle(fontSize: 13, color: AppTheme.textSub)),
+            Text('가입된 성함: ${e.fullName}', style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w600)),
+            Text('가입된 계정: ${e.maskedEmail ?? "비공개 계정"}', style: const TextStyle(color: AppTheme.textSub)),
+            const SizedBox(height: 12),
+            const Text('혹시 카카오나 구글 등 다른 방법으로 가입하셨나요?\n해당 계정으로 다시 로그인해 주세요.', style: TextStyle(fontSize: 13, color: AppTheme.textSub, height: 1.5)),
           ],
         ),
         actions: [
