@@ -3,6 +3,7 @@ import 'package:grace_note/core/repositories/grace_note_repository.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:async';
 
 // Repository Providers
 final repositoryProvider = Provider((ref) => GraceNoteRepository());
