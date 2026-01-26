@@ -10,6 +10,7 @@ const corsHeaders = {
 interface RequestBody {
     phone: string;
     code: string;
+    fullName?: string;
 }
 
 serve(async (req) => {
@@ -24,7 +25,7 @@ serve(async (req) => {
         )
 
         const body: RequestBody = await req.json()
-        const { phone, code } = body
+        const { phone, code, fullName } = body
         const cleanPhone = phone.replace(/-/g, '').trim()
 
         // 1. Verify Code
@@ -46,17 +47,21 @@ serve(async (req) => {
             throw new Error('Verification code expired')
         }
 
-        // 2. Mark as Verified (Optional, or just return success)
-        // We can delete the verification row to prevent reuse, or just leave it.
-        // Deleting is safer.
+        // 2. Clear verification on success
         await supabase.from('phone_verifications').delete().eq('id', verification.id)
 
         // 3. Find Match in Member Directory
-        const { data: memberMatch } = await supabase
+        // [ENHANCEMENT] Match by both phone AND name if provided
+        let query = supabase
             .from('member_directory')
             .select('id, full_name, church_id, department_id, group_name, role_in_group')
-            .eq('phone', cleanPhone)
-            .maybeSingle()
+            .eq('phone', cleanPhone);
+
+        if (fullName && fullName.trim().length > 0) {
+            query = query.eq('full_name', fullName.trim());
+        }
+
+        const { data: memberMatch } = await query.maybeSingle();
 
         // 4. Return Success + Match Data
         return new Response(

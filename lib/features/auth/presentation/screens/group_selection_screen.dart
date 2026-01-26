@@ -36,6 +36,7 @@ class _GroupSelectionScreenState extends ConsumerState<GroupSelectionScreen> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.prefilledName);
+    debugPrint('GroupSelectionScreen: churchId=${widget.churchId}, matchedData=${widget.matchedData}');
   }
 
   Future<void> _completeOnboarding() async {

@@ -235,6 +235,13 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 24),
+            Center(
+              child: Text(
+                'v${AppConstants.appVersion}',
+                style: const TextStyle(color: AppTheme.textLight, fontSize: 13, fontWeight: FontWeight.w500),
+              ),
+            ),
             const SizedBox(height: 60),
           ],
         ),

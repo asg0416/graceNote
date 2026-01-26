@@ -18,6 +18,7 @@ class PhoneVerificationScreen extends ConsumerStatefulWidget {
 }
 
 class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScreen> {
+  final _nameController = TextEditingController(); // [NEW] Real name for registry matching
   final _phoneController = TextEditingController();
   final _codeController = TextEditingController();
   
@@ -29,6 +30,7 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
   @override
   void dispose() {
     _timer?.cancel();
+    _nameController.dispose();
     _phoneController.dispose();
     _codeController.dispose();
     super.dispose();
@@ -94,17 +96,22 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
   }
 
   Future<void> _verifyCode() async {
+    final name = _nameController.text.trim();
     final phone = _phoneController.text.trim();
     final code = _codeController.text.trim();
+    
+    if (name.isEmpty) {
+      SnackBarUtil.showSnackBar(context, message: '성함(실명)을 입력해주세요.', isError: true);
+      return;
+    }
     if (code.length < 4) return;
 
     setState(() => _isLoading = true);
     try {
       final user = Supabase.instance.client.auth.currentUser;
-      final metadataName = user?.userMetadata?['full_name']?.toString() ?? '';
 
       final repo = ref.read(repositoryProvider);
-      final result = await repo.verifySMS(phone, code);
+      final result = await repo.verifySMS(phone, code, fullName: name);
       final matchedMember = result['matched_member'];
 
       final profile = ref.read(userProfileProvider).value;
@@ -155,20 +162,7 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
         return;
       }
 
-      // [ENFORCE] Name matching check
-      final directoryName = matchedMember['full_name']?.toString() ?? '';
-      if (!isAdmin && metadataName.isNotEmpty && metadataName != directoryName) {
-        if (mounted) {
-          SnackBarUtil.showSnackBar(
-            context, 
-            message: '입력하신 이름($metadataName)이 명부상의 이름($directoryName)과 일치하지 않습니다.\n정확한 정보를 확인해 주세요.', 
-            isError: true,
-          );
-        }
-        return;
-      }
-
-      // Match Found & Name Verified!
+      // Match Found!
       final churchId = matchedMember['church_id'];
       
       // Fetch church name (Quick one-off query)
@@ -220,7 +214,7 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
             builder: (context) => GroupSelectionScreen(
               churchId: churchId,
               churchName: churchName,
-              prefilledName: directoryName,
+              prefilledName: matchedMember['full_name'],
               prefilledPhone: phone,
               matchedData: Map<String, dynamic>.from(matchedMember),
             ),
@@ -326,7 +320,19 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
                   : '교회 성도 명부에 등록된\n성함과 휴대폰 번호로 인증해주세요.',
               style: const TextStyle(color: AppTheme.textSub),
             ),
-            const SizedBox(height: 40),
+            // Name Input (Real name)
+            TextField(
+              controller: _nameController,
+              readOnly: _isCodeSent,
+              decoration: InputDecoration(
+                labelText: '성함(실명)',
+                hintText: '성도 명부에 등록된 성함을 적어주세요',
+                filled: true,
+                fillColor: AppTheme.background,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+              ),
+            ),
+            const SizedBox(height: 16),
 
             // Phone Input
             TextField(

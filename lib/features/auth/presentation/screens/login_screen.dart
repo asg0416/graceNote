@@ -219,7 +219,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     onPressed: () => _signInWithSocial(OAuthProvider.google),
                     hasBorder: true,
                   ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 24),
+                  Center(
+                    child: Text(
+                      'Version ${AppConstants.appVersion}',
+                      style: const TextStyle(color: AppTheme.textLight, fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),

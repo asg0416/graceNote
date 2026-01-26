@@ -5,7 +5,6 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/constants/app_constants.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/auth/presentation/screens/login_screen.dart';
-import 'package:grace_note/features/auth/presentation/screens/church_selection_screen.dart';
 import 'package:grace_note/features/auth/presentation/screens/phone_verification_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:grace_note/core/services/ai_service.dart';

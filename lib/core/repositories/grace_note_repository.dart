@@ -1,8 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../error/exceptions.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:flutter/foundation.dart';
-import 'package:intl/intl.dart';
 
 class GraceNoteRepository {
   final _supabase = Supabase.instance.client;
@@ -894,11 +892,15 @@ class GraceNoteRepository {
   }
 
   // SMS 인증 확인 및 매칭 조회
-  Future<Map<String, dynamic>> verifySMS(String phone, String code) async {
+  Future<Map<String, dynamic>> verifySMS(String phone, String code, {String? fullName}) async {
     try {
       final response = await _supabase.functions.invoke(
         'verify-sms',
-        body: {'phone': phone, 'code': code},
+        body: {
+          'phone': phone, 
+          'code': code,
+          if (fullName != null) 'fullName': fullName,
+        },
       );
 
       if (response.status != 200) {
