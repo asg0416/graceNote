@@ -174,38 +174,36 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
       
       final churchName = churchRes['name'];
 
-      // [FIX] Use upsert instead of update to ensure profile exists
-      // This is crucial because get_my_church_id() used in RLS relies on profiles.church_id
-      if (user != null) {
-        await Supabase.instance.client.from('profiles').upsert({
-          'id': user.id,
-          'full_name': name,
-          'email': user.email,
-          'church_id': churchId,
-          'phone': phone,
-        });
-
-        // Refresh userProfileProvider so the app state reflects the new church_id
-        ref.invalidate(userProfileProvider);
-        
-        // Give a tiny bit of time for RLS/Provider to catch up
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
-
       if (mounted) {
         if (isAdmin) {
-          // Even if matched, if admin, just complete onboarding
+          // [ADMIN] Immediate profile update and onboarding completion
+          if (user != null) {
+            await Supabase.instance.client.from('profiles').upsert({
+              'id': user.id,
+              'full_name': profile!.fullName,
+              'email': user.email,
+              'church_id': churchId,
+              'phone': phone,
+            });
+          }
+
           await repo.completeOnboarding(
             profileId: user!.id,
             fullName: profile!.fullName,
-            churchId: churchId, // Use the matched churchId instead of profile.churchId (which might be null)
+            churchId: churchId,
             phone: phone,
             matchedData: Map<String, dynamic>.from(matchedMember),
           );
-          SnackBarUtil.showSnackBar(context, message: '관리자 인증이 완료되었습니다.');
-          ref.invalidate(userProfileProvider);
+
+          if (mounted) {
+            SnackBarUtil.showSnackBar(context, message: '관리자 인증이 완료되었습니다.');
+            ref.invalidate(userProfileProvider);
+          }
           return;
         }
+
+        // [USER] PROMPT FIRST, UPDATE LATER
+        // This prevents the profile from being "poisoned" with a phone number if the info is wrong.
 
         // [NEW] Show Confirmation Modal for regular users
         String? departmentName;
@@ -231,7 +229,17 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
           );
 
           if (isConfirmed == true) {
-            // Success: Complete onboarding automatically
+            // [SUCCESS] Now it is safe to update the profile and complete onboarding
+            if (user != null) {
+              await Supabase.instance.client.from('profiles').upsert({
+                'id': user.id,
+                'full_name': name,
+                'email': user.email,
+                'church_id': churchId,
+                'phone': phone,
+              });
+            }
+
             await repo.completeOnboarding(
               profileId: user!.id,
               fullName: name,
