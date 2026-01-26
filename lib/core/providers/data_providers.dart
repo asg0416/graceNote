@@ -113,27 +113,35 @@ final churchGroupsProvider = FutureProvider.family<List<Map<String, dynamic>>, S
   }).toList();
 });
 
-// User's assigned groups
-final userGroupsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+// User's assigned groups (Real-time Reactive)
+final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   // Rebuild on auth changes
   ref.watch(authStateProvider);
 
   final user = Supabase.instance.client.auth.currentUser;
-  if (user == null) return [];
+  if (user == null) return Stream.value([]);
 
-  final response = await Supabase.instance.client
+  // Listen to changes in group_members for this user
+  // Since .stream() doesn't support joins, we use it as a trigger to re-fetch full data
+  return Supabase.instance.client
       .from('group_members')
-      .select('group_id, role_in_group, groups(name, church_id, departments(name))')
+      .stream(primaryKey: ['id'])
       .eq('profile_id', user.id)
-      .eq('is_active', true);
-      
-  return (response as List).map<Map<String, dynamic>>((e) => {
-    'group_id': e['group_id']?.toString() ?? '',
-    'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
-    'church_id': e['groups']?['church_id']?.toString() ?? '',
-    'department_name': e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
-    'role_in_group': (e['role_in_group'] ?? 'member').toString(),
-  }).toList();
+      .asyncMap((_) async {
+        final response = await Supabase.instance.client
+            .from('group_members')
+            .select('group_id, role_in_group, groups(name, church_id, departments(name))')
+            .eq('profile_id', user.id)
+            .eq('is_active', true);
+            
+        return (response as List).map<Map<String, dynamic>>((e) => {
+          'group_id': e['group_id']?.toString() ?? '',
+          'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
+          'church_id': e['groups']?['church_id']?.toString() ?? '',
+          'department_name': e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
+          'role_in_group': (e['role_in_group'] ?? 'member').toString(),
+        }).toList();
+      });
 });
 
 // Selected Week Provider (Current context for app)

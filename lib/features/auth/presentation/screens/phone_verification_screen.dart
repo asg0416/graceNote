@@ -207,22 +207,54 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
           return;
         }
 
-        // Refresh group provider for this church to bypass old RLS-cached empty results
-        ref.invalidate(churchGroupsProvider(churchId));
+        // [NEW] Show Confirmation Modal for regular users
+        String? departmentName;
+        if (matchedMember['department_id'] != null) {
+          try {
+            final deptRes = await Supabase.instance.client
+                .from('departments')
+                .select('name')
+                .eq('id', matchedMember['department_id'])
+                .single();
+            departmentName = deptRes['name'];
+          } catch (e) {
+            debugPrint('Error fetching dept name: $e');
+          }
+        }
 
-        // Go to GroupSelectionScreen directly
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => GroupSelectionScreen(
+        if (mounted) {
+          final isConfirmed = await _showMatchConfirmationDialog(
+            churchName: churchName,
+            departmentName: departmentName ?? '부서 미정',
+            groupName: matchedMember['group_name'] ?? '조 미정',
+            role: matchedMember['role_in_group'] == 'leader' ? '조장' : '조원',
+          );
+
+          if (isConfirmed == true) {
+            // Success: Complete onboarding automatically
+            await repo.completeOnboarding(
+              profileId: user!.id,
+              fullName: name,
               churchId: churchId,
-              churchName: churchName,
-              prefilledName: matchedMember['full_name'],
-              prefilledPhone: phone,
+              phone: phone,
               matchedData: Map<String, dynamic>.from(matchedMember),
-            ),
-          ),
-        );
+            );
+
+            ref.invalidate(userProfileProvider);
+            ref.invalidate(userGroupsProvider);
+
+            if (mounted) {
+              SnackBarUtil.showSnackBar(context, message: '인증이 완료되었습니다.');
+              // Redirect to Home
+               Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+            }
+          } else if (isConfirmed == false) {
+             // User said "No, this is not me"
+             if (mounted) {
+               _showContactAdminDialog();
+             }
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -231,6 +263,92 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<bool?> _showMatchConfirmationDialog({
+    required String churchName,
+    required String departmentName,
+    required String groupName,
+    required String role,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('정보 확인', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('아래 정보로 본인 인증을 진행할까요?', style: TextStyle(color: AppTheme.textSub)),
+            const SizedBox(height: 20),
+            _buildInfoRow('교회', churchName),
+            _buildInfoRow('부서', departmentName),
+            _buildInfoRow('소속', groupName),
+            _buildInfoRow('역할', role),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('정보가 틀려요', style: TextStyle(color: AppTheme.textSub)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryIndigo,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('네, 맞아요'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showContactAdminDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('관리자 문의 필요', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text(
+          '명부에 등록된 정보와 실제 정보가 일치하지 않습니다.\n교회 관리자에게 문의하여 정보를 올바르게 수정해 주세요.',
+          style: TextStyle(height: 1.5),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryIndigo,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 40,
+            child: Text(label, style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w600, fontSize: 15)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showAccountExistsDialog(AccountExistsException e) {
@@ -323,6 +441,7 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
                   : '교회 성도 명부에 등록된\n성함과 휴대폰 번호로 인증해주세요.',
               style: const TextStyle(color: AppTheme.textSub),
             ),
+            const SizedBox(height: 32),
             // Name Input (Real name)
             TextField(
               controller: _nameController,

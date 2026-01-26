@@ -213,7 +213,19 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
 
             const SizedBox(height: 32),
             _buildInfoCard(settings),
-            const SizedBox(height: 40),
+            const SizedBox(height: 48),
+            const Center(
+              child: Text(
+                'v1.0.1+2',
+                style: TextStyle(
+                  color: AppTheme.textLight,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ),
+            const SizedBox(height: 60),
           ],
         ),
       ),

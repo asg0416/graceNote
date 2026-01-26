@@ -116,7 +116,7 @@ class _GroupSelectionScreenState extends ConsumerState<GroupSelectionScreen> {
                   height: 1.3,
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               TextField(
                 controller: _nameController,
                 decoration: InputDecoration(
