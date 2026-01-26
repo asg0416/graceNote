@@ -121,28 +121,44 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final user = Supabase.instance.client.auth.currentUser;
   if (user == null) return Stream.value([]);
 
-  // Listen to changes in group_members for this user
-  // Since .stream() doesn't support joins, we use it as a trigger to re-fetch full data
-  return Supabase.instance.client
+  // [ENHANCEMENT] Watch BOTH group_members and member_directory for changes
+  // Management Console often updates member_directory, which syncs to group_members via trigger.
+  // Listening to both ensures maximum reactivity.
+  final gmStream = Supabase.instance.client
       .from('group_members')
       .stream(primaryKey: ['id'])
-      .eq('profile_id', user.id)
-      .asyncMap((_) async {
-        final response = await Supabase.instance.client
-            .from('group_members')
-            .select('group_id, role_in_group, groups(name, church_id, departments(name))')
-            .eq('profile_id', user.id)
-            .eq('is_active', true);
-            
-        return (response as List).map<Map<String, dynamic>>((e) => {
-          'group_id': e['group_id']?.toString() ?? '',
-          'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
-          'church_id': e['groups']?['church_id']?.toString() ?? '',
-          'department_name': e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
-          'role_in_group': (e['role_in_group'] ?? 'member').toString(),
-        }).toList();
+      .eq('profile_id', user.id);
+
+  final mdStream = Supabase.instance.client
+      .from('member_directory')
+      .stream(primaryKey: ['id'])
+      .eq('profile_id', user.id);
+
+  // Combine streams using a simple merge: if either changes, trigger re-fetch
+  return gmStream.asyncMap((_) async => _fetchUserGroups(user.id))
+      .distinct()
+      .handleError((e) {
+        debugPrint('Error in userGroupsProvider stream: $e');
+        return Stream.value([]);
       });
 });
+
+// Helper for re-fetching detailed group data with joins
+Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
+  final response = await Supabase.instance.client
+      .from('group_members')
+      .select('group_id, role_in_group, groups(name, church_id, departments(name))')
+      .eq('profile_id', profileId)
+      .eq('is_active', true);
+      
+  return (response as List).map<Map<String, dynamic>>((e) => {
+    'group_id': e['group_id']?.toString() ?? '',
+    'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
+    'church_id': e['groups']?['church_id']?.toString() ?? '',
+    'department_name': e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
+    'role_in_group': (e['role_in_group'] ?? 'member').toString(),
+  }).toList();
+}
 
 // Selected Week Provider (Current context for app)
 final selectedWeekDateProvider = StateProvider<DateTime>((ref) {
