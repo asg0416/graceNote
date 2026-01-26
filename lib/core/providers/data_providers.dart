@@ -124,13 +124,19 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 
   final controller = StreamController<List<Map<String, dynamic>>>();
   
-  // Re-fetch logic with a protective delay for DB triggers/sync
+  // Re-fetch logic with a small protective delay for DB triggers/sync
   Future<void> triggerUpdate() async {
-    await Future.delayed(const Duration(milliseconds: 800)); // Slightly longer for stability
+    // 0.8s is enough for triggers and publication to sync
+    await Future.delayed(const Duration(milliseconds: 800));
     if (controller.isClosed) return;
     try {
       final data = await _fetchUserGroups(user.id);
-      if (!controller.isClosed) controller.add(data);
+      if (!controller.isClosed) {
+        controller.add(data);
+        // [FORCE] Ensure related providers are also refreshed
+        ref.invalidate(weeklyDataProvider);
+        ref.invalidate(weekIdProvider);
+      }
     } catch (e) {
       debugPrint('Error refreshing user groups: $e');
     }
@@ -139,22 +145,15 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   // Initial fetch
   triggerUpdate();
 
-  // Listen to BOTH gmStream and mdStream
+  // [NEW] Use a broader filter or listening to ensure we don't miss any update
   final gmSub = Supabase.instance.client
       .from('group_members')
       .stream(primaryKey: ['id'])
       .eq('profile_id', user.id)
       .listen((_) => triggerUpdate());
 
-  final mdSub = Supabase.instance.client
-      .from('member_directory')
-      .stream(primaryKey: ['id'])
-      .eq('profile_id', user.id)
-      .listen((_) => triggerUpdate());
-
   ref.onDispose(() {
     gmSub.cancel();
-    mdSub.cancel();
     controller.close();
   });
 
@@ -162,20 +161,29 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 });
 
 // Helper for re-fetching detailed group data with joins
+// [ENHANCEMENT] Join with member_directory to ensure newest assignment
 Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
   final response = await Supabase.instance.client
       .from('group_members')
-      .select('group_id, role_in_group, groups(name, church_id, departments(name))')
+      .select('group_id, role_in_group, groups(name, church_id, departments(name)), profiles(member_directory(group_name, role_in_group, is_active))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
-      .order('joined_at', ascending: false); // Ensure latest assigned group is first
+      .order('joined_at', ascending: false);
       
-  return (response as List).map<Map<String, dynamic>>((e) => {
-    'group_id': e['group_id']?.toString() ?? '',
-    'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
-    'church_id': e['groups']?['church_id']?.toString() ?? '',
-    'department_name': e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
-    'role_in_group': (e['role_in_group'] ?? 'member').toString(),
+  return (response as List).map<Map<String, dynamic>>((e) {
+    // [LOGIC UPGRADE] Prefer directory data if it matches, to handle trigger delays
+    final dir = (e['profiles']?['member_directory'] as List?)?.firstWhere(
+      (d) => d['is_active'] == true,
+      orElse: () => null
+    );
+
+    return {
+      'group_id': e['group_id']?.toString() ?? '',
+      'group_name': dir?['group_name'] ?? e['groups']?['name']?.toString() ?? '알 수 없는 조',
+      'church_id': e['groups']?['church_id']?.toString() ?? '',
+      'department_name': e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
+      'role_in_group': dir?['role_in_group'] ?? (e['role_in_group'] ?? 'member').toString(),
+    };
   }).toList();
 }
 
