@@ -671,6 +671,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       }
     });
 
+    // [NEW] Listen to group changes (Real-time trigger)
+    ref.listen(userGroupsProvider, (previous, next) {
+       if (next.hasValue && previous?.value != next.value) {
+         debugPrint('AttendancePrayerScreen: Group change detected, refreshing...');
+         _refreshData();
+       }
+    });
+
     if (groupsAsync.hasValue && !_isInitialized) {
       _isInitialized = true;
       Future.microtask(() => _refreshData());

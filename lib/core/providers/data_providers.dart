@@ -121,26 +121,43 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final user = Supabase.instance.client.auth.currentUser;
   if (user == null) return Stream.value([]);
 
-  // [ENHANCEMENT] Watch BOTH group_members and member_directory for changes
-  // Management Console often updates member_directory, which syncs to group_members via trigger.
-  // Listening to both ensures maximum reactivity.
-  final gmStream = Supabase.instance.client
+  final controller = StreamController<List<Map<String, dynamic>>>();
+  
+  // Re-fetch logic with a small protective delay for DB triggers
+  Future<void> triggerUpdate() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (controller.isClosed) return;
+    try {
+      final data = await _fetchUserGroups(user.id);
+      if (!controller.isClosed) controller.add(data);
+    } catch (e) {
+      debugPrint('Error refreshing user groups: $e');
+    }
+  }
+
+  // Initial fetch
+  triggerUpdate();
+
+  // Listen to BOTH gmStream and mdStream
+  final gmSub = Supabase.instance.client
       .from('group_members')
       .stream(primaryKey: ['id'])
-      .eq('profile_id', user.id);
+      .eq('profile_id', user.id)
+      .listen((_) => triggerUpdate());
 
-  final mdStream = Supabase.instance.client
+  final mdSub = Supabase.instance.client
       .from('member_directory')
       .stream(primaryKey: ['id'])
-      .eq('profile_id', user.id);
+      .eq('profile_id', user.id)
+      .listen((_) => triggerUpdate());
 
-  // Combine streams using a simple merge: if either changes, trigger re-fetch
-  return gmStream.asyncMap((_) async => _fetchUserGroups(user.id))
-      .distinct()
-      .handleError((e) {
-        debugPrint('Error in userGroupsProvider stream: $e');
-        return Stream.value([]);
-      });
+  ref.onDispose(() {
+    gmSub.cancel();
+    mdSub.cancel();
+    controller.close();
+  });
+
+  return controller.stream;
 });
 
 // Helper for re-fetching detailed group data with joins
