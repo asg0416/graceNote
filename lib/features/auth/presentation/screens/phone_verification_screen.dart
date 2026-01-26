@@ -180,13 +180,25 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
       
       final churchName = churchRes['name'];
 
+      // [FIX] Update profile's church_id early to satisfy RLS for groups
+      // This is crucial because get_my_church_id() used in RLS relies on profiles.church_id
+      if (user != null) {
+        await Supabase.instance.client.from('profiles').update({
+          'church_id': churchId,
+          'phone': phone,
+        }).eq('id', user.id);
+
+        // Refresh userProfileProvider so the app state reflects the new church_id
+        ref.invalidate(userProfileProvider);
+      }
+
       if (mounted) {
         if (isAdmin) {
           // Even if matched, if admin, just complete onboarding
           await repo.completeOnboarding(
             profileId: user!.id,
             fullName: profile!.fullName,
-            churchId: profile.churchId,
+            churchId: churchId, // Use the matched churchId instead of profile.churchId (which might be null)
             phone: phone,
             matchedData: Map<String, dynamic>.from(matchedMember),
           );
@@ -194,6 +206,9 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
           ref.invalidate(userProfileProvider);
           return;
         }
+
+        // Refresh group provider for this church to bypass old RLS-cached empty results
+        ref.invalidate(churchGroupsProvider(churchId));
 
         // Go to GroupSelectionScreen directly
         Navigator.push(
