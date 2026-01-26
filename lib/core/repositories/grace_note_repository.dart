@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../error/exceptions.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:flutter/foundation.dart';
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
+import 'package:grace_note/core/constants/app_constants.dart';
 import 'package:grace_note/features/auth/presentation/screens/login_screen.dart';
 import 'package:grace_note/features/home/presentation/screens/ai_settings_screen.dart';
 import 'package:grace_note/features/home/presentation/screens/saved_prayers_screen.dart';
