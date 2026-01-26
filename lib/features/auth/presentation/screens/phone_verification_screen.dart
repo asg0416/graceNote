@@ -190,6 +190,9 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
 
         // Refresh userProfileProvider so the app state reflects the new church_id
         ref.invalidate(userProfileProvider);
+        
+        // Give a tiny bit of time for RLS/Provider to catch up
+        await Future.delayed(const Duration(milliseconds: 500));
       }
 
       if (mounted) {
