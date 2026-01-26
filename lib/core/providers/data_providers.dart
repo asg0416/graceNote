@@ -124,9 +124,9 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 
   final controller = StreamController<List<Map<String, dynamic>>>();
   
-  // Re-fetch logic with a small protective delay for DB triggers
+  // Re-fetch logic with a protective delay for DB triggers/sync
   Future<void> triggerUpdate() async {
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 800)); // Slightly longer for stability
     if (controller.isClosed) return;
     try {
       final data = await _fetchUserGroups(user.id);
@@ -167,7 +167,8 @@ Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
       .from('group_members')
       .select('group_id, role_in_group, groups(name, church_id, departments(name))')
       .eq('profile_id', profileId)
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .order('joined_at', ascending: false); // Ensure latest assigned group is first
       
   return (response as List).map<Map<String, dynamic>>((e) => {
     'group_id': e['group_id']?.toString() ?? '',

@@ -673,9 +673,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
     // [NEW] Listen to group changes (Real-time trigger)
     ref.listen(userGroupsProvider, (previous, next) {
-       if (next.hasValue && previous?.value != next.value) {
-         debugPrint('AttendancePrayerScreen: Group change detected, refreshing...');
-         _refreshData();
+       if (next.hasValue) {
+         final oldGroupId = previous?.value?.isNotEmpty == true ? previous!.value!.first['group_id'] : null;
+         final newGroupId = next.value?.isNotEmpty == true ? next.value!.first['group_id'] : null;
+         
+         if (oldGroupId != newGroupId) {
+           debugPrint('AttendancePrayerScreen: Group ID changed ($oldGroupId -> $newGroupId), refreshing...');
+           _refreshData();
+         }
        }
     });
 
