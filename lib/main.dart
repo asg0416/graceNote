@@ -94,81 +94,81 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
-    // 1. Watch Auth State Reactive (IMPORTANT: Rebuilds on login/signup)
     final authStateAsync = ref.watch(authStateProvider);
 
-    // [ENHANCEMENT] Invalidate user profile and related data on auth change
-    ref.listen(authStateProvider, (previous, next) {
-      if (previous?.value?.session?.user.id != next.value?.session?.user.id) {
-        ref.invalidate(userProfileProvider);
-        ref.invalidate(userGroupsProvider);
-      }
-    });
+    // 1. Auth State Handling with Resilience
+    // 이미 데이터가 있는 경우(hasValue) 에러나 로딩 중이라도 기존 화면을 최대한 유지합니다.
+    if (authStateAsync.isLoading && !authStateAsync.hasValue) {
+      return _buildLoadingScreen();
+    }
 
-    return authStateAsync.when(
-      data: (authState) {
-        final session = authState.session;
-
-        // Not logged in
-        if (session == null) {
-          return const LoginScreen();
-        }
-
-        // 2. Logged in - Load Profile and route
-        final profileAsync = ref.watch(userProfileProvider);
-
-        return profileAsync.when(
-          data: (profile) {
-            // 프로필이 아직 생성되지 않았거나 온보딩이 완료되지 않은 경우
-            if (profile == null || !profile.isOnboardingComplete) {
-              return const PhoneVerificationScreen();
-            }
-
-            // 2. 관리자 권한 신청 중이거나 승인 대기인 경우 (마스터 계정은 예외)
-            final bool isPendingAdmin = profile.adminStatus == 'pending' || 
-                                       (profile.role == 'admin' && profile.adminStatus != 'approved');
-            
-            if (isPendingAdmin && !profile.isMaster) {
-              return const AdminPendingScreen();
-            }
-
-            // 3. Ready to go
-            return const HomeScreen();
-          },
-          loading: () {
-            // [ENHANCEMENT] Show a timeout-based Check button if loading takes too long
-            return FutureBuilder(
-              future: Future.delayed(const Duration(seconds: 5)),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  return _buildSlowLoadingScreen(ref);
-                }
-                return _buildLoadingScreen();
-              },
-            );
-          },
-          error: (e, _) => _AutoRetryErrorScreen(
-            error: e, 
-            onRetry: _refreshAllData,
-            onLogout: () async {
-              await Supabase.instance.client.auth.signOut();
-              ref.invalidate(userProfileProvider);
-              ref.invalidate(userGroupsProvider);
-            },
-          ),
-        );
-      },
-      loading: () => _buildLoadingScreen(),
-      error: (e, _) => _AutoRetryErrorScreen(
-        error: e, 
+    if (authStateAsync.hasError && !authStateAsync.hasValue) {
+      return _AutoRetryErrorScreen(
+        error: authStateAsync.error!,
         onRetry: _refreshAllData,
         onLogout: () async {
           await Supabase.instance.client.auth.signOut();
           ref.invalidate(userProfileProvider);
           ref.invalidate(userGroupsProvider);
         },
-      ),
-    );
+      );
+    }
+
+    final authState = authStateAsync.valueOrNull;
+    final session = authState?.session;
+
+    // Not logged in
+    if (session == null) {
+      return const LoginScreen();
+    }
+
+    // 2. Profile Handling with Resilience
+    final profileAsync = ref.watch(userProfileProvider);
+
+    // 데이터가 없고 로딩 중일 때만 로딩 화면 표시
+    if (profileAsync.isLoading && !profileAsync.hasValue) {
+      return FutureBuilder(
+        future: Future.delayed(const Duration(seconds: 5)),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done) {
+            return _buildSlowLoadingScreen(ref);
+          }
+          return _buildLoadingScreen();
+        },
+      );
+    }
+
+    // 데이터가 없고 에러일 때만 에러 화면 표시
+    if (profileAsync.hasError && !profileAsync.hasValue) {
+      return _AutoRetryErrorScreen(
+        error: profileAsync.error!, 
+        onRetry: _refreshAllData,
+        onLogout: () async {
+          await Supabase.instance.client.auth.signOut();
+          ref.invalidate(userProfileProvider);
+          ref.invalidate(userGroupsProvider);
+        },
+      );
+    }
+
+    // 데이터가 있다면 (에러나 로딩 중이라도) 기존 데이터 공유
+    final profile = profileAsync.valueOrNull;
+
+    // 프로필이 아직 생성되지 않았거나 온보딩이 완료되지 않은 경우
+    if (profile == null || !profile.isOnboardingComplete) {
+      return const PhoneVerificationScreen();
+    }
+
+    // 관리자 권한 신청 중이거나 승인 대기인 경우 (마스터 계정은 예외)
+    final bool isPendingAdmin = profile.adminStatus == 'pending' || 
+                                (profile.role == 'admin' && profile.adminStatus != 'approved');
+    
+    if (isPendingAdmin && !profile.isMaster) {
+      return const AdminPendingScreen();
+    }
+
+    // Ready to go
+    return const HomeScreen();
   }
 
   Widget _buildLoadingScreen() {
@@ -275,9 +275,7 @@ class _AutoRetryErrorScreenState extends State<_AutoRetryErrorScreen> {
   Widget build(BuildContext context) {
     final errorMessage = widget.error.toString();
     final isRealtimeError = errorMessage.contains('Realtime');
-    final displayMessage = isRealtimeError 
-        ? '서버와의 연결이 원활하지 않습니다.\n자동으로 재연결을 시도하고 있습니다.' 
-        : '로그인 정보를 불러오는 중 오류가 발생했습니다.';
+    final displayMessage = '서버와의 연결이 원활하지 않습니다.\n잠시 후 다시 시도해 주세요.';
 
     return Scaffold(
       body: Center(
@@ -286,10 +284,10 @@ class _AutoRetryErrorScreenState extends State<_AutoRetryErrorScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                isRealtimeError ? Icons.wifi_off_rounded : Icons.error_outline_rounded, 
-                size: 48, 
-                color: AppTheme.error
+              const Icon(
+                Icons.wifi_off_rounded, 
+                size: 64, 
+                color: Color(0xFFEF4444), // AppTheme.error
               ),
               const SizedBox(height: 16),
               Text(
@@ -328,10 +326,12 @@ class _AutoRetryErrorScreenState extends State<_AutoRetryErrorScreen> {
                   onPressed: widget.onRetry,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryIndigo,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
                   ),
-                  child: const Text('즉시 재시도', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text('다시 시도', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
                 ),
               ),
               const SizedBox(height: 12),
