@@ -171,62 +171,42 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
               ),
             ],
 
-            const SizedBox(height: 32),
             _buildSectionHeader('기도제목 공유 스타일', '카카오톡 공유 시 사용할 텍스트 포맷을 설정합니다.'),
             const SizedBox(height: 12),
             _buildCard(
-              child: Column(
+              child: _buildSwitchTile(
+                title: '해당 주차 날짜 표시',
+                subtitle: '제목 부분에 "1/18" 과 같이 날짜를 포함합니다.',
+                value: settings.showDateInShare,
+                onChanged: (val) => ref.read(aiSettingsProvider.notifier).setShowDateInShare(val),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildSectionHeader('이름 양옆 기호 설정', '성도 이름 앞뒤에 붙을 아이콘을 지정하세요.'),
+            const SizedBox(height: 12),
+            _buildCard(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
                 children: [
-                  _buildSwitchTile(
-                    title: '해당 주차 날짜 표시',
-                    subtitle: '제목 부분에 "1/18" 과 같이 날짜를 포함합니다.',
-                    value: settings.showDateInShare,
-                    onChanged: (val) => ref.read(aiSettingsProvider.notifier).setShowDateInShare(val),
-                  ),
-                  _buildDivider(),
-                  _buildSwitchTile(
-                    title: '이름 양옆 기호 설정',
-                    subtitle: '성도 이름 앞뒤에 붙을 아이콘을 지정하세요.',
-                    value: true, 
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 80,
-                          height: 50,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: AppTheme.divider, width: 1),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))
-                            ],
-                          ),
-                          child: TextField(
-                            controller: _shareIconController,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                            decoration: const InputDecoration(
-                              hintText: '💙',
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              filled: false,
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                            onChanged: (val) {
-                              if (val.trim().isNotEmpty) {
-                                ref.read(aiSettingsProvider.notifier).setShareHeaderIcon(val.trim());
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.edit_rounded, size: 16, color: AppTheme.textLight),
-                      ],
+                  Expanded(
+                    child: TextField(
+                      controller: _shareIconController,
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      decoration: const InputDecoration(
+                        hintText: '아이콘 입력 (예: 💙, ✨)',
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        filled: false,
+                      ),
                     ),
-                    onChanged: (v) {},
                   ),
+                  _buildApplyButton(onPressed: () {
+                    // 빈 문자열인 경우에도 저장을 허용하여 '삭제' 기능 지원
+                    final val = _shareIconController.text;
+                    ref.read(aiSettingsProvider.notifier).setShareHeaderIcon(val);
+                    SnackBarUtil.showSnackBar(context, message: val.isEmpty ? '공유 기호가 초기화되었습니다.' : '공유 기호가 적용되었습니다.');
+                  }),
                 ],
               ),
             ),
