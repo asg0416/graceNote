@@ -174,13 +174,16 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
       
       final churchName = churchRes['name'];
 
-      // [FIX] Update profile's church_id early to satisfy RLS for groups
+      // [FIX] Use upsert instead of update to ensure profile exists
       // This is crucial because get_my_church_id() used in RLS relies on profiles.church_id
       if (user != null) {
-        await Supabase.instance.client.from('profiles').update({
+        await Supabase.instance.client.from('profiles').upsert({
+          'id': user.id,
+          'full_name': name,
+          'email': user.email,
           'church_id': churchId,
           'phone': phone,
-        }).eq('id', user.id);
+        });
 
         // Refresh userProfileProvider so the app state reflects the new church_id
         ref.invalidate(userProfileProvider);
