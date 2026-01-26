@@ -71,7 +71,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           case AppRole.leader:
             screens = [
               groups.isNotEmpty
-                ? const AttendancePrayerScreen()
+                ? AttendancePrayerScreen(isActive: _selectedIndex == 0)
                 : const Scaffold(body: Center(child: Text('기록할 조가 없습니다.'))),
               const PrayerListScreen(),
               groups.isNotEmpty 

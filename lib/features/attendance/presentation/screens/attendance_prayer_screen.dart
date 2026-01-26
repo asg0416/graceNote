@@ -14,7 +14,8 @@ import 'package:flutter/services.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 
 class AttendancePrayerScreen extends ConsumerStatefulWidget {
-  const AttendancePrayerScreen({super.key});
+  final bool isActive;
+  const AttendancePrayerScreen({super.key, this.isActive = true});
 
   @override
   ConsumerState<AttendancePrayerScreen> createState() => _AttendancePrayerScreenState();
@@ -45,6 +46,25 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   void initState() {
     super.initState();
     // Initial fetch handled by build/watch
+  }
+
+  @override
+  void didUpdateWidget(AttendancePrayerScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 탭이 선택되어 활성화될 때(false -> true), 출석 체크 여부 재확인
+    if (widget.isActive && !oldWidget.isActive) {
+      _checkAndShowAttendancePopup();
+    }
+  }
+
+  void _checkAndShowAttendancePopup() {
+    if (_members.isEmpty || _isCheckScreenShowing || _isLoading || _isFetching) return;
+
+    final hasAnyPresence = _members.any((m) => m['isPresent'] == true);
+    if (!hasAnyPresence) {
+      _isCheckScreenShowing = true;
+      Future.microtask(() => _launchAttendanceCheck());
+    }
   }
 
   Future<void> _refreshData() async {
@@ -140,10 +160,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         _isFetching = false;
 
         // 출석 기록이 전혀 없거나, 참석 인원이 0명인 경우 출석체크 화면 강제 유도
-        final hasAnyPresence = _members.any((m) => m['isPresent'] == true);
-        if ((existingAttendance.isEmpty || !hasAnyPresence) && _members.isNotEmpty && !_isCheckScreenShowing) {
-           _isCheckScreenShowing = true;
-           Future.microtask(() => _launchAttendanceCheck());
+        // 오직 화면이 활성화된 상태(widget.isActive)에서만 팝업을 띄움
+        if (widget.isActive) {
+          _checkAndShowAttendancePopup();
         }
       });
     } catch (e) {
