@@ -42,8 +42,20 @@ serve(async (req) => {
         }
 
         // 2. Check for Duplicates in Profiles via RPC (Secure)
+        // [MODIFIED] Pass current user id to exclude from self-duplicate check
+        const authHeader = req.headers.get('Authorization');
+        let userId = null;
+        if (authHeader) {
+            const token = authHeader.replace('Bearer ', '');
+            const { data: { user } } = await supabase.auth.getUser(token);
+            userId = user?.id;
+        }
+
         const { data: duplicateCheck, error: rpcError } = await supabase
-            .rpc('check_phone_exists', { p_phone: cleanPhone });
+            .rpc('check_phone_exists', {
+                p_phone: cleanPhone,
+                p_user_id: userId
+            });
 
         if (rpcError) throw rpcError;
 
