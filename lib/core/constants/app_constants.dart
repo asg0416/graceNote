@@ -17,5 +17,5 @@ class AppConstants {
     defaultValue: 'YOUR_GEMINI_API_KEY',
   );
 
-  static const String appVersion = '1.2.5+5'; // [NEW] Current app version
+  static const String appVersion = '1.2.6+6'; // [NEW] Current app version
 }

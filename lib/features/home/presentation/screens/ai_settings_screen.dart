@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
+import 'package:grace_note/core/constants/app_constants.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 
 class AISettingsScreen extends ConsumerStatefulWidget {
@@ -216,7 +217,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
             const SizedBox(height: 48),
             const Center(
               child: Text(
-                'v1.0.1+2',
+                'v${AppConstants.appVersion}',
                 style: TextStyle(
                   color: AppTheme.textLight,
                   fontSize: 12,
