@@ -24,6 +24,7 @@ export default function RegisterPage() {
     const [success, setSuccess] = useState(false);
     const [otpSent, setOtpSent] = useState(false);
     const [otp, setOtp] = useState('');
+    const [resendCooldown, setResendCooldown] = useState(0);
 
     // Password validation states
     const [passwordChecks, setPasswordChecks] = useState({
@@ -43,6 +44,16 @@ export default function RegisterPage() {
             specialChar: /[!@#$%^&*(),.?":{}|<>]/.test(password),
         });
     }, [password]);
+
+    useEffect(() => {
+        let timer: NodeJS.Timeout;
+        if (resendCooldown > 0) {
+            timer = setInterval(() => {
+                setResendCooldown((prev) => prev - 1);
+            }, 1000);
+        }
+        return () => clearInterval(timer);
+    }, [resendCooldown]);
 
     const isPasswordValid = Object.values(passwordChecks).every(Boolean);
 
@@ -216,6 +227,29 @@ export default function RegisterPage() {
         }
     };
 
+    const handleResendOTP = async () => {
+        if (resendCooldown > 0) return;
+
+        setError(null);
+        setLoading(true);
+        try {
+            const { error: resendError } = await supabase.auth.resend({
+                type: 'signup',
+                email: email,
+                options: {
+                    emailRedirectTo: 'https://admin.gracenote.io.kr/auth/callback'
+                }
+            });
+            if (resendError) throw resendError;
+            setResendCooldown(60);
+        } catch (err) {
+            const error = err as { message: string };
+            setError(error.message || '인증 번호 재발송 중 오류가 발생했습니다.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     if (success) {
         return (
             <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 dark:bg-[#0a0f1d]">
@@ -334,13 +368,25 @@ export default function RegisterPage() {
                                 >
                                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : '인증 완료 및 가입 승인 대기'}
                                 </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setOtpSent(false)}
-                                    className="w-full text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest hover:text-indigo-600 transition-colors"
-                                >
-                                    이메일 주소 수정하기
-                                </button>
+
+                                <div className="flex flex-col gap-4">
+                                    <button
+                                        type="button"
+                                        onClick={handleResendOTP}
+                                        disabled={loading || resendCooldown > 0}
+                                        className="w-full text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest hover:underline disabled:text-slate-300 dark:disabled:text-slate-700 disabled:no-underline"
+                                    >
+                                        {resendCooldown > 0 ? `인증 번호 재전송 (${resendCooldown}초)` : '인증 번호를 받지 못하셨나요? 재전송하기'}
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setOtpSent(false)}
+                                        className="w-full text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest hover:text-indigo-600 transition-colors"
+                                    >
+                                        이메일 주소 수정하기
+                                    </button>
+                                </div>
                             </form>
                         ) : (
                             <form onSubmit={handleRegister} className="space-y-6">

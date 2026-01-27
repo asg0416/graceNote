@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +23,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _otpController = TextEditingController();
   bool _isLoading = false;
   bool _isOtpSent = false;
+  Timer? _resendTimer;
+  int _resendSeconds = 0;
 
   // Password validation states
   bool _hasMinLength = false;
@@ -44,6 +47,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _emailController.dispose();
     _confirmPasswordController.dispose();
     _otpController.dispose();
+    _resendTimer?.cancel();
     super.dispose();
   }
 
@@ -97,6 +101,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           Navigator.of(context).pop();
         } else {
           setState(() => _isOtpSent = true);
+          _startResendTimer(); // Start timer on successful signup
           SnackBarUtil.showSnackBar(context, message: '인증 번호가 이메일로 발송되었습니다.');
         }
       }
@@ -113,6 +118,50 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  void _startResendTimer() {
+    _resendTimer?.cancel();
+    setState(() => _resendSeconds = 60);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_resendSeconds == 0) {
+        timer.cancel();
+      } else {
+        setState(() => _resendSeconds--);
+      }
+    });
+  }
+
+  Future<void> _handleResendOtp() async {
+    if (_resendSeconds > 0) return;
+    
+    final email = _emailController.text.trim();
+    setState(() => _isLoading = true);
+    
+    try {
+      await Supabase.instance.client.auth.resend(
+        type: OtpType.signup,
+        email: email,
+        emailRedirectTo: 'https://gracenote.io.kr/auth-callback',
+      );
+      
+      _startResendTimer();
+      if (mounted) {
+        SnackBarUtil.showSnackBar(context, message: '인증 번호가 다시 발송되었습니다.');
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarUtil.showSnackBar(
+          context,
+          message: '인증 번호 재발송에 실패했습니다.',
+          isError: true,
+          technicalDetails: e.toString(),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
 
   Future<void> _handleVerifyOtp() async {
     final email = _emailController.text.trim();
@@ -229,8 +278,24 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         )
                       : const Text('인증 및 가입 완료', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
+                const SizedBox(height: 16),
                 TextButton(
-                  onPressed: () => setState(() => _isOtpSent = false),
+                  onPressed: _isLoading || _resendSeconds > 0 ? null : _handleResendOtp,
+                  child: Text(
+                    _resendSeconds > 0 ? '인증 번호 재전송 ($_resendSeconds초)' : '인증 번호를 받지 못하셨나요? 재전송하기',
+                    style: TextStyle(
+                      color: _resendSeconds > 0 ? AppTheme.textSub.withOpacity(0.5) : AppTheme.primaryIndigo,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() {
+                    _isOtpSent = false;
+                    _resendTimer?.cancel();
+                    _resendSeconds = 0;
+                  }),
                   child: const Text('이메일 주소 수정하기', style: TextStyle(color: AppTheme.textSub)),
                 ),
               ] else ...[
