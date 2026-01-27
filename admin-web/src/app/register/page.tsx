@@ -15,8 +15,8 @@ export default function RegisterPage() {
     const [phone, setPhone] = useState('');
     const [selectedChurchId, setSelectedChurchId] = useState('');
     const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
-    const [churches, setChurches] = useState<any[]>([]);
-    const [departments, setDepartments] = useState<any[]>([]);
+    const [churches, setChurches] = useState<{ id: string; name: string }[]>([]);
+    const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
     const [loading, setLoading] = useState(false);
     const [fetchingChurches, setFetchingChurches] = useState(true);
     const [fetchingDepartments, setFetchingDepartments] = useState(false);
@@ -128,7 +128,7 @@ export default function RegisterPage() {
 
         try {
             // Check if phone number is already registered using a secure RPC
-            let phoneCheckData: any = null;
+            let phoneCheckData: { p_exists: boolean; p_full_name: string; p_masked_email: string | null }[] | null = null;
             let phoneCheckError: any = null;
 
             try {
