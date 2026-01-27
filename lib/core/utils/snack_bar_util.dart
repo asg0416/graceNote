@@ -7,6 +7,8 @@ class SnackBarUtil {
     required String message,
     bool isError = false,
     String? technicalDetails,
+    Duration? duration,
+    SnackBarAction? action,
   }) {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     
@@ -62,7 +64,8 @@ class SnackBarUtil {
           ),
         ),
         margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        duration: const Duration(seconds: 3),
+        duration: duration ?? const Duration(seconds: 3),
+        action: action,
         elevation: 10,
       ),
     );
