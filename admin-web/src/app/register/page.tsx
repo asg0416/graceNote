@@ -22,6 +22,8 @@ export default function RegisterPage() {
     const [fetchingDepartments, setFetchingDepartments] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+    const [otpSent, setOtpSent] = useState(false);
+    const [otp, setOtp] = useState('');
 
     // Password validation states
     const [passwordChecks, setPasswordChecks] = useState({
@@ -167,15 +169,15 @@ export default function RegisterPage() {
                         church_id: selectedChurchId,
                         department_id: selectedDepartmentId,
                         phone: phone,
-                    }
+                    },
+                    emailRedirectTo: 'https://admin.gracenote.io.kr/auth/callback'
                 }
             });
 
             if (signUpError) throw signUpError;
 
             if (data.user) {
-                await supabase.auth.signOut();
-                setSuccess(true);
+                setOtpSent(true);
             }
         } catch (err) {
             const error = err as { message: string };
@@ -185,6 +187,30 @@ export default function RegisterPage() {
             } else {
                 setError(msg);
             }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleVerifyOTP = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+
+        try {
+            const { error: verifyError } = await supabase.auth.verifyOtp({
+                email,
+                token: otp,
+                type: 'signup'
+            });
+
+            if (verifyError) throw verifyError;
+
+            await supabase.auth.signOut();
+            setSuccess(true);
+        } catch (err) {
+            const error = err as { message: string };
+            setError(error.message || '인증 번호가 올바르지 않습니다.');
         } finally {
             setLoading(false);
         }
@@ -271,183 +297,225 @@ export default function RegisterPage() {
                     </div>
 
                     <div className="hidden lg:block space-y-2">
-                        <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">관리자 신청</h1>
-                        <p className="text-slate-500 dark:text-slate-500 font-bold text-sm tracking-tight">교회 운영을 위한 관리자 권한을 신청합니다.</p>
+                        <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">{otpSent ? '인증 번호 입력' : '관리자 신청'}</h1>
+                        <p className="text-slate-500 dark:text-slate-500 font-bold text-sm tracking-tight">
+                            {otpSent ? '이메일로 발송된 6자리 번호를 입력해 주세요.' : '교회 운영을 위한 관리자 권한을 신청합니다.'}
+                        </p>
                     </div>
 
                     <div className="bg-white/80 dark:bg-[#111827]/60 backdrop-blur-2xl p-8 sm:p-10 rounded-[40px] border border-white dark:border-slate-800/80 shadow-2xl dark:shadow-none relative">
-                        <form onSubmit={handleRegister} className="space-y-6">
-                            {error && (
-                                <div className="space-y-4">
+                        {otpSent ? (
+                            <form onSubmit={handleVerifyOTP} className="space-y-6">
+                                {error && (
                                     <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-600 dark:text-red-400 text-xs font-black text-center flex items-center justify-center gap-2">
                                         <ShieldCheck className="w-4 h-4" />
                                         {error}
                                     </div>
-                                    {error.includes('이미 가입된 계정') && (
-                                        <button
-                                            type="button"
-                                            onClick={() => router.push('/login')}
-                                            className="w-full py-3 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-indigo-100 transition-all flex items-center justify-center gap-2"
-                                        >
-                                            해당 계정으로 로그인하여 신청하기
-                                            <ArrowRight className="w-3 h-3" />
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-
-                            <div className="space-y-5">
+                                )}
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">관리자 성함</label>
+                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">인증 번호 (6자리)</label>
                                     <div className="relative group">
-                                        <User className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
+                                        <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
                                         <input
                                             type="text"
                                             required
-                                            value={fullName}
-                                            onChange={(e) => setFullName(e.target.value)}
-                                            className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-sm"
-                                            placeholder="홍길동"
+                                            value={otp}
+                                            onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ''))}
+                                            maxLength={6}
+                                            className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-black text-center tracking-[1em] placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-xl"
+                                            placeholder="000000"
                                         />
                                     </div>
                                 </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">관리자 이메일 주소</label>
-                                    <div className="relative group">
-                                        <Mail className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
-                                        <input
-                                            type="email"
-                                            required
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-sm"
-                                            placeholder="admin@church.com"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">휴대폰 번호 (앱 본인 인증용)</label>
-                                    <div className="relative group">
-                                        <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
-                                        <input
-                                            type="tel"
-                                            required
-                                            value={phone}
-                                            onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                                            className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-sm"
-                                            placeholder="01012345678"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">관리 대상 교회</label>
-                                    <div className="relative group">
-                                        <Church className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors pointer-events-none" />
-                                        <select
-                                            required
-                                            value={selectedChurchId}
-                                            onChange={(e) => setSelectedChurchId(e.target.value)}
-                                            disabled={fetchingChurches}
-                                            className="w-full pl-14 pr-10 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold appearance-none transition-all text-sm"
-                                        >
-                                            <option value="" disabled>{fetchingChurches ? '로딩 중...' : '소속 교회를 선택해 주세요'}</option>
-                                            {churches.map((church) => (
-                                                <option key={church.id} value={church.id}>{church.name}</option>
-                                            ))}
-                                        </select>
-                                        <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none border-l pl-3 border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-400 group-hover:bg-indigo-500" />
+                                <button
+                                    type="submit"
+                                    disabled={loading || otp.length < 6}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600"
+                                >
+                                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : '인증 완료 및 가입 승인 대기'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setOtpSent(false)}
+                                    className="w-full text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest hover:text-indigo-600 transition-colors"
+                                >
+                                    이메일 주소 수정하기
+                                </button>
+                            </form>
+                        ) : (
+                            <form onSubmit={handleRegister} className="space-y-6">
+                                {error && (
+                                    <div className="space-y-4">
+                                        <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-600 dark:text-red-400 text-xs font-black text-center flex items-center justify-center gap-2">
+                                            <ShieldCheck className="w-4 h-4" />
+                                            {error}
                                         </div>
+                                        {error.includes('이미 가입된 계정') && (
+                                            <button
+                                                type="button"
+                                                onClick={() => router.push('/login')}
+                                                className="w-full py-3 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-indigo-100 transition-all flex items-center justify-center gap-2"
+                                            >
+                                                해당 계정으로 로그인하여 신청하기
+                                                <ArrowRight className="w-3 h-3" />
+                                            </button>
+                                        )}
                                     </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">관리 대상 부서</label>
-                                    <div className="relative group">
-                                        <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors pointer-events-none" />
-                                        <select
-                                            required
-                                            value={selectedDepartmentId}
-                                            onChange={(e) => setSelectedDepartmentId(e.target.value)}
-                                            disabled={!selectedChurchId || fetchingDepartments}
-                                            className="w-full pl-14 pr-10 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold appearance-none transition-all text-sm disabled:opacity-50"
-                                        >
-                                            <option value="" disabled>{!selectedChurchId ? '교회를 먼저 선택해 주세요' : fetchingDepartments ? '로딩 중...' : '관리할 부서를 선택해 주세요'}</option>
-                                            {departments.map((dept) => (
-                                                <option key={dept.id} value={dept.id}>{dept.name}</option>
-                                            ))}
-                                        </select>
-                                        <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none border-l pl-3 border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-400 group-hover:bg-indigo-500" />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">비밀번호 설정</label>
-                                        <div className="relative group">
-                                            <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
-                                            <input
-                                                type="password"
-                                                required
-                                                value={password}
-                                                onChange={(e) => setPassword(e.target.value)}
-                                                className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 transition-all text-sm"
-                                                placeholder="••••••••"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">비밀번호 재확인</label>
-                                        <div className="relative group">
-                                            <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
-                                            <input
-                                                type="password"
-                                                required
-                                                value={confirmPassword}
-                                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                                className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 transition-all text-sm"
-                                                placeholder="••••••••"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Password Requirements Checklist */}
-                                <div className="p-5 bg-slate-50 dark:bg-slate-900/30 rounded-[28px] border border-slate-100 dark:border-slate-800/40 space-y-3">
-                                    <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                                        <ShieldCheck className="w-3 h-3" />
-                                        비밀번호 보안 규칙
-                                    </h4>
-                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                                        <PasswordRequirementItem label="6자 이상" met={passwordChecks.minLength} />
-                                        <PasswordRequirementItem label="대문자 포함" met={passwordChecks.uppercase} />
-                                        <PasswordRequirementItem label="소문자 포함" met={passwordChecks.lowercase} />
-                                        <PasswordRequirementItem label="숫자 포함" met={passwordChecks.digit} />
-                                        <PasswordRequirementItem label="특수문자 포함" met={passwordChecks.specialChar} />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button
-                                type="submit"
-                                disabled={loading || !isPasswordValid}
-                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600"
-                            >
-                                {loading ? (
-                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                ) : (
-                                    <>
-                                        신청 완료 및 검토 요청
-                                        <ArrowRight className="w-4 h-4" />
-                                    </>
                                 )}
-                            </button>
-                        </form>
+
+                                <div className="space-y-5">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">관리자 성함</label>
+                                        <div className="relative group">
+                                            <User className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
+                                            <input
+                                                type="text"
+                                                required
+                                                value={fullName}
+                                                onChange={(e) => setFullName(e.target.value)}
+                                                className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-sm"
+                                                placeholder="홍길동"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">관리자 이메일 주소</label>
+                                        <div className="relative group">
+                                            <Mail className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
+                                            <input
+                                                type="email"
+                                                required
+                                                value={email}
+                                                onChange={(e) => setEmail(e.target.value)}
+                                                className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-sm"
+                                                placeholder="admin@church.com"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">휴대폰 번호 (앱 본인 인증용)</label>
+                                        <div className="relative group">
+                                            <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
+                                            <input
+                                                type="tel"
+                                                required
+                                                value={phone}
+                                                onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                                                className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-sm"
+                                                placeholder="01012345678"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">관리 대상 교회</label>
+                                        <div className="relative group">
+                                            <Church className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors pointer-events-none" />
+                                            <select
+                                                required
+                                                value={selectedChurchId}
+                                                onChange={(e) => setSelectedChurchId(e.target.value)}
+                                                disabled={fetchingChurches}
+                                                className="w-full pl-14 pr-10 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold appearance-none transition-all text-sm"
+                                            >
+                                                <option value="" disabled>{fetchingChurches ? '로딩 중...' : '소속 교회를 선택해 주세요'}</option>
+                                                {churches.map((church) => (
+                                                    <option key={church.id} value={church.id}>{church.name}</option>
+                                                ))}
+                                            </select>
+                                            <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none border-l pl-3 border-slate-200 dark:border-slate-700 flex items-center justify-center">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-slate-400 group-hover:bg-indigo-500" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">관리 대상 부서</label>
+                                        <div className="relative group">
+                                            <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors pointer-events-none" />
+                                            <select
+                                                required
+                                                value={selectedDepartmentId}
+                                                onChange={(e) => setSelectedDepartmentId(e.target.value)}
+                                                disabled={!selectedChurchId || fetchingDepartments}
+                                                className="w-full pl-14 pr-10 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold appearance-none transition-all text-sm disabled:opacity-50"
+                                            >
+                                                <option value="" disabled>{!selectedChurchId ? '교회를 먼저 선택해 주세요' : fetchingDepartments ? '로딩 중...' : '관리할 부서를 선택해 주세요'}</option>
+                                                {departments.map((dept) => (
+                                                    <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                                ))}
+                                            </select>
+                                            <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none border-l pl-3 border-slate-200 dark:border-slate-700 flex items-center justify-center">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-slate-400 group-hover:bg-indigo-500" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">비밀번호 설정</label>
+                                            <div className="relative group">
+                                                <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
+                                                <input
+                                                    type="password"
+                                                    required
+                                                    value={password}
+                                                    onChange={(e) => setPassword(e.target.value)}
+                                                    className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 transition-all text-sm"
+                                                    placeholder="••••••••"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">비밀번호 재확인</label>
+                                            <div className="relative group">
+                                                <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
+                                                <input
+                                                    type="password"
+                                                    required
+                                                    value={confirmPassword}
+                                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                                    className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 transition-all text-sm"
+                                                    placeholder="••••••••"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Password Requirements Checklist */}
+                                    <div className="p-5 bg-slate-50 dark:bg-slate-900/30 rounded-[28px] border border-slate-100 dark:border-slate-800/40 space-y-3">
+                                        <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                            <ShieldCheck className="w-3 h-3" />
+                                            비밀번호 보안 규칙
+                                        </h4>
+                                        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                                            <PasswordRequirementItem label="6자 이상" met={passwordChecks.minLength} />
+                                            <PasswordRequirementItem label="대문자 포함" met={passwordChecks.uppercase} />
+                                            <PasswordRequirementItem label="소문자 포함" met={passwordChecks.lowercase} />
+                                            <PasswordRequirementItem label="숫자 포함" met={passwordChecks.digit} />
+                                            <PasswordRequirementItem label="특수문자 포함" met={passwordChecks.specialChar} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={loading || !isPasswordValid}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600"
+                                >
+                                    {loading ? (
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                    ) : (
+                                        <>
+                                            신청 완료 및 검토 요청
+                                            <ArrowRight className="w-4 h-4" />
+                                        </>
+                                    )}
+                                </button>
+                            </form>
+                        )}
                     </div>
 
                     <p className="text-center text-[10px] sm:text-[11px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest leading-relaxed">
