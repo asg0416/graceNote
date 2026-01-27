@@ -23,6 +23,27 @@ export default function RegisterPage() {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
 
+    // Password validation states
+    const [passwordChecks, setPasswordChecks] = useState({
+        minLength: false,
+        uppercase: false,
+        lowercase: false,
+        digit: false,
+        specialChar: false,
+    });
+
+    useEffect(() => {
+        setPasswordChecks({
+            minLength: password.length >= 6,
+            uppercase: /[A-Z]/.test(password),
+            lowercase: /[a-z]/.test(password),
+            digit: /[0-9]/.test(password),
+            specialChar: /[!@#$%^&*(),.?":{}|<>]/.test(password),
+        });
+    }, [password]);
+
+    const isPasswordValid = Object.values(passwordChecks).every(Boolean);
+
     const { theme, setTheme } = useTheme();
     const router = useRouter();
 
@@ -81,6 +102,12 @@ export default function RegisterPage() {
             return;
         }
 
+        if (!isPasswordValid) {
+            setError('비밀번호 보안 규칙을 모두 충족해야 합니다.');
+            setLoading(false);
+            return;
+        }
+
         if (!selectedChurchId) {
             setError('관리할 교회를 선택해 주세요.');
             setLoading(false);
@@ -99,16 +126,6 @@ export default function RegisterPage() {
             return;
         }
 
-        const maskEmail = (email: string | null) => {
-            if (!email) return '이메일 미등록';
-            const [local, domain] = email.split('@');
-            if (!domain) return email;
-            const maskedLocal = local.length > 3
-                ? local.slice(0, 3) + '*'.repeat(Math.min(local.length - 3, 5))
-                : local[0] + '*';
-            return `${maskedLocal}@${domain}`;
-        };
-
         try {
             // Check if phone number is already registered using a secure RPC
             let phoneCheckData: any = null;
@@ -122,7 +139,7 @@ export default function RegisterPage() {
                 console.error('Phone check RPC call failed:', err);
             }
 
-            if (phoneCheckError && phoneCheckError.code !== 'PGRST202') { // Ignore missing RPC error if needed, but safer to block
+            if (phoneCheckError && phoneCheckError.code !== 'PGRST202') {
                 setError('본인 인증 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
                 setLoading(false);
                 return;
@@ -130,7 +147,6 @@ export default function RegisterPage() {
 
             const result = phoneCheckData && phoneCheckData[0];
             if (result && result.p_exists) {
-                // Improved message to focus on phone number as requested
                 const masked = result.p_masked_email;
                 if (masked) {
                     setError(`이미 등록된 전화번호입니다: ${result.p_full_name} (${masked}). 해당 계정으로 로그인 후 관리자 권한을 신청해 주세요.`);
@@ -141,7 +157,6 @@ export default function RegisterPage() {
                 return;
             }
 
-            // 1. Sign up user with full metadata for the trigger to pick up
             const { data, error: signUpError } = await supabase.auth.signUp({
                 email,
                 password,
@@ -159,10 +174,6 @@ export default function RegisterPage() {
             if (signUpError) throw signUpError;
 
             if (data.user) {
-                // IMPORTANT: Rely on the database trigger (handle_new_user_profile) 
-                // to create the profile record using the metadata we sent above.
-
-                // Sign out immediately so they can't access the dashboard with a pending session
                 await supabase.auth.signOut();
                 setSuccess(true);
             }
@@ -203,7 +214,6 @@ export default function RegisterPage() {
 
     return (
         <div className="min-h-screen flex flex-col lg:flex-row bg-slate-50 dark:bg-[#0a0f1d] transition-colors duration-500 overflow-hidden">
-            {/* Left Side: Branding (Hidden on mobile) */}
             <div className="hidden lg:flex lg:w-1/2 relative bg-indigo-600 items-center justify-center p-20 overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800" />
                 <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-white/10 rounded-full blur-[100px]" />
@@ -218,7 +228,7 @@ export default function RegisterPage() {
                             성장을 돕는 <br />
                             <span className="text-indigo-200">커뮤니티 파트너</span>
                         </h2>
-                        <p className="text-indigo-100/70 text-lg font-medium leading-relaxed leading-relaxed">
+                        <p className="text-indigo-100/70 text-lg font-medium leading-relaxed">
                             그레이스노트 관리자 시스템은 성도 관리부터 조 편성까지, 교회의 모든 효율을 극대화하는 스마트 솔루션입니다.
                         </p>
                     </div>
@@ -235,7 +245,6 @@ export default function RegisterPage() {
                 </div>
             </div>
 
-            {/* Right Side: Form */}
             <div className="flex-1 flex items-center justify-center p-6 sm:p-12 relative">
                 <div className="absolute top-8 right-8 flex items-center gap-4 z-20">
                     <button
@@ -406,11 +415,26 @@ export default function RegisterPage() {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Password Requirements Checklist */}
+                                <div className="p-5 bg-slate-50 dark:bg-slate-900/30 rounded-[28px] border border-slate-100 dark:border-slate-800/40 space-y-3">
+                                    <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                        <ShieldCheck className="w-3 h-3" />
+                                        비밀번호 보안 규칙
+                                    </h4>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                                        <PasswordRequirementItem label="6자 이상" met={passwordChecks.minLength} />
+                                        <PasswordRequirementItem label="대문자 포함" met={passwordChecks.uppercase} />
+                                        <PasswordRequirementItem label="소문자 포함" met={passwordChecks.lowercase} />
+                                        <PasswordRequirementItem label="숫자 포함" met={passwordChecks.digit} />
+                                        <PasswordRequirementItem label="특수문자 포함" met={passwordChecks.specialChar} />
+                                    </div>
+                                </div>
                             </div>
 
                             <button
                                 type="submit"
-                                disabled={loading}
+                                disabled={loading || !isPasswordValid}
                                 className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600"
                             >
                                 {loading ? (
@@ -430,6 +454,19 @@ export default function RegisterPage() {
                     </p>
                 </div>
             </div>
+        </div>
+    );
+}
+
+function PasswordRequirementItem({ label, met }: { label: string; met: boolean }) {
+    return (
+        <div className={`flex items-center gap-2 transition-all duration-300 ${met ? 'opacity-100' : 'opacity-40'}`}>
+            <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-all ${met ? 'bg-emerald-500 rotate-0' : 'bg-slate-300 dark:bg-slate-700 rotate-90'}`}>
+                {met && <ShieldCheck className="w-2 h-2 text-white" />}
+            </div>
+            <span className={`text-[10px] font-black tracking-tight ${met ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-600'}`}>
+                {label}
+            </span>
         </div>
     );
 }

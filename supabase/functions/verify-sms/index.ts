@@ -54,7 +54,15 @@ serve(async (req) => {
         // [ENHANCEMENT] Match by both phone AND name if provided
         let query = supabase
             .from('member_directory')
-            .select('id, full_name, church_id, department_id, group_name, role_in_group')
+            .select(`
+                id, 
+                full_name, 
+                church_id, 
+                department_id, 
+                group_name, 
+                role_in_group,
+                departments:department_id (name)
+            `)
             .eq('phone', cleanPhone);
 
         if (fullName && fullName.trim().length > 0) {

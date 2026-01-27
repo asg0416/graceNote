@@ -206,24 +206,13 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
         // This prevents the profile from being "poisoned" with a phone number if the info is wrong.
 
         // [NEW] Show Confirmation Modal for regular users
-        String? departmentName;
-        if (matchedMember['department_id'] != null) {
-          try {
-            final deptRes = await Supabase.instance.client
-                .from('departments')
-                .select('name')
-                .eq('id', matchedMember['department_id'])
-                .single();
-            departmentName = deptRes['name'];
-          } catch (e) {
-            debugPrint('Error fetching dept name: $e');
-          }
-        }
+        // [MATCHED] Extract department name from joined data
+        final String departmentName = matchedMember['departments']?['name'] ?? '부서 미정';
 
         if (mounted) {
           final isConfirmed = await _showMatchConfirmationDialog(
             churchName: churchName,
-            departmentName: departmentName ?? '부서 미정',
+            departmentName: departmentName,
             groupName: matchedMember['group_name'] ?? '조 미정',
             role: matchedMember['role_in_group'] == 'leader' ? '조장' : '조원',
           );
