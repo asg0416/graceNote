@@ -5,17 +5,36 @@ import { supabase } from '@/lib/supabase';
 import { Modal } from '@/components/Modal';
 import RichTextEditor from '@/components/RichTextEditor';
 
+export interface MemberProfile {
+    id: string;
+    full_name: string;
+    phone: string | null;
+    spouse_name: string | null;
+    children_info: string | null;
+    group_name: string | null;
+    department_id: string | null;
+    role_in_group: string;
+    birth_date: string | null;
+    wedding_anniversary: string | null;
+    notes: string | null;
+    is_linked: boolean;
+    person_id: string | null;
+    is_active?: boolean;
+    family_id?: string | null;
+    departments?: { name: string; color_hex: string };
+}
+
 interface MemberModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSuccess: (member: any) => void;
-    member?: any; // If provided, it's Edit mode
+    onSuccess: (member: MemberProfile) => void;
+    member?: MemberProfile; // If provided, it's Edit mode
     churchId: string;
     departmentId?: string;
     groupId?: string;
     groupName?: string;
-    departments: any[];
-    groups?: any[]; // For local state support (Regrouping Dashboard)
+    departments: { id: string; name: string }[];
+    groups?: { department_id: string; name: string }[]; // For local state support (Regrouping Dashboard)
 }
 
 export const MemberModal: React.FC<MemberModalProps> = ({
@@ -31,7 +50,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     groups
 }) => {
     const [loading, setLoading] = useState(false);
-    const [formData, setFormData] = useState<any>({
+    const [formData, setFormData] = useState<Partial<MemberProfile>>({
         full_name: '',
         phone: '',
         spouse_name: '',
@@ -46,8 +65,8 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         person_id: null
     });
 
-    const [availableGroups, setAvailableGroups] = useState<any[]>([]);
-    const [nameSuggestions, setNameSuggestions] = useState<any[]>([]);
+    const [availableGroups, setAvailableGroups] = useState<{ name: string }[]>([]);
+    const [nameSuggestions, setNameSuggestions] = useState<MemberProfile[]>([]);
 
     useEffect(() => {
         if (member) {
@@ -107,16 +126,17 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         setLoading(true);
         try {
             const {
-                departments: _dept,
-                profiles: _prof,
-                _availableGroups,
-                _profileMode,
-                _affiliations,
                 ...dataToSave
             } = {
                 ...formData,
                 church_id: churchId,
             };
+
+            // Remove internal state keys if they exist from spread (defensive)
+            const keysToDelete = ['departments', 'profiles', '_availableGroups', '_profileMode', '_affiliations'];
+            keysToDelete.forEach(key => {
+                delete (dataToSave as Record<string, unknown>)[key];
+            });
 
             let result;
             if (member?.id && !member.id.startsWith('temp-')) {
@@ -138,11 +158,12 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 };
             }
 
-            onSuccess(result);
+            onSuccess(result as MemberProfile);
             onClose();
-        } catch (err: any) {
-            console.error(err);
-            alert('오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
+        } catch (err) {
+            const error = err as { message: string };
+            console.error(error);
+            alert('오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
         } finally {
             setLoading(false);
         }

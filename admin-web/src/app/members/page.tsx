@@ -35,8 +35,27 @@ import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
 import SmartBatchModal from '@/components/SmartBatchModal';
 import RichTextEditor from '@/components/RichTextEditor';
-import { MemberModal } from '@/components/MemberModal';
+import { MemberModal, MemberProfile } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
+
+interface Church {
+    id: string;
+    name: string;
+}
+
+interface Department {
+    id: string;
+    name: string;
+    color_hex: string;
+    profile_mode?: 'individual' | 'couple';
+}
+
+interface Group {
+    id: string;
+    name: string;
+    department_id: string;
+    color_hex?: string;
+}
 
 export default function MembersPage() {
     return (
@@ -53,9 +72,9 @@ export default function MembersPage() {
 
 function MembersPageInner() {
     const [loading, setLoading] = useState(true);
-    const [members, setMembers] = useState<any[]>([]);
-    const [churches, setChurches] = useState<any[]>([]);
-    const [departments, setDepartments] = useState<any[]>([]);
+    const [members, setMembers] = useState<MemberProfile[]>([]);
+    const [churches, setChurches] = useState<Church[]>([]);
+    const [departments, setDepartments] = useState<Department[]>([]);
     const [isMaster, setIsMaster] = useState(false);
     const [assignedDeptId, setAssignedDeptId] = useState<string | null>(null);
 
@@ -64,14 +83,14 @@ function MembersPageInner() {
     const [selectedDeptId, setSelectedDeptId] = useState<string>('all');
     const [deptProfileMode, setDeptProfileMode] = useState<'individual' | 'couple'>('individual');
     const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
-    const [groups, setGroups] = useState<any[]>([]);
+    const [groups, setGroups] = useState<Group[]>([]);
 
     const [isChurchSelectOpen, setIsChurchSelectOpen] = useState(false);
     const [isDeptSelectOpen, setIsDeptSelectOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editingMember, setEditingMember] = useState<any>(null);
+    const [editingMember, setEditingMember] = useState<MemberProfile | null>(null);
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
     const [targetDeptIdForMove, setTargetDeptIdForMove] = useState<string>('');
     const [targetGroupIdForMove, setTargetGroupIdForMove] = useState<string>('');
@@ -80,7 +99,7 @@ function MembersPageInner() {
     const [isGroupedView, setIsGroupedView] = useState(false);
 
     const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
-    const [lastAction, setLastAction] = useState<{ type: 'move' | 'delete', data: any[] } | null>(null);
+    const [lastAction, setLastAction] = useState<{ type: 'move' | 'delete', data: MemberProfile[] } | null>(null);
     const [showUndo, setShowUndo] = useState(false);
     const [sortBy, setSortBy] = useState<'name' | 'group' | 'role' | 'family'>('name');
     const [filterStatus, setFilterStatus] = useState<'all' | 'linked' | 'not_linked'>('all');
@@ -90,7 +109,7 @@ function MembersPageInner() {
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
     const [collapsedDepts, setCollapsedDepts] = useState<string[]>([]);
-    const [nameSuggestions, setNameSuggestions] = useState<any[]>([]);
+    const [nameSuggestions, setNameSuggestions] = useState<MemberProfile[]>([]);
 
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -138,7 +157,7 @@ function MembersPageInner() {
                 const urlChurchId = searchParams.get('churchId');
                 const urlDeptId = searchParams.get('deptId') || 'all';
                 const urlGroupId = searchParams.get('groupId') || 'all';
-                const urlSort = searchParams.get('sort') as any || 'name';
+                const urlSort = (searchParams.get('sort') as 'name' | 'group' | 'role' | 'family') || 'name';
                 const urlSearch = searchParams.get('q') || '';
 
                 setSortBy(urlSort);
@@ -262,7 +281,7 @@ function MembersPageInner() {
                 .select('id, name, color_hex')
                 .eq('department_id', deptId)
                 .order('name');
-            setGroups(data || []);
+            setGroups((data as Group[]) || []);
         } catch (err) {
             console.error(err);
         }
@@ -305,7 +324,7 @@ function MembersPageInner() {
 
 
 
-            setMembers(fetchedMembers);
+            setMembers(fetchedMembers as MemberProfile[]);
         } catch (err) {
             console.error(err);
         } finally {
@@ -391,7 +410,7 @@ function MembersPageInner() {
 
             if (error) throw error;
             setIsMoveModalOpen(false);
-            setLastAction({ type: 'move', data: previousStates });
+            setLastAction({ type: 'move', data: previousStates as MemberProfile[] });
             setShowUndo(true);
             setSelectedMemberIds([]);
             if (currentChurchId) fetchMembers(currentChurchId, selectedDeptId);
@@ -459,7 +478,7 @@ function MembersPageInner() {
     }).sort((a, b) => {
         // Priority 1: If sorted by family OR in couple mode, use family grouping
         if (sortBy === 'family' || (sortBy === 'name' && deptProfileMode === 'couple')) {
-            const getFamilyKey = (m: any) => {
+            const getFamilyKey = (m: MemberProfile) => {
                 if (m.family_id) return m.family_id;
                 if (m.spouse_name) {
                     // Create a stable key from both names so husband/wife get same key
@@ -484,7 +503,7 @@ function MembersPageInner() {
     // 3. Deduplicate by person_id to create 'Master List'
     const masterMembers = useMemo(() => {
         const map = new Map();
-        filteredMembers.forEach(m => {
+        filteredMembers.forEach((m: MemberProfile) => {
             const key = m.person_id || m.id;
             // If already exists, keep the one with group info or preferred metadata
             if (!map.has(key)) {
@@ -503,8 +522,8 @@ function MembersPageInner() {
     const groupedData = useMemo(() => {
         if (!isGroupedView) return null;
 
-        const groups: Record<string, any[]> = {};
-        masterMembers.forEach(m => {
+        const groups: Record<string, MemberProfile[]> = {};
+        masterMembers.forEach((m: MemberProfile) => {
             const groupName = m.group_name || '미배정';
             if (!groups[groupName]) groups[groupName] = [];
             groups[groupName].push(m);
@@ -522,7 +541,7 @@ function MembersPageInner() {
         if (selectedMemberIds.length === filteredMembers.length) {
             setSelectedMemberIds([]);
         } else {
-            setSelectedMemberIds(filteredMembers.map(m => m.id));
+            setSelectedMemberIds(filteredMembers.map((m: MemberProfile) => m.id));
         }
     };
 
@@ -750,7 +769,7 @@ function MembersPageInner() {
                                         <button
                                             key={item.id}
                                             onClick={() => {
-                                                setSortBy(item.id as any);
+                                                setSortBy(item.id as 'name' | 'group' | 'role' | 'family');
                                                 setIsSortOpen(false);
                                                 updateQueryParams({ sort: item.id });
                                             }}
@@ -790,10 +809,10 @@ function MembersPageInner() {
                                                 { id: 'all', label: '전체' },
                                                 { id: 'linked', label: '앱 연동' },
                                                 { id: 'not_linked', label: '미가입' }
-                                            ].map(item => (
+                                            ].map((item: { id: string; label: string }) => (
                                                 <button
                                                     key={item.id}
-                                                    onClick={() => setFilterStatus(item.id as any)}
+                                                    onClick={() => setFilterStatus(item.id as 'all' | 'linked' | 'not_linked')}
                                                     className={cn(
                                                         "px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors",
                                                         filterStatus === item.id ? "bg-indigo-600 text-white" : "bg-slate-50 dark:bg-slate-900 text-slate-500 hover:bg-slate-100"
@@ -812,10 +831,10 @@ function MembersPageInner() {
                                                 { id: 'all', label: '전체' },
                                                 { id: 'leader', label: '조장' },
                                                 { id: 'member', label: '조원' }
-                                            ].map(item => (
+                                            ].map((item: { id: string; label: string }) => (
                                                 <button
                                                     key={item.id}
-                                                    onClick={() => setFilterRole(item.id as any)}
+                                                    onClick={() => setFilterRole(item.id as 'all' | 'leader' | 'member')}
                                                     className={cn(
                                                         "px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors",
                                                         filterRole === item.id ? "bg-indigo-600 text-white" : "bg-slate-50 dark:bg-slate-900 text-slate-500 hover:bg-slate-100"
@@ -834,10 +853,10 @@ function MembersPageInner() {
                                                 { id: 'all', label: '전체' },
                                                 { id: 'active', label: '활성 성도' },
                                                 { id: 'inactive', label: '비활성 성도' }
-                                            ].map(item => (
+                                            ].map((item: { id: string; label: string }) => (
                                                 <button
                                                     key={item.id}
-                                                    onClick={() => setFilterActive(item.id as any)}
+                                                    onClick={() => setFilterActive(item.id as 'all' | 'active' | 'inactive')}
                                                     className={cn(
                                                         "px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors",
                                                         filterActive === item.id ? "bg-indigo-600 text-white" : "bg-slate-50 dark:bg-slate-900 text-slate-500 hover:bg-slate-100"
@@ -957,7 +976,7 @@ function MembersPageInner() {
                                                 </button>
                                             </td>
                                         </tr>
-                                        {!collapsedGroups.includes(groupName) && groupMembers.map((m: any) => (
+                                        {!collapsedGroups.includes(groupName) && groupMembers.map((m: MemberProfile) => (
                                             <MemberRow
                                                 key={m.id}
                                                 member={m}
@@ -971,7 +990,7 @@ function MembersPageInner() {
                                     </Fragment>
                                 ))
                             ) : (
-                                masterMembers.map((m: any) => (
+                                masterMembers.map((m: MemberProfile) => (
                                     <MemberRow
                                         key={m.id}
                                         member={m}
@@ -1087,7 +1106,7 @@ function MembersPageInner() {
                         onSuccess={() => {
                             if (currentChurchId) fetchMembers(currentChurchId, selectedDeptId);
                         }}
-                        member={isEditModalOpen ? editingMember : null}
+                        member={isEditModalOpen && editingMember ? editingMember : undefined}
                         churchId={currentChurchId!}
                         departmentId={selectedDeptId !== 'all' ? selectedDeptId : (assignedDeptId || undefined)}
                         departments={departments}
@@ -1192,9 +1211,18 @@ const getGroupColor = (groupName: string, customHex?: string) => {
 };
 
 // Helper component for each row
-const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onDelete }: any) => {
-    const groupInfo = groupedGroups.find((g: any) => g.name === m.group_name);
-    const groupColor = getGroupColor(m.group_name, groupInfo?.color_hex);
+interface MemberRowProps {
+    member: MemberProfile;
+    groupedGroups: Group[];
+    isSelected: boolean;
+    onToggle: () => void;
+    onEdit: () => void;
+    onDelete: () => void;
+}
+
+const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onDelete }: MemberRowProps) => {
+    const groupInfo = groupedGroups.find((g) => g.name === m.group_name);
+    const groupColor = getGroupColor(m.group_name || '', groupInfo?.color_hex);
 
     return (
         <tr className={cn("hover:bg-slate-50/80 dark:hover:bg-indigo-500/[0.02] transition-colors group", isSelected && "bg-indigo-50/50 dark:bg-indigo-500/[0.05]")}>

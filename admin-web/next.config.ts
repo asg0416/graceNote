@@ -1,12 +1,7 @@
 import type { NextConfig } from "next";
 
-const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-} as any;
+const nextConfig: NextConfig = {
+  /* config options here */
+};
 
 export default nextConfig;

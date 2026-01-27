@@ -61,7 +61,7 @@ serve(async (req) => {
                 department_id, 
                 group_name, 
                 role_in_group,
-                departments!department_id (name)
+                departments:department_id (name)
             `)
             .eq('phone', cleanPhone);
 
