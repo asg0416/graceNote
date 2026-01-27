@@ -12,7 +12,7 @@ function cn(...inputs: ClassValue[]) {
 
 export default function SidebarWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
-    const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/upgrade';
+    const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/upgrade' || pathname === '/update-password';
 
     if (isAuthPage) {
         return <main className="min-h-screen w-full bg-slate-50 dark:bg-[#0a0f1d] transition-colors duration-300">{children}</main>;

@@ -20,19 +20,54 @@ export default function AuthCallbackPage() {
             }
 
             if (session) {
-                // Check user role/profile to redirect to appropriate page
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('role, admin_status')
-                    .eq('id', session.user.id)
-                    .single();
+                // [RETRY LOGIC] Check user role/profile with retries
+                // Trigger might be slow to create profile
+                let profile = null;
+                let retryCount = 0;
+                const maxRetries = 3;
 
-                if (profile?.role === 'admin' && profile?.admin_status === 'pending') {
-                    // Sign out because pending admins shouldn't access the dashboard yet
-                    await supabase.auth.signOut();
-                    router.push('/register/success');
+                while (retryCount < maxRetries) {
+                    const { data } = await supabase
+                        .from('profiles')
+                        .select('role, admin_status')
+                        .eq('id', session.user.id)
+                        .single();
+
+                    if (data) {
+                        profile = data;
+                        break;
+                    }
+
+                    // Wait 1s before retry
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    retryCount++;
+                }
+
+                // Decide destination
+                if (profile) {
+                    // Check if pending admin
+                    if (profile.role === 'admin' && profile.admin_status === 'pending') {
+                        // Sign out because pending admins shouldn't access the dashboard yet
+                        await supabase.auth.signOut();
+                        router.push('/register/success');
+                    } else if (profile.role === 'admin' && profile.admin_status === 'rejected') {
+                        await supabase.auth.signOut();
+                        router.push('/login?error=rejected');
+                    } else if (profile.role === 'admin') {
+                        // Approved admin
+                        router.push('/members');
+                    } else {
+                        // Non-admin user? Should not happen in admin web, but handle gracefully
+                        // Force logout as they are not authorized for admin
+                        await supabase.auth.signOut();
+                        router.push('/login?error=unauthorized');
+                    }
                 } else {
-                    router.push('/members');
+                    // Profile still missing after retries -> likely race condition won or system error
+                    // Assume pending or not ready, prevent dashboard access
+                    console.error('Profile not found after retries');
+                    await supabase.auth.signOut();
+                    router.push('/login?error=profile_not_found'); // Or redirect to pending to be safe
                 }
             } else {
                 router.push('/login');
@@ -49,7 +84,7 @@ export default function AuthCallbackPage() {
             </div>
             <div className="space-y-2">
                 <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">인증 처리 중...</h1>
-                <p className="text-sm text-slate-500 font-bold">잠시만 기다려 주시면 로그인 페이지로 이동합니다.</p>
+                <p className="text-sm text-slate-500 font-bold">잠시만 기다려 주시면 이동합니다.</p>
             </div>
         </div>
     );

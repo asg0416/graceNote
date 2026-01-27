@@ -63,18 +63,40 @@ serve(async (req) => {
         const result = Array.isArray(duplicateCheck) ? (duplicateCheck[0] as DuplicateCheckResult) : null;
 
         if (result && result.p_exists) {
-            return new Response(
-                JSON.stringify({
-                    error: 'account_exists',
-                    message: `이미 가입된 전화번호입니다.`,
-                    masked_email: result.p_masked_email,
-                    full_name: result.p_full_name
-                }),
-                {
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                    status: 400
+            // [SELF-CONFLICT CHECK]
+            // If the phone is taken, check if it belongs to the *current requester*.
+            // If yes, it's a self-verification (e.g., verifying phone after Admin Web signup or re-verifying).
+            let isSelf = false;
+
+            if (userId) {
+                // Fetch the owner of this phone number from profiles
+                const { data: ownerProfile } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('phone', cleanPhone)
+                    .maybeSingle();
+
+                if (ownerProfile && ownerProfile.id === userId) {
+                    isSelf = true;
+                    console.log(`[GraceNote] Self-verification detected for user ${userId}. Allowing SMS.`);
                 }
-            )
+            }
+
+            // Only block if it is NOT self
+            if (!isSelf) {
+                return new Response(
+                    JSON.stringify({
+                        error: 'account_exists',
+                        message: `이미 가입된 전화번호입니다.`,
+                        masked_email: result.p_masked_email,
+                        full_name: result.p_full_name
+                    }),
+                    {
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                        status: 400
+                    }
+                )
+            }
         }
 
         // 3. Generate Code
