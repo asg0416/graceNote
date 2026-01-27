@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/snack_bar_util.dart';
+import '../../../../core/utils/auth_error_helper.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -49,7 +50,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       if (mounted) {
         SnackBarUtil.showSnackBar(
           context,
-          message: AuthErrorHelper.getFriendlyMessage(e),,
+          message: AuthErrorHelper.getFriendlyMessage(e),
           isError: true,
         );
       }
