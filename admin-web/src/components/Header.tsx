@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
@@ -30,7 +30,29 @@ export default function Header() {
     const [unreadInquiries, setUnreadInquiries] = useState(0);
     const [unreadList, setUnreadList] = useState<any[]>([]);
     const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+
+    // Refs for click outside detection
+    const profileRef = useRef<HTMLDivElement>(null);
+    const notificationRef = useRef<HTMLDivElement>(null);
+
     const router = useRouter();
+
+    // Click outside handler
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (isProfileOpen && profileRef.current && !profileRef.current.contains(event.target as Node)) {
+                setIsProfileOpen(false);
+            }
+            if (isNotificationOpen && notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+                setIsNotificationOpen(false);
+            }
+        }
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isProfileOpen, isNotificationOpen]);
 
     const getUnreadCount = async (currentUserProfile?: any) => {
         const up = currentUserProfile || profile;
@@ -135,7 +157,7 @@ export default function Header() {
                     {profile && (
                         <div className="flex items-center gap-2 sm:gap-4">
                             {/* User Profile Dropdown */}
-                            <div className="relative">
+                            <div className="relative" ref={profileRef}>
                                 <button
                                     onClick={() => setIsProfileOpen(!isProfileOpen)}
                                     className="flex items-center gap-2.5 pl-2.5 pr-1.5 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-800"
@@ -154,7 +176,7 @@ export default function Header() {
 
                                 {isProfileOpen && (
                                     <>
-                                        <div className="fixed inset-0 z-10" onClick={() => setIsProfileOpen(false)} />
+                                        {/* Overlay removed, managed by ref */}
                                         <div className="absolute top-full mt-3 right-0 w-64 bg-white dark:bg-[#0d1221] border border-slate-200 dark:border-slate-800 rounded-[24px] shadow-2xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2">
                                             <div className="p-5 border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-900/20">
                                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">사용자 프로필</p>
@@ -192,9 +214,8 @@ export default function Header() {
                                 )}
                             </div>
 
-                            {/* Inquiry Notification Popover (Far Right) - Master Only */}
                             {profile.is_master && (
-                                <div className="relative">
+                                <div className="relative" ref={notificationRef}>
                                     <button
                                         onClick={() => setIsNotificationOpen(!isNotificationOpen)}
                                         className="relative p-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-xl transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-800 group"
@@ -207,7 +228,7 @@ export default function Header() {
 
                                     {isNotificationOpen && (
                                         <>
-                                            <div className="fixed inset-0 z-10" onClick={() => setIsNotificationOpen(false)} />
+                                            {/* Overlay removed, managed by ref */}
                                             <div className="absolute top-full mt-3 right-0 w-80 bg-white dark:bg-[#0d1221] border border-slate-200 dark:border-slate-800 rounded-[28px] shadow-2xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2">
                                                 <div className="p-5 border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-900/20 flex items-center justify-between">
                                                     <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest">새로운 문의 알림</h4>
