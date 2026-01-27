@@ -9,7 +9,14 @@ import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RegistrationScreen extends StatefulWidget {
-  const RegistrationScreen({super.key});
+  final String? initialEmail;
+  final bool showOtpFirst;
+
+  const RegistrationScreen({
+    super.key,
+    this.initialEmail,
+    this.showOtpFirst = false,
+  });
 
   @override
   State<RegistrationScreen> createState() => _RegistrationScreenState();
@@ -36,6 +43,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialEmail != null) {
+      _emailController.text = widget.initialEmail!;
+    }
+    if (widget.showOtpFirst) {
+      _isOtpSent = true;
+      // Note: Timer won't start automatically here as we need a fresh resend if it was a long time ago.
+    }
     _passwordController.addListener(_validatePassword);
   }
 

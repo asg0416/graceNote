@@ -11,7 +11,7 @@ class AuthErrorHelper {
         case 'weak_password':
           return '비밀번호가 너무 취약합니다. (최소 6자 이상)';
         case 'email_not_confirmed':
-          return '이메일 인증이 완료되지 않았습니다. 메일함을 확인해주세요.';
+          return '이메일 인증이 완료되지 않았습니다. 메일함의 인증번호 6자리를 입력해 주세요.';
         case 'over_email_send_rate_limit':
           return '짧은 시간에 너무 많은 요청을 보냈습니다. 잠시 후 다시 시도해주세요.';
         case 'network_error':

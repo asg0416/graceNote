@@ -38,11 +38,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       );
     } catch (e) {
       if (mounted) {
+        final isNotConfirmed = e is AuthException && 
+            (e.code == 'email_not_confirmed' || e.message.contains('Email not confirmed'));
+        
         SnackBarUtil.showSnackBar(
           context,
           message: AuthErrorHelper.getFriendlyMessage(e),
           isError: true,
           technicalDetails: e.toString(),
+          duration: isNotConfirmed ? const Duration(seconds: 10) : null,
+          action: isNotConfirmed ? SnackBarAction(
+            label: '인증번호 입력',
+            textColor: Colors.white,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => RegistrationScreen(
+                    initialEmail: email,
+                    showOtpFirst: true,
+                  ),
+                ),
+              );
+            },
+          ) : null,
         );
       }
     } finally {
