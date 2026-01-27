@@ -79,7 +79,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                     .from('member_directory')
                     .select(`
                         *,
-                        departments (name, color_hex)
+                        departments!department_id (name, color_hex)
                     `)
                     .eq('id', id)
                     .single();
@@ -95,7 +95,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 // 2. Fetch all affiliations for the same person (using person_id or fallback to name+phone)
                 let relatedQuery = supabase
                     .from('member_directory')
-                    .select('id, profile_id, group_name, phone, departments(name, color_hex)');
+                    .select('id, profile_id, group_name, phone, departments!department_id(name, color_hex)');
 
                 if (memberData.person_id) {
                     relatedQuery = relatedQuery.eq('person_id', memberData.person_id);

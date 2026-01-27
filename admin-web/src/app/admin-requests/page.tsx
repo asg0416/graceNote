@@ -61,7 +61,7 @@ export default function AdminRequestsPage() {
                 .select(`
                     *,
                     churches (name),
-                    departments (name)
+                    department:departments!department_id(name)
                 `)
                 .neq('admin_status', 'none');
 

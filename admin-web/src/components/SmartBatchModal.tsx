@@ -204,7 +204,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                     person_id, 
                     profile_id, 
                     group_name,
-                    departments (name)
+                    department:departments!department_id(name)
                 `)
                 .in('full_name', names)
                 .eq('church_id', churchId);

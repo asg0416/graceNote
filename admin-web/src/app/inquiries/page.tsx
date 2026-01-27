@@ -179,7 +179,7 @@ export default function InquiriesPage() {
                         full_name, 
                         church_id,
                         church:churches(name),
-                        department:departments(name)
+                        department:departments!department_id (name)
                     )
                 `);
 

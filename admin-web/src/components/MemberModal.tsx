@@ -106,12 +106,16 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         }
         setLoading(true);
         try {
-            const dataToSave = {
+            const {
+                departments: _dept,
+                profiles: _prof,
+                _availableGroups,
+                _profileMode,
+                _affiliations,
+                ...dataToSave
+            } = {
                 ...formData,
                 church_id: churchId,
-                // Ensure temporary UI fields are not sent to DB
-                _availableGroups: undefined,
-                _profileMode: undefined
             };
 
             let result;

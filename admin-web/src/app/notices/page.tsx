@@ -83,7 +83,7 @@ export default function NoticesPage() {
                     *,
                     created_by_profile:profiles!created_by(full_name),
                     church:churches(name),
-                    department:departments(name)
+                    department:departments!department_id (name)
                 `);
 
             if (!userProfile.is_master) {
