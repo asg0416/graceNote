@@ -30,7 +30,7 @@ export default function AuthCallbackPage() {
                 if (profile?.role === 'admin' && profile?.admin_status === 'pending') {
                     // Sign out because pending admins shouldn't access the dashboard yet
                     await supabase.auth.signOut();
-                    router.push('/login?message=pending_approval');
+                    router.push('/register/success');
                 } else {
                     router.push('/members');
                 }
