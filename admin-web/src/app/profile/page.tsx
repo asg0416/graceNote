@@ -12,6 +12,7 @@ export default function ProfilePage() {
     const [profile, setProfile] = useState<any>(null);
 
     // Password Update State
+    const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -58,9 +59,27 @@ export default function ProfilePage() {
             return;
         }
 
+        if (!currentPassword) {
+            setMessage({ type: 'error', text: '현재 비밀번호를 입력해주세요.' });
+            return;
+        }
+
         setIsSaving(true);
 
         try {
+            // 1. Verify Current Password
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: profile.email,
+                password: currentPassword
+            });
+
+            if (signInError) {
+                setMessage({ type: 'error', text: '현재 비밀번호가 일치하지 않습니다.' });
+                setIsSaving(false);
+                return;
+            }
+
+            // 2. Update Password
             const { error } = await supabase.auth.updateUser({
                 password: newPassword
             });
@@ -73,6 +92,8 @@ export default function ProfilePage() {
             }
 
             setMessage({ type: 'success', text: '비밀번호가 성공적으로 변경되었습니다.' });
+
+            setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
         } catch (error: any) {
@@ -122,8 +143,8 @@ export default function ProfilePage() {
                                 </p>
                                 <div className="flex items-center gap-2 mt-3">
                                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${profile?.admin_status === 'approved'
-                                            ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20'
-                                            : 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20'
+                                        ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20'
+                                        : 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20'
                                         }`}>
                                         {profile?.admin_status === 'approved' ? '승인됨' : '대기중'}
                                     </span>
@@ -174,6 +195,16 @@ export default function ProfilePage() {
                     <form onSubmit={handleUpdatePassword} className="p-8 space-y-6">
                         <div className="space-y-4">
                             <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">현재 비밀번호</label>
+                                <input
+                                    type="password"
+                                    value={currentPassword}
+                                    onChange={(e) => setCurrentPassword(e.target.value)}
+                                    placeholder="현재 사용 중인 비밀번호"
+                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-indigo-500 text-sm font-medium transition-all"
+                                />
+                            </div>
+                            <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">새 비밀번호</label>
                                 <input
                                     type="password"
@@ -197,8 +228,8 @@ export default function ProfilePage() {
 
                         {message && (
                             <div className={`p-4 rounded-xl text-sm font-bold flex items-center gap-2 ${message.type === 'success'
-                                    ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10'
-                                    : 'bg-rose-50 text-rose-600 dark:bg-rose-500/10'
+                                ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10'
+                                : 'bg-rose-50 text-rose-600 dark:bg-rose-500/10'
                                 }`}>
                                 {message.text}
                             </div>
@@ -207,7 +238,7 @@ export default function ProfilePage() {
                         <div className="flex justify-end pt-2">
                             <button
                                 type="submit"
-                                disabled={isSaving || !newPassword || !confirmPassword}
+                                disabled={isSaving || !currentPassword || !newPassword || !confirmPassword}
                                 className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                             >
                                 {isSaving ? (
