@@ -133,9 +133,8 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
       final data = await _fetchUserGroups(user.id);
       if (!controller.isClosed) {
         controller.add(data);
-        // [FORCE] Ensure related providers are also refreshed
-        ref.invalidate(weeklyDataProvider);
-        ref.invalidate(weekIdProvider);
+        // Removed explicit invalidations to avoid complex cycles during inference.
+        // Dependent providers will naturally rebuild if they watch userGroupsProvider.
       }
     } catch (e) {
       debugPrint('Error refreshing user groups: $e');
@@ -145,15 +144,22 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   // Initial fetch
   triggerUpdate();
 
-  // [NEW] Use a broader filter or listening to ensure we don't miss any update
+  // Listen to BOTH group_members and member_directory for changes
   final gmSub = Supabase.instance.client
       .from('group_members')
       .stream(primaryKey: ['id'])
       .eq('profile_id', user.id)
       .listen((_) => triggerUpdate());
 
+  final mdSub = Supabase.instance.client
+      .from('member_directory')
+      .stream(primaryKey: ['id'])
+      .eq('profile_id', user.id)
+      .listen((_) => triggerUpdate());
+
   ref.onDispose(() {
     gmSub.cancel();
+    mdSub.cancel();
     controller.close();
   });
 
@@ -195,9 +201,10 @@ final selectedWeekDateProvider = StateProvider<DateTime>((ref) {
 });
 
 // Week ID Provider (Computed from selected date)
-final weekIdProvider = FutureProvider.family<String?, String>((ref, churchId) async {
+final weekIdProvider = FutureProvider.family<String?, String>((ref, String churchId) async {
   final date = ref.watch(selectedWeekDateProvider);
-  final groups = await ref.watch(userGroupsProvider.future);
+  final groupsAsync = ref.watch(userGroupsProvider);
+  final groups = groupsAsync.value ?? [];
   
   // 현재 교회의 조장이나 관리자인지 확인
   final isAuthorized = groups.any((g) => 
@@ -238,7 +245,7 @@ final groupMembersProvider = FutureProvider.family<List<Map<String, dynamic>>, S
 
 // Weekly Data Provider (Attendance + Prayers)
 // Params: "groupId:churchId" or "groupId:churchId:weekId"
-final weeklyDataProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, paramString) async {
+final weeklyDataProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, String paramString) async {
   final parts = paramString.split(':');
   if (parts.length < 2) return {'attendance': [], 'prayers': []};
   
