@@ -279,7 +279,7 @@ function MembersPageInner() {
                 .from('member_directory')
                 .select(`
                     *,
-                    departments (name, color_hex)
+                    departments!department_id (name, color_hex)
                 `)
                 .eq('church_id', churchId);
 

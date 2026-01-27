@@ -171,7 +171,7 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
   final response = await Supabase.instance.client
       .from('group_members')
-      .select('group_id, role_in_group, groups(name, church_id, departments(name)), profiles(member_directory(group_name, role_in_group, is_active))')
+      .select('group_id, role_in_group, groups(name, church_id, departments!department_id(name)), profiles(member_directory!member_directory_profile_id_fkey(group_name, role_in_group, is_active))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
       .order('joined_at', ascending: false);
