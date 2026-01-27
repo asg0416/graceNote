@@ -129,7 +129,7 @@ export default function RegisterPage() {
         try {
             // Check if phone number is already registered using a secure RPC
             let phoneCheckData: { p_exists: boolean; p_full_name: string; p_masked_email: string | null }[] | null = null;
-            let phoneCheckError: any = null;
+            let phoneCheckError: { message: string; code?: string } | null = null;
 
             try {
                 const response = await supabase.rpc('check_phone_exists', { p_phone: phone });
@@ -177,8 +177,9 @@ export default function RegisterPage() {
                 await supabase.auth.signOut();
                 setSuccess(true);
             }
-        } catch (err: any) {
-            const msg = err.message;
+        } catch (err) {
+            const error = err as { message: string };
+            const msg = error.message;
             if (msg.includes('User already registered') || msg.includes('already been registered')) {
                 setError('이미 가입된 계정입니다. 로그인 후 관리자 권한을 신청해 주세요.');
             } else {
