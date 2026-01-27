@@ -16,6 +16,8 @@ class AuthErrorHelper {
           return '짧은 시간에 너무 많은 요청을 보냈습니다. 잠시 후 다시 시도해주세요.';
         case 'network_error':
           return '네트워크 연결이 원활하지 않습니다.';
+        case 'same_password':
+          return '새 비밀번호가 기존 비밀번호와 동일합니다. 다른 비밀번호를 선택해 주세요.';
         default:
           if (error.message.contains('Email not confirmed')) {
             return '이메일 인증이 완료되지 않았습니다.';

@@ -49,7 +49,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       if (mounted) {
         SnackBarUtil.showSnackBar(
           context,
-          message: '오류가 발생했습니다: ${e.toString()}',
+          message: AuthErrorHelper.getFriendlyMessage(e),,
           isError: true,
         );
       }

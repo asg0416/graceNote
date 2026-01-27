@@ -137,17 +137,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             );
                           }
                         ),
-                        _MenuItem(
-                          icon: Icons.lock_reset_rounded, 
-                          label: '비밀번호 변경', 
-                          color: const Color(0xFF6366F1),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const ChangePasswordScreen()),
-                            );
-                          }
-                        ),
+
                       ],
                     ),
                     const SizedBox(height: 16),

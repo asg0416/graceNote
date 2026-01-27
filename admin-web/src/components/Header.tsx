@@ -169,9 +169,15 @@ export default function Header() {
                                                 </div>
                                             </div>
                                             <div className="p-2">
-                                                <button className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 rounded-xl transition-all group">
+                                                <button
+                                                    onClick={() => {
+                                                        setIsProfileOpen(false);
+                                                        router.push('/profile');
+                                                    }}
+                                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 rounded-xl transition-all group"
+                                                >
                                                     <Settings className="w-4.5 h-4.5 text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                                                    시스템 설정
+                                                    내 정보 관리
                                                 </button>
                                                 <button
                                                     onClick={handleLogout}
