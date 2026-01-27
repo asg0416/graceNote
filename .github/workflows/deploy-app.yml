@@ -2,7 +2,7 @@ name: Deploy Flutter App to Vercel
 on:
   push:
     branches: [ main ]
-    paths-ignore: [ 'admin-web/**', 'README.md', '.gitignore' ]
+    paths-ignore: [ 'README.md', '.gitignore' ]
 
 jobs:
   deploy:
