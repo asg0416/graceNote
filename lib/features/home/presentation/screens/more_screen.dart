@@ -12,6 +12,7 @@ import 'package:grace_note/features/home/presentation/screens/profile_screen.dar
 import 'package:grace_note/features/home/presentation/screens/notice_list_screen.dart';
 import 'package:grace_note/features/home/presentation/screens/inquiry_screen.dart';
 import 'package:grace_note/core/providers/user_role_provider.dart';
+import 'package:grace_note/features/settings/presentation/screens/change_password_screen.dart';
 
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
@@ -133,6 +134,17 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(builder: (context) => const ProfileScreen()),
+                            );
+                          }
+                        ),
+                        _MenuItem(
+                          icon: Icons.lock_reset_rounded, 
+                          label: '비밀번호 변경', 
+                          color: const Color(0xFF6366F1),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const ChangePasswordScreen()),
                             );
                           }
                         ),

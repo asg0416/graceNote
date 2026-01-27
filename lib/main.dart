@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
 import 'package:grace_note/core/widgets/droplet_loader.dart';
 import 'package:intl/intl.dart';
+import 'package:grace_note/features/auth/presentation/screens/password_reset_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,15 +64,26 @@ class AuthGate extends ConsumerStatefulWidget {
 }
 
 class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver {
+  late final StreamSubscription<AuthState> _authSubscription;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const PasswordResetScreen()),
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _authSubscription.cancel();
     super.dispose();
   }
 

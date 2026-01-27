@@ -87,6 +87,84 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  void _showForgotPasswordDialog(BuildContext context) {
+    final emailController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('비밀번호 찾기'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '가입하신 이메일 주소를 입력해 주세요.\n비밀번호 재설정 링크를 보내드립니다.',
+              style: TextStyle(fontSize: 14, color: AppTheme.textSub),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailController,
+              decoration: InputDecoration(
+                hintText: '이메일 주소',
+                filled: true,
+                fillColor: AppTheme.background,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소', style: TextStyle(color: AppTheme.textSub)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final email = emailController.text.trim();
+              if (email.isEmpty) return;
+
+              Navigator.pop(context); // Close dialog first
+
+              try {
+                // Send password reset email
+                await Supabase.instance.client.auth.resetPasswordForEmail(
+                  email,
+                  redirectTo: 'io.supabase.flutter://reset-callback', // Deep link scheme
+                );
+                
+                if (mounted) {
+                  SnackBarUtil.showSnackBar(
+                    context, 
+                    message: '비밀번호 재설정 링크가 이메일로 발송되었습니다.',
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  SnackBarUtil.showSnackBar(
+                    context,
+                    message: AuthErrorHelper.getFriendlyMessage(e),
+                    isError: true,
+                    technicalDetails: e.toString(),
+                  );
+                }
+              }
+            },
+            child: const Text(
+              '이메일 발송', 
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryIndigo),
+            ),
+          ),
+        ],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -179,7 +257,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     obscureText: true,
                   ),
-                  const SizedBox(height: 24),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => _showForgotPasswordDialog(context),
+                      child: const Text(
+                        '비밀번호를 잊으셨나요?',
+                        style: TextStyle(
+                          color: AppTheme.textSub,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   
                   ElevatedButton(
                     onPressed: _isLoading ? null : _handleEmailLogin,

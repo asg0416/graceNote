@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { Church, Mail, Lock, Loader2, ArrowRight, ShieldCheck, Moon, Sun } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, ShieldCheck, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
 
@@ -14,6 +14,12 @@ export default function LoginPage() {
     const [error, setError] = useState<string | null>(null);
     const { theme, setTheme } = useTheme();
     const router = useRouter();
+
+    // Modal State
+    const [showForgotModal, setShowForgotModal] = useState(false);
+    const [forgotEmail, setForgotEmail] = useState('');
+    const [forgotLoading, setForgotLoading] = useState(false);
+    const [forgotMessage, setForgotMessage] = useState<string | null>(null);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -62,6 +68,27 @@ export default function LoginPage() {
             setError(err.message === 'Invalid login credentials' ? '이메일 또는 비밀번호가 잘못되었습니다.' : err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleForgotPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setForgotLoading(true);
+        setForgotMessage(null);
+
+        try {
+            const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+                redirectTo: `${window.location.origin}/update-password`,
+            });
+
+            if (error) throw error;
+
+            setForgotMessage('비밀번호 재설정 링크가 이메일로 전송되었습니다.');
+            setForgotEmail('');
+        } catch (err: any) {
+            setForgotMessage(`오류: ${err.message}`);
+        } finally {
+            setForgotLoading(false);
         }
     };
 
@@ -154,7 +181,13 @@ export default function LoginPage() {
                                 <div className="space-y-2.5">
                                     <div className="flex items-center justify-between ml-1">
                                         <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">보안 비밀번호</label>
-                                        <button type="button" className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:underline uppercase tracking-widest">비밀번호 찾기</button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowForgotModal(true)}
+                                            className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:underline uppercase tracking-widest"
+                                        >
+                                            비밀번호 찾기
+                                        </button>
                                     </div>
                                     <div className="relative group">
                                         <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
@@ -203,6 +236,58 @@ export default function LoginPage() {
                     </p>
                 </div>
             </div>
+
+            {/* Forgot Password Modal */}
+            {showForgotModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl p-8 shadow-2xl border border-slate-100 dark:border-slate-800 relative">
+                        <h3 className="text-xl font-black text-slate-900 dark:text-white mb-2">비밀번호 찾기</h3>
+                        <p className="text-sm text-slate-500 mb-6">가입하신 이메일 주소를 입력하시면<br />비밀번호 재설정 링크를 보내드립니다.</p>
+
+                        <form onSubmit={handleForgotPassword} className="space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">이메일 주소</label>
+                                <input
+                                    type="email"
+                                    required
+                                    value={forgotEmail}
+                                    onChange={(e) => setForgotEmail(e.target.value)}
+                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                    placeholder="admin@gracenote.com"
+                                />
+                            </div>
+
+                            {forgotMessage && (
+                                <div className={`p-3 rounded-lg text-xs font-bold ${forgotMessage.startsWith('오류') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                                    {forgotMessage}
+                                </div>
+                            )}
+
+                            <div className="flex gap-3 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowForgotModal(false);
+                                        setForgotMessage(null);
+                                        setForgotEmail('');
+                                    }}
+                                    className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                >
+                                    취소
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={forgotLoading}
+                                    className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-500 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    {forgotLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    이메일 발송
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
