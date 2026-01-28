@@ -32,22 +32,27 @@ export async function POST(req: Request) {
           
           CRITICAL INSTRUCTIONS:
           1. STRUCTURE LOGIC: If the data is text/CSV, first identify the headers. Use column positions and labels to determine meaning.
-          2. GROUP LEADERS: Look for group headers (usually ending in "조", e.g., "현권 영미 조" or "1조"). The names in these headers or explicitly marked as leader are the Group Leaders. 
+          2. GROUP NAME: 
+             - Extract the "조" or "Group" information. 
+             - IMPORTANT: If there is no specific "조" info (e.g., it's just a general member list), or if the "조" column contains department names like "예닮부", set group_name to "미정". 
+             - Only set a specific group_name if it clearly indicates a small group (e.g., "1조", "현권 조").
+          3. GROUP LEADERS: Look for groups or headers explicitly marked as leader (조장, 리더).
              - Create a separate object for EACH person in the header.
              - Set "role_in_group": "leader" for them.
-          3. INDIVIDUALIZATION: If a line or cell contains multiple adults (e.g., "재홍 혜진 (예봄, 예강)"), create TWO separate objects:
-             - Object 1: full_name="재홍", spouse_name="혜진", children_info="예봄, 예강", role_in_group="member"
-             - Object 2: full_name="혜진", spouse_name="재홍", children_info="예봄, 예강", role_in_group="member"
-          4. FAMILY LINKS: When splitting a couple, ensure they cross-reference each other in the "spouse_name" field.
-          5. NOISE REMOVAL: Clean labels like "딸:", "아들:", "(A)", "성도", etc., from names.
+          4. FAMILY LINKS (CRITICAL): 
+             - If a couple is detected (e.g., "재홍 혜진"), Object 1 (재홍) MUST have spouse_name="혜진", and Object 2 (혜진) MUST have spouse_name="재홍".
+             - If children are listed for a family, ALL adults in that family (both spouses) MUST have the same "children_info". Do not leave it null for one spouse if the other has it.
+          5. INDIVIDUALIZATION: Create separate objects for each adult. 
+             - For "재홍 혜진 (예봄, 예강)", Object 1: full_name="재홍", spouse_name="혜진", children_info="예봄, 예강"; Object 2: full_name="혜진", spouse_name="재홍", children_info="예봄, 예강".
+          6. NOISE REMOVAL: Clean labels like "딸:", "아들:", "(A)", "성도", etc., from names.
           
           Return ONLY a clean JSON array of objects with the following keys:
           - full_name: string (The person's name)
           - role_in_group: "leader" | "member"
-          - spouse_name: string or null
-          - children_info: string or null
-          - group_name: string (The name of the group they belong to)
-          - phone: string (Mobile phone number if exists, default empty)
+          - spouse_name: string or null (Mutual reference)
+          - children_info: string or null (Assign to both parents)
+          - group_name: string ("미정" if no clear small group)
+          - phone: string (Mobile phone number, default empty)
 
           Do not include any other text. No markdown decorators. Just the raw JSON.
         `;
