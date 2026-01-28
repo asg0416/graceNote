@@ -13,10 +13,32 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://admin.gracenote.io.kr"),
   title: "Grace Note Admin",
-  description: "Grace Note Church Management System",
+  description: "Grace Note 교회 관리 시스템 - 효율적인 성도 관리를 위해",
   icons: {
     icon: "/favicon.png",
+  },
+  openGraph: {
+    title: "Grace Note Admin",
+    description: "Grace Note 교회 관리 시스템 - 효율적인 성도 관리를 위해",
+    url: "https://admin.gracenote.io.kr",
+    siteName: "Grace Note Admin",
+    images: [
+      {
+        url: "/logo.png",
+        width: 1024,
+        height: 1024,
+      },
+    ],
+    locale: "ko_KR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Grace Note Admin",
+    description: "Grace Note 교회 관리 시스템 - 효율적인 성도 관리를 위해",
+    images: ["/logo.png"],
   },
 };
 

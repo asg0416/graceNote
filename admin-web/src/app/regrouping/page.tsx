@@ -317,6 +317,16 @@ function RegroupingPageInner() {
         setHasChanges(true);
     };
 
+    const handleToggleLeader = (memberId: string) => {
+        setLocalMembers(prev => prev.map(m => {
+            if (m.id === memberId) {
+                return { ...m, role_in_group: m.role_in_group === 'leader' ? 'member' : 'leader' };
+            }
+            return m;
+        }));
+        setHasChanges(true);
+    };
+
     const handleOpenAddMemberModal = (groupInfo?: any) => {
         let target = null;
         if (typeof groupInfo === 'string') {
@@ -619,10 +629,12 @@ function RegroupingPageInner() {
                 // Trigger update if:
                 // 1. Group assignment changed (moved)
                 // 2. Current group was renamed (group_name in member_directory needs update)
+                // 3. Role changed (leader <-> member)
                 const isMoved = original?.group_id !== mappedGroupId;
                 const isGroupRenamed = currentGroup && originalGroup && currentGroup.name !== originalGroup.name;
+                const isRoleChanged = original?.role_in_group !== m.role_in_group;
 
-                if (isMoved || isGroupRenamed) {
+                if (isMoved || isGroupRenamed || isRoleChanged) {
                     const key = mappedGroupId || 'unassigned';
                     if (!acc[key]) acc[key] = [];
                     acc[key].push(m.id);
@@ -632,6 +644,20 @@ function RegroupingPageInner() {
 
             for (const [groupId, memberIds] of Object.entries(groupedChanges)) {
                 const targetId = groupId === 'unassigned' ? null : groupId;
+
+                // For each group, we update their group_id and their individual roles
+                // We'll update the roles individually for members in this group who changed
+                for (const mid of (memberIds as string[])) {
+                    const localMember = localMembers.find(lm => lm.id === mid);
+                    if (localMember) {
+                        const { error: roleError } = await supabase
+                            .from('member_directory')
+                            .update({ role_in_group: localMember.role_in_group })
+                            .eq('id', mid);
+                        if (roleError) throw roleError;
+                    }
+                }
+
                 const { error } = await supabase.rpc('regroup_members', {
                     p_member_ids: memberIds,
                     p_target_group_id: targetId
@@ -929,6 +955,7 @@ function RegroupingPageInner() {
                         members={sortedMembers}
                         onMoveMembers={handleMoveMembers}
                         onReorderMembers={handleReorderMembers}
+                        onToggleLeader={handleToggleLeader}
                         selectedMemberIds={selectedMemberIds}
                         onMemberClick={handleMemberClick}
                         onMemberDoubleClick={handleMemberEdit}

@@ -19,6 +19,7 @@ interface MemberBadgeProps {
     onDoubleClick?: () => void;
     className?: string;
     profileMode?: string;
+    onToggleLeader?: (id: string) => void;
 }
 
 export const MemberBadge: React.FC<MemberBadgeProps> = ({
@@ -27,9 +28,17 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
     onClick,
     onDoubleClick,
     className,
-    profileMode
+    profileMode,
+    onToggleLeader
 }) => {
     const isLeader = member.role_in_group === 'leader';
+
+    const handleToggleLeader = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (onToggleLeader) {
+            onToggleLeader(member.id);
+        }
+    };
 
     return (
         <div
@@ -82,6 +91,37 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
                     )}
                 </div>
             </div>
+
+            {/* Leader Toggle Button */}
+            {onToggleLeader && (
+                <button
+                    onClick={handleToggleLeader}
+                    className={cn(
+                        "p-2 rounded-xl transition-all duration-300",
+                        isLeader
+                            ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 opacity-100"
+                            : "text-slate-200 dark:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500 opacity-0 group-hover:opacity-100"
+                    )}
+                    title={isLeader ? "조장 해제" : "조장으로 지정"}
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill={isLeader ? "currentColor" : "none"}
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="w-4 h-4"
+                    >
+                        <path d="M2 20h20" />
+                        <path d="M7 14.65v-2.7a2 2 0 0 1 .63-1.46L10 8.08V4h4v4.08l2.37 2.41a2 2 0 0 1 .63 1.46v2.7" />
+                        <path d="m10 8 2-2 2 2" />
+                        <path d="M12 11.53V14" />
+                        <path d="M12 14v1.5" />
+                    </svg>
+                </button>
+            )}
 
             {/* Selection Indicator */}
             {isSelected && (

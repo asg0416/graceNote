@@ -40,6 +40,7 @@ interface KanbanBoardProps {
     onAddMembers?: (groupId: string | null) => void;
     lastAddedGroupId?: string | null;
     profileMode?: string;
+    onToggleLeader?: (id: string) => void;
 }
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
@@ -47,6 +48,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     members,
     onMoveMembers,
     onReorderMembers,
+    onToggleLeader,
     selectedMemberIds,
     onMemberClick,
     onMemberDoubleClick,
@@ -284,6 +286,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     selectedMemberIds={selectedMemberIds}
                     onMemberClick={onMemberClick}
                     onMemberDoubleClick={onMemberDoubleClick}
+                    onToggleLeader={onToggleLeader}
                     color="#94a3b8"
                     onQuickAdd={onQuickAddMember ? (name) => onQuickAddMember(null, name) : undefined}
                     onAddMembers={onAddMembers ? () => onAddMembers(null) : undefined}
@@ -303,6 +306,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         selectedMemberIds={selectedMemberIds}
                         onMemberClick={onMemberClick}
                         onMemberDoubleClick={onMemberDoubleClick}
+                        onToggleLeader={onToggleLeader}
                         onDelete={onDeleteGroup ? () => onDeleteGroup(group.id) : undefined}
                         onUpdate={onUpdateGroup ? (updates) => onUpdateGroup(group.id, updates) : undefined}
                         onQuickAdd={onQuickAddMember ? (name) => onQuickAddMember(group.id, name) : undefined}

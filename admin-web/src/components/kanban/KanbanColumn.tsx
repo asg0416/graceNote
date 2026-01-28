@@ -22,6 +22,7 @@ interface KanbanColumnProps {
     profileMode?: string;
     activeId?: string | null;
     movingMembersCount?: number;
+    onToggleLeader?: (id: string) => void;
 }
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({
@@ -39,7 +40,8 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     autoFocusRename = false,
     profileMode,
     activeId,
-    movingMembersCount = 1
+    movingMembersCount = 1,
+    onToggleLeader
 }) => {
     const { setNodeRef, isOver } = useDroppable({ id });
     const [isRenaming, setIsRenaming] = useState(false);
@@ -305,6 +307,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                     isSelected={isSelected}
                                     onClick={onMemberClick}
                                     onDoubleClick={onMemberDoubleClick}
+                                    onToggleLeader={onToggleLeader}
                                     profileMode={profileMode}
                                     isDraggingElsewhere={isBeingDragged}
                                     movingMembersCount={movingMembersCount}

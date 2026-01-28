@@ -15,9 +15,10 @@ interface DraggableCardProps {
     profileMode?: string;
     isDraggingElsewhere?: boolean;
     movingMembersCount?: number;
+    onToggleLeader?: (id: string) => void;
 }
 
-export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSelected, onClick, onDoubleClick, profileMode, isDraggingElsewhere, movingMembersCount = 1 }) => {
+export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSelected, onClick, onDoubleClick, profileMode, isDraggingElsewhere, movingMembersCount = 1, onToggleLeader }) => {
     const {
         attributes,
         listeners,
@@ -71,6 +72,7 @@ export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSel
                         isSelected={isSelected}
                         onClick={() => onClick(member.id)}
                         onDoubleClick={() => onDoubleClick?.(member.id)}
+                        onToggleLeader={onToggleLeader}
                         profileMode={profileMode}
                     />
                 ))}
