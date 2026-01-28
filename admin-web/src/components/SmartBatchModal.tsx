@@ -13,8 +13,11 @@ import {
     Sparkles,
     PencilLine,
     Trash2,
-    UserPlus
+    UserPlus,
+    FileSpreadsheet,
+    FileText
 } from 'lucide-react';
+import { read, utils } from 'xlsx';
 
 interface Department {
     id: string;
@@ -312,12 +315,15 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 reader.onload = () => resolve(reader.result as string);
                 reader.readAsDataURL(file);
             });
-            const base64Image = await base64Promise;
+            const base64Data = await base64Promise;
 
             const response = await fetch('/api/vision', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: base64Image }),
+                body: JSON.stringify({
+                    image: base64Data,
+                    mimeType: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/png')
+                }),
             });
 
             if (!response.ok) {
@@ -362,11 +368,12 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
             complete: (result) => {
                 setLoading(false);
                 const mapped: Partial<MemberData>[] = result.data.map((row: any) => ({
-                    full_name: row['이름'] || row['성함'] || row['name'],
-                    group_name: row['조'] || row['group'],
-                    role_in_group: ((row['역할'] || row['role']) === '조장' ? 'leader' : 'member') as 'leader' | 'member',
-                    spouse_name: row['배우자'] || row['spouse'] || null,
-                    children_info: row['자녀'] || row['children'] || null,
+                    full_name: row['이름'] || row['성함'] || row['name'] || row['Name'],
+                    group_name: row['조'] || row['group'] || row['Group'],
+                    role_in_group: ((row['역할'] || row['role'] || row['Role'] || '').includes('장') || (row['역할'] || row['role'] || row['Role'] || '').includes('리더') ? 'leader' : 'member') as 'leader' | 'member',
+                    spouse_name: row['배우자'] || row['spouse'] || row['Spouse'] || null,
+                    children_info: row['자녀'] || row['children'] || row['Children'] || null,
+                    phone: row['전화번호'] || row['연락처'] || row['phone'] || row['Phone'] || '',
                     church_id: churchId,
                     department_id: selectedDeptId,
                     is_linked: false
@@ -381,6 +388,47 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 setError('CSV 파일 파싱 중 오류가 발생했습니다: ' + error.message);
             }
         });
+    };
+
+    const handleXLSXUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!selectedDeptId) {
+            alert('먼저 부서를 선택해 주세요.');
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+
+        try {
+            const data = await file.arrayBuffer();
+            const workbook = read(data);
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = utils.sheet_to_json(worksheet);
+
+            const mapped: Partial<MemberData>[] = jsonData.map((row: any) => ({
+                full_name: row['이름'] || row['성함'] || row['name'] || row['Name'],
+                group_name: row['조'] || row['group'] || row['Group'],
+                role_in_group: ((row['역할'] || row['role'] || row['Role'] || '').includes('장') || (row['역할'] || row['role'] || row['Role'] || '').includes('리더') ? 'leader' : 'member') as 'leader' | 'member',
+                spouse_name: row['배우자'] || row['spouse'] || row['Spouse'] || null,
+                children_info: row['자녀'] || row['children'] || row['Children'] || null,
+                phone: row['전화번호'] || row['연락처'] || row['phone'] || row['Phone'] || '',
+                church_id: churchId,
+                department_id: selectedDeptId,
+                is_linked: false
+            })).filter(item => item.full_name);
+
+            setParsedData(mapped);
+            setStep('preview');
+            fetchMatchesFromDB(mapped);
+        } catch (err: any) {
+            console.error(err);
+            setError('엑셀 파일 파싱 중 오류가 발생했습니다: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const downloadTemplate = () => {
@@ -597,21 +645,41 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                                         {loading ? <Loader2 className="w-10 h-10 animate-spin" /> : <Upload className="w-10 h-10" />}
                                     </div>
                                     <div className="text-center px-10">
-                                        <p className="font-black text-slate-900 dark:text-white text-lg tracking-tight">이미지 또는 CSV 파일 업로드</p>
+                                        <p className="font-black text-slate-900 dark:text-white text-lg tracking-tight">이미지, PDF 또는 엑셀(CSV/XLSX) 업로드</p>
                                         <p className="text-[10px] text-slate-400 mt-2 uppercase font-bold tracking-widest leading-relaxed">
-                                            조편성 사진이나 명부 파일을 올려주세요.<br />AI가 데이터를 자동으로 추출합니다.
+                                            조편성 사진이나 명단 파일을 올려주세요.<br />AI와 시스템이 데이터를 자동으로 추출합니다.
                                         </p>
+                                        <div className="flex gap-2 mt-4">
+                                            <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                                                <Upload className="w-3 h-3 text-slate-400" />
+                                                <span className="text-[9px] font-black text-slate-500 uppercase">IMG</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                                                <FileText className="w-3 h-3 text-red-500" />
+                                                <span className="text-[9px] font-black text-slate-500 uppercase">PDF</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                                                <FileSpreadsheet className="w-3 h-3 text-emerald-500" />
+                                                <span className="text-[9px] font-black text-slate-500 uppercase">XLSX/CSV</span>
+                                            </div>
+                                        </div>
                                     </div>
                                     <input
                                         type="file"
                                         ref={fileInputRef}
                                         className="hidden"
-                                        accept="image/*,.csv"
+                                        accept="image/*,.csv,.xlsx,.xls,.pdf"
                                         onChange={(e) => {
                                             const file = e.target.files?.[0];
                                             if (!file) return;
-                                            if (file.type.includes('image')) {
+
+                                            const type = file.type;
+                                            const fileName = file.name.toLowerCase();
+
+                                            if (type.includes('image') || type === 'application/pdf' || fileName.endsWith('.pdf')) {
                                                 handleVisionUpload(e);
+                                            } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                                                handleXLSXUpload(e);
                                             } else {
                                                 handleCSVUpload(e);
                                             }

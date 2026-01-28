@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
     try {
-        const { image } = await req.json(); // base64 image data
+        const { image, mimeType = "image/png" } = await req.json(); // base64 data and mimeType
         if (!image) {
-            return NextResponse.json({ error: "Image data is required" }, { status: 400 });
+            return NextResponse.json({ error: "Data is required" }, { status: 400 });
         }
 
         const apiKey = process.env.GOOGLE_AI_API_KEY;
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
         // Fallback strategy: Based on verified ListModels output for this key:
         // Try newer generation models (2.5, 2.0) and latest aliases
-        const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-2.5-flash-lite"];
+        const modelNames = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"];
         let lastError = null;
 
         for (const modelName of modelNames) {
@@ -28,10 +28,10 @@ export async function POST(req: Request) {
                 );
 
                 const prompt = `
-          Extract church organization/group assignment data from this image.
+          Extract church organization/group assignment data from this ${mimeType.includes('pdf') ? 'document' : 'image'}.
           
           CRITICAL INSTRUCTIONS:
-          1. GROUP LEADERS: Look for group headers (usually ending in "조", e.g., "현권 영미 조"). The names in these headers are the Group Leaders. 
+          1. GROUP LEADERS: Look for group headers (usually ending in "조", e.g., "현권 영미 조" or "1조"). The names in these headers or explicitly marked as leader are the Group Leaders. 
              - Create a separate object for EACH person in the header.
              - Set "role_in_group": "leader" for them.
           2. INDIVIDUALIZATION: If a line or cell contains multiple adults (e.g., "재홍 혜진 (예봄, 예강)"), create TWO separate objects:
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
                     {
                         inlineData: {
                             data: image.split(",")[1] || image,
-                            mimeType: "image/png",
+                            mimeType: mimeType,
                         },
                     },
                     prompt,
