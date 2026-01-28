@@ -532,7 +532,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 church_id: churchId,
                 department_id: selectedDeptId,
                 full_name: item.full_name?.trim() || '',
-                phone: item.phone?.trim() || '',
+                phone: (item.phone || '').replace(/[^0-9]/g, ''),
                 group_name: item.group_name?.trim() || '미정',
                 role_in_group: item.role_in_group || 'member',
                 spouse_name: item.spouse_name?.trim() || null,

@@ -129,6 +129,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 ...dataToSave
             } = {
                 ...formData,
+                phone: (formData.phone || '').replace(/[^0-9]/g, ''),
                 church_id: churchId,
             };
 

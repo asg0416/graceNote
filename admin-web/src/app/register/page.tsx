@@ -133,7 +133,9 @@ export default function RegisterPage() {
             return;
         }
 
-        if (!phone || phone.length < 10) {
+        const sanitizedPhone = phone.replace(/[^0-9]/g, '');
+
+        if (!sanitizedPhone || sanitizedPhone.length < 10) {
             setError('올바른 휴대폰 번호를 입력해 주세요.');
             setLoading(false);
             return;
@@ -145,7 +147,7 @@ export default function RegisterPage() {
             let phoneCheckError: { message: string; code?: string } | null = null;
 
             try {
-                const response = await supabase.rpc('check_phone_exists', { p_phone: phone });
+                const response = await supabase.rpc('check_phone_exists', { p_phone: sanitizedPhone });
                 phoneCheckData = response.data;
                 phoneCheckError = response.error;
             } catch (err) {
@@ -179,7 +181,7 @@ export default function RegisterPage() {
                         role_request: 'admin',
                         church_id: selectedChurchId,
                         department_id: selectedDepartmentId,
-                        phone: phone,
+                        phone: sanitizedPhone,
                     },
                     emailRedirectTo: 'https://admin.gracenote.io.kr/auth/callback'
                 }
