@@ -875,6 +875,18 @@ class GraceNoteRepository {
     await _supabase.auth.signOut();
   }
 
+  // [NEW] 온보딩 미완료 유저 스스로 계정 삭제 (중복 계정 충돌 시 등)
+  Future<void> cancelRegistration() async {
+    try {
+      await _supabase.rpc('delete_self_in_onboarding');
+      await signOut(); // 삭제 후 로컬 세션도 정리
+    } catch (e) {
+      debugPrint('GraceNoteRepository: Error in cancelRegistration: $e');
+      // 이미 삭제되었거나 권한 에러인 경우 그냥 로그아웃 시도
+      await signOut();
+    }
+  }
+
   // SMS 인증 요청
   Future<void> sendVerificationSMS(String phone) async {
     try {

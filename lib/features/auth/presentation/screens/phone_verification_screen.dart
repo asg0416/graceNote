@@ -378,13 +378,20 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
             child: const Text('취소', style: TextStyle(color: AppTheme.textSub)),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context); // Close dialog
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-                (route) => false,
-              );
+              
+              // [CLEANUP] Clean up the temporary "zombie" account before redirecting
+              // This keeps auth.users clean of incomplete social/email signups.
+              await ref.read(repositoryProvider).cancelRegistration();
+
+              if (mounted) {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  (route) => false,
+                );
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primaryIndigo,
