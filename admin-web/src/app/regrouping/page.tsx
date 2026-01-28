@@ -589,7 +589,7 @@ function RegroupingPageInner() {
 
             const { data: upsertedGroups, error: upsertError } = await supabase
                 .from('groups')
-                .upsert(groupsToUpsert)
+                .upsert(groupsToUpsert, { onConflict: 'church_id,department_id,name' })
                 .select();
 
             if (upsertError) throw upsertError;
