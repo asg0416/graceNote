@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     siteName: "Grace Note Admin",
     images: [
       {
-        url: "/logo.png",
+        url: "/og-image.png",
         width: 1024,
         height: 1024,
       },
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Grace Note Admin",
     description: "Grace Note 교회 관리 시스템 - 효율적인 성도 관리를 위해",
-    images: ["/logo.png"],
+    images: ["/og-image.png"],
   },
 };
 

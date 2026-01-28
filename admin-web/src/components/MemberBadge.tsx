@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { User, ShieldCheck } from 'lucide-react';
+import { User, ShieldCheck, Crown } from 'lucide-react';
 
 interface MemberBadgeProps {
     member: {
@@ -97,29 +97,19 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
                 <button
                     onClick={handleToggleLeader}
                     className={cn(
-                        "p-2 rounded-xl transition-all duration-300",
+                        "p-2 rounded-xl transition-all duration-300 transform",
                         isLeader
-                            ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 opacity-100"
+                            ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 opacity-100 scale-110"
                             : "text-slate-200 dark:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500 opacity-0 group-hover:opacity-100"
                     )}
                     title={isLeader ? "조장 해제" : "조장으로 지정"}
                 >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill={isLeader ? "currentColor" : "none"}
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="w-4 h-4"
-                    >
-                        <path d="M2 20h20" />
-                        <path d="M7 14.65v-2.7a2 2 0 0 1 .63-1.46L10 8.08V4h4v4.08l2.37 2.41a2 2 0 0 1 .63 1.46v2.7" />
-                        <path d="m10 8 2-2 2 2" />
-                        <path d="M12 11.53V14" />
-                        <path d="M12 14v1.5" />
-                    </svg>
+                    <Crown
+                        className={cn(
+                            "w-4 h-4 transition-all duration-300",
+                            isLeader && "fill-amber-500"
+                        )}
+                    />
                 </button>
             )}
 
