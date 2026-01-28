@@ -128,7 +128,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- 1. 교회 (Churches)
 CREATE TABLE IF NOT EXISTS churches (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     address TEXT,
     settings JSONB DEFAULT '{"allow_leader_cross_view": false}'::jsonb,
@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS churches (
 
 -- 2. 부서 (Departments)
 CREATE TABLE IF NOT EXISTS departments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES churches(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     profile_mode TEXT DEFAULT 'individual' CHECK (profile_mode IN ('individual', 'couple')),
@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS departments (
 
 -- 3. 가족 (Families)
 CREATE TABLE IF NOT EXISTS families (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES churches(id) ON DELETE CASCADE,
     department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
     name TEXT,
@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 -- 5. 소그룹/조 (Groups)
 CREATE TABLE IF NOT EXISTS groups (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES churches(id) ON DELETE CASCADE,
     department_id UUID REFERENCES departments(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS groups (
 
 -- 6. 소그룹 소속 (Group Members)
 CREATE TABLE IF NOT EXISTS group_members (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     group_id UUID REFERENCES groups(id) ON DELETE CASCADE,
     profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
     role_in_group TEXT DEFAULT 'member',
@@ -202,7 +202,7 @@ CREATE TABLE IF NOT EXISTS group_members (
 
 -- 7. 주차 관리 (Weeks)
 CREATE TABLE IF NOT EXISTS weeks (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES churches(id) ON DELETE CASCADE,
     week_date DATE NOT NULL,
     name TEXT,
@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS weeks (
 
 -- 8. 출석 기록 (Attendance)
 CREATE TABLE IF NOT EXISTS attendance (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     week_id UUID REFERENCES weeks(id) ON DELETE CASCADE,
     group_member_id UUID REFERENCES group_members(id) ON DELETE SET NULL,
     directory_member_id UUID REFERENCES member_directory(id) ON DELETE CASCADE,
@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS attendance (
 
 -- 9. 성도 명부 (Member Directory)
 CREATE TABLE IF NOT EXISTS member_directory (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES churches(id) ON DELETE CASCADE,
     department_id UUID REFERENCES departments(id) ON DELETE CASCADE,
     full_name TEXT NOT NULL,
@@ -246,7 +246,7 @@ CREATE TABLE IF NOT EXISTS member_directory (
 
 -- 10. 기도 제목 (Prayer Entries)
 CREATE TABLE IF NOT EXISTS prayer_entries (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     week_id UUID REFERENCES weeks(id) ON DELETE CASCADE,
     group_id UUID REFERENCES groups(id) ON DELETE CASCADE,
     author_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
@@ -263,7 +263,7 @@ CREATE TABLE IF NOT EXISTS prayer_entries (
 
 -- 11. 기도 상호작용 (Prayer Interactions)
 CREATE TABLE IF NOT EXISTS prayer_interactions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     prayer_id UUID REFERENCES prayer_entries(id) ON DELETE CASCADE,
     profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
     interaction_type TEXT CHECK (interaction_type IN ('pray', 'save')),
@@ -273,7 +273,7 @@ CREATE TABLE IF NOT EXISTS prayer_interactions (
 
 -- 12. 주보/뉴스레터 (Newsletters)
 CREATE TABLE IF NOT EXISTS newsletters (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES churches(id) ON DELETE CASCADE,
     week_id UUID REFERENCES weeks(id) ON DELETE CASCADE,
     content TEXT,
@@ -282,7 +282,7 @@ CREATE TABLE IF NOT EXISTS newsletters (
 
 -- 12. 기도 제목 AI 백업
 CREATE TABLE IF NOT EXISTS prayer_ai_backups (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     prayer_entry_id UUID REFERENCES prayer_entries(id) ON DELETE CASCADE,
     original_content TEXT,
     refined_content TEXT,
@@ -291,7 +291,7 @@ CREATE TABLE IF NOT EXISTS prayer_ai_backups (
 
 -- 13. 공지사항 (Notices)
 CREATE TABLE IF NOT EXISTS public.notices (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
     department_id UUID REFERENCES public.departments(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
@@ -306,7 +306,7 @@ CREATE TABLE IF NOT EXISTS public.notices (
 
 -- 14. 문의하기 (Inquiries)
 CREATE TABLE IF NOT EXISTS public.inquiries (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     content TEXT NOT NULL,
@@ -320,7 +320,7 @@ CREATE TABLE IF NOT EXISTS public.inquiries (
 
 -- 15. 문의 답변 (Inquiry Responses)
 CREATE TABLE IF NOT EXISTS public.inquiry_responses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     inquiry_id UUID REFERENCES public.inquiries(id) ON DELETE CASCADE,
     admin_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     content TEXT NOT NULL,
@@ -447,7 +447,9 @@ BEGIN
     id, full_name, email, role, admin_status, church_id, department_id, phone, is_onboarding_complete
   )
   VALUES (
-    NEW.id, v_full_name, v_email, v_role, v_status, v_church_id, v_department_id, v_phone, false
+    NEW.id, 
+    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'fullName', '신규 유저'), 
+    NEW.email, v_role, v_status, v_church_id, v_department_id, NEW.raw_user_meta_data->>'phone', false
   )
   ON CONFLICT (id) DO UPDATE SET
     full_name = EXCLUDED.full_name,
@@ -460,11 +462,10 @@ BEGIN
   RETURN NEW;
 EXCEPTION 
   WHEN unique_violation THEN
-    -- If phone uniqueness is violated, we MUST fail to prevent duplicate accounts
     RAISE EXCEPTION 'This phone number is already registered.';
   WHEN OTHERS THEN
     INSERT INTO public.debug_logs (level, message, payload)
-    VALUES ('ERROR', 'Profile Trigger Crash: ' || SQLERRM, jsonb_build_object('user_id', NEW.id, 'metadata', NEW.raw_user_meta_data));
+    VALUES ('ERROR', 'Profile Trigger Failed: ' || SQLERRM, jsonb_build_object('user_id', NEW.id));
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
