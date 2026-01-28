@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
         // Fallback strategy: Based on verified ListModels output for this key:
         // Try newer generation models (2.5, 2.0) and latest aliases
-        const modelNames = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"];
+        const modelNames = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
         let lastError = null;
 
         for (const modelName of modelNames) {

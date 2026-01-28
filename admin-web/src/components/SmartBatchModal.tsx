@@ -403,22 +403,53 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
         setError(null);
 
         try {
-            const data = await file.arrayBuffer();
-            const workbook = read(data);
+            const buffer = await file.arrayBuffer();
+            const workbook = read(buffer);
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData = utils.sheet_to_json(worksheet);
 
-            const mapped: Partial<MemberData>[] = jsonData.map((row: any) => ({
-                full_name: row['이름'] || row['성함'] || row['name'] || row['Name'],
-                group_name: row['조'] || row['group'] || row['Group'],
+            // 1. Try with headers first
+            let jsonData = utils.sheet_to_json(worksheet);
+
+            let mapped: Partial<MemberData>[] = jsonData.map((row: any) => ({
+                full_name: String(row['이름'] || row['성함'] || row['name'] || row['Name'] || '').trim(),
+                group_name: String(row['조'] || row['group'] || row['Group'] || '미정').trim(),
                 role_in_group: ((row['역할'] || row['role'] || row['Role'] || '').includes('장') || (row['역할'] || row['role'] || row['Role'] || '').includes('리더') ? 'leader' : 'member') as 'leader' | 'member',
                 spouse_name: row['배우자'] || row['spouse'] || row['Spouse'] || null,
                 children_info: row['자녀'] || row['children'] || row['Children'] || null,
-                phone: row['전화번호'] || row['연락처'] || row['phone'] || row['Phone'] || '',
+                phone: String(row['전화번호'] || row['연락처'] || row['phone'] || row['Phone'] || '').trim(),
                 church_id: churchId,
                 department_id: selectedDeptId,
                 is_linked: false
             })).filter(item => item.full_name);
+
+            // 2. Fallback: If no results with headers, try raw array (useful if headers are missing or mismatched)
+            if (mapped.length === 0) {
+                const rawData = utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+                if (rawData.length > 0) {
+                    // Start from row 0 if it looks like data, or row 1 if it looks like headers
+                    mapped = rawData.map((row) => {
+                        if (!row[0]) return null;
+                        const fullName = String(row[0]).trim();
+                        if (fullName === '이름' || fullName === 'Name' || fullName === '성함') return null; // Skip header row
+
+                        return {
+                            full_name: fullName,
+                            group_name: String(row[1] || '미정').trim(),
+                            role_in_group: (String(row[2] || '').includes('장') || String(row[2] || '').includes('리더') ? 'leader' : 'member') as 'leader' | 'member',
+                            spouse_name: row[3] || null,
+                            children_info: row[4] || null,
+                            phone: String(row[5] || '').trim(),
+                            church_id: churchId,
+                            department_id: selectedDeptId,
+                            is_linked: false
+                        };
+                    }).filter(item => item && item.full_name) as Partial<MemberData>[];
+                }
+            }
+
+            if (mapped.length === 0) {
+                throw new Error('데이터를 찾을 수 없습니다. 파일의 첫 번째 열에 성함이 있는지 확인해 주세요.');
+            }
 
             setParsedData(mapped);
             setStep('preview');
