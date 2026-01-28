@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { DraggableCard } from './DraggableCard';
 import { cn } from '@/lib/utils';
-import { Users, MoreVertical, Plus, Trash2, Edit2, X, Check } from 'lucide-react';
+import { Users, MoreVertical, Plus, Trash2, Edit2, X, Check, Search } from 'lucide-react';
 import { useRef, useEffect } from 'react';
 
 interface KanbanColumnProps {
@@ -48,6 +48,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     const [isAdding, setIsAdding] = useState(false);
     const [quickAddName, setQuickAddName] = useState('');
     const [showMenu, setShowMenu] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
     const menuRef = useRef<HTMLDivElement>(null);
 
     const colorPresets = [
@@ -80,23 +81,33 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
         return () => document.removeEventListener('mousedown', handleClick);
     }, [showMenu]);
 
+    // Filter members based on search query
+    const filteredMembers = useMemo(() => {
+        if (!searchQuery.trim()) return members;
+        const query = searchQuery.toLowerCase().trim();
+        return members.filter(m =>
+            m.full_name?.toLowerCase().includes(query) ||
+            m.phone?.includes(query)
+        );
+    }, [members, searchQuery]);
+
     // Group members into family units if in couple mode
     const familyUnits = useMemo(() => {
         if (profileMode !== 'couple') {
-            return members.map(m => ({ id: m.id, members: [m] }));
+            return filteredMembers.map(m => ({ id: m.id, members: [m] }));
         }
 
         const units: { id: string, members: any[] }[] = [];
         const seen = new Set<string>();
 
-        members.forEach(m => {
+        filteredMembers.forEach(m => {
             if (seen.has(m.id)) return;
 
             const unit = { id: m.id, members: [m] };
             seen.add(m.id);
 
             if (m.spouse_name) {
-                const spouse = members.find(s =>
+                const spouse = filteredMembers.find(s =>
                     !seen.has(s.id) &&
                     s.full_name === m.spouse_name &&
                     s.spouse_name === m.full_name
@@ -109,7 +120,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
             units.push(unit);
         });
         return units;
-    }, [members, profileMode]);
+    }, [filteredMembers, profileMode]);
 
     return (
         <div className="flex flex-col w-96 shrink-0 max-h-[820px] bg-white dark:bg-slate-900/60 rounded-[32px] border border-slate-200/80 dark:border-slate-800/60 transition-all group/column shadow-sm hover:shadow-xl hover:shadow-slate-200/40 dark:hover:shadow-none">
@@ -239,6 +250,32 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                 </button>
                             )}
                         </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Column Search Bar - Only for unassigned by default, or all if needed. 
+                User specifically asked for unassigned, but keeping it available for all makes it consistent. */}
+            <div className="px-5 py-2 bg-white/50 dark:bg-slate-950/30">
+                <div className="relative group/search">
+                    <Search className={cn(
+                        "absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 transition-colors",
+                        searchQuery ? "text-indigo-500" : "text-slate-300 dark:text-slate-600 group-focus-within/search:text-indigo-400"
+                    )} />
+                    <input
+                        type="text"
+                        placeholder={`${title} 검색...`}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-8 pr-8 h-9 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 rounded-xl text-[11px] font-bold focus:ring-4 focus:ring-indigo-500/5 outline-none transition-all placeholder:text-slate-300 dark:placeholder:text-slate-600"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-300 hover:text-slate-500 transition-colors"
+                        >
+                            <X className="w-3 h-3" />
+                        </button>
                     )}
                 </div>
             </div>
