@@ -15,8 +15,10 @@ export async function POST(req: Request) {
 
         const genAI = new GoogleGenerativeAI(apiKey);
 
-        const modelNames = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
-        let lastError = null;
+        // Fallback strategy: Based on verified ListModels output for this key:
+        // Try newer generation models (2.0) and latest aliases
+        const modelNames = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-flash-latest"];
+        let lastError: any = null;
 
         for (const modelName of modelNames) {
             try {
