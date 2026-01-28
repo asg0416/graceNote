@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
     try {
-        const { image, mimeType = "image/png" } = await req.json(); // base64 data and mimeType
-        if (!image) {
+        const { image, text: rawTextContent, mimeType = "image/png" } = await req.json();
+        if (!image && !rawTextContent) {
             return NextResponse.json({ error: "Data is required" }, { status: 400 });
         }
 
@@ -15,8 +15,6 @@ export async function POST(req: Request) {
 
         const genAI = new GoogleGenerativeAI(apiKey);
 
-        // Fallback strategy: Based on verified ListModels output for this key:
-        // Try newer generation models (2.5, 2.0) and latest aliases
         const modelNames = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
         let lastError = null;
 
@@ -28,16 +26,18 @@ export async function POST(req: Request) {
                 );
 
                 const prompt = `
-          Extract church organization/group assignment data from this ${mimeType.includes('pdf') ? 'document' : 'image'}.
+          Extract church organization/group assignment data from this ${rawTextContent ? 'text data' : (mimeType.includes('pdf') ? 'document' : 'image')}.
           
           CRITICAL INSTRUCTIONS:
-          1. GROUP LEADERS: Look for group headers (usually ending in "조", e.g., "현권 영미 조" or "1조"). The names in these headers or explicitly marked as leader are the Group Leaders. 
+          1. STRUCTURE LOGIC: If the data is text/CSV, first identify the headers. Use column positions and labels to determine meaning.
+          2. GROUP LEADERS: Look for group headers (usually ending in "조", e.g., "현권 영미 조" or "1조"). The names in these headers or explicitly marked as leader are the Group Leaders. 
              - Create a separate object for EACH person in the header.
              - Set "role_in_group": "leader" for them.
-          2. INDIVIDUALIZATION: If a line or cell contains multiple adults (e.g., "재홍 혜진 (예봄, 예강)"), create TWO separate objects:
+          3. INDIVIDUALIZATION: If a line or cell contains multiple adults (e.g., "재홍 혜진 (예봄, 예강)"), create TWO separate objects:
              - Object 1: full_name="재홍", spouse_name="혜진", children_info="예봄, 예강", role_in_group="member"
              - Object 2: full_name="혜진", spouse_name="재홍", children_info="예봄, 예강", role_in_group="member"
-          3. FAMILY LINKS: When splitting a couple, ensure they cross-reference each other in the "spouse_name" field.
+          4. FAMILY LINKS: When splitting a couple, ensure they cross-reference each other in the "spouse_name" field.
+          5. NOISE REMOVAL: Clean labels like "딸:", "아들:", "(A)", "성도", etc., from names.
           
           Return ONLY a clean JSON array of objects with the following keys:
           - full_name: string (The person's name)
@@ -45,26 +45,24 @@ export async function POST(req: Request) {
           - spouse_name: string or null
           - children_info: string or null
           - group_name: string (The name of the group they belong to)
+          - phone: string (Mobile phone number if exists, default empty)
 
-          Example Output:
-          [
-            { "full_name": "현권", "role_in_group": "leader", "spouse_name": "영미", "children_info": null, "group_name": "현권 영미 조" },
-            { "full_name": "영미", "role_in_group": "leader", "spouse_name": "현권", "children_info": null, "group_name": "현권 영미 조" },
-            { "full_name": "재홍", "role_in_group": "member", "spouse_name": "혜진", "children_info": "예봄, 예강", "group_name": "현권 영미 조" }
-          ]
-          
           Do not include any other text. No markdown decorators. Just the raw JSON.
         `;
 
-                const result = await model.generateContent([
-                    {
+                const content: any[] = [prompt];
+                if (image) {
+                    content.push({
                         inlineData: {
                             data: image.split(",")[1] || image,
                             mimeType: mimeType,
                         },
-                    },
-                    prompt,
-                ]);
+                    });
+                } else if (rawTextContent) {
+                    content.push(rawTextContent);
+                }
+
+                const result = await model.generateContent(content);
 
                 const response = await result.response;
                 const text = response.text();

@@ -352,7 +352,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
         }
     };
 
-    const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -362,32 +362,46 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
         }
 
         setLoading(true);
-        Papa.parse(file, {
-            header: true,
-            skipEmptyLines: true,
-            complete: (result) => {
-                setLoading(false);
-                const mapped: Partial<MemberData>[] = result.data.map((row: any) => ({
-                    full_name: row['이름'] || row['성함'] || row['name'] || row['Name'],
-                    group_name: row['조'] || row['group'] || row['Group'],
-                    role_in_group: ((row['역할'] || row['role'] || row['Role'] || '').includes('장') || (row['역할'] || row['role'] || row['Role'] || '').includes('리더') ? 'leader' : 'member') as 'leader' | 'member',
-                    spouse_name: row['배우자'] || row['spouse'] || row['Spouse'] || null,
-                    children_info: row['자녀'] || row['children'] || row['Children'] || null,
-                    phone: row['전화번호'] || row['연락처'] || row['phone'] || row['Phone'] || '',
-                    church_id: churchId,
-                    department_id: selectedDeptId,
-                    is_linked: false
-                })).filter(item => item.full_name);
+        setError(null);
 
-                setParsedData(mapped);
-                setStep('preview');
-                fetchMatchesFromDB(mapped);
-            },
-            error: (error) => {
-                setLoading(false);
-                setError('CSV 파일 파싱 중 오류가 발생했습니다: ' + error.message);
+        try {
+            const buffer = await file.arrayBuffer();
+            const workbook = read(buffer); // xlsx handles various encodings automatically
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const csvText = utils.sheet_to_csv(worksheet);
+
+            const response = await fetch('/api/vision', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: csvText
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'AI 분석에 실패했습니다.');
             }
-        });
+
+            const { data } = await response.json();
+
+            const mapped: Partial<MemberData>[] = data.map((item: any) => ({
+                ...item,
+                role_in_group: item.role_in_group as 'leader' | 'member',
+                church_id: churchId,
+                department_id: selectedDeptId,
+                is_linked: false
+            })).filter((item: any) => item.full_name);
+
+            setParsedData(mapped);
+            setStep('preview');
+            fetchMatchesFromDB(mapped);
+        } catch (err: any) {
+            console.error(err);
+            setError('CSV 파일 AI 분석 중 오류가 발생했습니다: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleXLSXUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -407,48 +421,34 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
             const workbook = read(buffer);
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
 
-            // 1. Try with headers first
-            let jsonData = utils.sheet_to_json(worksheet);
+            // Convert worksheet to CSV text for AI reasoning
+            const csvData = utils.sheet_to_csv(worksheet);
 
-            let mapped: Partial<MemberData>[] = jsonData.map((row: any) => ({
-                full_name: String(row['이름'] || row['성함'] || row['name'] || row['Name'] || '').trim(),
-                group_name: String(row['조'] || row['group'] || row['Group'] || '미정').trim(),
-                role_in_group: ((row['역할'] || row['role'] || row['Role'] || '').includes('장') || (row['역할'] || row['role'] || row['Role'] || '').includes('리더') ? 'leader' : 'member') as 'leader' | 'member',
-                spouse_name: row['배우자'] || row['spouse'] || row['Spouse'] || null,
-                children_info: row['자녀'] || row['children'] || row['Children'] || null,
-                phone: String(row['전화번호'] || row['연락처'] || row['phone'] || row['Phone'] || '').trim(),
+            const response = await fetch('/api/vision', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: csvData
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'AI 분석에 실패했습니다.');
+            }
+
+            const { data } = await response.json();
+
+            const mapped: Partial<MemberData>[] = data.map((item: any) => ({
+                ...item,
+                role_in_group: item.role_in_group as 'leader' | 'member',
                 church_id: churchId,
                 department_id: selectedDeptId,
                 is_linked: false
-            })).filter(item => item.full_name);
-
-            // 2. Fallback: If no results with headers, try raw array (useful if headers are missing or mismatched)
-            if (mapped.length === 0) {
-                const rawData = utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-                if (rawData.length > 0) {
-                    // Start from row 0 if it looks like data, or row 1 if it looks like headers
-                    mapped = rawData.map((row) => {
-                        if (!row[0]) return null;
-                        const fullName = String(row[0]).trim();
-                        if (fullName === '이름' || fullName === 'Name' || fullName === '성함') return null; // Skip header row
-
-                        return {
-                            full_name: fullName,
-                            group_name: String(row[1] || '미정').trim(),
-                            role_in_group: (String(row[2] || '').includes('장') || String(row[2] || '').includes('리더') ? 'leader' : 'member') as 'leader' | 'member',
-                            spouse_name: row[3] || null,
-                            children_info: row[4] || null,
-                            phone: String(row[5] || '').trim(),
-                            church_id: churchId,
-                            department_id: selectedDeptId,
-                            is_linked: false
-                        };
-                    }).filter(item => item && item.full_name) as Partial<MemberData>[];
-                }
-            }
+            })).filter((item: any) => item.full_name);
 
             if (mapped.length === 0) {
-                throw new Error('데이터를 찾을 수 없습니다. 파일의 첫 번째 열에 성함이 있는지 확인해 주세요.');
+                throw new Error('데이터를 찾을 수 없습니다.');
             }
 
             setParsedData(mapped);
@@ -456,7 +456,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
             fetchMatchesFromDB(mapped);
         } catch (err: any) {
             console.error(err);
-            setError('엑셀 파일 파싱 중 오류가 발생했습니다: ' + err.message);
+            setError('엑셀 파일 AI 분석 중 오류가 발생했습니다: ' + err.message);
         } finally {
             setLoading(false);
         }
