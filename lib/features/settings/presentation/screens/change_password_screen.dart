@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import '../../../../core/utils/auth_error_helper.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -105,16 +106,16 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               onPressed: _isLoading ? null : _updatePassword,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: AppTheme.primaryIndigo,
+                backgroundColor: AppTheme.primaryViolet,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 elevation: 0,
               ),
               child: _isLoading
-                  ? const SizedBox(
+                  ? SizedBox(
                       height: 20,
                       width: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      child: ShadcnSpinner(color: Colors.white),
                     )
                   : const Text('변경하기', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),

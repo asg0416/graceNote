@@ -1,14 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/error/exceptions.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
-import 'package:grace_note/features/auth/presentation/screens/church_selection_screen.dart'; // Fallback
-import 'package:grace_note/features/auth/presentation/screens/group_selection_screen.dart'; // Success Match
+import 'package:grace_note/features/auth/presentation/screens/church_selection_screen.dart';
+import 'package:grace_note/features/auth/presentation/screens/group_selection_screen.dart';
 import 'package:grace_note/features/auth/presentation/screens/login_screen.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class PhoneVerificationScreen extends ConsumerStatefulWidget {
   const PhoneVerificationScreen({super.key});
@@ -18,14 +20,14 @@ class PhoneVerificationScreen extends ConsumerStatefulWidget {
 }
 
 class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScreen> {
-  final _nameController = TextEditingController(); // [NEW] Real name for registry matching
+  final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _codeController = TextEditingController();
   
   bool _isCodeSent = false;
   bool _isLoading = false;
   Timer? _timer;
-  int _remainingTime = 0; // seconds
+  int _remainingTime = 0;
 
   @override
   void dispose() {
@@ -38,7 +40,7 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
 
   void _startTimer() {
     setState(() {
-      _remainingTime = 180; // 3 minutes
+      _remainingTime = 180;
     });
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -86,7 +88,6 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
         String msg = e.toString()
             .replaceFirst('Exception: ', '')
             .replaceFirst('FunctionException: ', '');
-        // Strip out brackets and raw data if any remain
         if (msg.contains('{')) msg = msg.split('{')[0].trim();
         SnackBarUtil.showSnackBar(context, message: msg, isError: true);
       }
@@ -109,17 +110,13 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
     setState(() => _isLoading = true);
     try {
       final user = Supabase.instance.client.auth.currentUser;
-
       final repo = ref.read(repositoryProvider);
       final result = await repo.verifySMS(phone, code, fullName: name);
       final matchedMember = result['matched_member'];
-
       final profile = ref.read(userProfileProvider).value;
       final isAdmin = profile?.role == 'admin' || (profile?.adminStatus != null && profile!.adminStatus != 'none');
 
-      // [SECURITY] If admin has a registered phone, it MUST match the verified phone
       if (isAdmin && profile?.phone != null && profile!.phone!.isNotEmpty) {
-        // Normalize for comparison
         final cleanProfilePhone = profile.phone!.replaceAll(RegExp(r'[^0-9]'), '');
         final cleanVerifiedPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
         
@@ -137,7 +134,6 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
 
       if (matchedMember == null) {
         if (isAdmin) {
-          // Admin bypass: just link phone and complete onboarding
           await repo.completeOnboarding(
             profileId: user!.id,
             fullName: profile!.fullName,
@@ -150,8 +146,6 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
           }
           return;
         }
-
-        // [BLOCK] No match in directory
         if (mounted) {
           SnackBarUtil.showSnackBar(
             context, 
@@ -162,21 +156,16 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
         return;
       }
 
-      // Match Found!
       final churchId = matchedMember['church_id'];
-      
-      // Fetch church name (Quick one-off query)
       final churchRes = await Supabase.instance.client
           .from('churches')
           .select('name')
           .eq('id', churchId)
           .single();
-      
       final churchName = churchRes['name'];
 
       if (mounted) {
         if (isAdmin) {
-          // [ADMIN] Immediate profile update and onboarding completion
           if (user != null) {
             await Supabase.instance.client.from('profiles').upsert({
               'id': user.id,
@@ -186,7 +175,6 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
               'phone': phone,
             });
           }
-
           await repo.completeOnboarding(
             profileId: user!.id,
             fullName: profile!.fullName,
@@ -194,7 +182,6 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
             phone: phone,
             matchedData: Map<String, dynamic>.from(matchedMember),
           );
-
           if (mounted) {
             SnackBarUtil.showSnackBar(context, message: '관리자 인증이 완료되었습니다.');
             ref.invalidate(userProfileProvider);
@@ -202,13 +189,7 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
           return;
         }
 
-        // [USER] PROMPT FIRST, UPDATE LATER
-        // This prevents the profile from being "poisoned" with a phone number if the info is wrong.
-
-        // [NEW] Show Confirmation Modal for regular users
-        // [MATCHED] Extract department name from joined data
         final String departmentName = matchedMember['departments']?['name'] ?? '부서 미정';
-
         if (mounted) {
           final isConfirmed = await _showMatchConfirmationDialog(
             churchName: churchName,
@@ -218,7 +199,6 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
           );
 
           if (isConfirmed == true) {
-            // [SUCCESS] Now it is safe to update the profile and complete onboarding
             if (user != null) {
               await Supabase.instance.client.from('profiles').upsert({
                 'id': user.id,
@@ -228,7 +208,6 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
                 'phone': phone,
               });
             }
-
             await repo.completeOnboarding(
               profileId: user!.id,
               fullName: name,
@@ -236,17 +215,13 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
               phone: phone,
               matchedData: Map<String, dynamic>.from(matchedMember),
             );
-
             ref.invalidate(userProfileProvider);
             ref.invalidate(userGroupsProvider);
-
             if (mounted) {
               SnackBarUtil.showSnackBar(context, message: '인증이 완료되었습니다.');
-              // Redirect to Home
-               Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+              Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
             }
           } else if (isConfirmed == false) {
-             // User said "No, this is not me"
              if (mounted) {
                _showContactAdminDialog();
              }
@@ -271,34 +246,38 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('정보 확인', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('아래 정보로 본인 인증을 진행할까요?', style: TextStyle(color: AppTheme.textSub)),
-            const SizedBox(height: 20),
-            _buildInfoRow('교회', churchName),
-            _buildInfoRow('부서', departmentName),
-            _buildInfoRow('소속', groupName),
-            _buildInfoRow('역할', role),
-          ],
+      builder: (context) => ShadDialog(
+        title: const Text('정보 확인', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
+        description: const Text('아래 정보로 본인 인증을 진행할까요?', style: TextStyle(fontFamily: 'Pretendard')),
+        actionsAxis: Axis.horizontal,
+        expandActionsWhenTiny: false,
+        removeBorderRadiusWhenTiny: false,
+        titleTextAlign: TextAlign.start,
+        descriptionTextAlign: TextAlign.start,
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.9,
+          minWidth: 320,
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildInfoRow(LucideIcons.church, '교회', churchName),
+              _buildInfoRow(LucideIcons.layers, '부서', departmentName),
+              _buildInfoRow(LucideIcons.users, '소속', groupName),
+              _buildInfoRow(LucideIcons.userCheck, '역할', role),
+            ],
+          ),
         ),
         actions: [
-          TextButton(
+          ShadButton.ghost(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('정보가 틀려요', style: TextStyle(color: AppTheme.textSub)),
+            child: const Text('정보가 틀려요', style: TextStyle(color: AppTheme.textSub, fontFamily: 'Pretendard')),
           ),
-          ElevatedButton(
+          ShadButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryIndigo,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('네, 맞아요'),
+            child: const Text('네, 맞아요', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
           ),
         ],
       ),
@@ -308,40 +287,46 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
   void _showContactAdminDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('관리자 문의 필요', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text(
-          '명부에 등록된 정보와 실제 정보가 일치하지 않습니다.\n교회 관리자에게 문의하여 정보를 올바르게 수정해 주세요.',
-          style: TextStyle(height: 1.5),
+      builder: (context) => ShadDialog(
+        title: const Text('관리자 문의 필요', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
+        description: const Text('명부와 정보가 일치하지 않습니다.\n관리자에게 정보를 올바르게 수정을 요청해주세요.', style: TextStyle(height: 1.5, fontFamily: 'Pretendard')),
+        actionsAxis: Axis.horizontal,
+        expandActionsWhenTiny: false,
+        removeBorderRadiusWhenTiny: false,
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.9,
+          minWidth: 320,
         ),
         actions: [
-          ElevatedButton(
+          ShadButton(
             onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryIndigo,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('확인'),
+            child: const Text('확인', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _buildInfoRow(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 40,
-            child: Text(label, style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold, fontSize: 13)),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppTheme.accentViolet,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: AppTheme.primaryViolet),
           ),
-          Expanded(
-            child: Text(value, style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w600, fontSize: 15)),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(color: AppTheme.textSub, fontSize: 11, fontWeight: FontWeight.w500, fontFamily: 'Pretendard')),
+              Text(value, style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontSize: 15, fontFamily: 'Pretendard')),
+            ],
           ),
         ],
       ),
@@ -351,40 +336,35 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
   void _showAccountExistsDialog(AccountExistsException e) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+      builder: (context) => ShadDialog(
+        title: Row(
           children: [
-            Icon(Icons.info_outline, color: AppTheme.primaryIndigo),
-            SizedBox(width: 8),
-            Text('계정 안내', style: TextStyle(fontWeight: FontWeight.bold)),
+            Icon(Icons.error_outline, size: 20, color: AppTheme.primaryViolet),
+            const SizedBox(width: 8),
+            const Text('계정 안내', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('등록된 휴대폰 번호로 가입된 다른 계정이 있습니다.', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            Text('가입된 성함: ${e.fullName}', style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w600)),
-            Text('가입된 계정: ${e.maskedEmail ?? "비공개 계정"}', style: const TextStyle(color: AppTheme.textSub)),
-            const SizedBox(height: 12),
-            const Text('혹시 카카오나 구글 등 다른 방법으로 가입하셨나요?\n해당 계정으로 다시 로그인해 주세요.', style: TextStyle(fontSize: 13, color: AppTheme.textSub, height: 1.5)),
-          ],
+        description: const Text('이미 가입된 다른 계정이 있습니다.', style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textMain, fontFamily: 'Pretendard')),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('가입된 성함: ${e.fullName}', style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'Pretendard')),
+              Text('가입된 계정: ${e.maskedEmail ?? "비공개"}\n\n다른 방법(소셜 등)으로 이미 가입하셨을 수 있습니다.', style: const TextStyle(color: AppTheme.textSub, fontSize: 13, height: 1.5, fontFamily: 'Pretendard')),
+            ],
+          ),
         ),
         actions: [
-          TextButton(
+          ShadButton.ghost(
             onPressed: () => Navigator.pop(context),
-            child: const Text('취소', style: TextStyle(color: AppTheme.textSub)),
+            child: const Text('취소', style: TextStyle(color: AppTheme.textSub, fontFamily: 'Pretendard')),
           ),
-          ElevatedButton(
+          ShadButton(
             onPressed: () async {
-              Navigator.pop(context); // Close dialog
-              
-              // [CLEANUP] Clean up the temporary "zombie" account before redirecting
-              // This keeps auth.users clean of incomplete social/email signups.
+              Navigator.pop(context);
               await ref.read(repositoryProvider).cancelRegistration();
-
               if (mounted) {
                 Navigator.pushAndRemoveUntil(
                   context,
@@ -393,12 +373,7 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
                 );
               }
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryIndigo,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('로그인하러 가기'),
+            child: const Text('로그인하러 가기', style: TextStyle(fontFamily: 'Pretendard')),
           ),
         ],
       ),
@@ -408,7 +383,6 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
   Future<void> _logout() async {
     final repo = ref.read(repositoryProvider);
     await repo.signOut();
-    // AuthGate will handle the redirect to Login
   }
 
   @override
@@ -418,112 +392,118 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('본인 확인'),
+        title: const Text('본인 확인', style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
         elevation: 0,
+        backgroundColor: Colors.white,
+        centerTitle: true,
         actions: [
-          TextButton(
+          ShadButton.ghost(
             onPressed: _logout,
-            child: const Text('로그아웃', style: TextStyle(color: AppTheme.textSub)),
+            child: const Text('로그아웃', style: TextStyle(color: AppTheme.textSub, fontSize: 13, fontFamily: 'Pretendard')),
           )
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               profile?.role == 'admin' 
-                  ? '${profile?.fullName ?? '관리자'}님 환영합니다!\n휴대폰 번호를 인증해주세요'
+                  ? '${profile?.fullName ?? '관리자'}님,\n본인 인증이 필요합니다'
                   : '휴대폰 번호로\n본인을 인증해주세요',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, height: 1.3),
+              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, height: 1.2, letterSpacing: -0.8, fontFamily: 'Pretendard'),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text(
               profile?.role == 'admin'
-                  ? '웹에서 등록하신 정보와 일치하는\n휴대폰 번호로 인증해주세요.'
-                  : '교회 성도 명부에 등록된\n성함과 휴대폰 번호로 인증해주세요.',
-              style: const TextStyle(color: AppTheme.textSub),
+                  ? '관리자 등록 시 입력하신 번호로\n인증을 진행해주세요.'
+                  : '교회 성도 명부에 등록된\n성함과 휴대폰 번호를 입력해주세요.',
+              style: const TextStyle(color: AppTheme.textSub, fontSize: 15, height: 1.5, fontFamily: 'Pretendard'),
             ),
-            const SizedBox(height: 32),
-            // Name Input (Real name)
-            TextField(
+            const SizedBox(height: 48),
+            
+            const Text('성함(실명)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.2)),
+            const SizedBox(height: 10),
+            ShadInput(
               controller: _nameController,
               readOnly: _isCodeSent,
-              decoration: InputDecoration(
-                labelText: '성함(실명)',
-                hintText: '성도 명부에 등록된 성함을 적어주세요',
-                filled: true,
-                fillColor: AppTheme.background,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+              placeholder: Text('명부상의 실명 입력', style: TextStyle(color: AppTheme.textSub.withOpacity(0.4), fontSize: 15)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              constraints: const BoxConstraints(minHeight: 56),
+              leading: const Padding(
+                padding: EdgeInsets.only(left: 12, right: 8),
+                child: Icon(LucideIcons.user, size: 20, color: AppTheme.textSub),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
-            // Phone Input
-            TextField(
+            const Text('휴대폰 번호', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.2)),
+            const SizedBox(height: 10),
+            ShadInput(
               controller: _phoneController,
               keyboardType: TextInputType.phone,
-              // [FIX] Don't disable the whole TextField if we need interactiviy in suffixIcon.
-              // Instead, we can make it readOnly if needed, but for now let's just use it.
-              readOnly: _isCodeSent, 
-              decoration: InputDecoration(
-                labelText: '휴대폰 번호',
-                hintText: '01012345678',
-                filled: true,
-                fillColor: AppTheme.background,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                // suffixIcon is usually part of the tap target only if TextField is enabled.
-                // However, TextButton inside suffixIcon should work if we handle it carefully.
-                suffixIcon: !_isCodeSent
-                    ? _isLoading 
-                        ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2)) 
-                        : TextButton(
-                            onPressed: _sendCode,
-                            child: const Text('인증요청'),
-                          )
-                    : TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _isCodeSent = false;
-                            _remainingTime = 0;
-                            _timer?.cancel();
-                          });
-                        },
-                        child: const Text('재입력'),
-                      ),
+              readOnly: _isCodeSent,
+              placeholder: Text('01012345678', style: TextStyle(color: AppTheme.textSub.withOpacity(0.4), fontSize: 15)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              constraints: const BoxConstraints(minHeight: 56),
+              leading: const Padding(
+                padding: EdgeInsets.only(left: 12, right: 8),
+                child: Icon(LucideIcons.smartphone, size: 20, color: AppTheme.textSub),
+              ),
+              trailing: Container(
+                padding: const EdgeInsets.only(right: 8),
+                child: _isCodeSent
+                  ? ShadButton.ghost(
+                      onPressed: () {
+                        setState(() {
+                          _isCodeSent = false;
+                          _timer?.cancel();
+                        });
+                      },
+                      size: ShadButtonSize.sm,
+                      child: const Text('재입력', style: TextStyle(fontSize: 12, color: AppTheme.primaryViolet, fontFamily: 'Pretendard')),
+                    )
+                  : ShadButton.ghost(
+                      onPressed: _isLoading ? null : _sendCode,
+                      size: ShadButtonSize.sm,
+                      child: _isLoading 
+                        ? SizedBox(width: 14, height: 14, child: ShadcnSpinner())
+                        : const Text('인증요청', style: TextStyle(fontSize: 12, color: AppTheme.primaryViolet, fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
+                    ),
               ),
             ),
 
             if (_isCodeSent) ...[
-              const SizedBox(height: 16),
-              // Code Input
-              TextField(
+              const SizedBox(height: 24),
+              const Text('인증번호', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.2)),
+              const SizedBox(height: 10),
+              ShadInput(
                 controller: _codeController,
                 keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: '인증번호 6자리',
-                  hintText: '123456',
-                  filled: true,
-                  fillColor: AppTheme.background,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                  helperText: '남은 시간: $_timerString',
-                  helperStyle: const TextStyle(color: Colors.red),
+                placeholder: Text('6자리 번호 입력', style: TextStyle(color: AppTheme.textSub.withOpacity(0.4), fontSize: 15)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                constraints: const BoxConstraints(minHeight: 56),
+                leading: const Padding(
+                  padding: EdgeInsets.only(left: 12, right: 8),
+                child: Icon(LucideIcons.shieldCheck, size: 20, color: AppTheme.textSub),
+                ),
+                trailing: Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Text(_timerString, style: const TextStyle(color: AppTheme.error, fontSize: 13, fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
                 ),
               ),
-              const SizedBox(height: 32),
-              ElevatedButton(
+              const SizedBox(height: 48),
+              ShadButton(
                 onPressed: _isLoading ? null : _verifyCode,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 56),
-                ),
+                size: ShadButtonSize.lg,
                 child: _isLoading 
-                  ? const CircularProgressIndicator(color: Colors.white) 
-                  : const Text('인증 및 다음단계'),
+                  ? SizedBox(width: 20, height: 20, child: ShadcnSpinner(color: Colors.white))
+                  : const Text('인증 및 다음 단계', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               if (_phoneController.text == '01000000000')
-                 const Text('테스트 모드: 인증번호 [123456]', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                 const Text('테스트 모드: 인증번호 [123456]', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSub, fontSize: 12, fontFamily: 'Pretendard')),
             ],
           ],
         ),

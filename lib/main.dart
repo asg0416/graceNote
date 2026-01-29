@@ -13,13 +13,23 @@ import 'package:grace_note/features/home/presentation/screens/home_screen.dart';
 import 'package:grace_note/features/auth/presentation/screens/admin_pending_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
-import 'package:grace_note/core/widgets/droplet_loader.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/features/auth/presentation/screens/password_reset_screen.dart';
+
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   usePathUrlStrategy();
+
+  // Initialize Environment Variables
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    debugPrint("Warning: .env file not found or failed to load. Using fallback values.");
+  }
 
   // Initialize SharedPreferences
   final prefs = await SharedPreferences.getInstance();
@@ -48,11 +58,15 @@ class GraceNoteApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: AppConstants.appName,
-      theme: AppTheme.light,
-      debugShowCheckedModeBanner: false,
-      home: const AuthGate(),
+    return ShadApp.custom(
+      theme: AppTheme.graceNoteTheme,
+      appBuilder: (context) => MaterialApp(
+        title: AppConstants.appName,
+        theme: AppTheme.light,
+        debugShowCheckedModeBanner: false,
+        builder: (context, child) => ShadAppBuilder(child: child!),
+        home: const AuthGate(),
+      ),
     );
   }
 }
@@ -137,72 +151,36 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
     // 2. Profile Handling with Resilience
     final profileAsync = ref.watch(userProfileProvider);
 
-    // 데이터가 없고 로딩 중일 때만 로딩 화면 표시
-    if (profileAsync.isLoading && !profileAsync.hasValue) {
-      return FutureBuilder(
-        future: Future.delayed(const Duration(seconds: 5)),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
-            return _buildSlowLoadingScreen(ref);
-          }
-          return _buildLoadingScreen();
-        },
-      );
-    }
-
-    // 데이터가 없고 에러일 때만 에러 화면 표시
-    if (profileAsync.hasError && !profileAsync.hasValue) {
-      return _AutoRetryErrorScreen(
-        error: profileAsync.error!, 
+    return profileAsync.when(
+      data: (profile) {
+        if (profile == null || !profile.isOnboardingComplete) {
+          return const PhoneVerificationScreen();
+        }
+        final bool isPendingAdmin = profile.adminStatus == 'pending' || 
+                                    (profile.role == 'admin' && profile.adminStatus != 'approved');
+        if (isPendingAdmin && !profile.isMaster) {
+          return const AdminPendingScreen();
+        }
+        return const HomeScreen();
+      },
+      loading: () => _buildLoadingScreen(),
+      error: (error, _) => _AutoRetryErrorScreen(
+        error: error,
         onRetry: _refreshAllData,
         onLogout: () async {
           await Supabase.instance.client.auth.signOut();
           ref.invalidate(userProfileProvider);
           ref.invalidate(userGroupsProvider);
         },
-      );
-    }
-
-    // 데이터가 있다면 (에러나 로딩 중이라도) 기존 데이터 공유
-    final profile = profileAsync.valueOrNull;
-
-    // 프로필이 아직 생성되지 않았거나 온보딩이 완료되지 않은 경우
-    if (profile == null || !profile.isOnboardingComplete) {
-      return const PhoneVerificationScreen();
-    }
-
-    // 관리자 권한 신청 중이거나 승인 대기인 경우 (마스터 계정은 예외)
-    final bool isPendingAdmin = profile.adminStatus == 'pending' || 
-                                (profile.role == 'admin' && profile.adminStatus != 'approved');
-    
-    if (isPendingAdmin && !profile.isMaster) {
-      return const AdminPendingScreen();
-    }
-
-    // Ready to go
-    return const HomeScreen();
+      ),
+    );
   }
 
   Widget _buildLoadingScreen() {
     return const Scaffold(
       backgroundColor: Colors.white,
       body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DropletLoader(size: 80),
-            SizedBox(height: 24),
-            Text(
-              '그레이스노트를 준비하고 있습니다',
-              style: TextStyle(
-                color: AppTheme.textMain,
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
-                letterSpacing: -0.5,
-              ),
-            ),
-          ],
-        ),
+        child: CircularProgressIndicator(),
       ),
     );
   }
@@ -214,14 +192,14 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const DropletLoader(size: 80),
+            const CircularProgressIndicator(),
             const SizedBox(height: 24),
             const Text(
               '데이터를 불러오는데 시간이 조금 걸리네요',
               style: TextStyle(
-                color: AppTheme.textMain,
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
+                color: AppTheme.textMain, 
+                fontWeight: FontWeight.w800, 
+                fontSize: 16
               ),
             ),
             const SizedBox(height: 32),
@@ -337,7 +315,7 @@ class _AutoRetryErrorScreenState extends State<_AutoRetryErrorScreen> {
                 child: ElevatedButton(
                   onPressed: widget.onRetry,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryIndigo,
+                    backgroundColor: AppTheme.primaryViolet,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 18),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

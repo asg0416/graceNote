@@ -5,6 +5,7 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/utils/snack_bar_util.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -162,7 +163,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => Center(child: ShadcnSpinner()),
         error: (e, _) => Center(child: Text('오류 발생: $e')),
       ),
     );
@@ -181,7 +182,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: AppTheme.primaryIndigo.withOpacity(0.15),
+                  color: AppTheme.primaryViolet.withOpacity(0.15),
                   blurRadius: 30,
                   offset: const Offset(0, 10),
                 ),
@@ -192,7 +193,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(60),
                 child: _isLoading 
-                  ? const Center(child: CircularProgressIndicator())
+                  ? Center(child: ShadcnSpinner())
                   : (profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty)
                     ? Image.network(profile.avatarUrl!, fit: BoxFit.cover)
                     : Image.asset('assets/images/avatar.png', fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 60, color: AppTheme.divider)),
@@ -204,7 +205,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppTheme.primaryIndigo,
+                color: AppTheme.primaryViolet,
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white, width: 3),
               ),
@@ -265,7 +266,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           child: ListTile(
             onTap: _changePassword,
-            leading: const Icon(Icons.lock_reset_rounded, color: AppTheme.primaryIndigo),
+            leading: const Icon(Icons.lock_reset_rounded, color: AppTheme.primaryViolet),
             title: const Text('비밀번호 설정 변경', style: TextStyle(fontWeight: FontWeight.w700)),
             subtitle: const Text('이메일로 재설정 링크를 받습니다.', style: TextStyle(fontSize: 12, color: AppTheme.textSub)),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: AppTheme.divider),

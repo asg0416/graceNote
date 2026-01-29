@@ -4,6 +4,7 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class DepartmentAttendanceDashboardScreen extends ConsumerStatefulWidget {
   final String departmentId;
@@ -63,12 +64,12 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
               height: 2,
               child: LinearProgressIndicator(
                 backgroundColor: Colors.transparent,
-                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryIndigo),
+                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet),
               ),
             ),
           Expanded(
             child: (history.isEmpty && isLoading)
-                ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryIndigo))
+                ? Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
                 : SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: Column(
@@ -123,7 +124,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
           Consumer(builder: (context, ref, child) {
             final nameAsync = ref.watch(departmentNameProvider(widget.departmentId));
             return Text(nameAsync.value ?? widget.departmentName, 
-              style: const TextStyle(color: AppTheme.primaryIndigo, fontWeight: FontWeight.bold, fontSize: 13));
+              style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.bold, fontSize: 13));
           }),
           const SizedBox(height: 4),
           Text(DateFormat('M월 d일 주차 출석 요약').format(date), 
@@ -133,7 +134,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _buildSummaryItem('출석 인원', '${weekData['present_count']}명 / ${weekData['total_count']}', Colors.blue),
-              _buildSummaryItem('출석률', '${(weekData['attendance_rate'] * 100).toInt()}%', AppTheme.primaryIndigo),
+              _buildSummaryItem('출석률', '${(weekData['attendance_rate'] * 100).toInt()}%', AppTheme.primaryViolet),
               _buildSummaryItem('미출석', '${weekData['total_count'] - weekData['present_count']}명', Colors.redAccent),
             ],
           ),
@@ -204,13 +205,13 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                 Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new, size: 16, color: AppTheme.primaryIndigo),
+                      icon: const Icon(Icons.arrow_back_ios_new, size: 16, color: AppTheme.primaryViolet),
                       onPressed: _previousMonth,
                       tooltip: '이전 달',
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.arrow_forward_ios, size: 16, color: AppTheme.primaryIndigo),
+                      icon: const Icon(Icons.arrow_forward_ios, size: 16, color: AppTheme.primaryViolet),
                       onPressed: (_viewYear == DateTime.now().year && _viewMonth == DateTime.now().month) ? null : _nextMonth,
                       tooltip: '다음 달',
                       visualDensity: VisualDensity.compact,
@@ -221,12 +222,12 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
             ),
           ),
           if (isLoading)
-            const Expanded(
+            Expanded(
               child: Center(
                 child: SizedBox(
                   width: 30,
                   height: 30,
-                  child: CircularProgressIndicator(strokeWidth: 2.5, color: AppTheme.primaryIndigo),
+                  child: ShadcnSpinner(color: AppTheme.primaryViolet),
                 ),
               ),
             )
@@ -266,7 +267,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                         return BarTooltipItem(
                           rod.toY.toInt().toString(),
                           const TextStyle(
-                            color: AppTheme.primaryIndigo,
+                            color: AppTheme.primaryViolet,
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
                           ),
@@ -315,7 +316,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                       barRods: [
                         BarChartRodData(
                           toY: attendance,
-                          color: isSelected ? AppTheme.primaryIndigo : AppTheme.primaryIndigo.withOpacity(0.4),
+                          color: isSelected ? AppTheme.primaryViolet : AppTheme.primaryViolet.withOpacity(0.4),
                           width: 14,
                           borderRadius: const BorderRadius.vertical(top: Radius.circular(6), bottom: Radius.circular(6)),
                           backDrawRodData: BackgroundBarChartRodData(
@@ -368,11 +369,11 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                     margin: const EdgeInsets.only(right: 12, bottom: 8),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: isSelected ? AppTheme.primaryIndigo : Colors.white,
+                      color: isSelected ? AppTheme.primaryViolet : Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isSelected ? AppTheme.primaryIndigo : AppTheme.divider),
+                      border: Border.all(color: isSelected ? AppTheme.primaryViolet : AppTheme.divider),
                       boxShadow: [
-                        if (isSelected) BoxShadow(color: AppTheme.primaryIndigo.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4)),
+                        if (isSelected) BoxShadow(color: AppTheme.primaryViolet.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4)),
                       ],
                     ),
                     child: Column(
@@ -421,7 +422,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                 },
               );
             },
-            loading: () => const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator())),
+            loading: () => Center(child: Padding(padding: EdgeInsets.all(40), child: ShadcnSpinner())),
             error: (e, s) => Center(child: Text('로딩 실패: $e')),
           ),
         ],

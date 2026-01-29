@@ -21,13 +21,13 @@ class AdminPendingScreen extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: AppTheme.primaryIndigo.withOpacity(0.05),
+                    color: AppTheme.primaryViolet.withOpacity(0.05),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
                     Icons.admin_panel_settings_rounded,
                     size: 80,
-                    color: AppTheme.primaryIndigo,
+                    color: AppTheme.primaryViolet,
                   ),
                 ),
                 const SizedBox(height: 32),

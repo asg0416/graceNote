@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:intl/intl.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class AdminMemberDetailScreen extends ConsumerWidget {
   final String directoryMemberId;
@@ -64,7 +65,7 @@ class AdminMemberDetailScreen extends ConsumerWidget {
                   },
                 );
               },
-              loading: () => const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator())),
+              loading: () => Center(child: Padding(padding: EdgeInsets.all(40), child: ShadcnSpinner())),
               error: (e, s) => Center(child: Text('로딩 실패: $e')),
             ),
             const SizedBox(height: 40),
@@ -81,10 +82,10 @@ class AdminMemberDetailScreen extends ConsumerWidget {
         children: [
           CircleAvatar(
             radius: 40,
-            backgroundColor: AppTheme.primaryIndigo.withOpacity(0.1),
+            backgroundColor: AppTheme.primaryViolet.withOpacity(0.1),
             child: Text(
               fullName.length >= 2 ? fullName.substring(fullName.length - 2) : fullName,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primaryIndigo),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primaryViolet),
             ),
           ),
           const SizedBox(width: 20),
@@ -94,7 +95,7 @@ class AdminMemberDetailScreen extends ConsumerWidget {
               children: [
                 Text(fullName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 4),
-                Text(groupName, style: const TextStyle(fontSize: 16, color: AppTheme.primaryIndigo, fontWeight: FontWeight.bold)),
+                Text(groupName, style: const TextStyle(fontSize: 16, color: AppTheme.primaryViolet, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 const Row(
                   children: [
@@ -140,7 +141,7 @@ class AdminMemberDetailScreen extends ConsumerWidget {
               height: 12,
               margin: const EdgeInsets.only(top: 6),
               decoration: const BoxDecoration(
-                color: AppTheme.primaryIndigo,
+                color: AppTheme.primaryViolet,
                 shape: BoxShape.circle,
               ),
             ),
@@ -167,7 +168,7 @@ class AdminMemberDetailScreen extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(weekName, style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryIndigo, fontSize: 13)),
+                    Text(weekName, style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryViolet, fontSize: 13)),
                     Text(DateFormat('MM/dd').format(createdAt), style: const TextStyle(color: AppTheme.textSub, fontSize: 11)),
                   ],
                 ),

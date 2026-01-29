@@ -5,6 +5,8 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/features/attendance/presentation/screens/attendance_prayer_screen.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 class AttendanceDashboardScreen extends ConsumerStatefulWidget {
   final String groupId;
@@ -49,10 +51,16 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('출석 관리 대시보드', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 20)),
+        title: const Text('출석 통계', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 18, fontFamily: 'Pretendard')),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(lucide.LucideIcons.share, size: 20, color: AppTheme.primaryViolet),
+            onPressed: () {},
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -61,12 +69,12 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
               height: 2,
               child: LinearProgressIndicator(
                 backgroundColor: Colors.transparent,
-                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryIndigo),
+                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet),
               ),
             ),
           Expanded(
             child: (history.isEmpty && isLoading)
-                ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryIndigo))
+                ? Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
                 : SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: Column(
@@ -120,27 +128,26 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
       opacity: isLoading ? 0.6 : 1.0,
       child: Container(
         padding: const EdgeInsets.all(24),
-        margin: const EdgeInsets.all(20),
+        margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: AppTheme.border),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 8)),
+            BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 15, offset: const Offset(0, 8)),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.groupName, style: const TextStyle(color: AppTheme.primaryIndigo, fontWeight: FontWeight.bold, fontSize: 14)),
-            const SizedBox(height: 4),
-            const Text('우리 조 출석 요약', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
-            const SizedBox(height: 20),
+            const Text('우리 조 출석 요약', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textMain, fontFamily: 'Pretendard')),
+            const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildSummaryItem('선택 주차', activeWeek['week_id'] != null ? '${activeWeek['present_count']}명 / ${activeWeek['total_count']}' : '-', Colors.blue),
-                _buildSummaryItem('평균 출석', history.isNotEmpty ? '${(history.map((e) => e['present_count'] as int).reduce((a, b) => a + b) / history.length).toStringAsFixed(1)}명' : '-', Colors.indigo),
-                _buildSummaryItem('기록 주차', '${history.length}회', Colors.orange),
+                _buildSummaryItem('선택 주차', activeWeek['week_id'] != null ? '${activeWeek['present_count']}명 / ${activeWeek['total_count']}' : '-', const Color(0xFF6366F1)),
+                _buildSummaryItem('평균 출석', history.isNotEmpty ? '${(history.map((e) => e['present_count'] as int).reduce((a, b) => a + b) / history.length).toStringAsFixed(1)}명' : '-', const Color(0xFF8B5CF6)),
+                _buildSummaryItem('기록 주차', '${history.length}회', const Color(0xFFF59E0B)),
               ],
             ),
           ],
@@ -152,9 +159,9 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
   Widget _buildSummaryItem(String label, String value, Color color) {
     return Column(
       children: [
-        Text(label, style: const TextStyle(color: AppTheme.textSub, fontSize: 12)),
-        const SizedBox(height: 6),
-        Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w900)),
+        Text(label, style: const TextStyle(color: AppTheme.textSub, fontSize: 13, fontWeight: FontWeight.w500, fontFamily: 'Pretendard')),
+        const SizedBox(height: 8),
+        Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w800, fontFamily: 'Pretendard', letterSpacing: -0.5)),
       ],
     );
   }
@@ -212,13 +219,13 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                 Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new, size: 16, color: AppTheme.primaryIndigo),
+                      icon: Icon(lucide.LucideIcons.chevronLeft, size: 18, color: AppTheme.textSub),
                       onPressed: _previousMonth,
                       tooltip: '이전 달',
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.arrow_forward_ios, size: 16, color: AppTheme.primaryIndigo),
+                      icon: Icon(lucide.LucideIcons.chevronRight, size: 18, color: AppTheme.textSub),
                       onPressed: (_viewYear == DateTime.now().year && _viewMonth == DateTime.now().month) ? null : _nextMonth,
                       tooltip: '다음 달',
                       visualDensity: VisualDensity.compact,
@@ -229,12 +236,12 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
             ),
           ),
           if (isLoading)
-            const Expanded(
+            Expanded(
               child: Center(
                 child: SizedBox(
                   width: 30,
                   height: 30,
-                  child: CircularProgressIndicator(strokeWidth: 2.5, color: AppTheme.primaryIndigo),
+                  child: ShadcnSpinner(color: AppTheme.primaryViolet),
                 ),
               ),
             )
@@ -256,32 +263,25 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
               child: BarChart(
                 BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: (history.isEmpty ? 10 : (history.map((e) => e['total_count'] as int).reduce((a, b) => a > b ? a : b) + 4)).toDouble(),
+                maxY: (history.isEmpty ? 10 : (history.map((e) => (e['total_count'] as int)).reduce((a, b) => a > b ? a : b) + 2)).toDouble(),
                 barTouchData: BarTouchData(
                   enabled: true,
-                  touchCallback: (event, response) {
-                    if (response != null && response.spot != null && event is FlTapUpEvent) {
-                      setState(() {
-                        _selectedWeekId = reversedHistory[response.spot!.touchedBarGroupIndex]['week_id'];
-                      });
-                    }
-                  },
                   touchTooltipData: BarTouchTooltipData(
-                    getTooltipColor: (_) => Colors.transparent,
-                    tooltipPadding: EdgeInsets.zero,
+                    getTooltipColor: (_) => AppTheme.primaryViolet,
+                    tooltipPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     tooltipMargin: 8,
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       return BarTooltipItem(
-                        rod.toY.toInt().toString(),
+                        '${rod.toY.toInt()}명',
                         const TextStyle(
-                          color: AppTheme.primaryIndigo,
-                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
                           fontSize: 12,
+                          fontFamily: 'Pretendard',
                         ),
                       );
                     },
                   ),
-                  handleBuiltInTouches: true,
                 ),
                 titlesData: FlTitlesData(
                   show: true,
@@ -293,24 +293,29 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                         if (idx < 0 || idx >= reversedHistory.length) return const SizedBox.shrink();
                         final date = DateTime.parse(reversedHistory[idx]['week_date']);
                         return Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text('${date.month}/${date.day}', style: const TextStyle(fontSize: 10, color: AppTheme.textSub)),
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Text('${date.month}/${date.day}', style: const TextStyle(fontSize: 11, color: AppTheme.textSub, fontWeight: FontWeight.w500)),
                         );
                       },
-                      reservedSize: 28,
+                      reservedSize: 32,
                     ),
                   ),
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      getTitlesWidget: (value, meta) => Text(value.toInt().toString(), style: const TextStyle(fontSize: 10, color: AppTheme.textSub)),
+                      getTitlesWidget: (value, meta) => Text(value.toInt().toString(), style: const TextStyle(fontSize: 11, color: AppTheme.textSub)),
                       reservedSize: 28,
                     ),
                   ),
                   rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 5),
+                gridData: FlGridData(
+                  show: true, 
+                  drawVerticalLine: false, 
+                  horizontalInterval: 5,
+                  getDrawingHorizontalLine: (value) => FlLine(color: AppTheme.border.withOpacity(0.5), strokeWidth: 1),
+                ),
                 borderData: FlBorderData(show: false),
                 barGroups: reversedHistory.asMap().entries.map((e) {
                   final attendance = (e.value['present_count'] as int).toDouble();
@@ -319,17 +324,16 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
 
                   return BarChartGroupData(
                     x: e.key,
-                    showingTooltipIndicators: [0],
                     barRods: [
                       BarChartRodData(
                         toY: attendance,
-                        color: isSelected ? AppTheme.primaryIndigo : AppTheme.primaryIndigo.withOpacity(0.4),
-                        width: 14,
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(6), bottom: Radius.circular(6)),
+                        color: isSelected ? AppTheme.primaryViolet : AppTheme.primaryViolet.withOpacity(0.3),
+                        width: 16,
+                        borderRadius: BorderRadius.circular(4),
                         backDrawRodData: BackgroundBarChartRodData(
                           show: true,
                           toY: total,
-                          color: AppTheme.divider.withOpacity(isSelected ? 0.35 : 0.15),
+                          color: const Color(0xFFF1F5F9),
                         ),
                       ),
                     ],
@@ -359,7 +363,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
           child: Text('이 달의 주차별 기록', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
         ),
         SizedBox(
-          height: 100,
+          height: 60,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -372,26 +376,26 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
               return GestureDetector(
                 onTap: () => setState(() => _selectedWeekId = item['week_id']),
                 child: Container(
-                  width: 100,
-                  margin: const EdgeInsets.only(right: 12, bottom: 8),
-                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(right: 10, bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isSelected ? AppTheme.primaryIndigo : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: isSelected ? AppTheme.primaryIndigo : AppTheme.divider),
+                    color: isSelected ? AppTheme.primaryViolet : Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: isSelected ? AppTheme.primaryViolet : AppTheme.border),
                     boxShadow: [
-                      if (isSelected) BoxShadow(color: AppTheme.primaryIndigo.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4)),
+                      if (isSelected) BoxShadow(color: AppTheme.primaryViolet.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 4)),
                     ],
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(DateFormat('M/d').format(date), 
-                        style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? Colors.white : AppTheme.textMain)),
-                      const SizedBox(height: 4),
-                      Text('${item['present_count']}명', 
-                        style: TextStyle(fontSize: 12, color: isSelected ? Colors.white.withOpacity(0.8) : AppTheme.textSub)),
-                    ],
+                  child: Center(
+                    child: Text(
+                      DateFormat('M/d').format(date), 
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700, 
+                        color: isSelected ? Colors.white : AppTheme.textSub,
+                        fontFamily: 'Pretendard',
+                      )
+                    ),
                   ),
                 ),
               );
@@ -430,40 +434,44 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                   border: Border.all(color: AppTheme.divider.withOpacity(0.5)),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   child: Wrap(
                     spacing: 8,
-                    runSpacing: 8,
+                    runSpacing: 10,
                     children: attendanceList.map((att) {
                       final member = att['member_directory'];
                       if (member == null) return const SizedBox.shrink();
                       
                       final status = att['status'];
                       final isPresent = status == 'present' || status == 'late';
-                      final color = status == 'present' ? Colors.green : (status == 'late' ? Colors.orange : Colors.grey.withOpacity(0.3));
                       
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: color.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: color.withOpacity(0.5)),
+                          color: isPresent ? Colors.white : const Color(0xFFF1F5F9).withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isPresent ? AppTheme.primaryViolet : Colors.transparent,
+                            width: 1,
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(member['full_name'], 
+                            if (isPresent)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: Icon(lucide.LucideIcons.check, size: 14, color: AppTheme.primaryViolet),
+                              ),
+                            Text(
+                              member['full_name'], 
                               style: TextStyle(
-                                fontSize: 12, 
-                                fontWeight: isPresent ? FontWeight.bold : FontWeight.normal,
-                                color: isPresent ? color : AppTheme.textSub,
+                                fontSize: 13, 
+                                fontWeight: isPresent ? FontWeight.w700 : FontWeight.w500,
+                                color: isPresent ? AppTheme.primaryViolet : AppTheme.textSub,
+                                fontFamily: 'Pretendard',
                               )
                             ),
-                            if (status == 'late')
-                              const Padding(
-                                padding: EdgeInsets.only(left: 4),
-                                child: Text('지각', style: TextStyle(fontSize: 8, color: Colors.orange, fontWeight: FontWeight.bold)),
-                              ),
                           ],
                         ),
                       );
@@ -472,7 +480,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                 ),
               );
             },
-            loading: () => const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator())),
+            loading: () => Center(child: Padding(padding: EdgeInsets.all(40), child: ShadcnSpinner())),
             error: (e, s) => Center(child: Text('로딩 실패: $e')),
           ),
         ],

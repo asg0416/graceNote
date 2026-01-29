@@ -13,6 +13,8 @@ import 'package:grace_note/features/home/presentation/screens/notice_list_screen
 import 'package:grace_note/features/home/presentation/screens/inquiry_screen.dart';
 import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/features/settings/presentation/screens/change_password_screen.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
@@ -40,18 +42,16 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
+        title: const Text('더보기', style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.textMain, fontSize: 18)),
+        centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
-        centerTitle: true,
-        title: const Text(
-          '더보기',
-          style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.textMain, fontSize: 18),
-        ),
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: Column(
           children: [
+            const SizedBox(height: 8),
             _buildProfileCard(context, ref),
             const SizedBox(height: 24),
             _buildMenuSection(
@@ -75,7 +75,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
             groupsAsync.when(
               data: (groups) {
                 final activeRole = ref.watch(activeRoleProvider);
-                final isAdminMode = activeRole == AppRole.admin;
                 final isLeaderMode = activeRole == AppRole.leader;
                 
                 return Column(
@@ -137,7 +136,17 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             );
                           }
                         ),
-
+                        _MenuItem(
+                          icon: Icons.lock_rounded, 
+                          label: '비밀번호 변경', 
+                          color: const Color(0xFFF472B6),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const ChangePasswordScreen()),
+                            );
+                          }
+                        ),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -190,6 +199,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: TextButton.icon(
                 onPressed: () async {
+                  // [FIX] Material Dialog -> 정돈된 스타일의 커스텀 다이얼로그 스타일로의 교체는 
+                  // 나중에 ShadDialog로 교체하되 지금은 디자인 정합성을 우선함
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (context) => AlertDialog(
@@ -242,7 +253,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
             Center(
               child: Text(
                 'v${AppConstants.appVersion}',
-                style: const TextStyle(color: AppTheme.textLight, fontSize: 13, fontWeight: FontWeight.w500),
+                style: const TextStyle(color: AppTheme.textSub, fontSize: 13, fontWeight: FontWeight.w500),
               ),
             ),
             const SizedBox(height: 60),
@@ -259,16 +270,17 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
     final hasNewNotices = ref.watch(hasNewNoticesProvider).value ?? false;
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-      padding: const EdgeInsets.all(24),
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: AppTheme.border),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF6366F1).withOpacity(0.08),
-            blurRadius: 30,
-            offset: const Offset(0, 15),
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -278,47 +290,44 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
             alignment: Alignment.bottomRight,
             children: [
               Container(
-                width: 100,
-                height: 100,
+                width: 88,
+                height: 88,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 4),
+                  border: Border.all(color: Colors.white, width: 3),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 15,
                       offset: const Offset(0, 5),
                     ),
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(50),
+                  borderRadius: BorderRadius.circular(44),
                   child: profileAsync.when(
                     data: (profile) {
                       if (profile?.avatarUrl != null && profile!.avatarUrl!.isNotEmpty) {
                         return Image.network(profile.avatarUrl!, fit: BoxFit.cover);
                       }
-                      return Image.asset(
-                        'assets/images/avatar.png',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          color: AppTheme.surfaceIndigo,
-                          child: const Icon(Icons.person_rounded, size: 50, color: AppTheme.primaryIndigo),
-                        ),
+                      return Container(
+                        color: AppTheme.accentViolet,
+                        child: Icon(lucide.LucideIcons.user, size: 40, color: AppTheme.primaryViolet),
                       );
                     },
-                    loading: () => Container(color: AppTheme.surfaceIndigo, child: const Center(child: CircularProgressIndicator(strokeWidth: 2))),
-                    error: (_, __) => Container(color: AppTheme.surfaceIndigo, child: const Icon(Icons.error, size: 50, color: AppTheme.primaryIndigo)),
+                    loading: () => Container(color: AppTheme.accentViolet, child: Center(child: ShadcnSpinner())),
+                    error: (_, __) => Container(color: AppTheme.accentViolet, child: Icon(lucide.LucideIcons.user, size: 40, color: AppTheme.primaryViolet)),
                   ),
                 ),
               ),
               Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF10B981),
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981),
                   shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
                 ),
-                child: const Icon(Icons.check_rounded, color: Colors.white, size: 14),
+                child: Icon(lucide.LucideIcons.check, color: Colors.white, size: 10),
               ),
             ],
           ),
@@ -328,7 +337,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               '${profile?.fullName ?? "성도"}님', 
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain)
             ),
-            loading: () => const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 3)),
+            loading: () => SizedBox(height: 24, width: 24, child: ShadcnSpinner()),
             error: (_, __) => const Text('이름 정보 없음'),
           ),
           const SizedBox(height: 8),
@@ -400,12 +409,12 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                         )
                       else if (displayGroup != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           decoration: BoxDecoration(
-                            color: displayRoleColor.withOpacity(0.08),
+                            color: const Color(0xFFF8FAFC),
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
-                              color: displayRoleColor.withOpacity(0.2),
+                              color: AppTheme.border,
                               width: 1,
                             ),
                           ),
@@ -413,33 +422,20 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                '${displayGroup['group_name']} ',
-                                style: TextStyle(
+                                '${displayGroup['group_name']} | $displayRoleStr',
+                                style: const TextStyle(
                                   color: AppTheme.textMain,
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              Container(
-                                width: 1, 
-                                height: 12, 
-                                color: AppTheme.divider,
-                                margin: const EdgeInsets.symmetric(horizontal: 8),
-                              ),
-                              Text(
-                                displayRoleStr,
-                                style: TextStyle(
-                                  color: displayRoleColor,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'Pretendard',
                                 ),
                               ),
                               if (availableRoles.length > 1) ...[
                                 const SizedBox(width: 8),
                                 Icon(
-                                  Icons.keyboard_arrow_down_rounded,
-                                  color: displayRoleColor,
-                                  size: 18,
+                                   lucide.LucideIcons.chevronDown,
+                                  color: AppTheme.textSub,
+                                  size: 16,
                                 ),
                               ],
                             ],
@@ -530,7 +526,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                               height: 8,
                               decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
                             ),
-                          const Icon(Icons.arrow_forward_ios, color: AppTheme.divider, size: 16),
+                          Icon(lucide.LucideIcons.chevronRight, color: AppTheme.textSub, size: 16),
                         ],
                       ),
                       onTap: item.onTap,
@@ -630,10 +626,10 @@ extension MoreScreenRoleExtension on _MoreScreenState {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                     decoration: BoxDecoration(
-                      color: isSelected ? AppTheme.primaryIndigo.withOpacity(0.05) : AppTheme.background,
+                      color: isSelected ? AppTheme.primaryViolet.withOpacity(0.05) : AppTheme.background,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: isSelected ? AppTheme.primaryIndigo.withOpacity(0.3) : Colors.transparent,
+                        color: isSelected ? AppTheme.primaryViolet.withOpacity(0.3) : Colors.transparent,
                         width: 1.5,
                       ),
                     ),
@@ -645,11 +641,11 @@ extension MoreScreenRoleExtension on _MoreScreenState {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
-                            color: isSelected ? AppTheme.primaryIndigo : AppTheme.textMain,
+                            color: isSelected ? AppTheme.primaryViolet : AppTheme.textMain,
                           ),
                         ),
                         if (isSelected)
-                          const Icon(Icons.check_circle_rounded, color: AppTheme.primaryIndigo, size: 24),
+                          const Icon(Icons.check_circle_rounded, color: AppTheme.primaryViolet, size: 24),
                       ],
                     ),
                   ),
@@ -745,7 +741,7 @@ extension MoreScreenRoleExtension on _MoreScreenState {
       children: [
         Text(
           title,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.primaryIndigo),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.primaryViolet),
         ),
         const SizedBox(height: 12),
         Text(

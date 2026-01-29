@@ -1,97 +1,131 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class AppTheme {
-  // WeVote Inspired Color Palette (Premium Indigo-Blue)
-  static const Color primaryIndigo = Color(0xFF4F46E5); // WeVote Main Indigo
-  static const Color secondaryIndigo = Color(0xFF818CF8); 
-  static const Color surfaceIndigo = Color(0xFFF5F3FF); // Light Indigo Surface
+  // Grace Note 핵심 컬러 (shadcn/ui 컨셉 지원)
+  static const Color primaryViolet = Color(0xFF8B5CF6);
+  static const Color accentViolet = Color(0xFFF3F0FF);
+  static const Color background = Color(0xFFFFFFFF);
+  static const Color secondaryBackground = Color(0xFFF8FAFC);
+  static const Color border = Color(0xFFF1F5F9); // v0 very light border
+  static const Color borderMedium = Color(0xFFE2E8F0); // For cards
   
-  static const LinearGradient primaryGradient = LinearGradient(
-    colors: [Color(0xFF6366F1), Color(0xFF4F46E5)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-  
-  // Design Tokens
-  static const Color background = Color(0xFFF9FAFB);
-  static const Color surface = Colors.white;
-  static const Color textMain = Color(0xFF1F2937); // Darker Gray 800
-  static const Color textSub = Color(0xFF6B7280); // Gray 500
-  static const Color textLight = Color(0xFF9CA3AF); // Gray 400
-  static const Color divider = Color(0xFFF3F4F6); // Gray 100
-  
-  // Status Colors
+  static const Color textMain = Color(0xFF1A1A1A);
+  static const Color textSub = Color(0xFF64748B);
   static const Color success = Color(0xFF10B981);
   static const Color warning = Color(0xFFF59E0B);
   static const Color error = Color(0xFFEF4444);
+  
+  static const Color divider = border;
+  static const Color textLight = textSub;
+  static const Color primaryIndigo = primaryViolet;
 
+  // [NEW] shadcn_ui 전역 테마 설정
+  static ShadThemeData get graceNoteTheme {
+    return ShadThemeData(
+      brightness: Brightness.light,
+      colorScheme: ShadColorScheme(
+        background: background,
+        foreground: textMain,
+        card: background,
+        cardForeground: textMain,
+        popover: background,
+        popoverForeground: textMain,
+        primary: primaryViolet,
+        primaryForeground: Colors.white,
+        secondary: secondaryBackground,
+        secondaryForeground: textMain,
+        muted: const Color(0xFFF1F5F9),
+        mutedForeground: textSub,
+        accent: accentViolet,
+        accentForeground: primaryViolet,
+        destructive: error,
+        destructiveForeground: Colors.white,
+        border: border,
+        input: border,
+        ring: primaryViolet,
+        selection: primaryViolet.withOpacity(.3),
+      ),
+      // 폰트 설정: Pretendard Variable & 자간 -2%
+      textTheme: ShadTextTheme(
+        family: 'Pretendard',
+      ),
+      // 모든 컴포넌트 곡률 12px 통일
+      radius: BorderRadius.circular(12),
+    );
+  }
+
+  // 기존 Material ThemeData (호환성을 위해 유지하되 스타일 업데이트)
   static ThemeData get light {
     return ThemeData(
       useMaterial3: true,
       scaffoldBackgroundColor: background,
+      primaryColor: primaryViolet,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: primaryIndigo,
-        primary: primaryIndigo,
-        secondary: secondaryIndigo,
-        surface: surface,
-        background: background,
+        seedColor: primaryViolet,
+        primary: primaryViolet,
+        surface: background,
+        onSurface: textMain,
         error: error,
       ),
+      // Material 텍스트 테마 초정밀 교정 (letterSpacing -0.5 고정)
       textTheme: GoogleFonts.notoSansKrTextTheme().copyWith(
-        displayLarge: GoogleFonts.notoSansKr(fontWeight: FontWeight.bold, color: textMain, letterSpacing: -1.0),
-        titleLarge: GoogleFonts.notoSansKr(fontSize: 22, fontWeight: FontWeight.w800, color: textMain, letterSpacing: -0.5),
-        bodyLarge: GoogleFonts.notoSansKr(fontSize: 16, color: textMain, height: 1.6),
-        bodyMedium: GoogleFonts.notoSansKr(fontSize: 14, color: textSub, height: 1.5),
+        displayLarge: const TextStyle(fontWeight: FontWeight.bold, color: textMain, letterSpacing: -0.5, fontFamily: 'Pretendard'),
+        titleLarge: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: textMain, letterSpacing: -0.5, fontFamily: 'Pretendard'),
+        bodyLarge: const TextStyle(fontSize: 14, color: textMain, height: 1.5, letterSpacing: -0.5, fontFamily: 'Pretendard'), // 이름 등
+        bodyMedium: const TextStyle(fontSize: 13, color: textSub, height: 1.4, letterSpacing: -0.5, fontFamily: 'Pretendard'), // 보조텍스트
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.white,
         elevation: 0,
-        centerTitle: false,
+        centerTitle: true,
         scrolledUnderElevation: 0,
+        toolbarHeight: 52,
         titleTextStyle: TextStyle(
           color: textMain,
-          fontSize: 22,
-          fontWeight: FontWeight.w900,
-          letterSpacing: -0.8,
+          fontSize: 16, // v0 정밀 축소
+          fontWeight: FontWeight.w700, // Bold(700)
+          fontFamily: 'Pretendard',
+          letterSpacing: -0.5,
         ),
-        iconTheme: IconThemeData(color: textMain, size: 24),
+        iconTheme: IconThemeData(color: textMain, size: 22),
       ),
       cardTheme: CardThemeData(
-        color: surface,
+        color: background,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: Colors.transparent),
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: borderMedium, width: 1),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: primaryIndigo,
+          backgroundColor: primaryViolet,
           foregroundColor: Colors.white,
           elevation: 0,
-          minimumSize: const Size(double.infinity, 60),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.2),
+          minimumSize: const Size(double.infinity, 52),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: -0.2, fontFamily: 'Pretendard'),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        fillColor: secondaryBackground,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: divider, width: 1.5),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: border, width: 1),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: divider, width: 1.5),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: border, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: primaryIndigo, width: 2),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: primaryViolet, width: 2),
         ),
-        hintStyle: TextStyle(color: textLight, fontSize: 14),
+        hintStyle: const TextStyle(color: textSub, fontSize: 14, fontFamily: 'Pretendard'),
       ),
     );
   }

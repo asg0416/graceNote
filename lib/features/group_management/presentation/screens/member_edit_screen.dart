@@ -5,6 +5,7 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import '../../../../core/utils/database_error_helper.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class MemberEditScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic>? member;
@@ -76,7 +77,7 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: AppTheme.primaryIndigo,
+              primary: AppTheme.primaryViolet,
               onPrimary: Colors.white,
               onSurface: AppTheme.textMain,
             ),
@@ -166,7 +167,7 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
           TextButton(
             onPressed: () => Navigator.pop(context, true), 
-            child: Text(actionText, style: TextStyle(color: currentStatus ? Colors.red : AppTheme.primaryIndigo)),
+            child: Text(actionText, style: TextStyle(color: currentStatus ? Colors.red : AppTheme.primaryViolet)),
           ),
         ],
       ),
@@ -214,8 +215,8 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
           TextButton(
             onPressed: _isSaving ? null : _save,
             child: _isSaving 
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('저장', style: TextStyle(color: AppTheme.primaryIndigo, fontWeight: FontWeight.w900, fontSize: 16)),
+              ? SizedBox(width: 20, height: 20, child: ShadcnSpinner())
+              : const Text('저장', style: TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.w900, fontSize: 16)),
           ),
           const SizedBox(width: 8),
         ],
@@ -297,11 +298,11 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
                 icon: Icon(_isActive ? Icons.person_off_rounded : Icons.person_add_rounded, size: 18),
                 label: Text(_isActive ? '조원 비활성화하기' : '조원 다시 활성화하기'),
                 style: TextButton.styleFrom(
-                  foregroundColor: _isActive ? Colors.red : AppTheme.primaryIndigo,
+                  foregroundColor: _isActive ? Colors.red : AppTheme.primaryViolet,
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: _isActive ? Colors.red.withOpacity(0.2) : AppTheme.primaryIndigo.withOpacity(0.2)),
+                    side: BorderSide(color: _isActive ? Colors.red.withOpacity(0.2) : AppTheme.primaryViolet.withOpacity(0.2)),
                   ),
                 ),
               ),
@@ -365,7 +366,7 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          prefixIcon: Icon(icon, color: AppTheme.primaryIndigo.withOpacity(0.4), size: 20),
+          prefixIcon: Icon(icon, color: AppTheme.primaryViolet.withOpacity(0.4), size: 20),
           labelStyle: TextStyle(color: AppTheme.textSub.withOpacity(0.6), fontWeight: FontWeight.w600, fontSize: 13),
           hintStyle: TextStyle(color: AppTheme.textSub.withOpacity(0.2), fontWeight: FontWeight.w500, fontSize: 14),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
@@ -396,7 +397,7 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
             decoration: InputDecoration(
               labelText: label,
               hintText: '날짜를 선택하세요',
-              prefixIcon: Icon(icon, color: AppTheme.primaryIndigo.withOpacity(0.4), size: 20),
+              prefixIcon: Icon(icon, color: AppTheme.primaryViolet.withOpacity(0.4), size: 20),
               labelStyle: TextStyle(color: AppTheme.textSub.withOpacity(0.6), fontWeight: FontWeight.w600, fontSize: 13),
               hintStyle: TextStyle(color: AppTheme.textSub.withOpacity(0.2), fontWeight: FontWeight.w500, fontSize: 14),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
