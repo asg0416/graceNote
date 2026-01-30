@@ -343,14 +343,51 @@ final unreadInquiryCountProvider = StreamProvider<int>((ref) {
 });
 
 // All Notices Provider (Cached & Stable)
-final allNoticesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final response = await Supabase.instance.client
+// All Notices Provider (Real-time with Joins)
+final allNoticesProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
+  // Rebuild on auth changes
+  ref.watch(authStateProvider);
+
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) return Stream.value([]);
+
+  final controller = StreamController<List<Map<String, dynamic>>>();
+
+  // Fetch Logic
+  Future<void> fetchNotices() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('notices')
+          .select('*, profiles!created_by(full_name), departments(name)')
+          .order('is_pinned', ascending: false)
+          .order('created_at', ascending: false);
+      
+      if (!controller.isClosed) {
+        controller.add(List<Map<String, dynamic>>.from(response));
+      }
+    } catch (e) {
+      debugPrint('Error fetching notices: $e');
+    }
+  }
+
+  // Initial Fetch
+  fetchNotices();
+
+  // Listen to table changes
+  final subscription = Supabase.instance.client
       .from('notices')
-      .select('*, profiles!created_by(full_name)')
-      .order('is_pinned', ascending: false)
-      .order('created_at', ascending: false);
-  
-  return List<Map<String, dynamic>>.from(response);
+      .stream(primaryKey: ['id'])
+      .listen((_) {
+        // Trigger fetch on any change
+        fetchNotices();
+      });
+
+  ref.onDispose(() {
+    subscription.cancel();
+    controller.close();
+  });
+
+  return controller.stream;
 });
 
 // User's read notice IDs (Real-time)

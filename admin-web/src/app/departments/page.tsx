@@ -278,7 +278,7 @@ export default function DepartmentsPage() {
             <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
                 <div className="space-y-3 sm:space-y-4">
                     <div className="space-y-1">
-                        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tighter">부서 및 조 관리</h1>
+                        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">부서 및 조 관리</h1>
                         <p className="text-slate-500 dark:text-slate-500 font-bold text-[11px] sm:text-sm tracking-tight text-opacity-80">교회 조직 구조를 설정하고 체계적인 관리를 시작합니다.</p>
                     </div>
 

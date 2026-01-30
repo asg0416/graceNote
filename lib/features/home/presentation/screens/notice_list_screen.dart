@@ -116,8 +116,8 @@ class _NoticeAccordionCardState extends State<NoticeAccordionCard> with SingleTi
   @override
   void initState() {
     super.initState();
-    // Pinned notices start expanded
-    _isExpanded = widget.notice['is_pinned'] == true;
+    // Pinned notices start collapsed as requested
+    _isExpanded = false;
   }
 
   @override
@@ -125,6 +125,7 @@ class _NoticeAccordionCardState extends State<NoticeAccordionCard> with SingleTi
     final notice = widget.notice;
     final isPinned = notice['is_pinned'] == true;
     final dateStr = DateFormat('yyyy.MM.dd').format(DateTime.parse(notice['created_at']));
+    final publisher = notice['departments']?['name'] ?? '전체';
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -161,54 +162,136 @@ class _NoticeAccordionCardState extends State<NoticeAccordionCard> with SingleTi
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
+                  // 1. Top Row: Badges (Wrap)
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      if (isPinned) ...[
+                      // Scope Badge
+                      if (notice['is_global'] == true)
                         Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFF3E8FF),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(LucideIcons.pin, size: 14, color: Color(0xFF9333EA)),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF3E8FF),
+                            color: const Color(0xFFF43F5E), // Rose-500
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const Text(
-                            '필독',
-                            style: TextStyle(
-                              color: Color(0xFF9333EA),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              fontFamily: 'Pretendard',
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(LucideIcons.globe, size: 10, color: Colors.white),
+                              const SizedBox(width: 3),
+                              const Text(
+                                '전체',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (notice['department_id'] != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981), // Emerald-500
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(LucideIcons.layers, size: 10, color: Colors.white),
+                              const SizedBox(width: 3),
+                              Text(
+                                notice['departments']?['name'] ?? '부서',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6366F1), // Indigo-500
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(LucideIcons.church, size: 10, color: Colors.white),
+                              const SizedBox(width: 3),
+                              const Text(
+                                '장전제일교회',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                      ],
-                      Text(
-                        dateStr,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF94A3B8),
-                          fontWeight: FontWeight.w600,
-                          fontFamily: 'Pretendard',
+
+                      // Category Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9), // Slate-100
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          notice['category'] == 'event' ? '행사' : 
+                          notice['category'] == 'urgent' ? '긴급' : '일반',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF64748B), // Slate-500
+                            fontWeight: FontWeight.w800,
+                            fontFamily: 'Pretendard',
+                          ),
                         ),
                       ),
-                      const Spacer(),
-                      Icon(
-                        _isExpanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
-                        size: 20,
-                        color: const Color(0xFF64748B),
-                      ),
+
+                      // Pinned Badge
+                      if (isPinned)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B), // Amber-500
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(LucideIcons.pin, size: 10, color: Colors.white),
+                              const SizedBox(width: 3),
+                              const Text(
+                                '상단 고정',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+
+                  const SizedBox(height: 10),
+
+                  // 2. Title & Unread Indicator
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -227,14 +310,56 @@ class _NoticeAccordionCardState extends State<NoticeAccordionCard> with SingleTi
                       ),
                       if (widget.isUnread && !isPinned)
                         Container(
-                          margin: const EdgeInsets.only(left: 8, top: 4),
+                          margin: const EdgeInsets.only(left: 8, top: 6),
                           width: 6,
                           height: 6,
                           decoration: const BoxDecoration(
-                            color: Color(0xFFEF4444),
+                            color: Color(0xFFEF4444), // Red-500
                             shape: BoxShape.circle,
                           ),
                         ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // 3. Footer: Author | Date | Chevron
+                  Row(
+                    children: [
+                      const Icon(LucideIcons.user, size: 13, color: Color(0xFF94A3B8)),
+                      const SizedBox(width: 4),
+                      Text(
+                        (notice['is_global'] == true) ? 'GraceNote 관리자' : (notice['profiles']?['full_name'] ?? 'GraceNote 관리자'),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF94A3B8), // Slate-400
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Pretendard',
+                        ),
+                      ),
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        width: 1,
+                        height: 10,
+                        color: const Color(0xFFE2E8F0), // Slate-200
+                      ),
+                      const Icon(LucideIcons.clock, size: 13, color: Color(0xFF94A3B8)),
+                      const SizedBox(width: 4),
+                      Text(
+                        dateStr,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF94A3B8), // Slate-400
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Pretendard',
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        _isExpanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                        size: 20,
+                        color: const Color(0xFF64748B),
+                      ),
                     ],
                   ),
                 ],

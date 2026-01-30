@@ -88,15 +88,17 @@ export default function NoticesPage() {
                     department:departments!department_id (name)
                 `);
 
-            if (!userProfile.is_master) {
-                const conditions = [
-                    'is_global.eq.true',
-                    `church_id.eq.${userProfile.church_id}`
-                ];
-                noticesQuery = noticesQuery.or(conditions.join(','));
-
-                // Note: RLS will further restrict department-level access if set.
-                // In code, we can also filter the results or add more complex or.
+            if (userProfile.is_master) {
+                // Master: Only see notices created by themselves
+                noticesQuery = noticesQuery.eq('created_by', userProfile.id);
+            } else {
+                // General Admin: Only see notices for their department
+                // If they have no department (e.g. church-wide admin but not master?), fallback to church_id match
+                if (userProfile.department_id) {
+                    noticesQuery = noticesQuery.eq('department_id', userProfile.department_id);
+                } else {
+                    noticesQuery = noticesQuery.eq('church_id', userProfile.church_id);
+                }
             }
 
             const { data: noticesData } = await noticesQuery
@@ -281,7 +283,9 @@ export default function NoticesPage() {
                                     <div className="flex items-center gap-4 pt-2">
                                         <div className="flex items-center gap-1.5 text-slate-400">
                                             <User className="w-3.5 h-3.5" />
-                                            <span className="text-xs font-bold">{notice.created_by_profile?.full_name || '알 수 없음'}</span>
+                                            <span className="text-xs font-bold">
+                                                {notice.is_global ? 'GraceNote 관리자' : (notice.created_by_profile?.full_name || 'GraceNote 관리자')}
+                                            </span>
                                         </div>
                                         <div className="flex items-center gap-1.5 text-slate-400 border-l border-slate-200 dark:border-slate-800 pl-4">
                                             <Clock className="w-3.5 h-3.5" />
@@ -290,20 +294,24 @@ export default function NoticesPage() {
                                     </div>
                                 </div>
 
-                                <div className="flex sm:flex-col gap-2 shrink-0">
-                                    <button
-                                        onClick={() => openModal(notice)}
-                                        className="flex-1 sm:flex-none p-3 bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 dark:hover:text-white hover:bg-indigo-50 dark:hover:bg-indigo-600/20 rounded-2xl transition-all border border-transparent hover:border-indigo-500/30"
-                                    >
-                                        <Edit className="w-5 h-5" />
-                                    </button>
-                                    <button
-                                        onClick={() => handleDelete(notice.id)}
-                                        className="flex-1 sm:flex-none p-3 bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-rose-600 dark:hover:text-white hover:bg-rose-50 dark:hover:bg-rose-600/20 rounded-2xl transition-all border border-transparent hover:border-rose-500/30"
-                                    >
-                                        <Trash2 className="w-5 h-5" />
-                                    </button>
-                                </div>
+
+
+                                {profile?.id === notice.created_by && (
+                                    <div className="flex sm:flex-col gap-2 shrink-0">
+                                        <button
+                                            onClick={() => openModal(notice)}
+                                            className="flex-1 sm:flex-none p-3 bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 dark:hover:text-white hover:bg-indigo-50 dark:hover:bg-indigo-600/20 rounded-2xl transition-all border border-transparent hover:border-indigo-500/30"
+                                        >
+                                            <Edit className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(notice.id)}
+                                            className="flex-1 sm:flex-none p-3 bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-rose-600 dark:hover:text-white hover:bg-rose-50 dark:hover:bg-rose-600/20 rounded-2xl transition-all border border-transparent hover:border-rose-500/30"
+                                        >
+                                            <Trash2 className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ))
@@ -311,144 +319,146 @@ export default function NoticesPage() {
             </div>
 
             {/* Modal */}
-            {isModalOpen && (
-                <Modal
-                    isOpen={isModalOpen}
-                    onClose={closeModal}
-                    title={editingId ? '공지사항 수정' : '새 공지사항 작성'}
-                    subtitle="대상과 카테고리를 설정하여 정보를 전달하세요."
-                    maxWidth="4xl"
-                >
-                    <form id="notice-form" onSubmit={handleSubmit} className="space-y-8">
-                        <div className="space-y-6">
-                            {/* Title */}
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">제목</label>
-                                <input
-                                    type="text"
-                                    value={title}
-                                    onChange={(e) => setTitle(e.target.value)}
-                                    placeholder="공지사항 제목을 입력하세요"
-                                    className="w-full p-5 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white"
-                                    required
-                                />
-                            </div>
-
-                            {/* Content */}
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">내용</label>
-                                <textarea
-                                    value={content}
-                                    onChange={(e) => setContent(e.target.value)}
-                                    placeholder="공지사항 상세 내용을 입력하세요"
-                                    className="w-full h-64 p-5 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white resize-none"
-                                    required
-                                />
-                            </div>
-
-                            {/* Pinned Toggle */}
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">상단 고정 여부</label>
-                                <div
-                                    onClick={() => setIsPinned(!isPinned)}
-                                    className={cn(
-                                        "w-full p-5 rounded-2xl font-black text-sm flex items-center justify-between cursor-pointer transition-all",
-                                        isPinned ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
-                                    )}
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <Pin className={cn("w-4 h-4", isPinned ? "text-white" : "text-slate-400")} />
-                                        <span>{isPinned ? '상단 고정됨' : '일반 공지'}</span>
-                                    </div>
-                                    <div className={cn("w-10 h-5 rounded-full relative transition-colors", isPinned ? "bg-white/30" : "bg-slate-300 dark:bg-slate-700")}>
-                                        <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", isPinned ? "left-6" : "left-1")} />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                {/* Category */}
+            {
+                isModalOpen && (
+                    <Modal
+                        isOpen={isModalOpen}
+                        onClose={closeModal}
+                        title={editingId ? '공지사항 수정' : '새 공지사항 작성'}
+                        subtitle="대상과 카테고리를 설정하여 정보를 전달하세요."
+                        maxWidth="4xl"
+                    >
+                        <form id="notice-form" onSubmit={handleSubmit} className="space-y-8">
+                            <div className="space-y-6">
+                                {/* Title */}
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">카테고리</label>
-                                    <select
-                                        value={category}
-                                        onChange={(e) => setCategory(e.target.value)}
-                                        className="w-full p-5 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white appearance-none"
-                                    >
-                                        <option value="general">일반</option>
-                                        <option value="event">행사</option>
-                                        <option value="urgent">긴급</option>
-                                    </select>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">제목</label>
+                                    <input
+                                        type="text"
+                                        value={title}
+                                        onChange={(e) => setTitle(e.target.value)}
+                                        placeholder="공지사항 제목을 입력하세요"
+                                        className="w-full p-5 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white"
+                                        required
+                                    />
                                 </div>
 
-                                {/* Global Toggle (Master Only) */}
-                                {profile.is_master && (
+                                {/* Content */}
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">내용</label>
+                                    <textarea
+                                        value={content}
+                                        onChange={(e) => setContent(e.target.value)}
+                                        placeholder="공지사항 상세 내용을 입력하세요"
+                                        className="w-full h-64 p-5 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white resize-none"
+                                        required
+                                    />
+                                </div>
+
+                                {/* Pinned Toggle */}
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">상단 고정 여부</label>
+                                    <div
+                                        onClick={() => setIsPinned(!isPinned)}
+                                        className={cn(
+                                            "w-full p-5 rounded-2xl font-black text-sm flex items-center justify-between cursor-pointer transition-all",
+                                            isPinned ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Pin className={cn("w-4 h-4", isPinned ? "text-white" : "text-slate-400")} />
+                                            <span>{isPinned ? '상단 고정됨' : '일반 공지'}</span>
+                                        </div>
+                                        <div className={cn("w-10 h-5 rounded-full relative transition-colors", isPinned ? "bg-white/30" : "bg-slate-300 dark:bg-slate-700")}>
+                                            <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", isPinned ? "left-6" : "left-1")} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                    {/* Category */}
                                     <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">전체 공지 여부</label>
-                                        <div
-                                            onClick={() => setIsGlobal(!isGlobal)}
-                                            className={cn(
-                                                "w-full p-5 rounded-2xl font-black text-sm flex items-center justify-between cursor-pointer transition-all",
-                                                isGlobal ? "bg-rose-500 text-white shadow-lg shadow-rose-500/20" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
-                                            )}
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">카테고리</label>
+                                        <select
+                                            value={category}
+                                            onChange={(e) => setCategory(e.target.value)}
+                                            className="w-full p-5 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white appearance-none"
                                         >
-                                            <span>{isGlobal ? '전체 서비스 공지' : '특정 대상 설정'}</span>
-                                            <div className={cn("w-10 h-5 rounded-full relative transition-colors", isGlobal ? "bg-white/30" : "bg-slate-300 dark:bg-slate-700")}>
-                                                <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", isGlobal ? "left-6" : "left-1")} />
+                                            <option value="general">일반</option>
+                                            <option value="event">행사</option>
+                                            <option value="urgent">긴급</option>
+                                        </select>
+                                    </div>
+
+                                    {/* Global Toggle (Master Only) */}
+                                    {profile.is_master && (
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">전체 공지 여부</label>
+                                            <div
+                                                onClick={() => setIsGlobal(!isGlobal)}
+                                                className={cn(
+                                                    "w-full p-5 rounded-2xl font-black text-sm flex items-center justify-between cursor-pointer transition-all",
+                                                    isGlobal ? "bg-rose-500 text-white shadow-lg shadow-rose-500/20" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                                                )}
+                                            >
+                                                <span>{isGlobal ? '전체 서비스 공지' : '특정 대상 설정'}</span>
+                                                <div className={cn("w-10 h-5 rounded-full relative transition-colors", isGlobal ? "bg-white/30" : "bg-slate-300 dark:bg-slate-700")}>
+                                                    <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", isGlobal ? "left-6" : "left-1")} />
+                                                </div>
                                             </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {!isGlobal && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
+                                        {/* Target Church */}
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">공지 대상 교회</label>
+                                            <select
+                                                value={targetChurchId}
+                                                onChange={(e) => setTargetChurchId(e.target.value)}
+                                                disabled={!profile.is_master}
+                                                className="w-full p-5 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white appearance-none disabled:opacity-50"
+                                            >
+                                                <option value="">선택 안함</option>
+                                                {churches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                            </select>
+                                        </div>
+
+                                        {/* Target Department */}
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">공지 대상 부서</label>
+                                            <select
+                                                value={targetDeptId}
+                                                onChange={(e) => setTargetDeptId(e.target.value)}
+                                                className="w-full p-5 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white appearance-none"
+                                            >
+                                                <option value="">전체 (부서 설정 안함)</option>
+                                                {departments
+                                                    .filter(d => !targetChurchId || d.church_id === targetChurchId)
+                                                    .map(d => <option key={d.id} value={d.id}>{d.name}</option>)
+                                                }
+                                            </select>
                                         </div>
                                     </div>
                                 )}
                             </div>
 
-                            {!isGlobal && (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
-                                    {/* Target Church */}
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">공지 대상 교회</label>
-                                        <select
-                                            value={targetChurchId}
-                                            onChange={(e) => setTargetChurchId(e.target.value)}
-                                            disabled={!profile.is_master}
-                                            className="w-full p-5 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white appearance-none disabled:opacity-50"
-                                        >
-                                            <option value="">선택 안함</option>
-                                            {churches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                        </select>
-                                    </div>
-
-                                    {/* Target Department */}
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">공지 대상 부서</label>
-                                        <select
-                                            value={targetDeptId}
-                                            onChange={(e) => setTargetDeptId(e.target.value)}
-                                            className="w-full p-5 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-900 dark:text-white appearance-none"
-                                        >
-                                            <option value="">전체 (부서 설정 안함)</option>
-                                            {departments
-                                                .filter(d => !targetChurchId || d.church_id === targetChurchId)
-                                                .map(d => <option key={d.id} value={d.id}>{d.name}</option>)
-                                            }
-                                        </select>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="pt-8 border-t border-slate-100 dark:border-slate-800">
-                            <button
-                                type="submit"
-                                disabled={isSubmitting}
-                                className="w-full py-6 bg-indigo-600 text-white rounded-[24px] font-black hover:bg-indigo-700 transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3 shadow-2xl shadow-indigo-500/30 disabled:opacity-50"
-                            >
-                                {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <Megaphone className="w-6 h-6" />}
-                                공지사항 {editingId ? '수정 완료' : '발행하기'}
-                            </button>
-                        </div>
-                    </form>
-                </Modal>
-            )}
-        </div>
+                            <div className="pt-8 border-t border-slate-100 dark:border-slate-800">
+                                <button
+                                    type="submit"
+                                    disabled={isSubmitting}
+                                    className="w-full py-6 bg-indigo-600 text-white rounded-[24px] font-black hover:bg-indigo-700 transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3 shadow-2xl shadow-indigo-500/30 disabled:opacity-50"
+                                >
+                                    {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <Megaphone className="w-6 h-6" />}
+                                    공지사항 {editingId ? '수정 완료' : '발행하기'}
+                                </button>
+                            </div>
+                        </form>
+                    </Modal>
+                )
+            }
+        </div >
     );
 }

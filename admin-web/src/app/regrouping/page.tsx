@@ -762,11 +762,11 @@ function RegroupingPageInner() {
             <header className="space-y-8 px-2">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div className="space-y-1.5">
-                        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">조편성 대시보드</h1>
+                        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">조편성 관리</h1>
                         <p className="text-slate-500 dark:text-slate-500 font-bold text-xs sm:text-sm tracking-tight">
                             {isMaster
                                 ? <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName || '교회 선택'}</span> · 시각적인 드래그 앤 드롭 방식으로 성도들의 소속 조를 관리합니다.</>
-                                : <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || '부서'}</span> 조편성 대시보드입니다. 성도들의 조 분배를 관리합니다.</>
+                                : <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || '부서'}</span> 조편성 관리 페이지입니다. 성도들의 조 분배를 관리합니다.</>
                             }
                         </p>
                     </div>

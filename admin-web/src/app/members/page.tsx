@@ -598,120 +598,104 @@ function MembersPageInner() {
 
     return (
         <div className="space-y-8 sm:space-y-10 max-w-7xl mx-auto">
-            <header className="">
-                <div className="relative group overflow-hidden rounded-[40px]">
-                    <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-800 opacity-90" />
-                    <div className="absolute top-[-20%] right-[-10%] w-64 h-64 bg-white/10 rounded-full blur-[80px]" />
-
-                    <div className="relative backdrop-blur-md border border-white/20 p-8 sm:p-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-                        <div className="flex items-center gap-6">
-                            <div className="w-16 h-16 bg-white/10 backdrop-blur-xl border border-white/30 rounded-2xl flex items-center justify-center shadow-2xl rotate-3 group-hover:rotate-0 transition-transform shrink-0">
-                                <Users className="w-8 h-8 text-white" />
-                            </div>
-                            <div className="space-y-2">
-                                <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full">
-                                    <Sparkles className="w-3 h-3 text-indigo-200" />
-                                    <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Member Management</span>
-                                </div>
-                                <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tighter">
-                                    성도 명부
-                                </h1>
-                                <p className="text-white/70 font-bold text-sm tracking-tight max-w-sm">
-                                    {isMaster
-                                        ? '교회 전체 성도의 상세 프로필과 신상 정보를 통합 관리하는 마스터 명부입니다.'
-                                        : <><span className="text-indigo-200 font-black">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || (selectedDeptId === 'all' ? '교회 전체' : '부서')}</span> 명부입니다.</>}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 sm:gap-3">
-                            <Tooltip content="이미지나 CSV 파일을 분석하여 여러 성도를 한 번에 등록합니다.">
-                                <button
-                                    onClick={() => setIsBatchModalOpen(true)}
-                                    disabled={!currentChurchId}
-                                    className="flex items-center gap-2 px-6 h-[52px] bg-white/10 backdrop-blur-md text-white border border-white/30 rounded-2xl font-black text-xs hover:bg-white/20 transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap"
-                                >
-                                    <Sparkles className="w-4 h-4 text-indigo-300" />
-                                    <span>스마트 등록 (AI)</span>
-                                </button>
-                            </Tooltip>
-                            <Tooltip content="새로운 성도 정보를 한 명씩 직접 입력하여 등록합니다.">
-                                <button
-                                    onClick={() => setIsAddModalOpen(true)}
-                                    disabled={!currentChurchId}
-                                    className="flex items-center gap-2 px-6 h-[52px] bg-white text-indigo-900 rounded-2xl font-black text-xs hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-indigo-950/20 whitespace-nowrap"
-                                >
-                                    <UserPlus className="w-4 h-4" />
-                                    <span>개별 성도 추가</span>
-                                </button>
-                            </Tooltip>
-                        </div>
+            <header className="space-y-8">
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div className="space-y-1.5">
+                        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">성도 명부</h1>
+                        <p className="text-slate-500 dark:text-slate-500 font-bold text-xs sm:text-sm tracking-tight">
+                            {isMaster
+                                ? '성도 개개인의 상세 프로필과 신상 정보를 통합 관리하는 마스터 명부입니다.'
+                                : <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || (selectedDeptId === 'all' ? '교회 전체' : '부서')}</span> 명부입니다. 소속 성도들의 정보를 관리합니다.</>}
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2 sm:gap-3">
+                        <Tooltip content="이미지나 CSV 파일을 분석하여 여러 성도를 한 번에 등록합니다.">
+                            <button
+                                onClick={() => setIsBatchModalOpen(true)}
+                                disabled={!currentChurchId}
+                                className="flex items-center gap-2 px-4 h-[44px] bg-white dark:bg-slate-900 text-indigo-600 dark:text-white border border-indigo-100 dark:border-slate-800 rounded-xl font-bold text-[11px] sm:text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm active:scale-95 disabled:opacity-50 whitespace-nowrap"
+                            >
+                                <Sparkles className="w-4 h-4 text-indigo-500" />
+                                <span className="hidden xs:inline">스마트 등록 (AI)</span>
+                                <span className="xs:hidden">AI 등록</span>
+                            </button>
+                        </Tooltip>
+                        <Tooltip content="새로운 성도 정보를 한 명씩 직접 입력하여 등록합니다.">
+                            <button
+                                onClick={() => setIsAddModalOpen(true)}
+                                disabled={!currentChurchId}
+                                className="flex items-center gap-2 px-4 h-[44px] bg-indigo-600 text-white rounded-xl font-bold text-[11px] sm:text-xs hover:bg-indigo-500 transition-all shadow-md shadow-indigo-600/10 active:scale-95 disabled:opacity-50 whitespace-nowrap"
+                            >
+                                <UserPlus className="w-4 h-4" />
+                                <span>개별 성도 추가</span>
+                            </button>
+                        </Tooltip>
                     </div>
                 </div>
-            </header>
 
-            {isMaster && (
-                <div className="flex flex-col xl:flex-row gap-6 items-stretch">
-                    {/* Selection Group - Left side (Red box in Photo 2) - Visible only to Master */}
-                    <div className="flex-1 bg-white dark:bg-[#111827]/40 p-5 sm:p-6 rounded-[32px] border border-slate-200 dark:border-slate-800 shadow-sm">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {/* Church Selection */}
-                            <div className="relative group/select">
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg flex items-center justify-center">
-                                    <Church className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                                </div>
-                                <button
-                                    onClick={() => setIsChurchSelectOpen(!isChurchSelectOpen)}
-                                    className="w-full h-[56px] pl-14 pr-10 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl font-black text-xs text-slate-900 dark:text-white text-left transition-all hover:border-indigo-500/30 shadow-none flex items-center"
-                                >
-                                    {currentChurchName}
-                                </button>
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                                    <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform duration-300", isChurchSelectOpen && "rotate-180")} />
-                                </div>
-                                {isChurchSelectOpen && (
-                                    <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-[80] overflow-hidden animate-in fade-in slide-in-from-top-2">
-                                        <div className="max-h-64 overflow-y-auto p-1.5">
-                                            {churches.map(c => (
-                                                <button
-                                                    key={c.id}
-                                                    onClick={() => { handleChurchChange(c.id, c.name); setIsChurchSelectOpen(false); }}
-                                                    className={cn(
-                                                        "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs transition-colors",
-                                                        currentChurchId === c.id ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600" : "hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
-                                                    )}
-                                                >
-                                                    {c.name}
-                                                </button>
-                                            ))}
-                                        </div>
+                {isMaster && (
+                    <div className="flex flex-col xl:flex-row gap-6 items-stretch">
+                        {/* Selection Group - Left side (Red box in Photo 2) - Visible only to Master */}
+                        <div className="flex-1 bg-white dark:bg-[#111827]/40 p-5 sm:p-6 rounded-[32px] border border-slate-200 dark:border-slate-800 shadow-sm">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {/* Church Selection */}
+                                <div className="relative group/select">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg flex items-center justify-center">
+                                        <Church className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                                     </div>
-                                )}
-                                <div className="absolute -top-2 left-4 px-1.5 bg-white dark:bg-[#111827] text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Church</div>
-                            </div>
+                                    <button
+                                        onClick={() => setIsChurchSelectOpen(!isChurchSelectOpen)}
+                                        className="w-full h-[56px] pl-14 pr-10 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl font-black text-xs text-slate-900 dark:text-white text-left transition-all hover:border-indigo-500/30 shadow-none flex items-center"
+                                    >
+                                        {currentChurchName}
+                                    </button>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                                        <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform duration-300", isChurchSelectOpen && "rotate-180")} />
+                                    </div>
+                                    {isChurchSelectOpen && (
+                                        <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-[80] overflow-hidden animate-in fade-in slide-in-from-top-2">
+                                            <div className="max-h-64 overflow-y-auto p-1.5">
+                                                {churches.map(c => (
+                                                    <button
+                                                        key={c.id}
+                                                        onClick={() => { handleChurchChange(c.id, c.name); setIsChurchSelectOpen(false); }}
+                                                        className={cn(
+                                                            "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left font-bold text-xs transition-colors",
+                                                            currentChurchId === c.id ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600" : "hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
+                                                        )}
+                                                    >
+                                                        {c.name}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="absolute -top-2 left-4 px-1.5 bg-white dark:bg-[#111827] text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Church</div>
+                                </div>
 
-                            {/* Department Selection */}
-                            <div className="relative group/select">
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg flex items-center justify-center">
-                                    <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                {/* Department Selection */}
+                                <div className="relative group/select">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg flex items-center justify-center">
+                                        <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                    </div>
+                                    <select
+                                        className="w-full h-[56px] pl-14 pr-10 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl font-black text-xs text-slate-900 dark:text-white appearance-none transition-all focus:ring-2 focus:ring-indigo-500/20 outline-none hover:border-indigo-500/30 shadow-none"
+                                        value={selectedDeptId}
+                                        onChange={(e) => handleDeptChange(e.target.value)}
+                                    >
+                                        <option value="all">전체 부서 보기</option>
+                                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                                        <ChevronDown className="w-4 h-4 text-slate-400 group-hover/select:text-indigo-500 transition-colors" />
+                                    </div>
+                                    <div className="absolute -top-2 left-4 px-1.5 bg-white dark:bg-[#111827] text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Department</div>
                                 </div>
-                                <select
-                                    className="w-full h-[56px] pl-14 pr-10 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl font-black text-xs text-slate-900 dark:text-white appearance-none transition-all focus:ring-2 focus:ring-indigo-500/20 outline-none hover:border-indigo-500/30 shadow-none"
-                                    value={selectedDeptId}
-                                    onChange={(e) => handleDeptChange(e.target.value)}
-                                >
-                                    <option value="all">전체 부서 보기</option>
-                                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                </select>
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                                    <ChevronDown className="w-4 h-4 text-slate-400 group-hover/select:text-indigo-500 transition-colors" />
-                                </div>
-                                <div className="absolute -top-2 left-4 px-1.5 bg-white dark:bg-[#111827] text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Department</div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+            </header>
 
             {/* Filters and Search Toolbar */}
             <div className="flex flex-col gap-4 sm:gap-6 px-1">

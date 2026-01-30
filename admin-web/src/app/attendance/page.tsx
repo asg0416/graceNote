@@ -23,8 +23,7 @@ import {
     Filter,
     BarChart3,
     PieChart,
-    CalendarDays,
-    Sparkles
+    CalendarDays
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
@@ -298,14 +297,13 @@ export default function AttendancePage() {
 
             if (mError) throw mError;
 
-            // 2. Fetch Attendance + Groups (Snapshot) + Member Info for this week
-            // 해당 부서의 조들에 속한 모든 출석 기록과 성도 정보를 함께 가져옴
+            // 2. Fetch Attendance + Groups (Snapshot) for this week
+            // 해당 부서의 조들에 속한 모든 출석 기록을 가져옴
             const { data: attendance, error: aError } = await supabase
                 .from('attendance')
                 .select(`
                     *,
-                    groups!inner(id, name, department_id),
-                    member_directory(full_name, role_in_group)
+                    groups!inner(id, name, department_id)
                 `)
                 .eq('week_id', selectedWeekId)
                 .eq('groups.department_id', selectedDeptId);
@@ -326,17 +324,13 @@ export default function AttendancePage() {
             const submittedGroupNames = new Set((attendance || []).map(a => (a as any).groups?.name).filter(Boolean));
 
             const mergedSnapshot = (attendance || []).map(att => {
-                // 1순위: attendance 테이블과 조인된 성도 정보 (조이동과 무관하게 정확함)
-                // 2순위: 현재 부서 명단(members)에서 찾은 정보
-                const snapshotMember = (att as any).member_directory;
-                const currentMember = members?.find(m => m.id === att.directory_member_id);
-
+                const memberInfo = members?.find(m => m.id === att.directory_member_id);
                 return {
                     id: att.directory_member_id,
-                    name: snapshotMember?.full_name || currentMember?.full_name || '이동/비활성 성도',
+                    name: memberInfo?.full_name || '이동/비활성 성도',
                     department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
                     group: att.groups?.name || '조 없음',
-                    role: snapshotMember?.role_in_group || currentMember?.role_in_group || '성도',
+                    role: memberInfo?.role_in_group || '성도',
                     status: att.status || 'absent',
                     updatedAt: att.updated_at
                 };
@@ -588,43 +582,28 @@ export default function AttendancePage() {
 
     return (
         <div className="space-y-8 sm:space-y-10 max-w-7xl mx-auto">
-            {/* Header Area - Premium Gradient */}
-            <header className="px-2">
-                <div className="relative group overflow-hidden rounded-[40px]">
-                    <div className="absolute inset-0 bg-gradient-to-r from-teal-600 via-emerald-600 to-indigo-700 opacity-90" />
-                    <div className="absolute top-[-20%] right-[-10%] w-64 h-64 bg-white/10 rounded-full blur-[80px]" />
-
-                    <div className="relative backdrop-blur-md border border-white/20 p-8 sm:p-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-                        <div className="flex items-center gap-6">
-                            <div className="w-16 h-16 bg-white/10 backdrop-blur-xl border border-white/30 rounded-2xl flex items-center justify-center shadow-2xl rotate-3 group-hover:rotate-0 transition-transform shrink-0">
-                                <BarChart3 className="w-8 h-8 text-white" />
-                            </div>
-                            <div className="space-y-2">
-                                <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full">
-                                    <Sparkles className="w-3 h-3 text-emerald-200" />
-                                    <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">Attendance Insight</span>
-                                </div>
-                                <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tighter">
-                                    출석 인사이트
-                                </h1>
-                                <p className="text-white/70 font-bold text-sm tracking-tight max-w-md">
-                                    성도들의 출석 패턴을 분석하고,<br />
-                                    더 세밀한 목회 돌봄을 위한 지표를 제공합니다.
-                                </p>
-                            </div>
+            {/* Header Area */}
+            <header className="space-y-8 px-2">
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className="space-y-1">
+                            <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">
+                                출석 현황
+                            </h1>
+                            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">Attendance Status</p>
                         </div>
+                    </div>
 
-                        <div className="flex items-center gap-3">
-                            <Tooltip content="선택된 기간의 전체 출석 현황을 엑셀 파일로 추출합니다.">
-                                <button
-                                    onClick={downloadExcel}
-                                    className="flex items-center gap-2 bg-white text-emerald-900 px-8 py-4 rounded-[20px] font-black text-sm hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-emerald-900/20 border-none"
-                                >
-                                    <Download className="w-4 h-4" />
-                                    리포트 추출
-                                </button>
-                            </Tooltip>
-                        </div>
+                    <div className="flex items-center gap-3">
+                        <Tooltip content="선택된 기간의 전체 출석 현황을 엑셀 파일로 추출합니다.">
+                            <button
+                                onClick={downloadExcel}
+                                className="flex items-center gap-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-3.5 rounded-2xl font-black text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-slate-950/10 dark:shadow-white/5 border border-slate-800 dark:border-slate-100 cursor-pointer"
+                            >
+                                <Download className="w-4 h-4" />
+                                리포트 추출
+                            </button>
+                        </Tooltip>
                     </div>
                 </div>
             </header>
@@ -710,45 +689,50 @@ export default function AttendancePage() {
                 </div>
             </div>
 
-            {/* Quick Summary Stats Row - Premium Redesign */}
+            {/* Quick Summary Stats Row */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 px-1">
-                {[
-                    { label: '전체 구성원', value: attendanceData.length, icon: Users, color: 'indigo', sub: 'Total Members' },
-                    { label: '금주 출석', value: attendanceData.filter(a => a.status === 'present').length, icon: CheckCircle2, color: 'emerald', sub: 'Present' },
-                    { label: '금주 결석', value: attendanceData.length - attendanceData.filter(a => a.status === 'present').length, icon: XCircle, color: 'rose', sub: 'Absent' },
-                    { label: '종합 출석률', value: `${attendanceData.length > 0 ? Math.round((attendanceData.filter(a => a.status === 'present').length / attendanceData.length) * 100) : 0}%`, icon: TrendingUp, color: 'primary', sub: 'Rate' }
-                ].map((stat, idx) => (
-                    <div key={idx} className={cn(
-                        "relative group p-6 rounded-[32px] border transition-all duration-500 overflow-hidden",
-                        stat.color === 'primary'
-                            ? "bg-gradient-to-br from-indigo-600 to-indigo-800 border-indigo-500 shadow-xl shadow-indigo-500/20"
-                            : "bg-white dark:bg-slate-800/40 border-slate-100 dark:border-slate-800/50 shadow-sm"
-                    )}>
-                        <div className="relative z-10 flex flex-col justify-between h-full space-y-4">
-                            <div className={cn(
-                                "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
-                                stat.color === 'primary' ? "bg-white/10 text-white" : "bg-slate-50 dark:bg-slate-900 text-slate-400 group-hover:scale-110"
-                            )}>
-                                <stat.icon className="w-5 h-5" />
-                            </div>
-                            <div>
-                                <p className={cn(
-                                    "text-[9px] font-black uppercase tracking-[0.2em] mb-1",
-                                    stat.color === 'primary' ? "text-white/60" : "text-slate-400 dark:text-slate-500"
-                                )}>{stat.label}</p>
-                                <h4 className={cn(
-                                    "text-3xl font-black tracking-tighter",
-                                    stat.color === 'primary' ? "text-white" : "text-slate-900 dark:text-white"
-                                )}>{stat.value}</h4>
-                            </div>
-                        </div>
-                        {stat.color !== 'primary' && (
-                            <div className="absolute -bottom-4 -right-4 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity">
-                                <stat.icon className="w-24 h-24" />
-                            </div>
-                        )}
+                <div className="bg-white dark:bg-slate-800/40 p-6 rounded-[32px] border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-indigo-500/30 transition-all">
+                    <div>
+                        <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">전체 구성원</p>
+                        <h4 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">{attendanceData.length}</h4>
                     </div>
-                ))}
+                    <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-700/50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500 group-hover:text-white transition-all">
+                        <Users className="w-6 h-6" />
+                    </div>
+                </div>
+                <div className="bg-white dark:bg-slate-800/40 p-6 rounded-[32px] border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-emerald-500/30 transition-all">
+                    <div>
+                        <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">금주 출석</p>
+                        <h4 className="text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tighter">
+                            {attendanceData.filter(a => a.status === 'present').length}
+                        </h4>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                        <CheckCircle2 className="w-6 h-6" />
+                    </div>
+                </div>
+                <div className="bg-white dark:bg-slate-800/40 p-6 rounded-[32px] border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-rose-500/30 transition-all">
+                    <div>
+                        <p className="text-[10px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest mb-1">금주 결석</p>
+                        <h4 className="text-3xl font-black text-rose-600 dark:text-rose-400 tracking-tighter">
+                            {attendanceData.length - attendanceData.filter(a => a.status === 'present').length}
+                        </h4>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-500/10 flex items-center justify-center text-rose-500 group-hover:bg-rose-500 group-hover:text-white transition-all">
+                        <XCircle className="w-6 h-6" />
+                    </div>
+                </div>
+                <div className="bg-indigo-600 p-6 rounded-[32px] shadow-xl shadow-indigo-500/20 flex items-center justify-between group hover:scale-[1.02] transition-all">
+                    <div>
+                        <p className="text-[10px] font-black text-indigo-100/60 uppercase tracking-widest mb-1">종합 출석률</p>
+                        <h4 className="text-3xl font-black text-white tracking-tighter">
+                            {attendanceData.length > 0 ? Math.round((attendanceData.filter(a => a.status === 'present').length / attendanceData.length) * 100) : 0}%
+                        </h4>
+                    </div>
+                    <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-white">
+                        <TrendingUp className="w-6 h-6" />
+                    </div>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 mt-4 px-1">
