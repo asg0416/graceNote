@@ -139,8 +139,9 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('App resumed: Refreshing auth and profile data...');
-      _refreshAllData();
+      debugPrint('App resumed: Skipping auto-refresh to maintain UI state');
+      // [FIX] 포커스 돌아올 때마다 새로고침되는 문제 해결을 위해 자동 갱신 중단
+      // _refreshAllData(); 
     }
   }
 

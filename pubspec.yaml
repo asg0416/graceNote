@@ -57,6 +57,7 @@ dependencies:
   shadcn_ui: ^0.45.1
   lucide_icons: ^0.257.0
   flutter_dotenv: ^5.1.0
+  animations: ^2.1.1
 
 dev_dependencies:
   flutter_test:

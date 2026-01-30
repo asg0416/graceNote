@@ -16,6 +16,8 @@ import 'package:flutter/services.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
+import 'package:animations/animations.dart';
+import 'prayer_share_screen.dart';
 
 class AttendancePrayerScreen extends ConsumerStatefulWidget {
   final bool isActive;
@@ -349,90 +351,6 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     return buffer.toString().trim();
   }
 
-  void _showShareMenu() {
-    final shareText = _formatPrayersForSharing();
-    if (shareText.isEmpty) {
-      SnackBarUtil.showSnackBar(context, message: '공유할 내용이 없습니다.', isError: true);
-      return;
-    }
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Dismiss',
-      barrierColor: Colors.black.withOpacity(0.5),
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (context, anim1, anim2) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-          child: Material(
-            color: Colors.transparent,
-            child: Column(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    behavior: HitTestBehavior.opaque,
-                    child: Center(
-                      child: GestureDetector(
-                        onTap: () {},
-                        child: Container(
-                          width: MediaQuery.of(context).size.width * 0.85,
-                          margin: const EdgeInsets.symmetric(vertical: 40),
-                          padding: const EdgeInsets.symmetric(vertical: 24),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 10))],
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Padding(padding: EdgeInsets.symmetric(horizontal: 24), child: Text('기도제목 미리보기', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppTheme.textMain))),
-                              const SizedBox(height: 16),
-                              Flexible(child: SingleChildScrollView(physics: const BouncingScrollPhysics(), padding: const EdgeInsets.symmetric(horizontal: 24), child: SizedBox(width: double.infinity, child: Text(shareText, style: const TextStyle(fontSize: 14, color: AppTheme.textSub, height: 1.6, fontWeight: FontWeight.w500))))),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.fromLTRB(24, 24, 24, 32 + MediaQuery.of(context).padding.bottom),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: const BorderRadius.vertical(top: Radius.circular(20)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, -5))]),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildShareOption(icon: Icons.copy_rounded, label: '텍스트 복사하기', onTap: () async { await Clipboard.setData(ClipboardData(text: shareText)); Navigator.pop(context); SnackBarUtil.showSnackBar(context, message: '복사되었습니다.'); }),
-                      const SizedBox(height: 12),
-                      _buildShareOption(icon: Icons.share_rounded, label: '카카오톡 및 시스템 공유', onTap: () { Share.share(shareText); Navigator.pop(context); }),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-      transitionBuilder: (context, anim1, anim2, child) {
-        return FadeTransition(opacity: CurvedAnimation(parent: anim1, curve: Curves.easeOut), child: ScaleTransition(scale: CurvedAnimation(parent: anim1, curve: Curves.easeOutBack), child: child));
-      },
-    );
-  }
-
-  Widget _buildShareOption({required IconData icon, required String label, required VoidCallback onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-        decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppTheme.divider.withOpacity(0.5))),
-        child: Row(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: AppTheme.primaryViolet.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: AppTheme.primaryViolet, size: 20)), const SizedBox(width: 16), Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textMain)), const Spacer(), const Icon(Icons.arrow_forward_ios_rounded, color: AppTheme.divider, size: 14)]),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -447,7 +365,18 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     });
     ref.listen(attendanceActionProvider, (previous, next) {
       if (next != null) {
-        if (next == AttendanceAction.share) _showShareMenu(); else if (next == AttendanceAction.addMember) _launchAttendanceCheck();
+        if (next == AttendanceAction.share) {
+          // [FIX] 수동 호출 시에도 일관된 애니메이션 제공을 고려할 수 있으나,
+          // 여기서는 아이콘 클릭이 주 용도이므로 간단히 기존 함수를 호출하거나 직접 내비게이션 가능
+          final shareText = _formatPrayersForSharing();
+          if (shareText.isNotEmpty) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => PrayerShareScreen(shareText: shareText))
+            );
+          }
+        } else if (next == AttendanceAction.addMember) {
+          _launchAttendanceCheck();
+        }
         Future.microtask(() => ref.read(attendanceActionProvider.notifier).state = null);
       }
     });
@@ -462,9 +391,23 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         elevation: 0,
         centerTitle: true,
         title: Text('${groupName.replaceAll('조', '')}조 기록', style: const TextStyle(fontWeight: FontWeight.w900, color: AppTheme.textMain, fontSize: 18)),
-        leading: IconButton(
-          icon: const Icon(lucide.LucideIcons.share, color: AppTheme.primaryViolet, size: 20),
-          onPressed: _showShareMenu,
+        leading: OpenContainer(
+          transitionType: ContainerTransitionType.fade,
+          transitionDuration: const Duration(milliseconds: 500),
+          openBuilder: (context, _) => PrayerShareScreen(shareText: _formatPrayersForSharing()),
+          closedElevation: 0,
+          closedColor: Colors.transparent,
+          closedBuilder: (context, openContainer) => IconButton(
+            icon: const Icon(lucide.LucideIcons.share, color: AppTheme.primaryViolet, size: 20),
+            onPressed: () {
+              final shareText = _formatPrayersForSharing();
+              if (shareText.isEmpty) {
+                SnackBarUtil.showSnackBar(context, message: '공유할 내용이 없습니다.', isError: true);
+                return;
+              }
+              openContainer();
+            },
+          ),
         ),
         actions: [
           IconButton(
