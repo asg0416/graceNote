@@ -7,8 +7,8 @@ class AppTheme {
   static const Color accentViolet = Color(0xFFF3F0FF);
   static const Color background = Color(0xFFFFFFFF);
   static const Color secondaryBackground = Color(0xFFF8FAFC);
-  static const Color border = Color(0xFFF1F5F9); // v0 very light border
-  static const Color borderMedium = Color(0xFFE2E8F0); // For cards
+  static const Color border = Color(0xFFE2E8F0); // v1 darker border
+  static const Color borderMedium = Color(0xFFCBD5E1); // v1 darker medium border
   
   static const Color textMain = Color(0xFF1A1A1A);
   static const Color textSub = Color(0xFF64748B);
@@ -52,6 +52,31 @@ class AppTheme {
       ),
       // 모든 컴포넌트 곡률 12px 통일
       radius: BorderRadius.circular(12),
+      calendarTheme: ShadCalendarTheme(
+        gridMainAxisSpacing: 8,
+        gridCrossAxisSpacing: 8,
+        dayButtonTextStyle: const TextStyle(
+          color: primaryViolet, // [Sunday Highlighting] 활성 날짜(일요일)는 진한 보라색
+          fontWeight: FontWeight.w800,
+          fontSize: 14,
+          fontFamily: 'Pretendard',
+          letterSpacing: -0.5,
+        ),
+        selectedDayButtonTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+          fontSize: 14,
+          fontFamily: 'Pretendard',
+          letterSpacing: -0.5,
+        ),
+        weekdaysTextStyle: const TextStyle(
+          color: textSub,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+          fontFamily: 'Pretendard',
+          letterSpacing: -0.5,
+        ),
+      ),
     );
   }
 
@@ -89,6 +114,9 @@ class AppTheme {
           letterSpacing: -0.5,
         ),
         iconTheme: IconThemeData(color: textMain, size: 22),
+        shape: Border(
+          bottom: BorderSide(color: border, width: 1), // [STYLE] 전역 앱바 하단 구분선 추가
+        ),
       ),
       cardTheme: CardThemeData(
         color: background,

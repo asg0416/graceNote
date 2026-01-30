@@ -34,6 +34,10 @@ class _NoticeListScreenState extends ConsumerState<NoticeListScreen> {
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(color: AppTheme.border, height: 1.0),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain),
           onPressed: () => Navigator.pop(context),

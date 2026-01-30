@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:grace_note/features/prayer/presentation/widgets/prayer_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
@@ -50,7 +51,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         finalGroupId = userGroups.first['group_id'];
       }
 
-      final results = await ref.read(repositoryProvider).searchPrayers(
+      final List<Map<String, dynamic>> results = await ref.read(repositoryProvider).searchPrayers(
         churchId: profile.churchId ?? '',
         departmentId: profile.departmentId,
         groupId: finalGroupId,
@@ -58,9 +59,26 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         searchTerm: _searchController.text,
       );
 
+      final List<Map<String, dynamic>> sortedResults = List<Map<String, dynamic>>.from(results);
+      // [SORT] 클라이언트 사이드 부부 정렬 보강
+      sortedResults.sort((a, b) {
+        final m1 = a['member_directory'] ?? {};
+        final m2 = b['member_directory'] ?? {};
+        final f1 = (m1['family_name'] as String?)?.trim() ?? '';
+        final f2 = (m2['family_name'] as String?)?.trim() ?? '';
+        
+        if (f1.isNotEmpty && f2.isEmpty) return -1;
+        if (f1.isEmpty && f2.isNotEmpty) return 1;
+        if (f1.isNotEmpty && f2.isNotEmpty && f1 != f2) return f1.compareTo(f2);
+        
+        final n1 = (m1['full_name'] as String?)?.trim() ?? '';
+        final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+        return n1.compareTo(n2);
+      });
+
       if (mounted) {
         setState(() {
-          _searchResults = results;
+          _searchResults = sortedResults;
           _isLoading = false;
         });
       }
@@ -133,6 +151,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(color: AppTheme.border, height: 1.0),
+        ),
         leading: IconButton(
           icon: const Icon(lucide.LucideIcons.chevronLeft, color: AppTheme.textMain, size: 24),
           onPressed: () => Navigator.pop(context),
@@ -185,15 +207,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     itemCount: _searchResults.length,
                     itemBuilder: (context, index) {
                       final prayer = _searchResults[index];
-                      return _PrayerCard(
+                      return PrayerCard(
                         key: ValueKey(prayer['id']),
-                        prayerId: prayer['id'],
+                        prayerId: prayer['id'].toString(),
                         name: prayer['member_directory']['full_name'] ?? '알 수 없음',
                         groupName: prayer['member_directory']['group_name'] ?? '',
-                        profileId: prayer['member_id'] ?? '',
+                        profileId: prayer['member_directory']['person_id'] ?? prayer['member_id'] ?? '',
                         content: prayer['content'] ?? '',
                         togetherCount: prayer['together_count'] ?? 0,
-                        date: prayer['weeks']['week_date'],
+                        date: prayer['weeks'] != null ? prayer['weeks']['week_date'] : null,
+                        onInteractionToggle: (type, isPositive) {
+                          if (type == 'pray') {
+                            setState(() {
+                              prayer['together_count'] = (prayer['together_count'] ?? 0) + (isPositive ? 1 : -1);
+                            });
+                          }
+                        },
                       );
                     },
                   ),
@@ -241,7 +270,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         fillColor: AppTheme.background,
         filled: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16), 
+          borderSide: const BorderSide(color: AppTheme.borderMedium)
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16), 
+          borderSide: const BorderSide(color: AppTheme.borderMedium)
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16), 
+          borderSide: const BorderSide(color: AppTheme.primaryViolet, width: 2)
+        ),
       ),
     );
   }
@@ -256,7 +296,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         decoration: BoxDecoration(
           color: AppTheme.background,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _selectedDate != null ? AppTheme.primaryViolet.withOpacity(0.5) : Colors.transparent),
+          border: Border.all(color: _selectedDate != null ? AppTheme.primaryViolet : AppTheme.borderMedium),
         ),
         child: Row(
           children: [
@@ -301,42 +341,45 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _selectedGroupId = 'all';
     }
 
-    return shad.ShadSelect<String>.withSearch(
-      placeholder: const Text('조 선택', style: TextStyle(fontSize: 13, color: AppTheme.textSub, fontFamily: 'Pretendard')),
-      initialValue: _selectedGroupId,
-      minWidth: 120,
-      maxHeight: 400,
-      decoration: shad.ShadDecoration(
-        color: AppTheme.background,
-        border: shad.ShadBorder.all(
-          radius: BorderRadius.circular(16),
-          width: 0,
-          color: Colors.transparent,
+    return SizedBox(
+      height: 48,
+      child: shad.ShadSelect<String>.withSearch(
+        placeholder: const Text('조 선택', style: TextStyle(fontSize: 14, color: AppTheme.textSub, fontFamily: 'Pretendard')),
+        initialValue: _selectedGroupId,
+        minWidth: 120,
+        maxHeight: 400,
+        decoration: shad.ShadDecoration(
+          color: AppTheme.background,
+          border: shad.ShadBorder.all(
+            radius: BorderRadius.circular(16),
+            width: 1,
+            color: AppTheme.borderMedium,
+          ),
+          shape: BoxShape.rectangle,
         ),
-        shape: BoxShape.rectangle,
+        onChanged: (val) {
+          if (val != null) {
+            setState(() => _selectedGroupId = val);
+            _performSearch();
+          }
+        },
+        selectedOptionBuilder: (context, value) {
+          final group = allGroups.firstWhere((g) => g['id'] == value, orElse: () => allGroups.first);
+          return Text(group['name'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textMain, fontFamily: 'Pretendard'));
+        },
+        options: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Text('조 목록', style: TextStyle(fontSize: 12, color: AppTheme.textSub, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
+          ),
+          ...filteredGroups.map((g) => shad.ShadOption(
+            value: g['id'] as String,
+            child: Text(g['name'] as String, style: const TextStyle(fontFamily: 'Pretendard', fontWeight: FontWeight.w500, fontSize: 14)),
+          )),
+        ],
+        searchPlaceholder: const Text('조 이름을 입력하세요', style: TextStyle(fontFamily: 'Pretendard', fontSize: 14)),
+        onSearchChanged: (query) => setState(() => _groupSearchQuery = query),
       ),
-      onChanged: (val) {
-        if (val != null) {
-          setState(() => _selectedGroupId = val);
-          _performSearch();
-        }
-      },
-      selectedOptionBuilder: (context, value) {
-        final group = allGroups.firstWhere((g) => g['id'] == value, orElse: () => allGroups.first);
-        return Text(group['name'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.primaryViolet, fontFamily: 'Pretendard'));
-      },
-      options: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-          child: Text('조 목록', style: TextStyle(fontSize: 12, color: AppTheme.textSub, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
-        ),
-        ...filteredGroups.map((g) => shad.ShadOption(
-          value: g['id'] as String,
-          child: Text(g['name'] as String, style: const TextStyle(fontFamily: 'Pretendard', fontWeight: FontWeight.w500)),
-        )),
-      ],
-      searchPlaceholder: const Text('조 이름을 입력하세요', style: TextStyle(fontFamily: 'Pretendard')),
-      onSearchChanged: (query) => setState(() => _groupSearchQuery = query),
     );
   }
 
@@ -348,231 +391,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           Icon(Icons.search_off_rounded, size: 64, color: AppTheme.divider),
           const SizedBox(height: 16),
           const Text('검색 결과가 없습니다', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Search용 전용 PrayerCard (일부 기능 간소화 및 날짜 표시 추가)
-// -----------------------------------------------------------------------------
-class _PrayerCard extends ConsumerStatefulWidget {
-  final String prayerId;
-  final String groupName;
-  final String name;
-  final String profileId;
-  final String content;
-  final int togetherCount;
-  final String? date;
-
-  const _PrayerCard({
-    super.key,
-    required this.prayerId,
-    required this.groupName, 
-    required this.name, 
-    required this.profileId,
-    required this.content,
-    this.togetherCount = 0,
-    this.date,
-  });
-
-  @override
-  ConsumerState<_PrayerCard> createState() => _PrayerCardState();
-}
-
-class _PrayerCardState extends ConsumerState<_PrayerCard> {
-  bool _isExpanded = false;
-  bool _isToggling = false;
-  
-  bool _optimisticPraying = false;
-  bool _optimisticSaved = false;
-  int _optimisticCount = 0;
-
-  Future<void> _toggleInteraction(String type) async {
-    final profile = ref.read(userProfileProvider).value;
-    if (profile == null) return;
-
-    final interactions = ref.read(prayerInteractionsProvider(profile.id)).valueOrNull ?? [];
-    final bool currentPraying = interactions.any((i) => i['prayer_id'] == widget.prayerId && i['interaction_type'] == 'pray');
-    final bool currentSaved = interactions.any((i) => i['prayer_id'] == widget.prayerId && i['interaction_type'] == 'save');
-
-    setState(() {
-      _isToggling = true;
-      if (type == 'pray') {
-        _optimisticPraying = !currentPraying;
-        _optimisticSaved = currentSaved;
-        _optimisticCount = widget.togetherCount + (_optimisticPraying ? 1 : -1);
-      } else {
-        _optimisticSaved = !currentSaved;
-        _optimisticPraying = currentPraying;
-        _optimisticCount = widget.togetherCount;
-      }
-    });
-
-    try {
-      await ref.read(repositoryProvider).togglePrayerInteraction(
-        prayerId: widget.prayerId,
-        profileId: profile.id,
-        type: type,
-      );
-      
-      ref.invalidate(prayerInteractionsProvider(profile.id));
-      ref.invalidate(savedPrayersProvider(profile.id));
-      
-      if (mounted) setState(() => _isToggling = false);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isToggling = false);
-        SnackBarUtil.showSnackBar(
-          context,
-          message: '동작에 실패했습니다.',
-          isError: true,
-          technicalDetails: e.toString(),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final profile = ref.watch(userProfileProvider).value;
-    final interactions = profile != null 
-        ? ref.watch(prayerInteractionsProvider(profile.id)).valueOrNull ?? []
-        : <Map<String, dynamic>>[];
-    
-    final bool actualPraying = interactions.any((i) => i['prayer_id'] == widget.prayerId && i['interaction_type'] == 'pray');
-    final bool actualSaved = interactions.any((i) => i['prayer_id'] == widget.prayerId && i['interaction_type'] == 'save');
-    
-    final bool displayPraying = _isToggling ? _optimisticPraying : actualPraying;
-    final bool displaySaved = _isToggling ? _optimisticSaved : actualSaved;
-    final int displayCount = _isToggling ? (_optimisticCount < 0 ? 0 : _optimisticCount) : widget.togetherCount;
-    
-    final bool isLong = widget.content.length > 80;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppTheme.divider),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 5)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: AppTheme.primaryViolet.withOpacity(0.1),
-                  child: Text(
-                    widget.name.isNotEmpty ? widget.name[0] : '?', 
-                    style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.bold, fontSize: 13)
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(widget.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-                          const SizedBox(width: 8),
-                          if (widget.date != null)
-                            Text(
-                              widget.date!, 
-                              style: const TextStyle(color: AppTheme.textSub, fontSize: 11, fontWeight: FontWeight.bold)
-                            ),
-                        ],
-                      ),
-                      if (widget.groupName.isNotEmpty)
-                        Text(widget.groupName, style: const TextStyle(color: AppTheme.textSub, fontSize: 11)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.content,
-                  maxLines: _isExpanded ? null : 3,
-                  overflow: _isExpanded ? null : TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14, height: 1.6, color: AppTheme.textMain),
-                ),
-                if (isLong)
-                  GestureDetector(
-                    onTap: () => setState(() => _isExpanded = !_isExpanded),
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        _isExpanded ? '접기' : '...더보기',
-                        style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: _isToggling ? null : () => _toggleInteraction('pray'),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    child: Row(
-                      children: [
-                        Icon(
-                          displayPraying ? Icons.volunteer_activism_rounded : Icons.volunteer_activism_outlined,
-                          size: 18, 
-                          color: displayPraying ? AppTheme.primaryViolet : AppTheme.textSub
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          displayPraying ? '함께 기도 중' : '같이 기도',
-                          style: TextStyle(
-                            fontSize: 12, 
-                            color: displayPraying ? AppTheme.primaryViolet : AppTheme.textSub,
-                            fontWeight: FontWeight.w800
-                          ),
-                        ),
-                        if (displayCount > 0) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            '$displayCount',
-                            style: const TextStyle(fontSize: 11, color: AppTheme.primaryViolet, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: _isToggling ? null : () => _toggleInteraction('save'),
-                  icon: Icon(
-                    displaySaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                    size: 18, 
-                    color: displaySaved ? AppTheme.primaryViolet : AppTheme.textSub,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );

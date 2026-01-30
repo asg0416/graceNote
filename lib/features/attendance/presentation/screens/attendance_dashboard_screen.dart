@@ -55,12 +55,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(lucide.LucideIcons.share, size: 20, color: AppTheme.primaryViolet),
-            onPressed: () {},
-          ),
-        ],
+        actions: const [],
       ),
       body: Column(
         children: [
@@ -81,8 +76,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildSummaryHeader(history, isLoading: isLoading),
+                        _buildHistoryList(history, isLoading: isLoading), // [MOVE] 상단(요약 아래)으로 이동
                         _buildGraphSection(history, isLoading: isLoading),
-                        _buildHistoryList(history, isLoading: isLoading),
                         if (_selectedWeekId != null || (history.isNotEmpty))
                           _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], isLoading: isLoading),
                         const SizedBox(height: 40),
@@ -127,41 +122,124 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     return Opacity(
       opacity: isLoading ? 0.6 : 1.0,
       child: Container(
-        padding: const EdgeInsets.all(24),
         margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF8B5CF6), // 진한 보라
+              Color(0xFF6366F1), // 인디고 계열
+            ],
+          ),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppTheme.border),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 15, offset: const Offset(0, 8)),
-          ],
+          border: Border.all(color: AppTheme.border.withOpacity(0.5), width: 1.0),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('우리 조 출석 요약', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textMain, fontFamily: 'Pretendard')),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildSummaryItem('선택 주차', activeWeek['week_id'] != null ? '${activeWeek['present_count']}명 / ${activeWeek['total_count']}' : '-', const Color(0xFF6366F1)),
-                _buildSummaryItem('평균 출석', history.isNotEmpty ? '${(history.map((e) => e['present_count'] as int).reduce((a, b) => a + b) / history.length).toStringAsFixed(1)}명' : '-', const Color(0xFF8B5CF6)),
-                _buildSummaryItem('기록 주차', '${history.length}회', const Color(0xFFF59E0B)),
-              ],
-            ),
-          ],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            children: [
+              // [STYLE] 배경 데코레이션 (추상적인 원형 패턴)
+              Positioned(
+                right: -20,
+                top: -20,
+                child: Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.1),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(lucide.LucideIcons.barChart3, color: Colors.white, size: 20),
+                        const SizedBox(width: 8),
+                        const Text(
+                          '우리 조 출석 요약',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            fontFamily: 'Pretendard',
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    // [STYLE] 글래스모피즘 카드 레이아웃
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildSummaryItem(
+                            '선택 주차', 
+                            activeWeek['week_id'] != null ? '${activeWeek['present_count']}명' : '-', 
+                            lucide.LucideIcons.calendarCheck2,
+                          ),
+                          Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                          _buildSummaryItem(
+                            '평균 출석', 
+                            history.isNotEmpty ? '${(history.map((e) => e['present_count'] as int).reduce((a, b) => a + b) / history.length).toStringAsFixed(1)}명' : '-', 
+                            lucide.LucideIcons.users,
+                          ),
+                          Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                          _buildSummaryItem(
+                            '기록 주차', 
+                            '${history.length}회', 
+                            lucide.LucideIcons.history,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildSummaryItem(String label, String value, Color color) {
+  Widget _buildSummaryItem(String label, String value, IconData icon) {
     return Column(
       children: [
-        Text(label, style: const TextStyle(color: AppTheme.textSub, fontSize: 13, fontWeight: FontWeight.w500, fontFamily: 'Pretendard')),
-        const SizedBox(height: 8),
-        Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w800, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+        Icon(icon, color: Colors.white.withOpacity(0.8), size: 16),
+        const SizedBox(height: 6),
+        Text(
+          label, 
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.7), 
+            fontSize: 11, 
+            fontWeight: FontWeight.w600, 
+            fontFamily: 'Pretendard',
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value, 
+          style: const TextStyle(
+            color: Colors.white, 
+            fontSize: 16, 
+            fontWeight: FontWeight.w900, 
+            fontFamily: 'Pretendard', 
+            letterSpacing: -0.5,
+          ),
+        ),
       ],
     );
   }
@@ -193,8 +271,16 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
 
   Widget _buildGraphSection(List<Map<String, dynamic>> history, {bool isLoading = false}) {
     // Reverse to show chronological order in graph
+    // Reverse to show chronological order in graph
     final reversedHistory = history.reversed.toList();
     
+    // [FIX] 배경 막대 가시성: 데이터 중 최대 인원수를 배경 높이로 설정하여 비어있는 주차도 가시성 확보
+    double maxAttendance = 10;
+    if (history.isNotEmpty) {
+      final actualMax = history.map((e) => (e['total_count'] as int)).reduce((a, b) => a > b ? a : b).toDouble();
+      maxAttendance = actualMax > 0 ? actualMax : 10;
+    }
+
     return Container(
       height: 280, // Height increased for arrows and labels
       width: double.infinity,
@@ -203,9 +289,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
-        ],
+        border: Border.all(color: AppTheme.border, width: 1.0), // [STYLE] 그림자 제거 후 테두리 복원
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -263,19 +347,29 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
               child: BarChart(
                 BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: (history.isEmpty ? 10 : (history.map((e) => (e['total_count'] as int)).reduce((a, b) => a > b ? a : b) + 2)).toDouble(),
+                maxY: maxAttendance + 4, // [FIX] 계산된 최대치 기반 (명시적 표시를 위해 여유분 확보)
                 barTouchData: BarTouchData(
                   enabled: true,
+                  touchCallback: (event, response) {
+                    if (response != null && response.spot != null && event is FlTapUpEvent) {
+                      final index = response.spot!.touchedBarGroupIndex;
+                      if (index >= 0 && index < reversedHistory.length) {
+                        setState(() {
+                          _selectedWeekId = reversedHistory[index]['week_id'];
+                        });
+                      }
+                    }
+                  },
                   touchTooltipData: BarTouchTooltipData(
-                    getTooltipColor: (_) => AppTheme.primaryViolet,
-                    tooltipPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    getTooltipColor: (_) => Colors.transparent, // 배경 투명
+                    tooltipPadding: EdgeInsets.zero,
                     tooltipMargin: 8,
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       return BarTooltipItem(
                         '${rod.toY.toInt()}명',
                         const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
+                          color: AppTheme.primaryViolet,
+                          fontWeight: FontWeight.w800,
                           fontSize: 12,
                           fontFamily: 'Pretendard',
                         ),
@@ -314,7 +408,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                   show: true, 
                   drawVerticalLine: false, 
                   horizontalInterval: 5,
-                  getDrawingHorizontalLine: (value) => FlLine(color: AppTheme.border.withOpacity(0.5), strokeWidth: 1),
+                  getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey[300]!, strokeWidth: 1), // [STYLE] 그리드 선명도 개선
                 ),
                 borderData: FlBorderData(show: false),
                 barGroups: reversedHistory.asMap().entries.map((e) {
@@ -332,11 +426,12 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                         borderRadius: BorderRadius.circular(4),
                         backDrawRodData: BackgroundBarChartRodData(
                           show: true,
-                          toY: total,
+                          toY: maxAttendance, // [FIX] 모든 막대의 배경 높이를 통일하여 가시성 확보
                           color: const Color(0xFFF1F5F9),
                         ),
                       ),
                     ],
+                    showingTooltipIndicators: [0],
                   );
                 }).toList(),
               ),
@@ -359,11 +454,11 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Padding(
-          padding: EdgeInsets.fromLTRB(24, 32, 24, 16),
-          child: Text('이 달의 주차별 기록', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
+          padding: EdgeInsets.fromLTRB(26, 24, 24, 12), // [LAYOUT] 간격 미세 조정
+          child: Text('주차별 기록', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
         ),
         SizedBox(
-          height: 60,
+          height: 48, // [STYLE] 높이 감소
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -372,19 +467,16 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
               final item = reversedHistory[index];
               final date = DateTime.parse(item['week_date']);
               final isSelected = _selectedWeekId == item['week_id'] || (_selectedWeekId == null && index == reversedHistory.length - 1);
-
+ 
               return GestureDetector(
                 onTap: () => setState(() => _selectedWeekId = item['week_id']),
                 child: Container(
-                  margin: const EdgeInsets.only(right: 10, bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  margin: const EdgeInsets.only(right: 8, bottom: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0), // [STYLE] 좌우 넓히고 상하 패딩 제거
                   decoration: BoxDecoration(
-                    color: isSelected ? AppTheme.primaryViolet : Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: isSelected ? AppTheme.primaryViolet : AppTheme.border),
-                    boxShadow: [
-                      if (isSelected) BoxShadow(color: AppTheme.primaryViolet.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 4)),
-                    ],
+                    color: isSelected ? AppTheme.primaryViolet : const Color(0xFFF1F5F9), // [STYLE] 미선택 시 연한 회색 배경
+                    borderRadius: BorderRadius.circular(10), // [STYLE] 더 샤프한 뱃지 느낌
+                    border: Border.all(color: isSelected ? AppTheme.primaryViolet : AppTheme.border), // [STYLE] 테두리 복원
                   ),
                   child: Center(
                     child: Text(
@@ -425,57 +517,68 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
               final attendanceList = List<Map<String, dynamic>>.from(data['attendance']);
               if (attendanceList.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(40), child: Text('데이터가 없습니다.')));
 
+              // [SORT] 명단 정렬 (부부별)
+              attendanceList.sort((a, b) {
+                final m1 = a['member_directory'] ?? {};
+                final m2 = b['member_directory'] ?? {};
+                final f1 = (m1['family_name'] as String?)?.trim() ?? '';
+                final f2 = (m2['family_name'] as String?)?.trim() ?? '';
+                
+                if (f1.isNotEmpty && f2.isEmpty) return -1;
+                if (f1.isEmpty && f2.isNotEmpty) return 1;
+                if (f1.isNotEmpty && f2.isNotEmpty && f1 != f2) return f1.compareTo(f2);
+                
+                final n1 = (m1['full_name'] as String?)?.trim() ?? '';
+                final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+                return n1.compareTo(n2);
+              });
+
               return Container(
-                width: double.infinity, // 가로 전체를 차지하도록 수정
+                width: double.infinity,
                 margin: const EdgeInsets.symmetric(horizontal: 20),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppTheme.divider.withOpacity(0.5)),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: AppTheme.border, width: 1.0), // [STYLE] 테두리 복원
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 10,
-                    children: attendanceList.map((att) {
-                      final member = att['member_directory'];
-                      if (member == null) return const SizedBox.shrink();
-                      
-                      final status = att['status'];
-                      final isPresent = status == 'present' || status == 'late';
-                      
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isPresent ? Colors.white : const Color(0xFFF1F5F9).withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: isPresent ? AppTheme.primaryViolet : Colors.transparent,
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isPresent)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 6),
-                                child: Icon(lucide.LucideIcons.check, size: 14, color: AppTheme.primaryViolet),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Wrap(
+                        spacing: 6, // [STYLE] 간격 좁힘
+                        runSpacing: 8,
+                        children: attendanceList.map((att) {
+                          final member = att['member_directory'];
+                          if (member == null) return const SizedBox.shrink();
+                          
+                          final status = att['status'];
+                          final isPresent = status == 'present' || status == 'late';
+                          
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), // [STYLE] 패딩 축소
+                            decoration: BoxDecoration(
+                              color: isPresent ? AppTheme.accentViolet : const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(12), // [STYLE] 조금 더 샤프한 어드민 스타일 뱃지
+                              border: Border.all(
+                                color: isPresent ? AppTheme.primaryViolet.withOpacity(0.4) : AppTheme.border.withOpacity(0.6),
+                                width: 1.0,
                               ),
-                            Text(
+                            ),
+                            child: Text(
                               member['full_name'], 
                               style: TextStyle(
-                                fontSize: 13, 
-                                fontWeight: isPresent ? FontWeight.w700 : FontWeight.w500,
+                                fontSize: 13,
+                                fontWeight: isPresent ? FontWeight.w800 : FontWeight.w600,
                                 color: isPresent ? AppTheme.primaryViolet : AppTheme.textSub,
                                 fontFamily: 'Pretendard',
-                              )
+                                letterSpacing: -0.3,
+                              ),
                             ),
-                          ],
-                        ),
+                          );
+                        }).toList(),
                       );
-                    }).toList(),
+                    }
                   ),
                 ),
               );

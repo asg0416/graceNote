@@ -619,18 +619,35 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         children: [
           ListTile(
             contentPadding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
-            leading: Container(width: 40, height: 40, decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle), alignment: Alignment.center, child: Text(member['name'][0], style: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600, fontSize: 14))),
+            leading: Container(
+              width: 40, 
+              height: 40, 
+              decoration: BoxDecoration(
+                color: isPresent ? AppTheme.accentViolet : const Color(0xFFF1F5F9), // v1 미참석 시 회색
+                shape: BoxShape.circle
+              ), 
+              alignment: Alignment.center, 
+              child: Text(
+                member['name'][0], 
+                style: TextStyle(
+                  color: isPresent ? AppTheme.primaryViolet : const Color(0xFF94A3B8), // v1 미참석 시 회색 글씨
+                  fontWeight: FontWeight.w600, 
+                  fontSize: 14
+                )
+              )
+            ),
             title: Text(member['name'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A), letterSpacing: -0.5, fontFamily: 'Pretendard')),
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Row(
                 children: [
-                  ShadBadge(
-                    backgroundColor: isPresent ? const Color(0xFFEEF2FF) : const Color(0xFFF1F5F9),
-                    foregroundColor: isPresent ? AppTheme.primaryViolet : const Color(0xFF64748B),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    child: Text(isPresent ? '참석' : '미참석', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
-                  ),
+                ShadBadge(
+                  backgroundColor: isPresent ? AppTheme.accentViolet : const Color(0xFFF1F5F9),
+                  foregroundColor: isPresent ? AppTheme.primaryViolet : const Color(0xFF1A1A1A), // v1 미참석 시 검은색 글씨
+                  hoverBackgroundColor: isPresent ? AppTheme.accentViolet : const Color(0xFFF1F5F9),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  child: Text(isPresent ? '참석' : '미참석', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
+                ),
                 ],
               ),
             ),

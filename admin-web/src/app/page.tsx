@@ -177,38 +177,54 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Hero Highlight */}
-      <div className="relative group overflow-hidden rounded-[32px] sm:rounded-[40px]">
-        <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-[32px] sm:rounded-[40px] blur opacity-10 dark:opacity-20 group-hover:opacity-20 dark:group-hover:opacity-30 transition duration-1000 group-hover:duration-200" />
-        <div className="relative bg-white dark:bg-[#111827]/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-[32px] sm:rounded-[40px] p-6 sm:p-10 flex flex-col lg:flex-row lg:items-center justify-between overflow-hidden gap-10">
-          <div className="absolute top-[-50%] right-[-10%] w-64 sm:w-96 h-64 sm:h-96 bg-indigo-600/5 dark:bg-indigo-600/10 rounded-full blur-[60px] sm:blur-[100px]" />
-          <div className="relative z-10 space-y-4 sm:space-y-6 max-w-xl">
-            <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-full">
-              <TrendingUp className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-indigo-600 dark:text-indigo-400" />
-              <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">시스템 통찰</span>
+      {/* Hero Highlight - Premium Glassmorphism */}
+      <div className="relative group overflow-hidden rounded-[40px]">
+        {/* [STYLE] 역동적인 배경 그라데이션 */}
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-800 opacity-90 dark:opacity-100" />
+        <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-white/10 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute bottom-[-10%] left-[-5%] w-[300px] h-[300px] bg-indigo-400/20 rounded-full blur-[80px]" />
+
+        <div className="relative backdrop-blur-md border border-white/20 p-8 sm:p-12 flex flex-col lg:flex-row lg:items-center justify-between gap-10">
+          <div className="relative z-10 space-y-6 max-w-2xl">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-full">
+              <TrendingUp className="w-4 h-4 text-white" />
+              <span className="text-[11px] font-black text-white uppercase tracking-[0.2em]">Grace Note Insight</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white leading-tight tracking-tight">
-              관리자님, 현재 <span className="text-indigo-600 dark:text-transparent dark:bg-clip-text dark:bg-gradient-to-r dark:from-indigo-400 dark:to-purple-400 underline decoration-indigo-200 dark:decoration-indigo-500/30">{stats.churchName}</span>의 시스템이 원활하게 운영되고 있습니다.
+            <h2 className="text-3xl sm:text-5xl font-black text-white leading-[1.1] tracking-tighter">
+              {profile?.full_name} 관리자님,<br />
+              <span className="text-indigo-200">{stats.churchName}</span>의 성장이<br />
+              지속되고 있습니다.
             </h2>
-            <p className="text-slate-500 dark:text-slate-400 font-medium leading-relaxed text-sm sm:text-base">
-              성도 명부와 조직 구조가 최신 상태로 유지되고 있습니다.
-              새로운 출석 보고서와 활동 내역을 아래에서 확인해 보세요.
+            <p className="text-white/80 font-medium leading-relaxed text-base sm:text-lg max-w-lg">
+              오늘도 성도들의 신앙 여정을 돕는 귀한 사역에 감사드립니다.
+              최적화된 관리 도구로 더 깊은 돌봄을 시작해 보세요.
             </p>
-            <button
-              onClick={() => router.push('/members')}
-              className="w-full sm:w-fit bg-slate-950 dark:bg-white text-white dark:text-slate-950 px-8 py-4 rounded-2xl sm:rounded-3xl font-black text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-slate-950/10 dark:shadow-white/5 mt-4"
-            >
-              성도 명부 바로가기
-            </button>
-          </div>
-          <div className="relative z-10 grid grid-cols-2 gap-4 lg:w-1/3">
-            <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-500/5 border border-slate-200 dark:border-slate-400/10 rounded-2xl sm:rounded-3xl backdrop-blur-md">
-              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1 uppercase tracking-widest">실시간 연동</p>
-              <h4 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">Active</h4>
+            <div className="flex flex-col sm:flex-row gap-4 pt-4">
+              <button
+                onClick={() => router.push('/members')}
+                className="bg-white text-indigo-900 px-10 py-5 rounded-[24px] font-black text-sm hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-indigo-950/20"
+              >
+                성도 명부 관리하기
+              </button>
+              <button
+                onClick={() => router.push('/departments')}
+                className="bg-white/10 backdrop-blur-md text-white border border-white/30 px-10 py-5 rounded-[24px] font-black text-sm hover:bg-white/20 transition-all"
+              >
+                조직 및 조 관리
+              </button>
             </div>
-            <div className="p-4 sm:p-6 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-400/10 rounded-2xl sm:rounded-3xl backdrop-blur-md">
-              <p className="text-[10px] font-bold text-indigo-400 dark:text-indigo-400 mb-1 uppercase tracking-widest">응답 속도</p>
-              <h4 className="text-xl sm:text-2xl font-black text-indigo-600 dark:text-white">0.1s</h4>
+          </div>
+
+          <div className="relative z-10 grid grid-cols-1 xs:grid-cols-2 gap-4 lg:w-1/3">
+            <div className="p-8 bg-white/10 backdrop-blur-xl border border-white/20 rounded-[32px] overflow-hidden group/item relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 group-hover/item:opacity-100 transition-opacity" />
+              <p className="text-[10px] font-black text-white/60 mb-2 uppercase tracking-[0.2em]">시스템 상태</p>
+              <h4 className="text-2xl font-black text-white">최적화됨</h4>
+            </div>
+            <div className="p-8 bg-white/10 backdrop-blur-xl border border-white/20 rounded-[32px] overflow-hidden group/item relative">
+              <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 group-hover/item:opacity-100 transition-opacity" />
+              <p className="text-[10px] font-black text-white/60 mb-2 uppercase tracking-[0.2em]">동기화</p>
+              <h4 className="text-2xl font-black text-white">Real-time</h4>
             </div>
           </div>
         </div>
@@ -345,11 +361,12 @@ export default function DashboardPage() {
 
 function StatsCard({ title, value, change, icon: Icon, color, isWarning, onClick }: any) {
   const colorMap: any = {
-    indigo: "from-indigo-600/10 to-indigo-600/[0.02] dark:from-indigo-500/20 dark:to-indigo-500/5 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/20",
-    blue: "from-blue-600/10 to-blue-600/[0.02] dark:from-blue-500/20 dark:to-blue-500/5 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20",
-    amber: "from-amber-600/10 to-amber-600/[0.02] dark:from-amber-500/20 dark:to-amber-500/5 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20",
-    emerald: "from-emerald-600/10 to-emerald-600/[0.02] dark:from-emerald-500/20 dark:to-emerald-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20",
-    rose: "from-rose-600/10 to-rose-600/[0.02] dark:from-rose-500/20 dark:to-rose-500/5 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/20",
+    indigo: "from-indigo-600 to-indigo-800 text-white border-indigo-500/50 shadow-indigo-500/20",
+    blue: "from-blue-600 to-blue-800 text-white border-blue-500/50 shadow-blue-500/20",
+    amber: "from-amber-600 to-amber-800 text-white border-amber-500/50 shadow-amber-500/20",
+    emerald: "from-emerald-600 to-emerald-800 text-white border-emerald-500/50 shadow-emerald-500/20",
+    rose: "from-rose-600 to-rose-800 text-white border-rose-500/50 shadow-rose-500/20",
+    slate: "from-slate-700 to-slate-900 text-white border-slate-600/50 shadow-slate-900/20",
   };
 
   return (
@@ -357,25 +374,35 @@ function StatsCard({ title, value, change, icon: Icon, color, isWarning, onClick
       onClick={onClick}
       disabled={!onClick}
       className={cn(
-        "bg-white dark:bg-[#111827]/60 backdrop-blur-xl p-6 rounded-[32px] sm:rounded-[40px] border border-slate-200 dark:border-slate-800/80 transition-all duration-300 group shadow-lg dark:shadow-none text-left w-full cursor-pointer overflow-hidden relative",
-        onClick ? "hover:border-indigo-300 dark:hover:border-slate-700 hover:scale-[1.02] active:scale-[0.98]" : "cursor-default"
+        "relative group p-8 rounded-[40px] border transition-all duration-500 overflow-hidden",
+        "bg-white dark:bg-[#111827]/60 border-slate-200 dark:border-slate-800/80 shadow-2xl shadow-slate-200/50 dark:shadow-none",
+        onClick ? "hover:border-indigo-400 dark:hover:border-indigo-500 hover:-translate-y-2" : "cursor-default"
       )}
     >
-      <div className="flex items-center justify-between mb-8">
-        <div className={cn("p-4 rounded-2xl bg-gradient-to-br border shadow-sm dark:shadow-lg group-hover:scale-110 transition-transform duration-300", colorMap[color])}>
-          <Icon className="w-6 h-6" />
-        </div>
-        <div className={cn(
-          "px-3 py-1.5 rounded-xl text-[10px] font-black tracking-widest uppercase",
-          isWarning ? "bg-red-500/10 text-red-500 border border-red-500/20" : "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
-        )}>
-          {change}
-        </div>
+      <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform duration-700">
+        <Icon className="w-24 h-24" />
       </div>
 
-      <div className="space-y-1">
-        <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 tracking-[0.2em] uppercase truncate">{title}</p>
-        <h4 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">{value}</h4>
+      <div className="relative z-10 space-y-6">
+        <div className={cn(
+          "w-14 h-14 rounded-[18px] flex items-center justify-center bg-gradient-to-br border shadow-xl",
+          colorMap[color]
+        )}>
+          <Icon className="w-6 h-6" />
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-[11px] font-black text-slate-400 dark:text-slate-500 tracking-[0.2em] uppercase">{title}</p>
+          <div className="flex items-baseline gap-2">
+            <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">{value}</h4>
+            <span className={cn(
+              "text-[10px] font-black px-2 py-0.5 rounded-lg border",
+              isWarning ? "bg-rose-500/10 text-rose-500 border-rose-200" : "bg-emerald-500/10 text-emerald-500 border-emerald-200"
+            )}>
+              {change}
+            </span>
+          </div>
+        </div>
       </div>
     </button>
   );

@@ -254,9 +254,12 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                     enabled: true,
                     touchCallback: (event, response) {
                       if (response != null && response.spot != null && event is FlTapUpEvent) {
-                        setState(() {
-                          _selectedWeekId = reversedHistory[response.spot!.touchedBarGroupIndex]['week_id'];
-                        });
+                        final index = response.spot!.touchedBarGroupIndex;
+                        if (index >= 0 && index < reversedHistory.length) {
+                          setState(() {
+                            _selectedWeekId = reversedHistory[index]['week_id'];
+                          });
+                        }
                       }
                     },
                     touchTooltipData: BarTouchTooltipData(
@@ -303,7 +306,12 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                     rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   ),
-                  gridData: const FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 10),
+                  gridData: FlGridData(
+                    show: true, 
+                    drawVerticalLine: false, 
+                    horizontalInterval: 10,
+                    getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey[200]!, strokeWidth: 1),
+                  ),
                   borderData: FlBorderData(show: false),
                   barGroups: reversedHistory.asMap().entries.map((e) {
                     final attendance = (e.value['present_count'] as int).toDouble();

@@ -95,9 +95,11 @@ class GraceNoteRepository {
     
     final prayersTask = _supabase
         .from('prayer_entries')
-        .select()
+        .select('*, member_directory!directory_member_id(family_name, full_name, person_id)')
         .eq('week_id', weekId)
-        .eq('group_id', groupId);
+        .eq('group_id', groupId)
+        .order('family_name', referencedTable: 'member_directory', ascending: true, nullsFirst: false)
+        .order('full_name', referencedTable: 'member_directory', ascending: true);
 
     final results = await Future.wait([attendanceTask, prayersTask]);
     final attendanceList = List<Map<String, dynamic>>.from(results[0]);
@@ -154,10 +156,12 @@ class GraceNoteRepository {
     // 2. 모든 조의 기도제목 조회
     final prayersResponse = await _supabase
         .from('prayer_entries')
-        .select()
+        .select('*, member_directory!directory_member_id(family_name, full_name, person_id)')
         .eq('week_id', weekId)
         .inFilter('group_id', groupIds)
-        .eq('status', 'published');
+        .eq('status', 'published')
+        .order('family_name', referencedTable: 'member_directory', ascending: true, nullsFirst: false)
+        .order('full_name', referencedTable: 'member_directory', ascending: true);
 
     return {
       'groups': groups,
@@ -273,7 +277,9 @@ class GraceNoteRepository {
         .eq('church_id', churchId)
         .eq('department_id', departmentId)
         .eq('group_name', groupName)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .order('family_name', ascending: true, nullsFirst: false)
+        .order('full_name', ascending: true);
         
     final membersList = List<Map<String, dynamic>>.from(directoryResponse);
     if (membersList.isEmpty) return [];
@@ -804,12 +810,12 @@ class GraceNoteRepository {
     DateTime? date,
     String? searchTerm,
   }) async {
-    var query = _supabase
+    dynamic query = _supabase
         .from('prayer_entries')
         .select('''
           *,
           weeks!inner(week_date),
-          member_directory!inner(full_name, group_name)
+          member_directory!inner(full_name, family_name, group_name)
         ''')
         .eq('status', 'published');
 
@@ -857,10 +863,11 @@ class GraceNoteRepository {
     }
 
     // updated_at 대신 week_date 기준으로 정렬 (주차별 정기적인 흐름 확인을 위해)
-    // Supabase Flutter에서 foreignTable 정렬은 아래와 같이 수행함
     final response = await query
         .order('week_date', referencedTable: 'weeks', ascending: false)
-        .order('updated_at', ascending: false)
+        .order('family_name', referencedTable: 'member_directory', ascending: true, nullsFirst: false)
+        .order('full_name', referencedTable: 'member_directory', ascending: true)
+        .order('id', ascending: true)
         .limit(50);
     return List<Map<String, dynamic>>.from(response);
   }

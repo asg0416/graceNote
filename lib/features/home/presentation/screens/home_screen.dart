@@ -16,6 +16,7 @@ import 'package:grace_note/core/widgets/shad_layout.dart';
 import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/features/search/presentation/screens/search_screen.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
+import 'package:animations/animations.dart' as animations;
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
