@@ -55,6 +55,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     try {
       // member_directory에서 이름이 일치하는 모든 성도 조회
       final response = await Supabase.instance.client
+          .from('member_directory')
           .select('*, department:departments!department_id(name)')
           .eq('church_id', widget.churchId)
           .eq('full_name', name);
