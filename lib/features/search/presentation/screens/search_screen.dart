@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' as shad;
+import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -76,29 +78,45 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 // ... (selectDate 메서드는 동일하므로 생략하거나 아래에서 context 유지)
   Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
+    showDialog(
       context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime(2023),
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppTheme.primaryViolet,
-              onPrimary: Colors.white,
-              onSurface: AppTheme.textMain,
+      builder: (context) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 340,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('검색 날짜 선택 (일요일)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textMain, fontFamily: 'Pretendard')),
+                ),
+                const Divider(height: 24),
+                shad.ShadCalendar(
+                  selected: _selectedDate,
+                  weekStartsOn: 7,
+                  selectableDayPredicate: (date) => date.weekday == DateTime.sunday,
+                  onChanged: (newDate) {
+                    if (newDate != null) {
+                      setState(() => _selectedDate = newDate);
+                      Navigator.pop(context);
+                      _performSearch();
+                    }
+                  },
+                ),
+              ],
             ),
           ),
-          child: child!,
-        );
-      },
+        ),
+      ),
     );
-    
-    if (picked != _selectedDate) {
-      setState(() => _selectedDate = picked);
-      _performSearch();
-    }
   }
 
   @override
@@ -116,7 +134,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain, size: 20),
+          icon: const Icon(lucide.LucideIcons.chevronLeft, color: AppTheme.textMain, size: 24),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -231,17 +249,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildDateFilter() {
     return InkWell(
       onTap: () => _selectDate(context),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        height: 48, // v1 높이 고정
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
           color: AppTheme.background,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _selectedDate != null ? AppTheme.primaryViolet : Colors.transparent),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _selectedDate != null ? AppTheme.primaryViolet.withOpacity(0.5) : Colors.transparent),
         ),
         child: Row(
           children: [
-            Icon(Icons.calendar_today_rounded, size: 16, color: _selectedDate != null ? AppTheme.primaryViolet : AppTheme.textSub),
+            Icon(lucide.LucideIcons.calendar, size: 16, color: _selectedDate != null ? AppTheme.primaryViolet : AppTheme.textSub),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -249,7 +268,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 style: TextStyle(
                   color: _selectedDate != null ? AppTheme.primaryViolet : AppTheme.textSub,
                   fontSize: 13,
-                  fontWeight: _selectedDate != null ? FontWeight.bold : FontWeight.normal,
+                  fontWeight: _selectedDate != null ? FontWeight.w700 : FontWeight.w500,
+                  fontFamily: 'Pretendard',
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -260,7 +280,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   setState(() => _selectedDate = null);
                   _performSearch();
                 },
-                child: const Icon(Icons.close_rounded, size: 16, color: AppTheme.primaryViolet),
+                child: const Icon(lucide.LucideIcons.x, size: 14, color: AppTheme.textSub),
               ),
           ],
         ),
@@ -268,37 +288,52 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
+  String _groupSearchQuery = '';
+
   Widget _buildGroupFilter(List<Map<String, dynamic>> groups) {
     final allGroups = [{'id': 'all', 'name': '전체 조'}, ...groups];
+    final filteredGroups = allGroups.where((g) => 
+      (g['name'] as String).toLowerCase().contains(_groupSearchQuery.toLowerCase())
+    ).toList();
     
     // 현재 선택된 ID가 목록에 없으면 'all'로 리셋
     if (!allGroups.any((g) => g['id'] == _selectedGroupId)) {
       _selectedGroupId = 'all';
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
+    return shad.ShadSelect<String>(
+      placeholder: const Text('조 선택', style: TextStyle(fontSize: 13, color: AppTheme.textSub, fontFamily: 'Pretendard')),
+      value: _selectedGroupId,
+      minWidth: 120,
+      maxHeight: 400,
+      decoration: shad.ShadDecoration(
         color: AppTheme.background,
-        borderRadius: BorderRadius.circular(12),
+        border: shad.ShadBorder.none,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedGroupId,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.textSub),
-          items: allGroups.map((g) => DropdownMenuItem(
-            value: g['id'] as String, 
-            child: Text(g['name'] as String, style: const TextStyle(fontSize: 13))
-          )).toList(),
-          onChanged: (val) {
-            if (val != null) {
-              setState(() => _selectedGroupId = val);
-              _performSearch();
-            }
-          },
+      onChanged: (val) {
+        if (val != null) {
+          setState(() => _selectedGroupId = val);
+          _performSearch();
+        }
+      },
+      selectedOptionBuilder: (context, value) {
+        final group = allGroups.firstWhere((g) => g['id'] == value, orElse: () => allGroups.first);
+        return Text(group['name'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.primaryViolet, fontFamily: 'Pretendard'));
+      },
+      options: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+          child: Text('조 목록', style: TextStyle(fontSize: 12, color: AppTheme.textSub, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
         ),
-      ),
+        ...filteredGroups.map((g) => shad.ShadOption(
+          value: g['id'] as String,
+          child: Text(g['name'] as String, style: const TextStyle(fontFamily: 'Pretendard', fontWeight: FontWeight.w500)),
+        )),
+      ],
+      searchPlaceholder: const Text('조 이름을 입력하세요', style: TextStyle(fontFamily: 'Pretendard')),
+      onSearchChanged: (query) => setState(() => _groupSearchQuery = query),
     );
   }
 

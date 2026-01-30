@@ -17,6 +17,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:animations/animations.dart';
+import 'package:grace_note/core/utils/route_util.dart';
 import 'prayer_share_screen.dart';
 
 class AttendancePrayerScreen extends ConsumerStatefulWidget {
@@ -180,8 +181,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
   void _launchAttendanceCheck() {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => AttendanceCheckScreen(
+      SharedAxisPageRoute(
+        page: AttendanceCheckScreen(
           initialMembers: _members,
           onComplete: (updated) async {
             setState(() {
@@ -391,24 +392,21 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         elevation: 0,
         centerTitle: true,
         title: Text('${groupName.replaceAll('조', '')}조 기록', style: const TextStyle(fontWeight: FontWeight.w900, color: AppTheme.textMain, fontSize: 18)),
-        leading: OpenContainer(
-          transitionType: ContainerTransitionType.fade,
-          transitionDuration: const Duration(milliseconds: 500),
-          openBuilder: (context, _) => PrayerShareScreen(shareText: _formatPrayersForSharing()),
-          closedElevation: 0,
-          closedColor: Colors.transparent,
-          closedBuilder: (context, openContainer) => IconButton(
-            icon: const Icon(lucide.LucideIcons.share, color: AppTheme.primaryViolet, size: 20),
-            onPressed: () {
-              final shareText = _formatPrayersForSharing();
-              if (shareText.isEmpty) {
-                SnackBarUtil.showSnackBar(context, message: '공유할 내용이 없습니다.', isError: true);
-                return;
-              }
-              openContainer();
-            },
-          ),
-        ),
+        leading: IconButton(
+        icon: const Icon(lucide.LucideIcons.share, color: AppTheme.primaryViolet, size: 20),
+        onPressed: () {
+          final shareText = _formatPrayersForSharing();
+          if (shareText.isEmpty) {
+            SnackBarUtil.showSnackBar(context, message: '공유할 내용이 없습니다.', isError: true);
+            return;
+          }
+          Navigator.of(context).push(
+            SharedAxisPageRoute(
+              page: PrayerShareScreen(shareText: shareText),
+            ),
+          );
+        },
+      ),
         actions: [
           IconButton(
             icon: const Icon(lucide.LucideIcons.userCheck, color: AppTheme.primaryViolet, size: 22), // v4 사람+체크 아이콘으로 최종 변경

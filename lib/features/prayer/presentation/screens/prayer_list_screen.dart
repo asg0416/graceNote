@@ -10,7 +10,7 @@ import '../../../../core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
-import 'package:grace_note/core/providers/user_role_provider.dart';
+import 'package:grace_note/core/utils/route_util.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 
 class PrayerListScreen extends ConsumerStatefulWidget {
@@ -183,7 +183,7 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         elevation: 0,
         actions: [
           IconButton(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SearchScreen())),
+            onPressed: () => Navigator.push(context, SharedAxisPageRoute(page: const SearchScreen())),
             icon: Icon(lucide.LucideIcons.search, color: AppTheme.primaryViolet, size: 20),
           ),
           const SizedBox(width: 8),
