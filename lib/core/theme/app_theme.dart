@@ -47,8 +47,8 @@ class AppTheme {
         ring: primaryViolet,
         selection: primaryViolet.withOpacity(.3),
       ),
-      // 폰트 설정: Pretendard Variable & 자간 -2%
-      textTheme: ShadTextTheme(
+      // 폰트 설정: Pretendard Variable 적용
+      textTheme: const ShadTextTheme(
         family: 'Pretendard',
       ),
       // 모든 컴포넌트 곡률 12px 통일
