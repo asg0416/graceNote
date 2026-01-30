@@ -169,15 +169,15 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 // Helper for re-fetching detailed group data with joins
 // [ENHANCEMENT] Join with member_directory to ensure newest assignment
 Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
-  // 1. First, check direct group memberships
-  final gmResponse = await Supabase.instance.client
+  final response = await Supabase.instance.client
       .from('group_members')
       .select('group_id, role_in_group, groups(name, church_id, departments!department_id(name)), profiles(member_directory!member_directory_profile_id_fkey(group_name, role_in_group, is_active))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
       .order('joined_at', ascending: false);
       
-  final List<Map<String, dynamic>> memberships = (gmResponse as List).map<Map<String, dynamic>>((e) {
+  return (response as List).map<Map<String, dynamic>>((e) {
+    // [LOGIC UPGRADE] Prefer directory data if it matches, to handle trigger delays
     final dir = (e['profiles']?['member_directory'] as List?)?.firstWhere(
       (d) => d['is_active'] == true,
       orElse: () => null
@@ -191,35 +191,6 @@ Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
       'role_in_group': dir?['role_in_group'] ?? (e['role_in_group'] ?? 'member').toString(),
     };
   }).toList();
-
-  // 2. [FALLBACK/ENHANCEMENT] If no group_members but has member_directory info, show that
-  // This handles users who were just assigned a group in the directory but not yet in group_members
-  if (memberships.isEmpty) {
-     final profileResponse = await Supabase.instance.client
-        .from('profiles')
-        .select('church_id, departments(name), member_directory!member_directory_profile_id_fkey(group_name, role_in_group, is_active)')
-        .eq('id', profileId)
-        .maybeSingle();
-
-     if (profileResponse != null) {
-        final dir = (profileResponse['member_directory'] as List?)?.firstWhere(
-          (d) => d['is_active'] == true && d['group_name'] != null,
-          orElse: () => null
-        );
-        
-        if (dir != null) {
-          memberships.add({
-            'group_id': 'directory_only', // Marks it's not a formal group_mem yet
-            'group_name': dir['group_name'],
-            'church_id': profileResponse['church_id']?.toString() ?? '',
-            'department_name': profileResponse['departments']?['name']?.toString() ?? '부서 미정',
-            'role_in_group': dir['role_in_group'] ?? 'member',
-          });
-        }
-     }
-  }
-      
-  return memberships;
 }
 
 // Selected Week Provider (Current context for app)

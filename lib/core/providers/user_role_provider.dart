@@ -31,10 +31,8 @@ final availableRolesProvider = Provider<List<AppRole>>((ref) {
     roles.add(AppRole.leader);
   }
 
-  // 3. 일반 회원 권한
-  // [LOGIC UPGRADE] group_members 테이블뿐만 아니라, member_directory에 조가 편성된 경우도 member 역할을 부여함
-  // 이는 관리자 페이지에서 개별 조 편성만 하고 공식 조원 등록을 안 했을 때도 앱 작동을 보장하기 위함
-  final hasMemberRole = groups.any((g) => g['role_in_group'] == 'member' || g['group_id'] == 'directory_only');
+  // 3. 일반 회원 권한 (소속 그룹 중 하나라도 member 역할인 경우)
+  final hasMemberRole = groups.any((g) => g['role_in_group'] == 'member');
   if (hasMemberRole) {
     roles.add(AppRole.member);
   }
