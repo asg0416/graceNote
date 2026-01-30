@@ -7,7 +7,7 @@ class SharedAxisPageRoute<T> extends PageRouteBuilder<T> {
 
   SharedAxisPageRoute({
     required this.page,
-    this.transitionType = SharedAxisTransitionType.z,
+    this.transitionType = SharedAxisTransitionType.scaled,
     super.settings,
   }) : super(
           pageBuilder: (context, animation, secondaryAnimation) => page,

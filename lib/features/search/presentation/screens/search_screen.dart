@@ -301,16 +301,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _selectedGroupId = 'all';
     }
 
-    return shad.ShadSelect<String>(
+    return shad.ShadSelect<String>.withSearch(
       placeholder: const Text('조 선택', style: TextStyle(fontSize: 13, color: AppTheme.textSub, fontFamily: 'Pretendard')),
-      value: _selectedGroupId,
+      initialValue: _selectedGroupId,
       minWidth: 120,
       maxHeight: 400,
       decoration: shad.ShadDecoration(
         color: AppTheme.background,
-        border: shad.ShadBorder.none,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        border: shad.ShadBorder.all(
+          radius: BorderRadius.circular(16),
+          width: 0,
+          color: Colors.transparent,
+        ),
+        shape: BoxShape.rectangle,
       ),
       onChanged: (val) {
         if (val != null) {
