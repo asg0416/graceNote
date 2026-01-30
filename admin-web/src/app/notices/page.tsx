@@ -13,7 +13,8 @@ import {
     Church,
     Layers,
     Clock,
-    User
+    User,
+    Pin
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -40,6 +41,7 @@ export default function NoticesPage() {
     const [isGlobal, setIsGlobal] = useState(false);
     const [targetChurchId, setTargetChurchId] = useState('');
     const [targetDeptId, setTargetDeptId] = useState('');
+    const [isPinned, setIsPinned] = useState(false);
 
     const router = useRouter();
 
@@ -97,7 +99,9 @@ export default function NoticesPage() {
                 // In code, we can also filter the results or add more complex or.
             }
 
-            const { data: noticesData } = await noticesQuery.order('created_at', { ascending: false });
+            const { data: noticesData } = await noticesQuery
+                .order('is_pinned', { ascending: false })
+                .order('created_at', { ascending: false });
 
             setNotices(noticesData || []);
 
@@ -136,7 +140,8 @@ export default function NoticesPage() {
                 is_global: profile.is_master ? isGlobal : false,
                 church_id: profile.is_master ? (targetChurchId || null) : profile.church_id,
                 department_id: targetDeptId || null,
-                created_by: profile.id
+                created_by: profile.id,
+                is_pinned: isPinned
             };
 
             if (editingId) {
@@ -177,6 +182,7 @@ export default function NoticesPage() {
             setIsGlobal(notice.is_global || false);
             setTargetChurchId(notice.church_id || '');
             setTargetDeptId(notice.department_id || '');
+            setIsPinned(notice.is_pinned || false);
         } else {
             setEditingId(null);
             setTitle('');
@@ -185,6 +191,7 @@ export default function NoticesPage() {
             setIsGlobal(false);
             setTargetChurchId(profile.is_master ? '' : (profile.church_id || ''));
             setTargetDeptId(profile.department_id || '');
+            setIsPinned(false);
         }
         setIsModalOpen(true);
     };
@@ -256,6 +263,11 @@ export default function NoticesPage() {
                                         <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-black rounded-lg uppercase tracking-widest">
                                             {notice.category === 'general' ? '일반' : notice.category === 'event' ? '행사' : '긴급'}
                                         </span>
+                                        {notice.is_pinned && (
+                                            <span className="px-2.5 py-1 bg-amber-500 text-white text-[9px] font-black rounded-lg uppercase tracking-widest flex items-center gap-1">
+                                                <Pin className="w-3 h-3" /> 상단 고정
+                                            </span>
+                                        )}
                                     </div>
 
                                     <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white group-hover:text-indigo-600 transition-colors tracking-tight leading-tight">
@@ -367,6 +379,23 @@ export default function NoticesPage() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Pinned Toggle */}
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">상단 고정 여부</label>
+                                    <div
+                                        onClick={() => setIsPinned(!isPinned)}
+                                        className={cn(
+                                            "w-full p-5 rounded-2xl font-black text-sm flex items-center justify-between cursor-pointer transition-all",
+                                            isPinned ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                                        )}
+                                    >
+                                        <span>{isPinned ? '상단 고정됨' : '일반 공지'}</span>
+                                        <div className={cn("w-10 h-5 rounded-full relative transition-colors", isPinned ? "bg-white/30" : "bg-slate-300 dark:bg-slate-700")}>
+                                            <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", isPinned ? "left-6" : "left-1")} />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             {!isGlobal && (

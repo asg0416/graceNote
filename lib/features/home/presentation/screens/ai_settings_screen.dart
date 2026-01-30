@@ -96,7 +96,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
             ),
 
             if (settings.indicatorType == AIIndicatorType.custom) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               _buildTextFieldContainer(
                 controller: _indicatorController,
                 hint: '기호 입력 (예: 💖, ✨, -)',
@@ -130,7 +130,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
             ),
 
             if (settings.endingStyle == AIEndingStyle.custom) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               _buildTextFieldContainer(
                 controller: _endingController,
                 hint: '예: ~하게 응답하소서',
@@ -172,19 +172,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
             const SizedBox(height: 48),
             _buildInfoCard(settings),
             
-            const SizedBox(height: 48),
-            Center(
-              child: Text(
-                'GraceNote v${AppConstants.appVersion}',
-                style: const TextStyle(
-                  color: AppTheme.textSub,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Pretendard',
-                ),
-              ),
-            ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 60),
           ],
         ),
       ),
@@ -250,11 +238,9 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
     required VoidCallback onApply,
   }) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
-      decoration: BoxDecoration(
+      padding: const EdgeInsets.fromLTRB(4, 0, 8, 4),
+      decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
       ),
       child: Row(
         children: [
@@ -264,7 +250,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, fontFamily: 'Pretendard', color: AppTheme.textMain),
               decoration: InputDecoration(
                 hintText: hint,
-                hintStyle: TextStyle(color: AppTheme.textSub.withOpacity(0.4), fontWeight: FontWeight.w500, fontSize: 14),
+                hintStyle: const TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w500, fontSize: 14),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),

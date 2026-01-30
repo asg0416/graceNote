@@ -3,11 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:intl/intl.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import '../../../../core/utils/database_error_helper.dart';
-import 'package:grace_note/core/widgets/shadcn_spinner.dart';
-import 'package:shadcn_ui/shadcn_ui.dart' as shad;
-import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 class MemberEditScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic>? member;
@@ -38,7 +36,6 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
   bool _isSaving = false;
   String? _selectedGroupId;
   String? _selectedGroupName;
-  String _groupSearchQuery = '';
 
   @override
   void initState() {
@@ -174,32 +171,6 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
     }
   }
 
-  Future<void> _handleGroupChange(String newGroupId, String newGroupName) async {
-    if (newGroupId == _selectedGroupId) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('소속 조 변경'),
-        content: Text('조원을 [$newGroupName]으로 이동시키겠습니까?\n이동 시 기존 출석 및 기도제목 데이터의 소속 정보도 함께 변경될 수 있습니다.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true), 
-            child: const Text('변경하기', style: TextStyle(color: AppTheme.primaryViolet)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      setState(() {
-        _selectedGroupId = newGroupId;
-        _selectedGroupName = newGroupName;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -272,17 +243,7 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
                     maxLines: 5,
                   ),
 
-                  if (widget.member != null) ...[
-                    _buildDivider(),
-
-                    _buildSectionHeader('소속 조 설정', '조원을 다른 조로 이동시키거나 소속을 변경합니다.'),
-                    _buildGroupSelector(ref),
-
-                    _buildDivider(),
-
-                    _buildSectionHeader('계정 상태 설정', '조원을 비활성화하면 명단에서 제외되지만 데이터는 보존됩니다.'),
-                    _buildStatusToggle(),
-                  ],
+                  const SizedBox(height: 48),
 
                   const SizedBox(height: 48),
                   const SizedBox(height: 40),
@@ -484,145 +445,6 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
           ),
         ],
       ),
-    );
-  }
-  Widget _buildStatusToggle() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _isActive ? const Color(0xFFE2E8F0) : Colors.red.withOpacity(0.3), 
-          width: _isActive ? 1.0 : 2.0
-        ),
-      ),
-      child: SwitchListTile(
-        value: _isActive,
-        onChanged: (val) => setState(() => _isActive = val),
-        title: Text(
-          _isActive ? '현재 활동 중' : '현재 비활성화 상태',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-            color: _isActive ? AppTheme.textMain : Colors.red,
-            fontFamily: 'Pretendard',
-          ),
-        ),
-        subtitle: Text(
-          _isActive ? '조원 명단에 노출됩니다.' : '명단에서 숨겨지며 출석 체크 대상에서 제외됩니다.',
-          style: TextStyle(
-            fontSize: 13,
-            color: _isActive ? AppTheme.textSub.withOpacity(0.6) : Colors.red.withOpacity(0.6),
-            fontFamily: 'Pretendard',
-          ),
-        ),
-        activeColor: AppTheme.primaryViolet,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      ),
-    );
-  }
-
-  Widget _buildGroupSelector(WidgetRef ref) {
-    // 조장 여부 판별 로직 추가
-    final bool isLeaderOrAdmin = widget.member?['profiles'] != null && 
-        (widget.member!['profiles']?['role_in_group'] == 'leader' || 
-         widget.member!['profiles']?['role_in_group'] == 'admin');
-
-    if (isLeaderOrAdmin) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.amber.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.amber.withOpacity(0.3)),
-        ),
-        child: Row(
-          children: [
-            const Icon(lucide.LucideIcons.alertTriangle, color: Colors.amber, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${widget.groupName}의 조장/관리자입니다.',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppTheme.textMain, fontFamily: 'Pretendard'),
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    '조장은 다른 조로 이동할 수 없습니다.\n직본을 먼저 변경해주세요.',
-                    style: TextStyle(fontSize: 12, color: AppTheme.textSub, height: 1.4, fontFamily: 'Pretendard'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final profileAsync = ref.watch(userProfileProvider);
-    
-    return profileAsync.when(
-      data: (profile) {
-        if (profile == null) return const SizedBox.shrink();
-        
-        final groupsAsync = ref.watch(departmentGroupsProvider(profile.departmentId!));
-        
-        return groupsAsync.when(
-          data: (groups) {
-            final filteredGroups = groups.where((g) => 
-               g['name'].toString().toLowerCase().contains(_groupSearchQuery.toLowerCase())
-            ).toList();
-
-            return Container(
-              height: 52,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
-              ),
-              child: shad.ShadSelect<String>.withSearch(
-                placeholder: const Text('조 이동', style: TextStyle(fontSize: 15, color: AppTheme.textSub, fontFamily: 'Pretendard')),
-                initialValue: _selectedGroupId,
-                minWidth: double.infinity,
-                maxHeight: 400,
-                decoration: shad.ShadDecoration(
-                  border: shad.ShadBorder.none,
-                ),
-                onChanged: (val) {
-                  if (val != null) {
-                    final group = groups.firstWhere((g) => g['id'].toString() == val);
-                    _handleGroupChange(val, group['name'].toString());
-                  }
-                },
-                selectedOptionBuilder: (context, value) {
-                  final group = groups.firstWhere((g) => g['id'].toString() == value, orElse: () => groups.first);
-                  return Text(
-                    group['name'].toString(),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      color: AppTheme.textMain,
-                      fontFamily: 'Pretendard',
-                    ),
-                  );
-                },
-                options: filteredGroups.map((g) => shad.ShadOption(
-                  value: g['id'] as String,
-                  child: Text(g['name'] as String, style: const TextStyle(fontFamily: 'Pretendard', fontWeight: FontWeight.w500, fontSize: 14)),
-                )).toList(),
-                searchPlaceholder: const Text('조 이름을 입력하세요', style: TextStyle(fontFamily: 'Pretendard', fontSize: 14)),
-                onSearchChanged: (query) => setState(() => _groupSearchQuery = query),
-              ),
-            );
-          },
-          loading: () => const Padding(padding: EdgeInsets.all(16), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))),
-          error: (_, __) => const Text('그룹 정보를 불러올 수 없습니다.'),
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
     );
   }
 }

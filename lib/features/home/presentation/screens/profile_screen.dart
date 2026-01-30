@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:intl/intl.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -197,7 +198,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ? Center(child: ShadcnSpinner())
                   : (profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty)
                     ? Image.network(profile.avatarUrl!, fit: BoxFit.cover)
-                    : Image.asset('assets/images/avatar.png', fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 60, color: AppTheme.divider)),
+                    : Image.asset('assets/images/default_profile.png', fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 60, color: AppTheme.divider)),
               ),
             ),
           ),
@@ -248,8 +249,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               _buildInfoRow('이름', profile.fullName),
               Divider(height: 32, color: AppTheme.border.withOpacity(0.5)),
               _buildInfoRow('연락처', profile.phone ?? '등록된 번호 없음'),
-              Divider(height: 32, color: AppTheme.border.withOpacity(0.5)),
-              _buildInfoRow('생년월일', profile.birthDate ?? '미설정'),
             ],
           ),
         ),
@@ -258,9 +257,41 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Widget _buildAccountSection() {
+    final user = Supabase.instance.client.auth.currentUser;
+    final String provider = user?.appMetadata['provider'] ?? 'email';
+    final String providerName = provider == 'kakao' ? '카카오톡' : (provider == 'google' ? '구글' : '이메일');
+    final String joinDate = user?.createdAt != null 
+        ? DateFormat('yyyy년 MM월 dd일').format(DateTime.parse(user!.createdAt)) 
+        : '-';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 8, bottom: 12),
+          child: Text('계정 정보', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppTheme.textSub)),
+        ),
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppTheme.border, width: 1.0),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 24, offset: const Offset(0, 8)),
+            ],
+          ),
+          child: Column(
+            children: [
+              _buildInfoRow('로그인 방식', providerName),
+              Divider(height: 32, color: AppTheme.border.withOpacity(0.5)),
+              _buildInfoRow('이메일', user?.email ?? '연결된 이메일 없음'),
+              Divider(height: 32, color: AppTheme.border.withOpacity(0.5)),
+              _buildInfoRow('가입 일자', joinDate),
+            ],
+          ),
+        ),
+        const SizedBox(height: 32),
         const Padding(
           padding: EdgeInsets.only(left: 8, bottom: 12),
           child: Text('계정 관리', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppTheme.textSub)),
