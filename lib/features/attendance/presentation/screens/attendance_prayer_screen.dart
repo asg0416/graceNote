@@ -684,13 +684,19 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: TextField(
-              controller: _controllers[member['directoryMemberId']],
-              onChanged: (val) => member['prayerNote'] = val,
-              maxLines: null,
-              minLines: 2,
-              style: const TextStyle(fontSize: 14, height: 1.5, color: Color(0xFF475569), fontFamily: 'Pretendard', letterSpacing: -0.5),
-              decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF8FAFC), hintText: isPresent ? '기도제목 입력' : '미참석자 기도제목', hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontFamily: 'Pretendard'), isDense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _controllers[member['directoryMemberId']],
+                  onChanged: (val) => member['prayerNote'] = val,
+                  maxLines: null,
+                  minLines: 2,
+                  style: const TextStyle(fontSize: 14, height: 1.5, color: Color(0xFF475569), fontFamily: 'Pretendard', letterSpacing: -0.5),
+                  decoration: InputDecoration(filled: true, fillColor: const Color(0xFFF8FAFC), hintText: isPresent ? '기도제목 입력' : '미참석자 기도제목', hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontFamily: 'Pretendard'), isDense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none)),
+                ),
+                _buildDynamicSpouseButton(member),
+              ],
             ),
           ),
         ],
@@ -698,6 +704,75 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     );
   }
 
+  Widget _buildDynamicSpouseButton(Map<String, dynamic> currentMember) {
+    if (currentMember['familyId'] == null) return const SizedBox.shrink();
+    final String familyId = currentMember['familyId'];
+    if (!familyId.startsWith('couple_')) return const SizedBox.shrink();
+
+    final spouse = _members.firstWhere(
+      (m) => m['familyId'] == familyId && m['directoryMemberId'] != currentMember['directoryMemberId'],
+      orElse: () => {},
+    );
+
+    if (spouse.isEmpty) return const SizedBox.shrink();
+
+    final spouseController = _controllers[spouse['directoryMemberId']];
+    if (spouseController == null) return const SizedBox.shrink();
+
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: spouseController,
+      builder: (context, value, child) {
+        final text = value.text.trim();
+        if (text.isEmpty) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: InkWell(
+            onTap: () {
+              final currentController = _controllers[currentMember['directoryMemberId']];
+              if (currentController != null) {
+                final currentText = currentController.text;
+                if (currentText.isEmpty) {
+                  currentController.text = text;
+                } else {
+                  currentController.text = "$currentText\n$text";
+                }
+                currentMember['prayerNote'] = currentController.text;
+                setState(() {}); // 모델 업데이트 반영을 위해
+                SnackBarUtil.showSnackBar(context, message: '${spouse['name']}님의 기도제목을 추가했습니다.');
+              }
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: CustomPaint(
+              painter: _DashedBorderPainter(color: AppTheme.primaryViolet.withOpacity(0.5), strokeWidth: 1, gap: 4),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: AppTheme.primaryViolet.withOpacity(0.03),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(lucide.LucideIcons.plus, size: 14, color: AppTheme.primaryViolet),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${spouse['name']}님 기도제목 가져오기',
+                      style: TextStyle(fontSize: 13, color: AppTheme.primaryViolet, fontWeight: FontWeight.w600, fontFamily: 'Pretendard'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // [기존 _buildCopySpouseButton 삭제됨]
   Widget _buildBottomActions() {
     return Container(
       padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + math.max(12, MediaQuery.of(context).padding.bottom)),
@@ -714,5 +789,40 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         ],
       ),
     );
+  }
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+  final double gap;
+
+  _DashedBorderPainter({required this.color, this.strokeWidth = 1.0, this.gap = 5.0});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke;
+
+    final Path path = Path()
+      ..addRRect(RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, size.width, size.height), const Radius.circular(8)));
+
+    final PathMetrics pathMetrics = path.computeMetrics();
+    for (PathMetric pathMetric in pathMetrics) {
+      double distance = 0.0;
+      while (distance < pathMetric.length) {
+        final double length = gap;
+        final double nextDistance = distance + length;
+        canvas.drawPath(pathMetric.extractPath(distance, nextDistance), paint);
+        distance = nextDistance + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedBorderPainter oldDelegate) {
+    return color != oldDelegate.color || strokeWidth != oldDelegate.strokeWidth || gap != oldDelegate.gap;
   }
 }
