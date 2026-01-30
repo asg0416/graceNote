@@ -238,9 +238,11 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
     required VoidCallback onApply,
   }) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(4, 0, 8, 4),
-      decoration: const BoxDecoration(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
         color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         children: [
@@ -250,19 +252,25 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, fontFamily: 'Pretendard', color: AppTheme.textMain),
               decoration: InputDecoration(
                 hintText: hint,
-                hintStyle: const TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w500, fontSize: 14),
+                hintStyle: TextStyle(color: AppTheme.textSub.withOpacity(0.5), fontWeight: FontWeight.w500, fontSize: 14),
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                isDense: true,
               ),
             ),
           ),
           TextButton(
             onPressed: onApply,
             style: TextButton.styleFrom(
-              foregroundColor: AppTheme.primaryViolet,
-              textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'Pretendard'),
+              backgroundColor: AppTheme.primaryViolet,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            child: const Text('적용'),
+            child: const Text('적용', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, fontFamily: 'Pretendard')),
           ),
         ],
       ),

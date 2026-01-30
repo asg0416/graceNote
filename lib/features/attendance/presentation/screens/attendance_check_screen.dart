@@ -111,31 +111,6 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(LucideIcons.info, size: 14, color: AppTheme.textSub),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          '참석한 분들에게만 기도제목 입력창이 제공됩니다.',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: AppTheme.textSub,
-                            fontWeight: FontWeight.w500,
-                            fontFamily: 'Pretendard',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),
@@ -152,10 +127,76 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
                   ),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
-                  itemCount: _tempMembers.length,
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 100), // Bottom padding for button area
+                  itemCount: _tempMembers.length + 1, // +1 for the info container
                   separatorBuilder: (context, index) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
+                    // Last item: Warning/Info Container
+                    if (index == _tempMembers.length) {
+                      return Container(
+                        margin: const EdgeInsets.only(top: 24), // Added margin for spacing
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF7ED), // Light Orange
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFED7AA)), // Orange Border
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 2),
+                                  child: Icon(LucideIcons.info, size: 16, color: Color(0xFFEA580C)), // Orange-600
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    '출석 체크/수정 후 기도제목 변경이 없더라도 기록 페이지 하단의 [최종 등록하기] 버튼을 꼭 눌러야 저장됩니다.',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFF9A3412), // Orange-900 (Darker text)
+                                      fontWeight: FontWeight.w500,
+                                      fontFamily: 'Pretendard',
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (widget.isPastWeek) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: 2),
+                                    child: Icon(LucideIcons.info, size: 15, color: Color(0xFFEA580C)),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Expanded(
+                                    child: Text(
+                                      "과거 주차 기록에 없는 성도가 현재 명단에 포함된 경우 이름 옆에 'X' 버튼이 표시됩니다. 이 버튼을 누르면 해당 성도를 이 주차 명단에서 제외할 수 있습니다.",
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Color(0xFF9A3412),
+                                        fontWeight: FontWeight.w500,
+                                        fontFamily: 'Pretendard',
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    }
+
                     final member = _tempMembers[index];
                     final bool isSelected = member['isPresent'] ?? false;
                     final String source = member['source'] ?? 'snapshot';
