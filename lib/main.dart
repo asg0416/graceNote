@@ -27,21 +27,35 @@ Future<void> main() async {
   // Initialize Environment Variables
   try {
     await dotenv.load(fileName: ".env");
+    debugPrint("Environment loaded successfully");
   } catch (e) {
     debugPrint("Warning: .env file not found or failed to load. Using fallback values.");
   }
+
+  // Debug Constants
+  debugPrint("Supabase URL: ${AppConstants.supabaseUrl}");
+  debugPrint("Supabase Key length: ${AppConstants.supabaseAnonKey.length}");
 
   // Initialize SharedPreferences
   final prefs = await SharedPreferences.getInstance();
 
   // Initialize Supabase
-  await Supabase.initialize(
-    url: AppConstants.supabaseUrl,
-    anonKey: AppConstants.supabaseAnonKey,
-  );
+  try {
+    await Supabase.initialize(
+      url: AppConstants.supabaseUrl,
+      anonKey: AppConstants.supabaseAnonKey,
+    );
+    debugPrint("Supabase initialized successfully");
+  } catch (e) {
+    debugPrint("CRITICAL: Supabase initialization failed: $e");
+  }
 
   // Initialize AI
-  AIService().init();
+  try {
+    AIService().init();
+  } catch (e) {
+    debugPrint("AI Service init error: $e");
+  }
 
   runApp(
     ProviderScope(
