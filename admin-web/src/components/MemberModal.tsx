@@ -151,12 +151,15 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 if (error) throw error;
                 result = data;
             } else {
-                // Insert or local success for RegroupingPage
-                // In RegroupingPage, we might want to just return the data for local state update
-                result = {
-                    ...dataToSave,
-                    id: member?.id || `temp-new-${Date.now()}`
-                };
+                // Insert for new member
+                const { data, error } = await supabase
+                    .from('member_directory')
+                    .insert([dataToSave])
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                result = data;
             }
 
             onSuccess(result as MemberProfile);
