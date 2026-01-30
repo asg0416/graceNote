@@ -47,7 +47,7 @@ class AppTheme {
         ring: primaryViolet,
         selection: primaryViolet.withOpacity(.3),
       ),
-      // 폰트 설정: Pretendard Variable 적용
+      // 폰트 설정: Pretendard 적용 (실패 대비)
       textTheme: ShadTextTheme(
         family: 'Pretendard',
       ),
