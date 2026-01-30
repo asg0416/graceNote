@@ -160,12 +160,13 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('문의하기 및 Q&A', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain)),
+        title: const Text('문의하기 및 Q&A', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17, fontFamily: 'Pretendard', letterSpacing: -0.5)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
+        shape: const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain),
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         bottom: TabBar(
@@ -174,7 +175,8 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
           unselectedLabelColor: AppTheme.textSub,
           indicatorColor: AppTheme.primaryViolet,
           indicatorWeight: 3,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+          labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'Pretendard'),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Pretendard'),
           tabs: [
             const Tab(text: '문의하기'),
             Tab(

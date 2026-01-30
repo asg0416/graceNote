@@ -137,12 +137,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('개인정보 관리', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain)),
+        title: const Text('개인정보 관리', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17, fontFamily: 'Pretendard', letterSpacing: -0.5)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
+        shape: const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain),
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -208,8 +209,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 color: AppTheme.primaryViolet,
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white, width: 3),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primaryViolet.withOpacity(0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 18),
+              child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
             ),
           ),
         ],
@@ -230,16 +238,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppTheme.border, width: 1.0),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 20, offset: const Offset(0, 10)),
+              BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 24, offset: const Offset(0, 8)),
             ],
           ),
           child: Column(
             children: [
               _buildInfoRow('이름', profile.fullName),
-              const Divider(height: 32, color: AppTheme.divider),
+              Divider(height: 32, color: AppTheme.border.withOpacity(0.5)),
               _buildInfoRow('연락처', profile.phone ?? '등록된 번호 없음'),
-              const Divider(height: 32, color: AppTheme.divider),
+              Divider(height: 32, color: AppTheme.border.withOpacity(0.5)),
               _buildInfoRow('생년월일', profile.birthDate ?? '미설정'),
             ],
           ),
@@ -260,16 +269,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppTheme.border, width: 1.0),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 20, offset: const Offset(0, 10)),
+              BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 24, offset: const Offset(0, 8)),
             ],
           ),
           child: ListTile(
             onTap: _changePassword,
-            leading: const Icon(Icons.lock_reset_rounded, color: AppTheme.primaryViolet),
-            title: const Text('비밀번호 설정 변경', style: TextStyle(fontWeight: FontWeight.w700)),
-            subtitle: const Text('이메일로 재설정 링크를 받습니다.', style: TextStyle(fontSize: 12, color: AppTheme.textSub)),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: AppTheme.divider),
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryViolet.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.lock_reset_rounded, color: AppTheme.primaryViolet, size: 20),
+            ),
+            title: const Text('비밀번호 설정 변경', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard', fontSize: 15)),
+            subtitle: const Text('이메일로 재설정 링크를 받습니다.', style: TextStyle(fontSize: 12, color: AppTheme.textSub, fontFamily: 'Pretendard')),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.divider),
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           ),
         ),
@@ -281,8 +298,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textSub)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain)),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textSub, fontFamily: 'Pretendard', fontSize: 14)),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontFamily: 'Pretendard', fontSize: 15)),
       ],
     );
   }

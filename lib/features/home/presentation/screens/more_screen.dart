@@ -14,6 +14,7 @@ import 'package:grace_note/features/home/presentation/screens/inquiry_screen.dar
 import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/features/settings/presentation/screens/change_password_screen.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:grace_note/features/home/presentation/screens/service_guide_screen.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 class MoreScreen extends ConsumerStatefulWidget {
@@ -42,16 +43,17 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('더보기', style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.textMain, fontSize: 18)),
+        title: const Text('더보기', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17, fontFamily: 'Pretendard', letterSpacing: -0.5)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
+        shape: const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: Column(
           children: [
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             _buildProfileCard(context, ref),
             const SizedBox(height: 24),
             _buildMenuSection(
@@ -59,9 +61,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               title: '즐겨찾기',
               items: [
                 _MenuItem(
-                  icon: Icons.bookmark_rounded, 
+                  icon: lucide.LucideIcons.bookmark, 
                   label: '저장된 기도제목', 
-                  color: const Color(0xFF6366F1),
                   onTap: () {
                     Navigator.push(
                       context,
@@ -71,7 +72,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             groupsAsync.when(
               data: (groups) {
                 final activeRole = ref.watch(activeRoleProvider);
@@ -85,9 +86,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                         title: '사역 관리',
                         items: [
                           _MenuItem(
-                            icon: Icons.groups_rounded, 
-                            label: '조원 출석 및 기도 관리', 
-                            color: const Color(0xFF4F46E5),
+                            icon: lucide.LucideIcons.users, 
+                            label: '조원 관리', 
                             onTap: () {
                               final group = groups.firstWhere(
                                 (g) => g['role_in_group'] == 'leader' || g['role_in_group'] == 'admin',
@@ -107,7 +107,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
                     ],
                     _buildMenuSection(
                       context: context,
@@ -115,9 +115,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                       items: [
                         if (isLeaderMode)
                           _MenuItem(
-                            icon: Icons.auto_awesome_rounded, 
+                            icon: lucide.LucideIcons.sparkles, 
                             label: 'AI 스타일 설정', 
-                            color: const Color(0xFF818CF8),
                             onTap: () {
                               Navigator.push(
                                 context,
@@ -126,9 +125,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             }
                           ),
                         _MenuItem(
-                          icon: Icons.manage_accounts_rounded, 
+                          icon: lucide.LucideIcons.user, 
                           label: '프로필 및 계정 관리', 
-                          color: const Color(0xFF8B5CF6),
                           onTap: () {
                             Navigator.push(
                               context,
@@ -136,20 +134,9 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             );
                           }
                         ),
-                        _MenuItem(
-                          icon: Icons.lock_rounded, 
-                          label: '비밀번호 변경', 
-                          color: const Color(0xFFF472B6),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const ChangePasswordScreen()),
-                            );
-                          }
-                        ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                   ],
                 );
               },
@@ -161,9 +148,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               title: '고객지원',
               items: [
                 _MenuItem(
-                  icon: Icons.campaign_rounded, 
+                  icon: lucide.LucideIcons.megaphone, 
                   label: '공지사항', 
-                  color: const Color(0xFFEC4899),
                   showBadge: ref.watch(hasNewNoticesProvider).value ?? false,
                   onTap: () {
                     Navigator.push(
@@ -173,9 +159,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   }
                 ),
                 _MenuItem(
-                  icon: Icons.chat_bubble_rounded, 
+                  icon: lucide.LucideIcons.messageSquare, 
                   label: '1:1 문의하기', 
-                  color: const Color(0xFF10B981),
                   showBadge: (ref.watch(unreadInquiryCountProvider).value ?? 0) > 0,
                   onTap: () {
                     Navigator.push(
@@ -185,30 +170,39 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   }
                 ),
                 _MenuItem(
-                  icon: Icons.menu_book_rounded, 
+                  icon: lucide.LucideIcons.bookOpen, 
                   label: '서비스 가이드 및 FAQ', 
-                  color: const Color(0xFF64748B),
                   onTap: () {
-                    _showServiceGuide(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ServiceGuideScreen()),
+                    );
                   }
                 ),
               ],
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 48),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: TextButton.icon(
                 onPressed: () async {
-                  // [FIX] Material Dialog -> 정돈된 스타일의 커스텀 다이얼로그 스타일로의 교체는 
-                  // 나중에 ShadDialog로 교체하되 지금은 디자인 정합성을 우선함
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (context) => AlertDialog(
-                      title: const Text('로그아웃'),
-                      content: const Text('정말 로그아웃 하시겠습니까?'),
+                      backgroundColor: Colors.white,
+                      surfaceTintColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      title: const Text('로그아웃', style: TextStyle(fontWeight: FontWeight.w900, fontFamily: 'Pretendard')),
+                      content: const Text('정말 로그아웃 하시겠습니까?', style: TextStyle(fontWeight: FontWeight.w500, fontFamily: 'Pretendard')),
                       actions: [
-                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-                        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('로그아웃', style: TextStyle(color: Colors.red))),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false), 
+                          child: const Text('취소', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w700))
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true), 
+                          child: const Text('로그아웃', style: TextStyle(color: AppTheme.error, fontWeight: FontWeight.w900))
+                        ),
                       ],
                     ),
                   );
@@ -274,13 +268,13 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: AppTheme.border),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppTheme.border, width: 1.0),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -335,7 +329,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
           profileAsync.when(
             data: (profile) => Text(
               '${profile?.fullName ?? "성도"}님', 
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain)
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain, fontFamily: 'Pretendard')
             ),
             loading: () => SizedBox(height: 24, width: 24, child: ShadcnSpinner()),
             error: (_, __) => const Text('이름 정보 없음'),
@@ -467,7 +461,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
         children: [
           Text(
             text,
-            style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w800),
+            style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w800, fontFamily: 'Pretendard'),
           ),
           const SizedBox(width: 4),
           Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: textColor),
@@ -483,18 +477,19 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(left: 8, bottom: 8),
-            child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppTheme.textSub)),
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.3)),
           ),
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: AppTheme.border, width: 1.0),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
+                  color: Colors.black.withOpacity(0.03),
                   blurRadius: 20,
-                  offset: const Offset(0, 10),
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
@@ -508,14 +503,14 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   children: [
                     ListTile(
                       leading: Container(
-                        padding: const EdgeInsets.all(10),
+                        padding: const EdgeInsets.all(9),
                         decoration: BoxDecoration(
-                          color: item.color.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(14),
+                          color: AppTheme.primaryViolet.withOpacity(0.07),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(item.icon, size: 22, color: item.color),
+                        child: Icon(item.icon, size: 20, color: AppTheme.primaryViolet),
                       ),
-                      title: Text(item.label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textMain)),
+                      title: Text(item.label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textMain, fontFamily: 'Pretendard', letterSpacing: -0.5)),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -557,10 +552,9 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
 class _MenuItem {
   final IconData icon;
   final String label;
-  final Color color;
   final bool showBadge;
   final VoidCallback onTap;
-  _MenuItem({required this.icon, required this.label, required this.color, required this.onTap, this.showBadge = false});
+  _MenuItem({required this.icon, required this.label, required this.onTap, this.showBadge = false});
 }
 
 extension MoreScreenRoleExtension on _MoreScreenState {

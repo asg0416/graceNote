@@ -28,10 +28,15 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('우리 조원 관리', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 20)),
+        title: const Text('우리 조원 관리', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17, fontFamily: 'Pretendard', letterSpacing: -0.5)),
         centerTitle: true,
-        elevation: 0,
         backgroundColor: Colors.white,
+        elevation: 0,
+        shape: const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: membersAsync.when(
         data: (members) {
@@ -85,46 +90,74 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
   Widget _buildHeader(List<Map<String, dynamic>> members) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      margin: const EdgeInsets.all(20),
+      margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
       decoration: BoxDecoration(
-        color: AppTheme.primaryViolet,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF8B5CF6),
+            Color(0xFF6366F1),
+          ],
+        ),
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(color: AppTheme.primaryViolet.withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 8)),
-        ],
+        border: Border.all(color: AppTheme.border.withOpacity(0.5), width: 1.0),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.groupName, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          const Text('조원 명단 관리', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _buildSimpleStat('총원', '${members.length}명'),
-              const SizedBox(width: 16),
-              _buildSimpleStat('앱 연결', '${members.where((m) => m['profile_id'] != null).length}명'),
-            ],
-          ),
-        ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -20,
+              top: -20,
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.1),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.groupName, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Pretendard')),
+                  const SizedBox(height: 4),
+                  const Text('조원 명단 관리', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      _buildSimpleStat('총원', '${members.length}명'),
+                      const SizedBox(width: 12),
+                      _buildSimpleStat('앱 연결', '${members.where((m) => m['profile_id'] != null).length}명'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSimpleStat(String label, String value) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withOpacity(0.15), width: 1.0),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'Pretendard')),
           const SizedBox(width: 6),
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800, fontFamily: 'Pretendard')),
         ],
       ),
     );

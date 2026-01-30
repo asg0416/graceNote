@@ -64,10 +64,15 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('비밀번호 변경'),
+        title: const Text('비밀번호 변경', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+        centerTitle: true,
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
         elevation: 0,
+        shape: const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       backgroundColor: Colors.white,
       body: Padding(

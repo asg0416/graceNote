@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import '../../../../core/utils/database_error_helper.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' as shad;
+import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 class MemberEditScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic>? member;
@@ -34,10 +36,15 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
 
   bool _isActive = true;
   bool _isSaving = false;
+  String? _selectedGroupId;
+  String? _selectedGroupName;
+  String _groupSearchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _selectedGroupId = widget.groupId;
+    _selectedGroupName = widget.groupName;
     _nameController = TextEditingController(text: widget.member?['full_name']);
     _phoneController = TextEditingController(text: widget.member?['phone']);
     _birthController = TextEditingController(text: widget.member?['birth_date']);
@@ -118,23 +125,36 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
         'spouse_name': _spouseController.text.trim().isEmpty ? null : _spouseController.text.trim(),
         'children_info': _childrenController.text.trim().isEmpty ? null : _childrenController.text.trim(),
         'notes': _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-        'group_name': widget.groupName, // 조 이름 동기화 강제
+        'group_name': _selectedGroupName, // 변경된 조 이름 반영
+        'is_active': _isActive, // 상태 반영
       };
 
       if (widget.member == null) {
         // Add new
         await repo.addDirectoryMember({
           ...data,
-          'church_id': profile?.churchId,
-          'department_id': profile?.departmentId,
-          'group_name': widget.groupName,
+          'church_id': profile.churchId,
+          'department_id': profile.departmentId,
         });
       } else {
         // Update existing
         await repo.updateDirectoryMember(widget.member!['id'], data);
+        
+        // 조가 변경되었고 연동된 프로필이 있는 경우 group_members도 업데이트 시도
+        if (_selectedGroupId != widget.groupId && widget.member!['profile_id'] != null) {
+          await repo.completeOnboarding(
+            profileId: widget.member!['profile_id'], 
+            fullName: _nameController.text.trim(),
+             churchId: profile.churchId,
+            groupId: _selectedGroupId,
+          );
+        }
       }
 
       ref.invalidate(groupMembersProvider(widget.groupId));
+      if (_selectedGroupId != widget.groupId) {
+        ref.invalidate(groupMembersProvider(_selectedGroupId!));
+      }
       
       if (mounted) {
         SnackBarUtil.showSnackBar(context, message: '정보가 성공적으로 저장되었습니다.');
@@ -154,194 +174,198 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
     }
   }
 
-  Future<void> _toggleActive() async {
-    final bool currentStatus = _isActive;
-    final String actionText = currentStatus ? '비활성화' : '활성화';
-    
+  Future<void> _handleGroupChange(String newGroupId, String newGroupName) async {
+    if (newGroupId == _selectedGroupId) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('조원 $actionText'),
-        content: Text('이 조원을 $actionText 하시겠습니까?\n${currentStatus ? '비활성화하면 조원 목록에서 보이지 않게 됩니다.' : '활성화하면 다시 조원 목록에 나타납니다.'}'),
+        title: const Text('소속 조 변경'),
+        content: Text('조원을 [$newGroupName]으로 이동시키겠습니까?\n이동 시 기존 출석 및 기도제목 데이터의 소속 정보도 함께 변경될 수 있습니다.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
           TextButton(
             onPressed: () => Navigator.pop(context, true), 
-            child: Text(actionText, style: TextStyle(color: currentStatus ? Colors.red : AppTheme.primaryViolet)),
+            child: const Text('변경하기', style: TextStyle(color: AppTheme.primaryViolet)),
           ),
         ],
       ),
     );
 
-    if (confirmed != true) return;
-
-    setState(() => _isSaving = true);
-    try {
-      await ref.read(repositoryProvider).toggleMemberActivation(widget.member!['id'], !currentStatus);
-      ref.invalidate(groupMembersProvider(widget.groupId));
-      if (mounted) {
-        SnackBarUtil.showSnackBar(context, message: '성공적으로 $actionText 되었습니다.');
-        Navigator.pop(context); // To member list
-      }
-    } catch (e) {
-      if (mounted) {
-        SnackBarUtil.showSnackBar(
-          context,
-          message: DatabaseErrorHelper.getFriendlyMessage(e),
-          isError: true,
-          technicalDetails: e.toString(),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+    if (confirmed == true) {
+      setState(() {
+        _selectedGroupId = newGroupId;
+        _selectedGroupName = newGroupName;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(widget.member == null ? '조원 등록' : '조원 정보 수정', 
-          style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 18)),
+          style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17, fontFamily: 'Pretendard', letterSpacing: -0.5)),
         centerTitle: true,
-        elevation: 0,
         backgroundColor: Colors.white,
+        elevation: 0,
+        shape: const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
         leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: AppTheme.textMain),
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          TextButton(
-            onPressed: _isSaving ? null : _save,
-            child: _isSaving 
-              ? SizedBox(width: 20, height: 20, child: ShadcnSpinner())
-              : const Text('저장', style: TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.w900, fontSize: 16)),
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        child: Column(
-          children: [
-            _buildInfoCard(
-              title: '기본 정보',
-              children: [
-                _buildTextField(
-                  controller: _nameController,
-                  label: '이름',
-                  hint: '성함(본명)을 입력하세요',
-                  icon: Icons.person_outline_rounded,
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _phoneController,
-                  label: '연락처',
-                  hint: '010-0000-0000',
-                  icon: Icons.phone_android_rounded,
-                  keyboardType: TextInputType.phone,
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader('기본 정보', '조원의 성함과 연락처를 입력하세요.'),
+                  _buildTextField(
+                    controller: _nameController,
+                    label: '이름',
+                    hint: '성함(본명) 입력',
+                  ),
+                  _buildTextField(
+                    controller: _phoneController,
+                    label: '연락처',
+                    hint: '010-0000-0000',
+                    keyboardType: TextInputType.phone,
+                  ),
+                  
+                  _buildDivider(),
+                  
+                  _buildSectionHeader('중요 기념일', '생일과 결혼기념일을 관리합니다.'),
+                  _buildDateField(
+                    context: context,
+                    controller: _birthController,
+                    label: '생년월일',
+                  ),
+                  _buildDateField(
+                    context: context,
+                    controller: _weddingController,
+                    label: '결혼기념일',
+                  ),
+                  
+                  _buildDivider(),
+                  
+                  _buildSectionHeader('가족 및 기타', '가족 관계와 추가 참고 사항을 기록하세요.'),
+                  _buildTextField(
+                    controller: _spouseController,
+                    label: '배우자 성함',
+                    hint: '배우자 성함 입력',
+                  ),
+                  _buildTextField(
+                    controller: _childrenController,
+                    label: '자녀 정보',
+                    hint: '자녀 이름, 나이 등',
+                  ),
+                  _buildTextField(
+                    controller: _notesController,
+                    label: '메모 사항',
+                    hint: '심방 내용이나 특이사항을 자유롭게 기록하세요',
+                    maxLines: 5,
+                  ),
+
+                  if (widget.member != null) ...[
+                    _buildDivider(),
+
+                    _buildSectionHeader('소속 조 설정', '조원을 다른 조로 이동시키거나 소속을 변경합니다.'),
+                    _buildGroupSelector(ref),
+
+                    _buildDivider(),
+
+                    _buildSectionHeader('계정 상태 설정', '조원을 비활성화하면 명단에서 제외되지만 데이터는 보존됩니다.'),
+                    _buildStatusToggle(),
+                  ],
+
+                  const SizedBox(height: 48),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
+          ),
+          
+          // 하단 저장 버튼 (Bottom Save Button)
+          Container(
+            padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(context).padding.bottom + 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: const Border(top: BorderSide(color: AppTheme.border, width: 1)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, -5),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            _buildInfoCard(
-              title: '중요 기념일',
-              children: [
-                _buildDateField(
-                  context: context,
-                  controller: _birthController,
-                  label: '생년월일',
-                  icon: Icons.cake_outlined,
-                ),
-                const SizedBox(height: 16),
-                _buildDateField(
-                  context: context,
-                  controller: _weddingController,
-                  label: '결혼기념일',
-                  icon: Icons.favorite_outline_rounded,
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            _buildInfoCard(
-              title: '가족 및 기타',
-              children: [
-                _buildTextField(
-                  controller: _spouseController,
-                  label: '배우자 성함',
-                  hint: '배우자 성함을 입력하세요',
-                  icon: Icons.people_outline_rounded,
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _childrenController,
-                  label: '자녀 정보',
-                  hint: '자녀 이름, 나이 등을 입력하세요',
-                  icon: Icons.child_care_rounded,
-                ),
-                const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _notesController,
-                  label: '메모 사항',
-                  hint: '특이사항이나 심방 내용 등을 기록하세요',
-                  icon: Icons.notes_rounded,
-                  maxLines: 4,
-                ),
-              ],
-            ),
-            if (widget.member != null) ...[
-              const SizedBox(height: 40),
-              TextButton.icon(
-                onPressed: _isSaving ? null : _toggleActive,
-                icon: Icon(_isActive ? Icons.person_off_rounded : Icons.person_add_rounded, size: 18),
-                label: Text(_isActive ? '조원 비활성화하기' : '조원 다시 활성화하기'),
-                style: TextButton.styleFrom(
-                  foregroundColor: _isActive ? Colors.red : AppTheme.primaryViolet,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: _isActive ? Colors.red.withOpacity(0.2) : AppTheme.primaryViolet.withOpacity(0.2)),
+            child: SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryViolet,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    fontFamily: 'Pretendard',
                   ),
                 ),
+                child: _isSaving 
+                  ? const SizedBox(width: 24, height: 24, child: ShadcnSpinner())
+                  : const Text('변경사항 저장하기'),
               ),
-            ],
-            const SizedBox(height: 48),
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildInfoCard({required String title, required List<Widget> children}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 10),
-          child: Text(
+  Widget _buildSectionHeader(String title, String subtitle) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
             title,
             style: const TextStyle(
-              fontSize: 13,
+              fontSize: 18,
               fontWeight: FontWeight.w900,
-              color: AppTheme.textSub,
-              letterSpacing: 0.5,
+              color: AppTheme.textMain,
+              fontFamily: 'Pretendard',
+              letterSpacing: -0.5,
             ),
           ),
-        ),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
-            ],
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 13,
+              color: AppTheme.textSub.withOpacity(0.7),
+              fontFamily: 'Pretendard',
+            ),
           ),
-          child: Column(children: children),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 32),
+      child: Divider(color: AppTheme.border, thickness: 1),
     );
   }
 
@@ -349,30 +373,57 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
     required TextEditingController controller,
     required String label,
     required String hint,
-    required IconData icon,
     TextInputType? keyboardType,
     int maxLines = 1,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.background.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        maxLines: maxLines,
-        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          prefixIcon: Icon(icon, color: AppTheme.primaryViolet.withOpacity(0.4), size: 20),
-          labelStyle: TextStyle(color: AppTheme.textSub.withOpacity(0.6), fontWeight: FontWeight.w600, fontSize: 13),
-          hintStyle: TextStyle(color: AppTheme.textSub.withOpacity(0.2), fontWeight: FontWeight.w500, fontSize: 14),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          floatingLabelBehavior: FloatingLabelBehavior.auto,
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.textMain,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              fontFamily: 'Pretendard',
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0), // 선명한 회색 테두리
+            ),
+            child: TextField(
+              controller: controller,
+              keyboardType: keyboardType,
+              maxLines: maxLines,
+              cursorColor: AppTheme.primaryViolet,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+                fontFamily: 'Pretendard',
+                color: AppTheme.textMain,
+              ),
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: TextStyle(
+                  color: AppTheme.textSub.withOpacity(0.35),
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                  fontFamily: 'Pretendard',
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.all(16),
+                fillColor: Colors.white,
+                filled: true,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -381,32 +432,197 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
     required BuildContext context,
     required TextEditingController controller,
     required String label,
-    required IconData icon,
   }) {
-    return GestureDetector(
-      onTap: () => _selectDate(context, controller),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppTheme.background.withOpacity(0.4),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: AbsorbPointer(
-          child: TextField(
-            controller: controller,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-            decoration: InputDecoration(
-              labelText: label,
-              hintText: '날짜를 선택하세요',
-              prefixIcon: Icon(icon, color: AppTheme.primaryViolet.withOpacity(0.4), size: 20),
-              labelStyle: TextStyle(color: AppTheme.textSub.withOpacity(0.6), fontWeight: FontWeight.w600, fontSize: 13),
-              hintStyle: TextStyle(color: AppTheme.textSub.withOpacity(0.2), fontWeight: FontWeight.w500, fontSize: 14),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              floatingLabelBehavior: FloatingLabelBehavior.auto,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.textMain,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              fontFamily: 'Pretendard',
             ),
           ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () => _selectDate(context, controller),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0), // 선명한 회색 테두리
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      controller.text.isEmpty ? '날짜 선택' : controller.text,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        fontFamily: 'Pretendard',
+                        color: controller.text.isEmpty 
+                          ? AppTheme.textSub.withOpacity(0.35) 
+                          : AppTheme.textMain,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.calendar_today_outlined,
+                    size: 18,
+                    color: AppTheme.textSub.withOpacity(0.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  Widget _buildStatusToggle() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _isActive ? const Color(0xFFE2E8F0) : Colors.red.withOpacity(0.3), 
+          width: _isActive ? 1.0 : 2.0
         ),
       ),
+      child: SwitchListTile(
+        value: _isActive,
+        onChanged: (val) => setState(() => _isActive = val),
+        title: Text(
+          _isActive ? '현재 활동 중' : '현재 비활성화 상태',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 15,
+            color: _isActive ? AppTheme.textMain : Colors.red,
+            fontFamily: 'Pretendard',
+          ),
+        ),
+        subtitle: Text(
+          _isActive ? '조원 명단에 노출됩니다.' : '명단에서 숨겨지며 출석 체크 대상에서 제외됩니다.',
+          style: TextStyle(
+            fontSize: 13,
+            color: _isActive ? AppTheme.textSub.withOpacity(0.6) : Colors.red.withOpacity(0.6),
+            fontFamily: 'Pretendard',
+          ),
+        ),
+        activeColor: AppTheme.primaryViolet,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      ),
+    );
+  }
+
+  Widget _buildGroupSelector(WidgetRef ref) {
+    // 조장 여부 판별 로직 추가
+    final bool isLeaderOrAdmin = widget.member?['profiles'] != null && 
+        (widget.member!['profiles']?['role_in_group'] == 'leader' || 
+         widget.member!['profiles']?['role_in_group'] == 'admin');
+
+    if (isLeaderOrAdmin) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.amber.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.amber.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            const Icon(lucide.LucideIcons.alertTriangle, color: Colors.amber, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${widget.groupName}의 조장/관리자입니다.',
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppTheme.textMain, fontFamily: 'Pretendard'),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    '조장은 다른 조로 이동할 수 없습니다.\n직본을 먼저 변경해주세요.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textSub, height: 1.4, fontFamily: 'Pretendard'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final profileAsync = ref.watch(userProfileProvider);
+    
+    return profileAsync.when(
+      data: (profile) {
+        if (profile == null) return const SizedBox.shrink();
+        
+        final groupsAsync = ref.watch(departmentGroupsProvider(profile.departmentId!));
+        
+        return groupsAsync.when(
+          data: (groups) {
+            final filteredGroups = groups.where((g) => 
+               g['name'].toString().toLowerCase().contains(_groupSearchQuery.toLowerCase())
+            ).toList();
+
+            return Container(
+              height: 52,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+              ),
+              child: shad.ShadSelect<String>.withSearch(
+                placeholder: const Text('조 이동', style: TextStyle(fontSize: 15, color: AppTheme.textSub, fontFamily: 'Pretendard')),
+                initialValue: _selectedGroupId,
+                minWidth: double.infinity,
+                maxHeight: 400,
+                decoration: shad.ShadDecoration(
+                  border: shad.ShadBorder.none,
+                ),
+                onChanged: (val) {
+                  if (val != null) {
+                    final group = groups.firstWhere((g) => g['id'].toString() == val);
+                    _handleGroupChange(val, group['name'].toString());
+                  }
+                },
+                selectedOptionBuilder: (context, value) {
+                  final group = groups.firstWhere((g) => g['id'].toString() == value, orElse: () => groups.first);
+                  return Text(
+                    group['name'].toString(),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: AppTheme.textMain,
+                      fontFamily: 'Pretendard',
+                    ),
+                  );
+                },
+                options: filteredGroups.map((g) => shad.ShadOption(
+                  value: g['id'] as String,
+                  child: Text(g['name'] as String, style: const TextStyle(fontFamily: 'Pretendard', fontWeight: FontWeight.w500, fontSize: 14)),
+                )).toList(),
+                searchPlaceholder: const Text('조 이름을 입력하세요', style: TextStyle(fontFamily: 'Pretendard', fontSize: 14)),
+                onSearchChanged: (query) => setState(() => _groupSearchQuery = query),
+              ),
+            );
+          },
+          loading: () => const Padding(padding: EdgeInsets.all(16), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))),
+          error: (_, __) => const Text('그룹 정보를 불러올 수 없습니다.'),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 }

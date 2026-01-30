@@ -30,16 +30,13 @@ class _NoticeListScreenState extends ConsumerState<NoticeListScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('공지사항', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain)),
+        title: const Text('공지사항', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17, fontFamily: 'Pretendard', letterSpacing: -0.5)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(color: AppTheme.border, height: 1.0),
-        ),
+        shape: const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain),
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ),
