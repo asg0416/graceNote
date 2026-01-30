@@ -180,12 +180,24 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   void _launchAttendanceCheck() {
+    final selectedDate = ref.read(selectedWeekDateProvider);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    // 선택된 날짜와 오늘 날짜를 비교하여 과거 주차 여부 확인 (일요일 기준이므로 < 오늘)
+    final bool isPastWeek = selectedDate.isBefore(today);
+
     Navigator.of(context).push(
       SharedAxisPageRoute(
         page: AttendanceCheckScreen(
           initialMembers: _members,
+          isPastWeek: isPastWeek,
           onComplete: (updated) async {
             setState(() {
+              // 업데이트된 명단에는 있고 이전 명단에는 없는 dirId 확인 (거의 없을 테지만 방어적)
+              // 업데이트된 명단에 없는 dirId는 제외된 성도이므로 컨트롤러 등에서도 삭제
+              final updatedIds = updated.map((m) => m['directoryMemberId']).toSet();
+              _controllers.removeWhere((id, _) => !updatedIds.contains(id));
+              
               _members = updated;
               for (final m in _members) {
                 final dirId = m['directoryMemberId'];
@@ -630,13 +642,29 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
               child: Text(
                 member['name'][0], 
                 style: TextStyle(
-                  color: isPresent ? AppTheme.primaryViolet : const Color(0xFF94A3B8), // v1 미참석 시 회색 글씨
+                  color: isPresent ? AppTheme.primaryViolet : const Color(0xFF94A3B8),
                   fontWeight: FontWeight.w600, 
                   fontSize: 14
                 )
               )
             ),
-            title: Text(member['name'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A), letterSpacing: -0.5, fontFamily: 'Pretendard')),
+            title: Row(
+              children: [
+                Text(member['name'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A), letterSpacing: -0.5, fontFamily: 'Pretendard')),
+                if (member['source'] == 'current' && (ref.read(selectedWeekDateProvider).isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))))
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text('신규/이동', style: TextStyle(fontSize: 10, color: Colors.red, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+              ],
+            ),
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Row(

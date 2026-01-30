@@ -346,6 +346,26 @@ export default function NoticesPage() {
                                 />
                             </div>
 
+                            {/* Pinned Toggle */}
+                            <div className="space-y-3">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">상단 고정 여부</label>
+                                <div
+                                    onClick={() => setIsPinned(!isPinned)}
+                                    className={cn(
+                                        "w-full p-5 rounded-2xl font-black text-sm flex items-center justify-between cursor-pointer transition-all",
+                                        isPinned ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                                    )}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <Pin className={cn("w-4 h-4", isPinned ? "text-white" : "text-slate-400")} />
+                                        <span>{isPinned ? '상단 고정됨' : '일반 공지'}</span>
+                                    </div>
+                                    <div className={cn("w-10 h-5 rounded-full relative transition-colors", isPinned ? "bg-white/30" : "bg-slate-300 dark:bg-slate-700")}>
+                                        <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", isPinned ? "left-6" : "left-1")} />
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                 {/* Category */}
                                 <div className="space-y-3">
@@ -379,23 +399,6 @@ export default function NoticesPage() {
                                         </div>
                                     </div>
                                 )}
-
-                                {/* Pinned Toggle */}
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pl-1">상단 고정 여부</label>
-                                    <div
-                                        onClick={() => setIsPinned(!isPinned)}
-                                        className={cn(
-                                            "w-full p-5 rounded-2xl font-black text-sm flex items-center justify-between cursor-pointer transition-all",
-                                            isPinned ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
-                                        )}
-                                    >
-                                        <span>{isPinned ? '상단 고정됨' : '일반 공지'}</span>
-                                        <div className={cn("w-10 h-5 rounded-full relative transition-colors", isPinned ? "bg-white/30" : "bg-slate-300 dark:bg-slate-700")}>
-                                            <div className={cn("absolute top-1 w-3 h-3 bg-white rounded-full transition-all", isPinned ? "left-6" : "left-1")} />
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
 
                             {!isGlobal && (

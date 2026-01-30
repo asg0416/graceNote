@@ -347,6 +347,7 @@ final allNoticesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) asyn
   final response = await Supabase.instance.client
       .from('notices')
       .select('*, profiles!created_by(full_name)')
+      .order('is_pinned', ascending: false)
       .order('created_at', ascending: false);
   
   return List<Map<String, dynamic>>.from(response);

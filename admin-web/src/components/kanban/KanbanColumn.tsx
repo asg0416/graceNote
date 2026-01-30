@@ -23,6 +23,7 @@ interface KanbanColumnProps {
     activeId?: string | null;
     movingMembersCount?: number;
     onToggleLeader?: (id: string) => void;
+    autoMoveCouples?: boolean;
 }
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({
@@ -41,7 +42,8 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     profileMode,
     activeId,
     movingMembersCount = 1,
-    onToggleLeader
+    onToggleLeader,
+    autoMoveCouples = true
 }) => {
     const { setNodeRef, isOver } = useDroppable({ id });
     const [isRenaming, setIsRenaming] = useState(false);
@@ -95,7 +97,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
 
     // Group members into family units if in couple mode
     const familyUnits = useMemo(() => {
-        if (profileMode !== 'couple') {
+        if (!autoMoveCouples || profileMode !== 'couple') {
             return filteredMembers.map(m => ({ id: m.id, members: [m] }));
         }
 

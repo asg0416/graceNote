@@ -298,13 +298,14 @@ export default function AttendancePage() {
 
             if (mError) throw mError;
 
-            // 2. Fetch Attendance + Groups (Snapshot) for this week
-            // 해당 부서의 조들에 속한 모든 출석 기록을 가져옴
+            // 2. Fetch Attendance + Groups (Snapshot) + Member Info for this week
+            // 해당 부서의 조들에 속한 모든 출석 기록과 성도 정보를 함께 가져옴
             const { data: attendance, error: aError } = await supabase
                 .from('attendance')
                 .select(`
                     *,
-                    groups!inner(id, name, department_id)
+                    groups!inner(id, name, department_id),
+                    member_directory(full_name, role_in_group)
                 `)
                 .eq('week_id', selectedWeekId)
                 .eq('groups.department_id', selectedDeptId);
@@ -325,13 +326,17 @@ export default function AttendancePage() {
             const submittedGroupNames = new Set((attendance || []).map(a => (a as any).groups?.name).filter(Boolean));
 
             const mergedSnapshot = (attendance || []).map(att => {
-                const memberInfo = members?.find(m => m.id === att.directory_member_id);
+                // 1순위: attendance 테이블과 조인된 성도 정보 (조이동과 무관하게 정확함)
+                // 2순위: 현재 부서 명단(members)에서 찾은 정보
+                const snapshotMember = (att as any).member_directory;
+                const currentMember = members?.find(m => m.id === att.directory_member_id);
+
                 return {
                     id: att.directory_member_id,
-                    name: memberInfo?.full_name || '이동/비활성 성도',
+                    name: snapshotMember?.full_name || currentMember?.full_name || '이동/비활성 성도',
                     department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
                     group: att.groups?.name || '조 없음',
-                    role: memberInfo?.role_in_group || '성도',
+                    role: snapshotMember?.role_in_group || currentMember?.role_in_group || '성도',
                     status: att.status || 'absent',
                     updatedAt: att.updated_at
                 };

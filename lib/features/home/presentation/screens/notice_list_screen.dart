@@ -5,6 +5,7 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 
 class NoticeListScreen extends ConsumerStatefulWidget {
   const NoticeListScreen({super.key});
@@ -14,27 +15,23 @@ class NoticeListScreen extends ConsumerStatefulWidget {
 }
 
 class _NoticeListScreenState extends ConsumerState<NoticeListScreen> {
-  // Removed automatic mark-all-read on entry to satisfy user's request
-  // for per-notice read persistence.
-
   @override
   Widget build(BuildContext context) {
     final profileAsync = ref.watch(userProfileProvider);
     final readIdsAsync = ref.watch(userReadNoticeIdsProvider);
     final noticesAsync = ref.watch(allNoticesProvider);
 
-    // 데이터가 하나라도 있는 경우 기존 UI를 유지하도록 처리 (깜빡임 방지)
     final hasData = profileAsync.hasValue && readIdsAsync.hasValue && noticesAsync.hasValue;
     final hasError = profileAsync.hasError || readIdsAsync.hasError || noticesAsync.hasError;
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('공지사항', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17, fontFamily: 'Pretendard', letterSpacing: -0.5)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
-        shape: const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
+        shape: const Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain, size: 20),
           onPressed: () => Navigator.pop(context),
@@ -42,38 +39,39 @@ class _NoticeListScreenState extends ConsumerState<NoticeListScreen> {
       ),
       body: () {
         if (hasData) {
-          final profile = profileAsync.value;
-          final readIds = readIdsAsync.value ?? {};
           final notices = noticesAsync.value ?? [];
+          final readIds = readIdsAsync.value ?? {};
 
-          if (profile == null) return const Center(child: Text('로그인 정보가 없습니다.'));
-          
           if (notices.isEmpty) {
-            return Center(
+            return const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.notifications_off_rounded, size: 64, color: AppTheme.divider),
-                  const SizedBox(height: 16),
-                  const Text('등록된 공지사항이 없습니다.', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 16),
+                  Text('등록된 공지사항이 없습니다.', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.bold)),
                 ],
               ),
             );
           }
-          
+
           return ListView.builder(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
             itemCount: notices.length,
             itemBuilder: (context, index) {
               final notice = notices[index];
               final isUnread = !readIds.contains(notice['id']);
-              return _buildNoticeCard(context, notice, isUnread);
+              return NoticeAccordionCard(
+                notice: notice,
+                isUnread: isUnread,
+                onRead: () => _markAsRead(notice['id']),
+              );
             },
           );
         }
 
         if (hasError) {
-          return Center(child: Text('데이터 로드 오류가 발생했습니다.', style: TextStyle(color: AppTheme.textSub)));
+          return const Center(child: Text('데이터 로드 오류가 발생했습니다.', style: TextStyle(color: AppTheme.textSub)));
         }
 
         return Center(child: ShadcnSpinner());
@@ -81,166 +79,191 @@ class _NoticeListScreenState extends ConsumerState<NoticeListScreen> {
     );
   }
 
-  Future<List<Map<String, dynamic>>> _fetchNotices(dynamic profile) async {
-    final response = await Supabase.instance.client
-        .from('notices')
-        .select('*, profiles!created_by(full_name)')
-        .order('created_at', ascending: false);
-    
-    // RLS already filters most of it, but we can ensure client-side if needed.
-    return List<Map<String, dynamic>>.from(response);
+  void _markAsRead(String noticeId) {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null) {
+      Supabase.instance.client.from('notice_reads').upsert({
+        'notice_id': noticeId,
+        'user_id': user.id,
+      }).then((_) {
+        // Provider will auto-refresh via stream
+      }).catchError((e) {
+        debugPrint('Error marking notice as read: $e');
+      });
+    }
+  }
+}
+
+class NoticeAccordionCard extends StatefulWidget {
+  final Map<String, dynamic> notice;
+  final bool isUnread;
+  final VoidCallback onRead;
+
+  const NoticeAccordionCard({
+    super.key,
+    required this.notice,
+    required this.isUnread,
+    required this.onRead,
+  });
+
+  @override
+  State<NoticeAccordionCard> createState() => _NoticeAccordionCardState();
+}
+
+class _NoticeAccordionCardState extends State<NoticeAccordionCard> with SingleTickerProviderStateMixin {
+  bool _isExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pinned notices start expanded
+    _isExpanded = widget.notice['is_pinned'] == true;
   }
 
-  Widget _buildNoticeCard(BuildContext context, Map<String, dynamic> notice, bool isNew) {
+  @override
+  Widget build(BuildContext context) {
+    final notice = widget.notice;
+    final isPinned = notice['is_pinned'] == true;
     final dateStr = DateFormat('yyyy.MM.dd').format(DateTime.parse(notice['created_at']));
-    final isUrgent = notice['category'] == 'urgent';
-    
-    return Container(
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: isNew ? AppTheme.primaryViolet.withOpacity(0.3) : AppTheme.divider.withOpacity(0.3), width: isNew ? 1.5 : 1),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: isPinned ? const Color(0xFFE2E8F0) : const Color(0xFFF1F5F9),
+          width: 1.5,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Stack(
+      child: Column(
         children: [
           InkWell(
-            onTap: () => _showNoticeDetail(context, notice),
-            borderRadius: BorderRadius.circular(32),
+            onTap: () {
+              setState(() {
+                _isExpanded = !_isExpanded;
+              });
+              if (_isExpanded && widget.isUnread) {
+                widget.onRead();
+              }
+            },
+            borderRadius: BorderRadius.circular(24),
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: isUrgent ? Colors.red.withOpacity(0.1) : AppTheme.primaryViolet.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
+                      if (isPinned) ...[
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFF3E8FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(LucideIcons.pin, size: 14, color: Color(0xFF9333EA)),
                         ),
-                        child: Text(
-                          isUrgent ? '긴급' : (notice['category'] == 'event' ? '행사' : '공지'),
-                          style: TextStyle(
-                            color: isUrgent ? Colors.red : AppTheme.primaryViolet,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3E8FF),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            '필독',
+                            style: TextStyle(
+                              color: Color(0xFF9333EA),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              fontFamily: 'Pretendard',
+                            ),
                           ),
                         ),
+                        const SizedBox(width: 8),
+                      ],
+                      Text(
+                        dateStr,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF94A3B8),
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Pretendard',
+                        ),
                       ),
-                      Text(dateStr, style: const TextStyle(fontSize: 11, color: AppTheme.textSub, fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      Icon(
+                        _isExpanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                        size: 20,
+                        color: const Color(0xFF64748B),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    notice['title'],
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textMain, height: 1.3),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    notice['content'],
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14, color: AppTheme.textSub, height: 1.5, fontWeight: FontWeight.w500),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          notice['title'],
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: isPinned ? FontWeight.w800 : FontWeight.w700,
+                            color: const Color(0xFF1E293B),
+                            height: 1.4,
+                            fontFamily: 'Pretendard',
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                      ),
+                      if (widget.isUnread && !isPinned)
+                        Container(
+                          margin: const EdgeInsets.only(left: 8, top: 4),
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEF4444),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
             ),
           ),
-          if (isNew)
-            Positioned(
-              top: 16,
-              right: 16,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                ),
-              ),
+          if (_isExpanded) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: Divider(height: 1, color: Color(0xFFF1F5F9)),
             ),
-        ],
-      ),
-    );
-  }
-
-  void _showNoticeDetail(BuildContext context, Map<String, dynamic> notice) {
-    // Mark as read in the database
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user != null) {
-      Supabase.instance.client.from('notice_reads').upsert({
-        'notice_id': notice['id'],
-        'user_id': user.id,
-      }).then((_) {
-        // No explicit setState needed as readIdsAsync will trigger a rebuild naturally
-      }).catchError((e) {
-        debugPrint('Error marking notice as read: $e');
-      });
-    }
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.8,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-        ),
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppTheme.divider, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 32),
-            Text(
-              notice['title'],
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain, height: 1.2),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              DateFormat('yyyy년 MM월 dd일 HH:mm').format(DateTime.parse(notice['created_at'])),
-              style: const TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w600, fontSize: 13),
-            ),
-            const SizedBox(height: 24),
-            const Divider(color: AppTheme.divider),
-            const SizedBox(height: 24),
-            Expanded(
-              child: SingleChildScrollView(
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: SizedBox(
+                width: double.infinity,
                 child: Text(
                   notice['content'],
-                  style: const TextStyle(fontSize: 16, color: AppTheme.textMain, height: 1.6, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    color: Color(0xFF475569),
+                    height: 1.6,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Pretendard',
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryViolet,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.all(20),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 0,
-                ),
-                child: const Text('닫기', style: TextStyle(fontWeight: FontWeight.w900)),
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }

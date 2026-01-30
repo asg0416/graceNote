@@ -5,11 +5,13 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 class AttendanceCheckScreen extends StatefulWidget {
   final List<Map<String, dynamic>> initialMembers;
   final Function(List<Map<String, dynamic>>) onComplete;
+  final bool isPastWeek;
 
   const AttendanceCheckScreen({
     super.key, 
     required this.initialMembers, 
-    required this.onComplete
+    required this.onComplete,
+    this.isPastWeek = false,
   });
 
   @override
@@ -36,7 +38,7 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
         title: const Text('출석 체크', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17)),
         leading: ShadButton.ghost(
           onPressed: () => Navigator.pop(context),
-          child: Icon(LucideIcons.x, size: 20, color: AppTheme.textSub),
+          child: const Icon(LucideIcons.x, size: 20, color: AppTheme.textSub),
         ),
       ),
       body: Column(
@@ -82,7 +84,7 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
                                 });
                               },
                               icon: Icon(
-                                isAllSelected ? LucideIcons.userMinus : LucideIcons.userPlus, // v2 더욱 직관적인 아이콘
+                                isAllSelected ? LucideIcons.userMinus : LucideIcons.userPlus,
                                 size: 22, 
                                 color: isAllSelected ? AppTheme.textSub : AppTheme.primaryViolet,
                               ),
@@ -156,6 +158,8 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
                   itemBuilder: (context, index) {
                     final member = _tempMembers[index];
                     final bool isSelected = member['isPresent'] ?? false;
+                    final String source = member['source'] ?? 'snapshot';
+                    final bool isNewInHistory = widget.isPastWeek && source == 'current';
 
                     return GestureDetector(
                       onTap: () => setState(() => member['isPresent'] = !isSelected),
@@ -181,24 +185,45 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
                               ),
                               child: Center(
                                 child: isSelected 
-                                  ? Icon(LucideIcons.check, color: Colors.white, size: 18)
+                                  ? const Icon(LucideIcons.check, color: Colors.white, size: 18)
                                   : Text(
-                                      member['name'][0], 
+                                      member['name'].toString().isNotEmpty ? member['name'][0] : '?', 
                                       style: const TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w800, fontSize: 13)
                                     ),
                               ),
                             ),
                             const SizedBox(width: 16),
-                            Text(
-                              member['name'],
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                color: isSelected ? AppTheme.primaryViolet : AppTheme.textMain,
-                                letterSpacing: -0.5,
+                            Expanded(
+                              child: Text(
+                                member['name'],
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                  color: isSelected ? AppTheme.primaryViolet : AppTheme.textMain,
+                                  letterSpacing: -0.5,
+                                ),
                               ),
                             ),
-                            const Spacer(),
+                            if (isNewInHistory) ...[
+                              IconButton(
+                                constraints: const BoxConstraints(),
+                                padding: EdgeInsets.zero,
+                                icon: const Icon(LucideIcons.x, size: 18, color: Colors.red),
+                                tooltip: '이 주차의 출석체크에서 제외',
+                                onPressed: () {
+                                  setState(() {
+                                    _tempMembers.removeAt(index);
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('${member['name']} 성도를 이 주차에서 제외했습니다.'),
+                                      duration: const Duration(seconds: 1),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(width: 12),
+                            ],
                             ShadCheckbox(
                               value: isSelected,
                               onChanged: (val) => setState(() => member['isPresent'] = val),

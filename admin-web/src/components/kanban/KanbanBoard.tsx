@@ -40,6 +40,7 @@ interface KanbanBoardProps {
     onAddMembers?: (groupId: string | null) => void;
     lastAddedGroupId?: string | null;
     profileMode?: string;
+    autoMoveCouples?: boolean;
     onToggleLeader?: (id: string) => void;
 }
 
@@ -58,7 +59,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     onQuickAddMember,
     onAddMembers,
     lastAddedGroupId,
-    profileMode
+    profileMode,
+    autoMoveCouples = true
 }) => {
     const [activeId, setActiveId] = useState<string | null>(null);
     const [dragSessionMembers, setDragSessionMembers] = useState<any[] | null>(null);
@@ -112,7 +114,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         if (activeMemberInSession.group_id === overGroupId) return;
 
         const activeUnitIds = [activeMemberInSession.id];
-        if (profileMode === 'couple' && activeMemberInSession.spouse_name) {
+        if (autoMoveCouples && profileMode === 'couple' && activeMemberInSession.spouse_name) {
             const spouse = dragSessionMembers.find(s =>
                 s.full_name === activeMemberInSession.spouse_name &&
                 s.spouse_name === activeMemberInSession.full_name &&
@@ -201,7 +203,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         const idsToMoveSet = new Set<string>();
         idsToMoveSet.add(activeUnitId);
 
-        if (profileMode === 'couple' && finalActiveMember.spouse_name) {
+        if (autoMoveCouples && profileMode === 'couple' && finalActiveMember.spouse_name) {
             const spouse = members.find(s => // Use members prop to find original spouse
                 s.full_name === finalActiveMember.spouse_name &&
                 s.spouse_name === finalActiveMember.full_name &&
@@ -253,7 +255,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         const movingIds = new Set<string>();
         movingIds.add(activeMemberInSession.id);
 
-        if (profileMode === 'couple' && activeMemberInSession.spouse_name) {
+        if (autoMoveCouples && profileMode === 'couple' && activeMemberInSession.spouse_name) {
             const spouse = currentMembers.find((s: any) =>
                 s.full_name === activeMemberInSession.spouse_name &&
                 s.spouse_name === activeMemberInSession.full_name &&
@@ -293,6 +295,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     profileMode={profileMode}
                     activeId={activeId}
                     movingMembersCount={movingMembersCount}
+                    autoMoveCouples={autoMoveCouples}
                 />
 
                 {/* Group Columns */}
@@ -315,6 +318,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         profileMode={profileMode}
                         activeId={activeId}
                         movingMembersCount={movingMembersCount}
+                        autoMoveCouples={autoMoveCouples}
                     />
                 ))}
 

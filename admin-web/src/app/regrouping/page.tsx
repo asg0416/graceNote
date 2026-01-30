@@ -213,19 +213,8 @@ function RegroupingPageInner() {
             group_id: groupData?.find(g => g.name === m.group_name)?.id || null
         }));
 
-        const uniqueMembers = Array.from(
-            membersWithGroupId.reduce((map: Map<string, any>, item: any) => {
-                const key = item.person_id || item.id;
-                const existing = map.get(key);
-                if (!existing || (!existing.group_id && item.group_id)) {
-                    map.set(key, item);
-                }
-                return map;
-            }, new Map()).values()
-        );
-
-        setMembers(uniqueMembers);
-        setLocalMembers(JSON.parse(JSON.stringify(uniqueMembers)));
+        setMembers(membersWithGroupId);
+        setLocalMembers(JSON.parse(JSON.stringify(membersWithGroupId)));
         setHasChanges(false);
         setLoading(false);
     };
@@ -965,6 +954,7 @@ function RegroupingPageInner() {
                         onQuickAddMember={handleOpenAddMemberModal}
                         onAddMembers={handleOpenAddMemberModal}
                         profileMode={departments.find(d => d.id === selectedDeptId)?.profile_mode}
+                        autoMoveCouples={autoMoveCouples}
                     />
                 </div>
 

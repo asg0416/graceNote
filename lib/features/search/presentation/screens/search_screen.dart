@@ -212,7 +212,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         prayerId: prayer['id'].toString(),
                         name: prayer['member_directory']['full_name'] ?? '알 수 없음',
                         groupName: prayer['member_directory']['group_name'] ?? '',
-                        profileId: prayer['member_directory']['person_id'] ?? prayer['member_id'] ?? '',
+                        profileId: prayer['member_directory']['profile_id'] ?? prayer['member_id'] ?? '',
                         content: prayer['content'] ?? '',
                         togetherCount: prayer['together_count'] ?? 0,
                         date: prayer['weeks'] != null ? prayer['weeks']['week_date'] : null,
