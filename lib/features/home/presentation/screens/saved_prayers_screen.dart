@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:intl/intl.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class SavedPrayersScreen extends ConsumerWidget {
   const SavedPrayersScreen({super.key});
@@ -58,7 +59,7 @@ class SavedPrayersScreen extends ConsumerWidget {
             ],
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => Center(child: ShadcnSpinner()),
         error: (e, s) => Center(child: Text('데이터 로딩 실패: $e')),
       ),
     );
@@ -73,7 +74,7 @@ class SavedPrayersScreen extends ConsumerWidget {
             width: 4,
             height: 16,
             decoration: BoxDecoration(
-              color: isHighlight ? AppTheme.primaryIndigo : AppTheme.textLight,
+              color: isHighlight ? AppTheme.primaryViolet : AppTheme.textSub,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -128,12 +129,12 @@ class SavedPrayersScreen extends ConsumerWidget {
                     children: [
                       Text(name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
                       const SizedBox(width: 8),
-                      Text(date, style: const TextStyle(color: AppTheme.textLight, fontSize: 12)),
+                      Text(date, style: const TextStyle(color: AppTheme.textSub, fontSize: 12)),
                     ],
                   ),
                   Icon(
                     isPraying ? Icons.volunteer_activism_rounded : Icons.bookmark_rounded, 
-                    color: AppTheme.primaryIndigo, 
+                    color: AppTheme.primaryViolet, 
                     size: 20
                   ),
                 ],

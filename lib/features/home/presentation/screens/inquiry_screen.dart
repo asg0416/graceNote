@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:image_picker/image_picker.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 // import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as p;
 // import 'package:path_provider/path_provider.dart';
@@ -169,9 +170,9 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
         ),
         bottom: TabBar(
           controller: _tabController,
-          labelColor: AppTheme.primaryIndigo,
+          labelColor: AppTheme.primaryViolet,
           unselectedLabelColor: AppTheme.textSub,
-          indicatorColor: AppTheme.primaryIndigo,
+          indicatorColor: AppTheme.primaryViolet,
           indicatorWeight: 3,
           labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
           tabs: [
@@ -318,14 +319,14 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
             child: ElevatedButton(
               onPressed: _isSubmitting ? null : _submitInquiry,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryIndigo,
+                backgroundColor: AppTheme.primaryViolet,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.all(20),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 elevation: 0,
               ),
               child: _isSubmitting 
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                ? SizedBox(width: 20, height: 20, child: ShadcnSpinner(color: Colors.white))
                 : const Text('문의 접수하기', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
             ),
           ),
@@ -341,9 +342,9 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primaryIndigo : Colors.white,
+          color: isSelected ? AppTheme.primaryViolet : Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isSelected ? AppTheme.primaryIndigo : AppTheme.divider),
+          border: Border.all(color: isSelected ? AppTheme.primaryViolet : AppTheme.divider),
         ),
         child: Text(
           label,
@@ -386,7 +387,7 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
             stream: _inquiriesStream,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return Center(child: ShadcnSpinner());
               }
               
               var inquiries = snapshot.data ?? [];
@@ -533,9 +534,9 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
       onSelected: (selected) {
         if (selected) setState(() => _historyFilter = value);
       },
-      selectedColor: AppTheme.primaryIndigo,
+      selectedColor: AppTheme.primaryViolet,
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: isSelected ? AppTheme.primaryIndigo : AppTheme.divider)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: isSelected ? AppTheme.primaryViolet : AppTheme.divider)),
       showCheckmark: false,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     );
@@ -602,7 +603,7 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
       contentPadding: const EdgeInsets.all(20),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: AppTheme.divider)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: AppTheme.divider)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: AppTheme.primaryIndigo, width: 2)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: AppTheme.primaryViolet, width: 2)),
     );
   }
   void _showFullScreenImage(String imagePath, {bool isNetwork = false}) {
@@ -852,9 +853,9 @@ class _InquiryDetailScreenState extends State<_InquiryDetailScreen> {
                   onTap: () => setState(() => _isHeaderExpanded = !_isHeaderExpanded),
                   child: Row(
                     children: [
-                      const Icon(Icons.help_outline_rounded, size: 16, color: AppTheme.primaryIndigo),
+                      const Icon(Icons.help_outline_rounded, size: 16, color: AppTheme.primaryViolet),
                       const SizedBox(width: 6),
-                      const Text('문의 원본 내용', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: AppTheme.primaryIndigo)),
+                      const Text('문의 원본 내용', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: AppTheme.primaryViolet)),
                       const Spacer(),
                       Icon(
                         _isHeaderExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
@@ -964,7 +965,7 @@ class _InquiryDetailScreenState extends State<_InquiryDetailScreen> {
                                       constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                       decoration: BoxDecoration(
-                                        color: isAdmin ? Colors.white : AppTheme.primaryIndigo,
+                                        color: isAdmin ? Colors.white : AppTheme.primaryViolet,
                                         borderRadius: BorderRadius.only(
                                           topLeft: const Radius.circular(20),
                                           topRight: const Radius.circular(20),
@@ -1062,7 +1063,7 @@ class _InquiryDetailScreenState extends State<_InquiryDetailScreen> {
                       children: [
                         IconButton(
                           onPressed: _pickImage,
-                          icon: const Icon(Icons.add_photo_alternate_outlined, color: AppTheme.primaryIndigo),
+                          icon: const Icon(Icons.add_photo_alternate_outlined, color: AppTheme.primaryViolet),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                         ),
@@ -1087,9 +1088,9 @@ class _InquiryDetailScreenState extends State<_InquiryDetailScreen> {
                           borderRadius: BorderRadius.circular(24),
                           child: Container(
                             padding: const EdgeInsets.all(10),
-                            decoration: const BoxDecoration(color: AppTheme.primaryIndigo, shape: BoxShape.circle),
+                            decoration: const BoxDecoration(color: AppTheme.primaryViolet, shape: BoxShape.circle),
                             child: _isSending 
-                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              ? SizedBox(width: 20, height: 20, child: ShadcnSpinner(color: Colors.white))
                               : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
                           ),
                         ),

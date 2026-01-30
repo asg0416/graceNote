@@ -5,6 +5,7 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/utils/snack_bar_util.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -84,7 +85,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: AppTheme.primaryIndigo,
+              primary: AppTheme.primaryViolet,
               onPrimary: Colors.white,
               onSurface: AppTheme.textMain,
             ),
@@ -148,7 +149,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ],
                     );
                   },
-                  loading: () => const SizedBox(height: 48, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+                  loading: () => SizedBox(height: 48, child: Center(child: ShadcnSpinner())),
                   error: (e, s) => const Text('로드 실패'),
                 ),
               ],
@@ -156,7 +157,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
           Expanded(
             child: _isLoading 
-              ? const Center(child: CircularProgressIndicator())
+              ? Center(child: ShadcnSpinner())
               : !_searchInitiated 
                 ? _buildInitialState() // 검색 전 안내 문구
                 : _searchResults.isEmpty
@@ -192,7 +193,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           Icon(Icons.search_rounded, size: 64, color: AppTheme.divider),
           const SizedBox(height: 16),
           const Text('이름이나 기도내용을 입력하여 검색해 보세요', 
-            style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold)),
+            style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -206,10 +207,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       onChanged: (val) => setState(() {}), // X 버튼 표시 여부 갱신용
       decoration: InputDecoration(
         hintText: '이름이나 기도제목을 입력하세요',
-        prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.textLight),
+        prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.textSub),
         suffixIcon: _searchController.text.isNotEmpty 
           ? IconButton(
-              icon: const Icon(Icons.cancel_rounded, color: AppTheme.textLight, size: 20),
+              icon: const Icon(Icons.cancel_rounded, color: AppTheme.textSub, size: 20),
               onPressed: () {
                 _searchController.clear();
                 setState(() {
@@ -236,17 +237,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         decoration: BoxDecoration(
           color: AppTheme.background,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _selectedDate != null ? AppTheme.primaryIndigo : Colors.transparent),
+          border: Border.all(color: _selectedDate != null ? AppTheme.primaryViolet : Colors.transparent),
         ),
         child: Row(
           children: [
-            Icon(Icons.calendar_today_rounded, size: 16, color: _selectedDate != null ? AppTheme.primaryIndigo : AppTheme.textLight),
+            Icon(Icons.calendar_today_rounded, size: 16, color: _selectedDate != null ? AppTheme.primaryViolet : AppTheme.textSub),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 _selectedDate == null ? '전체 날짜' : DateFormat('yyyy.MM.dd').format(_selectedDate!),
                 style: TextStyle(
-                  color: _selectedDate != null ? AppTheme.primaryIndigo : AppTheme.textSub,
+                  color: _selectedDate != null ? AppTheme.primaryViolet : AppTheme.textSub,
                   fontSize: 13,
                   fontWeight: _selectedDate != null ? FontWeight.bold : FontWeight.normal,
                 ),
@@ -259,7 +260,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   setState(() => _selectedDate = null);
                   _performSearch();
                 },
-                child: const Icon(Icons.close_rounded, size: 16, color: AppTheme.primaryIndigo),
+                child: const Icon(Icons.close_rounded, size: 16, color: AppTheme.primaryViolet),
               ),
           ],
         ),
@@ -285,7 +286,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: DropdownButton<String>(
           value: _selectedGroupId,
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.textLight),
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.textSub),
           items: allGroups.map((g) => DropdownMenuItem(
             value: g['id'] as String, 
             child: Text(g['name'] as String, style: const TextStyle(fontSize: 13))
@@ -308,7 +309,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: [
           Icon(Icons.search_off_rounded, size: 64, color: AppTheme.divider),
           const SizedBox(height: 16),
-          const Text('검색 결과가 없습니다', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold)),
+          const Text('검색 결과가 없습니다', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -430,10 +431,10 @@ class _PrayerCardState extends ConsumerState<_PrayerCard> {
               children: [
                 CircleAvatar(
                   radius: 18,
-                  backgroundColor: AppTheme.primaryIndigo.withOpacity(0.1),
+                  backgroundColor: AppTheme.primaryViolet.withOpacity(0.1),
                   child: Text(
                     widget.name.isNotEmpty ? widget.name[0] : '?', 
-                    style: const TextStyle(color: AppTheme.primaryIndigo, fontWeight: FontWeight.bold, fontSize: 13)
+                    style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.bold, fontSize: 13)
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -448,7 +449,7 @@ class _PrayerCardState extends ConsumerState<_PrayerCard> {
                           if (widget.date != null)
                             Text(
                               widget.date!, 
-                              style: const TextStyle(color: AppTheme.textLight, fontSize: 11, fontWeight: FontWeight.bold)
+                              style: const TextStyle(color: AppTheme.textSub, fontSize: 11, fontWeight: FontWeight.bold)
                             ),
                         ],
                       ),
@@ -478,7 +479,7 @@ class _PrayerCardState extends ConsumerState<_PrayerCard> {
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         _isExpanded ? '접기' : '...더보기',
-                        style: const TextStyle(color: AppTheme.primaryIndigo, fontWeight: FontWeight.bold, fontSize: 13),
+                        style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                     ),
                   ),
@@ -500,14 +501,14 @@ class _PrayerCardState extends ConsumerState<_PrayerCard> {
                         Icon(
                           displayPraying ? Icons.volunteer_activism_rounded : Icons.volunteer_activism_outlined,
                           size: 18, 
-                          color: displayPraying ? AppTheme.primaryIndigo : AppTheme.textSub
+                          color: displayPraying ? AppTheme.primaryViolet : AppTheme.textSub
                         ),
                         const SizedBox(width: 8),
                         Text(
                           displayPraying ? '함께 기도 중' : '같이 기도',
                           style: TextStyle(
                             fontSize: 12, 
-                            color: displayPraying ? AppTheme.primaryIndigo : AppTheme.textSub,
+                            color: displayPraying ? AppTheme.primaryViolet : AppTheme.textSub,
                             fontWeight: FontWeight.w800
                           ),
                         ),
@@ -515,7 +516,7 @@ class _PrayerCardState extends ConsumerState<_PrayerCard> {
                           const SizedBox(width: 6),
                           Text(
                             '$displayCount',
-                            style: const TextStyle(fontSize: 11, color: AppTheme.primaryIndigo, fontWeight: FontWeight.bold),
+                            style: const TextStyle(fontSize: 11, color: AppTheme.primaryViolet, fontWeight: FontWeight.bold),
                           ),
                         ],
                       ],
@@ -528,7 +529,7 @@ class _PrayerCardState extends ConsumerState<_PrayerCard> {
                   icon: Icon(
                     displaySaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
                     size: 18, 
-                    color: displaySaved ? AppTheme.primaryIndigo : AppTheme.textSub,
+                    color: displaySaved ? AppTheme.primaryViolet : AppTheme.textSub,
                   ),
                 ),
               ],

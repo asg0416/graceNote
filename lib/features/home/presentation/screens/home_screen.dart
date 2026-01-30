@@ -9,9 +9,13 @@ import 'package:grace_note/features/prayer/presentation/screens/prayer_list_scre
 import 'package:grace_note/features/admin/presentation/screens/department_member_directory_screen.dart';
 import 'package:grace_note/features/attendance/presentation/screens/attendance_dashboard_screen.dart';
 import 'package:grace_note/features/home/presentation/screens/inquiry_screen.dart';
-import 'package:grace_note/core/widgets/droplet_loader.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:grace_note/features/attendance/presentation/screens/department_attendance_dashboard_screen.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:grace_note/core/widgets/shad_layout.dart';
 import 'package:grace_note/core/providers/user_role_provider.dart';
+import 'package:grace_note/features/search/presentation/screens/search_screen.dart';
+import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -45,12 +49,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return groupsAsync.when(
       data: (groups) {
-        if (activeRole == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        if (activeRole == null) return Scaffold(body: Center(child: ShadcnSpinner(size: 32)));
 
         final List<Widget> screens;
+        String title = '';
         
         switch (activeRole) {
           case AppRole.admin:
+            title = departmentNameAsync.value ?? '구성원';
             screens = [
               profile?.departmentId != null && profile!.departmentId!.isNotEmpty
                 ? DepartmentMemberDirectoryScreen(
@@ -69,6 +75,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ];
             break;
           case AppRole.leader:
+            title = _selectedIndex == 0 
+                ? (groups.isNotEmpty ? '${groups.first['group_name']} 기록' : '기록')
+                : (_selectedIndex == 1 ? '기도소식' : (_selectedIndex == 2 ? '출석 통계' : '더보기'));
             screens = [
               groups.isNotEmpty
                 ? AttendancePrayerScreen(isActive: _selectedIndex == 0)
@@ -81,6 +90,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ];
             break;
           case AppRole.member:
+            title = _selectedIndex == 0 ? '나의 기도' : (_selectedIndex == 1 ? '기도소식' : '더보기');
             screens = [
               const MemberMyPrayerScreen(),
               const PrayerListScreen(),
@@ -90,37 +100,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
 
         return Scaffold(
+          backgroundColor: Colors.white,
           body: IndexedStack(
             index: _selectedIndex >= screens.length ? 0 : _selectedIndex,
             children: screens,
           ),
-          bottomNavigationBar: BottomNavigationBar(
-            currentIndex: _selectedIndex >= screens.length ? 0 : _selectedIndex,
-            onTap: (index) => setState(() => _selectedIndex = index),
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: AppTheme.primaryIndigo,
-            unselectedItemColor: AppTheme.textLight,
-            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-            unselectedLabelStyle: const TextStyle(fontSize: 12),
-            items: _buildBottomNavBarItems(ref, activeRole),
+          bottomNavigationBar: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                top: BorderSide(color: Color(0xFFF1F5F9), width: 1), // v0 정밀 보더
+              ),
+            ),
+            padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
+            child: SizedBox(
+              height: 60, // v0 높이 축소
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: _buildBottomNavBarItems(ref, activeRole),
+              ),
+            ),
           ),
         );
       },
-      loading: () => const Scaffold(
+      loading: () => Scaffold(
         backgroundColor: Colors.white,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropletLoader(size: 80),
-              SizedBox(height: 24),
-              Text(
+              ShadcnSpinner(size: 32), // v0 축소
+              const SizedBox(height: 24),
+              const Text(
                 '그레이스노트를 준비하고 있습니다',
                 style: TextStyle(
                   color: AppTheme.textMain,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15, // v0 축소
                   letterSpacing: -0.5,
+                  fontFamily: 'Pretendard',
                 ),
               ),
             ],
@@ -131,60 +149,134 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  List<BottomNavigationBarItem> _buildBottomNavBarItems(WidgetRef ref, AppRole role) {
+  List<Widget> _buildBottomNavBarItems(WidgetRef ref, AppRole role) {
     final unreadInquiries = ref.watch(unreadInquiryCountProvider).value ?? 0;
     final hasNewNotices = ref.watch(hasNewNoticesProvider).value ?? false;
 
-    Widget buildIconWithBadge(IconData icon, bool hasBadge) {
-      return Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Icon(icon),
-          if (hasBadge)
-            Positioned(
-              right: -2,
-              top: -2,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-        ],
-      );
-    }
-
     if (role == AppRole.admin || role == AppRole.leader) {
       return [
-        BottomNavigationBarItem(
-          icon: const Icon(Icons.people_alt_rounded), 
+        _buildNavItem(
+          index: 0,
+          lucideIcon: lucide.LucideIcons.userCircle, // v0 아이콘 변경
           label: role == AppRole.admin ? '구성원' : '기록',
         ),
-        const BottomNavigationBarItem(icon: Icon(Icons.auto_awesome_motion_rounded), label: '기도소식'),
-        const BottomNavigationBarItem(icon: Icon(Icons.bar_chart_rounded), label: '출석'),
-        BottomNavigationBarItem(
-          icon: buildIconWithBadge(
-            Icons.more_horiz_rounded,
-            (unreadInquiries > 0 || hasNewNotices), // Any notification
-          ),
+        _buildNavItem(
+          index: 1,
+          lucideIcon: lucide.LucideIcons.scrollText, // v0 아이콘 변경
+          label: '기도소식',
+        ),
+        _buildNavItem(
+          index: 2,
+          lucideIcon: lucide.LucideIcons.barChart3, // v0 아이콘 변경
+          label: '출석',
+        ),
+        _buildNavItem(
+          index: 3,
+          lucideIcon: lucide.LucideIcons.moreHorizontal,
           label: '더보기',
+          hasBadge: (unreadInquiries > 0 || hasNewNotices),
         ),
       ];
     } else {
       return [
-        const BottomNavigationBarItem(icon: Icon(Icons.history_edu_rounded), label: '나의 기도'),
-        const BottomNavigationBarItem(icon: Icon(Icons.auto_awesome_motion_rounded), label: '기도소식'),
-        BottomNavigationBarItem(
-          icon: buildIconWithBadge(
-            Icons.more_horiz_rounded,
-            (unreadInquiries > 0 || hasNewNotices), // Any notification
-          ),
+        _buildNavItem(
+          index: 0,
+          lucideIcon: lucide.LucideIcons.userCircle,
+          label: '나의 기도',
+        ),
+        _buildNavItem(
+          index: 1,
+          lucideIcon: lucide.LucideIcons.scrollText,
+          label: '기도소식',
+        ),
+        _buildNavItem(
+          index: 2,
+          lucideIcon: lucide.LucideIcons.moreHorizontal,
           label: '더보기',
+          hasBadge: (unreadInquiries > 0 || hasNewNotices),
         ),
       ];
+    }
+  }
+
+  Widget _buildNavItem({
+    required int index,
+    required IconData lucideIcon,
+    required String label,
+    bool hasBadge = false,
+  }) {
+    final isSelected = _selectedIndex == index;
+    final color = isSelected ? AppTheme.primaryViolet : const Color(0xFF94A3B8); // v0 미선택 컬러
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedIndex = index),
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  lucideIcon,
+                  size: 20, // v0 정밀 축소
+                  color: color,
+                ),
+                if (hasBadge)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      width: 5,
+                      height: 5,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.error,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11, // v0 축소
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500, // v0 Medium(500)/SemiBold(600)
+                color: color,
+                fontFamily: 'Pretendard',
+                letterSpacing: -0.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDatePickerForPrayerList(BuildContext context, WidgetRef ref) async {
+    final selectedDate = ref.read(selectedWeekDateProvider);
+    final date = await showDatePicker(
+      context: context, 
+      initialDate: selectedDate, 
+      firstDate: DateTime(2023), 
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        return Theme(
+          data: AppTheme.light.copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppTheme.primaryViolet,
+              onPrimary: Colors.white,
+              onSurface: AppTheme.textMain,
+            ),
+          ),
+          child: child!,
+        );
+      }
+    );
+    if (date != null) {
+      ref.read(selectedWeekDateProvider.notifier).state = date;
     }
   }
 }

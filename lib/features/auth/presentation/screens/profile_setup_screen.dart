@@ -6,6 +6,7 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/auth/presentation/screens/group_selection_screen.dart';
 import 'package:grace_note/features/home/presentation/screens/home_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class ProfileSetupScreen extends ConsumerStatefulWidget {
   final String churchId;
@@ -174,7 +175,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: Text('등록 정보 확인', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryIndigo)),
+        title: Text('등록 정보 확인', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryViolet)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -196,7 +197,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
               Navigator.pop(context);
               _navigateToGroupSelection(null); // 무시하고 수동 선택
             },
-            child: const Text('수동으로 선택할게요', style: TextStyle(color: AppTheme.textLight)),
+            child: const Text('수동으로 선택할게요', style: TextStyle(color: AppTheme.textSub)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -268,7 +269,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       child: Row(
         children: [
           Text('$label: ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-          Text(value, style: const TextStyle(color: AppTheme.primaryIndigo, fontWeight: FontWeight.w600)),
+          Text(value, style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -329,7 +330,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
             const SizedBox(height: 48),
             ElevatedButton(
               onPressed: _isLoading ? null : _handleNext,
-              child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('확인'),
+              child: _isLoading ? ShadcnSpinner(color: Colors.white) : const Text('확인'),
             ),
           ],
         ),

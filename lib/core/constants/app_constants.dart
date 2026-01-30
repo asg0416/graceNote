@@ -1,22 +1,23 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 class AppConstants {
-  static const String appName = 'Grace Note';
+  static String get appName => dotenv.get('APP_NAME', fallback: 'Grace Note');
   
-  // --dart-define 옵션을 통해 빌드 시점에 주입받습니다.
-  static const String supabaseUrl = String.fromEnvironment(
-    'SUPABASE_URL',
-    defaultValue: 'https://eejqiddsdovrabcsxznu.supabase.co',
+  // 1. Dotenv 우선, 2. Dart-Define(빌드타겟) 순서로 값을 가져옵니다.
+  static String get supabaseUrl => dotenv.get(
+    'SUPABASE_URL', 
+    fallback: const String.fromEnvironment('SUPABASE_URL', defaultValue: 'https://eejqiddsdovrabcsxznu.supabase.co')
   );
   
-  static const String supabaseAnonKey = String.fromEnvironment(
+  static String get supabaseAnonKey => dotenv.get(
     'SUPABASE_ANON_KEY',
-    defaultValue: 'YOUR_SUPABASE_ANON_KEY', // 보안을 위해 비워두거나 빌드 시 주입
+    fallback: const String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '')
   );
   
-  static const String geminiApiKey = String.fromEnvironment(
+  static String get geminiApiKey => dotenv.get(
     'GEMINI_API_KEY',
-    defaultValue: 'YOUR_GEMINI_API_KEY',
+    fallback: const String.fromEnvironment('GEMINI_API_KEY', defaultValue: '')
   );
 
   static const String appVersion = '1.2.7+7';
- // [NEW] Current app version
 }

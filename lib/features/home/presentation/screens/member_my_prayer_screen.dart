@@ -5,6 +5,7 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/utils/snack_bar_util.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class MemberMyPrayerScreen extends ConsumerStatefulWidget {
   const MemberMyPrayerScreen({super.key});
@@ -218,7 +219,7 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
         elevation: 0,
       ),
       body: _isLoading 
-        ? const Center(child: CircularProgressIndicator())
+        ? Center(child: ShadcnSpinner())
         : RefreshIndicator(
             onRefresh: _refreshData,
             child: SingleChildScrollView(
@@ -252,7 +253,7 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.person_search_rounded, size: 48, color: AppTheme.textLight.withOpacity(0.5)),
+            Icon(Icons.person_search_rounded, size: 48, color: AppTheme.textSub.withOpacity(0.5)),
             const SizedBox(height: 16),
             const Text(
               '조 명부에 등록되지 않아\n히스토리를 불러올 수 없습니다.',
@@ -348,11 +349,11 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
                         height: 12,
                         margin: const EdgeInsets.only(top: 4, left: 4),
                         decoration: BoxDecoration(
-                          color: index == 0 ? AppTheme.primaryIndigo : AppTheme.divider,
+                          color: index == 0 ? AppTheme.primaryViolet : AppTheme.divider,
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
                           boxShadow: index == 0 ? [
-                            BoxShadow(color: AppTheme.primaryIndigo.withOpacity(0.3), blurRadius: 4, spreadRadius: 1)
+                            BoxShadow(color: AppTheme.primaryViolet.withOpacity(0.3), blurRadius: 4, spreadRadius: 1)
                           ] : null,
                         ),
                       ),
@@ -369,7 +370,7 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
                                   style: TextStyle(
                                     fontSize: 14, 
                                     fontWeight: FontWeight.w800, 
-                                    color: index == 0 ? AppTheme.primaryIndigo : AppTheme.textSub
+                                    color: index == 0 ? AppTheme.primaryViolet : AppTheme.textSub
                                   ),
                                 ),
                                 if (item['member'] != null && item['member']['group_name'] != null) ...[
@@ -377,14 +378,14 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.primaryIndigo.withOpacity(0.08),
+                                      color: AppTheme.primaryViolet.withOpacity(0.08),
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: AppTheme.primaryIndigo.withOpacity(0.2)),
+                                      border: Border.all(color: AppTheme.primaryViolet.withOpacity(0.2)),
                                     ),
                                     child: Text(
                                       '${item['member']['group_name']} 조',
                                       style: const TextStyle(
-                                        color: AppTheme.primaryIndigo,
+                                        color: AppTheme.primaryViolet,
                                         fontSize: 10,
                                         fontWeight: FontWeight.w900,
                                       ),
@@ -429,7 +430,7 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
           },
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => Center(child: ShadcnSpinner()),
       error: (e, s) => Center(child: Text('히스토리 로딩 실패: $e')),
     );
   }

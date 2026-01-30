@@ -4,6 +4,7 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/auth/presentation/screens/profile_setup_screen.dart';
 import 'package:grace_note/features/auth/presentation/screens/group_selection_screen.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class ChurchSelectionScreen extends ConsumerStatefulWidget {
   final String? prefilledPhone;
@@ -105,9 +106,9 @@ class _ChurchSelectionScreenState extends ConsumerState<ChurchSelectionScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: isSelected ? AppTheme.primaryIndigo.withOpacity(0.05) : Colors.white,
+                          color: isSelected ? AppTheme.primaryViolet.withOpacity(0.05) : Colors.white,
                           border: Border.all(
-                            color: isSelected ? AppTheme.primaryIndigo : AppTheme.divider,
+                            color: isSelected ? AppTheme.primaryViolet : AppTheme.divider,
                             width: isSelected ? 2 : 1,
                           ),
                           borderRadius: BorderRadius.circular(16),
@@ -117,7 +118,7 @@ class _ChurchSelectionScreenState extends ConsumerState<ChurchSelectionScreen> {
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: isSelected ? AppTheme.primaryIndigo : Colors.grey[100],
+                                color: isSelected ? AppTheme.primaryViolet : Colors.grey[100],
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -151,7 +152,7 @@ class _ChurchSelectionScreenState extends ConsumerState<ChurchSelectionScreen> {
                               ),
                             ),
                             if (isSelected)
-                              const Icon(Icons.check_circle, color: AppTheme.primaryIndigo),
+                              const Icon(Icons.check_circle, color: AppTheme.primaryViolet),
                           ],
                         ),
                       ),
@@ -176,14 +177,14 @@ class _ChurchSelectionScreenState extends ConsumerState<ChurchSelectionScreen> {
                       )
                     : null,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _selectedChurchId != null ? AppTheme.primaryIndigo : Colors.grey[300],
+                  backgroundColor: _selectedChurchId != null ? AppTheme.primaryViolet : Colors.grey[300],
                 ),
                 child: const Text('다음'),
               ),
             ),
           ],
         ),
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => Center(child: ShadcnSpinner()),
         error: (e, _) => Center(child: Text('교회 목록 로딩 오류: $e')),
       ),
     );

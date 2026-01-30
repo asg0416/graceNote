@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class AttendanceCheckScreen extends StatefulWidget {
   final List<Map<String, dynamic>> initialMembers;
@@ -28,175 +29,206 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded, color: AppTheme.textSub),
-                  ),
-                ],
-              ),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        title: const Text('출석 체크', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17)),
+        leading: ShadButton.ghost(
+          onPressed: () => Navigator.pop(context),
+          child: Icon(LucideIcons.x, size: 20, color: AppTheme.textSub),
+        ),
+      ),
+      body: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+            decoration: const BoxDecoration(
+              color: Colors.white,
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '오늘 모임에\n누가 오셨나요? 👋',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      color: AppTheme.textMain,
-                      height: 1.3,
-                      letterSpacing: -1.0,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '참석한 조원들을 체크해 주세요.\n체크된 분들에게만 기도제목 입력창이 제공됩니다.\n\n명단에 없는 성도는 "개별 성도 추가"를 통해 임시로 추가할 수 있습니다.',
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: AppTheme.textSub,
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      TextButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            for (var m in _tempMembers) {
-                              m['isPresent'] = true;
-                            }
-                          });
-                        },
-                        icon: const Icon(Icons.done_all_rounded, size: 18),
-                        label: const Text('전체 선택'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppTheme.primaryIndigo,
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(0, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        '오늘 모임에\n누가 오셨나요? 👋',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          color: AppTheme.textMain,
+                          height: 1.2,
+                          letterSpacing: -0.8,
+                          fontFamily: 'Pretendard',
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      TextButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            for (var m in _tempMembers) {
-                              m['isPresent'] = false;
-                            }
-                          });
-                        },
-                        icon: const Icon(Icons.remove_done_rounded, size: 18),
-                        label: const Text('전체 해제'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppTheme.textSub,
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(0, 0),
+                    ),
+                    const SizedBox(width: 12),
+                    Builder(
+                      builder: (context) {
+                        final bool isAllSelected = _tempMembers.isNotEmpty && _tempMembers.every((m) => m['isPresent'] == true);
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  for (var m in _tempMembers) {
+                                    m['isPresent'] = !isAllSelected;
+                                  }
+                                });
+                              },
+                              icon: Icon(
+                                isAllSelected ? LucideIcons.userMinus : LucideIcons.userPlus, // v2 더욱 직관적인 아이콘
+                                size: 22, 
+                                color: isAllSelected ? AppTheme.textSub : AppTheme.primaryViolet,
+                              ),
+                              style: IconButton.styleFrom(
+                                backgroundColor: isAllSelected ? const Color(0xFFF1F5F9) : const Color(0xFFF3F0FF),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.all(10),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              isAllSelected ? '전체 해제' : '전체 선택',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isAllSelected ? AppTheme.textSub : AppTheme.primaryViolet,
+                                fontFamily: 'Pretendard',
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(LucideIcons.info, size: 14, color: AppTheme.textSub),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          '참석한 분들에게만 기도제목 입력창이 제공됩니다.',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: AppTheme.textSub,
+                            fontWeight: FontWeight.w500,
+                            fontFamily: 'Pretendard',
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 40),
-            Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
-                itemCount: _tempMembers.length,
-                separatorBuilder: (context, index) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final member = _tempMembers[index];
-                  final bool isSelected = member['isPresent'];
+          ),
+          Expanded(
+            child: _tempMembers.isEmpty 
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(LucideIcons.users, size: 48, color: AppTheme.textSub.withOpacity(0.3)),
+                      const SizedBox(height: 16),
+                      Text('등록된 조원이 없습니다.', style: TextStyle(color: AppTheme.textSub)),
+                    ],
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
+                  itemCount: _tempMembers.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final member = _tempMembers[index];
+                    final bool isSelected = member['isPresent'] ?? false;
 
-                  return InkWell(
-                    onTap: () => setState(() => member['isPresent'] = !member['isPresent']),
-                    borderRadius: BorderRadius.circular(20),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: isSelected ? AppTheme.primaryIndigo.withOpacity(0.05) : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isSelected ? AppTheme.primaryIndigo : AppTheme.divider,
-                          width: isSelected ? 2 : 1,
+                    return GestureDetector(
+                      onTap: () => setState(() => member['isPresent'] = !isSelected),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppTheme.primaryViolet.withOpacity(0.04) : AppTheme.secondaryBackground,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isSelected ? AppTheme.primaryViolet : AppTheme.border.withOpacity(0.3),
+                            width: isSelected ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isSelected ? AppTheme.primaryViolet : AppTheme.border.withOpacity(0.2),
+                              ),
+                              child: Center(
+                                child: isSelected 
+                                  ? Icon(LucideIcons.check, color: Colors.white, size: 18)
+                                  : Text(
+                                      member['name'][0], 
+                                      style: const TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w800, fontSize: 13)
+                                    ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Text(
+                              member['name'],
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                color: isSelected ? AppTheme.primaryViolet : AppTheme.textMain,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const Spacer(),
+                            ShadCheckbox(
+                              value: isSelected,
+                              onChanged: (val) => setState(() => member['isPresent'] = val),
+                            ),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundColor: isSelected ? AppTheme.primaryIndigo : Colors.grey[100],
-                            child: isSelected 
-                              ? const Icon(Icons.check_rounded, color: Colors.white, size: 20)
-                              : Text(
-                                  member['name'][0], 
-                                  style: const TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.bold)
-                                ),
-                          ),
-                          const SizedBox(width: 16),
-                          Text(
-                            member['name'],
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                              color: isSelected ? AppTheme.primaryIndigo : AppTheme.textMain,
-                            ),
-                          ),
-                          const Spacer(),
-                          if (member['source'] == 'current')
-                            IconButton(
-                              onPressed: () {
-                                setState(() {
-                                  _tempMembers.removeAt(index);
-                                });
-                              },
-                              icon: const Icon(Icons.close_rounded, size: 20, color: Colors.red),
-                              tooltip: '명단에서 제외',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
-                          const SizedBox(width: 8),
-                          Checkbox(
-                            value: isSelected,
-                            activeColor: AppTheme.primaryIndigo,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                            onChanged: (val) => setState(() => member['isPresent'] = val!),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+                    );
+                  },
+                ),
+          ),
+        ],
       ),
       bottomSheet: Container(
-        padding: EdgeInsets.fromLTRB(24, 16, 24, 16 + MediaQuery.of(context).padding.bottom),
-        decoration: BoxDecoration(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(context).padding.bottom),
+        decoration: const BoxDecoration(
           color: Colors.white,
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, -5))
-          ],
+          border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
         ),
-        child: ElevatedButton(
-          onPressed: () {
-            widget.onComplete(_tempMembers);
-            Navigator.pop(context);
-          },
-          child: const Text('출석체크 완료'),
+        child: SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: ShadButton(
+            onPressed: () {
+              widget.onComplete(_tempMembers);
+              Navigator.pop(context);
+            },
+            backgroundColor: const Color(0xFF8B5CF6),
+            child: const Text('출석체크 완료', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+          ),
         ),
       ),
     );

@@ -4,6 +4,7 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class NoticeListScreen extends ConsumerStatefulWidget {
   const NoticeListScreen({super.key});
@@ -74,7 +75,7 @@ class _NoticeListScreenState extends ConsumerState<NoticeListScreen> {
           return Center(child: Text('데이터 로드 오류가 발생했습니다.', style: TextStyle(color: AppTheme.textSub)));
         }
 
-        return const Center(child: CircularProgressIndicator());
+        return Center(child: ShadcnSpinner());
       }(),
     );
   }
@@ -98,7 +99,7 @@ class _NoticeListScreenState extends ConsumerState<NoticeListScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: isNew ? AppTheme.primaryIndigo.withOpacity(0.3) : AppTheme.divider.withOpacity(0.3), width: isNew ? 1.5 : 1),
+        border: Border.all(color: isNew ? AppTheme.primaryViolet.withOpacity(0.3) : AppTheme.divider.withOpacity(0.3), width: isNew ? 1.5 : 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -123,13 +124,13 @@ class _NoticeListScreenState extends ConsumerState<NoticeListScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: isUrgent ? Colors.red.withOpacity(0.1) : AppTheme.primaryIndigo.withOpacity(0.1),
+                          color: isUrgent ? Colors.red.withOpacity(0.1) : AppTheme.primaryViolet.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           isUrgent ? '긴급' : (notice['category'] == 'event' ? '행사' : '공지'),
                           style: TextStyle(
-                            color: isUrgent ? Colors.red : AppTheme.primaryIndigo,
+                            color: isUrgent ? Colors.red : AppTheme.primaryViolet,
                             fontSize: 10,
                             fontWeight: FontWeight.w900,
                           ),
@@ -228,7 +229,7 @@ class _NoticeListScreenState extends ConsumerState<NoticeListScreen> {
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(context),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryIndigo,
+                  backgroundColor: AppTheme.primaryViolet,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.all(20),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

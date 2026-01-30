@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/admin/presentation/screens/admin_member_detail_screen.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class DepartmentMemberDirectoryScreen extends ConsumerWidget {
   final String departmentId;
@@ -48,7 +49,7 @@ class DepartmentMemberDirectoryScreen extends ConsumerWidget {
             },
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => Center(child: ShadcnSpinner()),
         error: (e, s) => Center(child: Text('데이터 로딩 실패: $e')),
       ),
     );
@@ -111,9 +112,9 @@ class _GroupMemberAccordionState extends ConsumerState<_GroupMemberAccordion> {
                   ],
                 );
               },
-              loading: () => const Padding(
-                padding: EdgeInsets.all(20),
-                child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+              loading: () => Padding(
+                padding: const EdgeInsets.all(20),
+                child: Center(child: SizedBox(width: 20, height: 20, child: ShadcnSpinner())),
               ),
               error: (e, s) => Padding(
                 padding: const EdgeInsets.all(20),
@@ -150,13 +151,13 @@ class _GroupMemberAccordionState extends ConsumerState<_GroupMemberAccordion> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
       leading: CircleAvatar(
         radius: 18,
-        backgroundColor: isLinked ? AppTheme.primaryIndigo.withOpacity(0.1) : AppTheme.divider.withOpacity(0.3),
+        backgroundColor: isLinked ? AppTheme.primaryViolet.withOpacity(0.1) : AppTheme.divider.withOpacity(0.3),
         child: Text(
           fullName.substring(fullName.length - 2),
           style: TextStyle(
             fontSize: 12, 
             fontWeight: FontWeight.bold,
-            color: isLinked ? AppTheme.primaryIndigo : AppTheme.textSub,
+            color: isLinked ? AppTheme.primaryViolet : AppTheme.textSub,
           ),
         ),
       ),

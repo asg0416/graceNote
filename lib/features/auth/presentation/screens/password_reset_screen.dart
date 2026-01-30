@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import '../../../../core/utils/auth_error_helper.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class PasswordResetScreen extends StatefulWidget {
   const PasswordResetScreen({super.key});
@@ -98,15 +99,15 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
               onPressed: _isLoading ? null : _updatePassword,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: AppTheme.primaryIndigo,
+                backgroundColor: AppTheme.primaryViolet,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               child: _isLoading
-                  ? const SizedBox(
+                  ? SizedBox(
                       height: 20,
                       width: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      child: ShadcnSpinner(color: Colors.white),
                     )
                   : const Text('비밀번호 변경', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),

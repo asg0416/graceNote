@@ -5,6 +5,7 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/home/presentation/screens/home_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/utils/snack_bar_util.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class GroupSelectionScreen extends ConsumerStatefulWidget {
   final String churchId;
@@ -168,19 +169,19 @@ class _GroupSelectionScreenState extends ConsumerState<GroupSelectionScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(20),
                               decoration: BoxDecoration(
-                                color: isSelected ? AppTheme.primaryIndigo.withOpacity(0.05) : Colors.white,
+                                color: isSelected ? AppTheme.primaryViolet.withOpacity(0.05) : Colors.white,
                                 border: Border.all(
-                                  color: isSelected ? AppTheme.primaryIndigo : AppTheme.divider,
+                                  color: isSelected ? AppTheme.primaryViolet : AppTheme.divider,
                                   width: isSelected ? 2 : 1,
                                 ),
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Row(
                                 children: [
-                                  Icon(Icons.groups, color: isSelected ? AppTheme.primaryIndigo : Colors.grey[400]),
+                                  Icon(Icons.groups, color: isSelected ? AppTheme.primaryViolet : Colors.grey[400]),
                                   const SizedBox(width: 16),
                                   Expanded(child: Text(group['name'], style: const TextStyle(fontWeight: FontWeight.bold))),
-                                  if (isSelected) const Icon(Icons.check_circle, color: AppTheme.primaryIndigo),
+                                  if (isSelected) const Icon(Icons.check_circle, color: AppTheme.primaryViolet),
                                 ],
                               ),
                             ),
@@ -190,7 +191,7 @@ class _GroupSelectionScreenState extends ConsumerState<GroupSelectionScreen> {
                     ],
                   );
                 },
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => Center(child: ShadcnSpinner()),
                 error: (e, _) => Text('그룹 로드 오류: $e'),
               ),
               const SizedBox(height: 32),
@@ -199,7 +200,7 @@ class _GroupSelectionScreenState extends ConsumerState<GroupSelectionScreen> {
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 56),
                 ),
-                child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('성도 정보 입력 완료'),
+                child: _isLoading ? ShadcnSpinner(color: Colors.white) : const Text('성도 정보 입력 완료'),
               ),
               const SizedBox(height: 40),
             ],

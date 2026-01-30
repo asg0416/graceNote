@@ -219,7 +219,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
               child: Text(
                 'v${AppConstants.appVersion}',
                 style: TextStyle(
-                  color: AppTheme.textLight,
+                  color: AppTheme.textSub,
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                   letterSpacing: 1.0,
@@ -242,10 +242,10 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: AppTheme.primaryIndigo.withOpacity(0.1),
+                color: AppTheme.primaryViolet.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(Icons.auto_awesome_rounded, color: AppTheme.primaryIndigo, size: 24),
+              child: const Icon(Icons.auto_awesome_rounded, color: AppTheme.primaryViolet, size: 24),
             ),
             const SizedBox(width: 16),
             const Text(
@@ -269,7 +269,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
       children: [
         Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain)),
         const SizedBox(height: 4),
-        Text(subtitle, style: const TextStyle(fontSize: 13, color: AppTheme.textLight, fontWeight: FontWeight.w500)),
+        Text(subtitle, style: const TextStyle(fontSize: 13, color: AppTheme.textSub, fontWeight: FontWeight.w500)),
       ],
     );
   }
@@ -317,7 +317,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                      color: isSelected ? AppTheme.primaryIndigo : AppTheme.textMain,
+                      color: isSelected ? AppTheme.primaryViolet : AppTheme.textMain,
                     ),
                   ),
                   if (subtitle != null) ...[
@@ -336,7 +336,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: isSelected ? AppTheme.primaryIndigo : AppTheme.divider,
+                  color: isSelected ? AppTheme.primaryViolet : AppTheme.divider,
                   width: isSelected ? 7 : 2,
                 ),
                 color: Colors.white,
@@ -358,7 +358,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
       style: ElevatedButton.styleFrom(
         minimumSize: const Size(0, 44),
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        backgroundColor: AppTheme.primaryIndigo,
+        backgroundColor: AppTheme.primaryViolet,
         foregroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         elevation: 0,
@@ -404,7 +404,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
             Switch(
               value: value,
               onChanged: onChanged,
-              activeColor: AppTheme.primaryIndigo,
+              activeColor: AppTheme.primaryViolet,
             ),
         ],
       ),
@@ -417,19 +417,19 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            AppTheme.primaryIndigo.withOpacity(0.08),
-            AppTheme.primaryIndigo.withOpacity(0.02),
+            AppTheme.primaryViolet.withOpacity(0.08),
+            AppTheme.primaryViolet.withOpacity(0.02),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppTheme.primaryIndigo.withOpacity(0.1)),
+        border: Border.all(color: AppTheme.primaryViolet.withOpacity(0.1)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.lightbulb_outline_rounded, color: AppTheme.primaryIndigo, size: 22),
+          const Icon(Icons.lightbulb_outline_rounded, color: AppTheme.primaryViolet, size: 22),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -437,14 +437,14 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
               children: [
                 const Text(
                   '스타일 미리보기',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.primaryIndigo),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.primaryViolet),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   '현재 설정에 맞춰 AI가 기도제목을 정돈해드립니다. ${settings.endingStyle == AIEndingStyle.custom ? "직접 입력하신 말투가 적용됩니다." : "선택하신 프리셋이 적용됩니다."}',
                   style: TextStyle(
                     fontSize: 13,
-                    color: AppTheme.primaryIndigo.withOpacity(0.8),
+                    color: AppTheme.primaryViolet.withOpacity(0.8),
                     fontWeight: FontWeight.w500,
                     height: 1.5,
                   ),

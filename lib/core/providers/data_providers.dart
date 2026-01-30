@@ -200,6 +200,10 @@ final selectedWeekDateProvider = StateProvider<DateTime>((ref) {
   return DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday % 7));
 });
 
+// [NEW] Attendance Screen Action Trigger Provider
+enum AttendanceAction { share, addMember }
+final attendanceActionProvider = StateProvider<AttendanceAction?>((ref) => null);
+
 // Week ID Provider (Computed from selected date)
 final weekIdProvider = FutureProvider.family<String?, String>((ref, String churchId) async {
   final date = ref.watch(selectedWeekDateProvider);

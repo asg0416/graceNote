@@ -4,6 +4,7 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/group_management/presentation/screens/member_edit_screen.dart';
 import '../../../../core/utils/snack_bar_util.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
 class GroupLeaderAdminScreen extends ConsumerStatefulWidget {
   final String groupId;
@@ -69,12 +70,12 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
             ],
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => Center(child: ShadcnSpinner()),
         error: (e, s) => Center(child: Text('데이터 로딩 실패: $e')),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => MemberEditScreen(groupId: widget.groupId, groupName: widget.groupName))),
-        backgroundColor: AppTheme.primaryIndigo,
+        backgroundColor: AppTheme.primaryViolet,
         icon: const Icon(Icons.add_rounded, color: Colors.white),
         label: const Text('조원 추가', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
@@ -87,10 +88,10 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
       padding: const EdgeInsets.all(24),
       margin: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppTheme.primaryIndigo,
+        color: AppTheme.primaryViolet,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: AppTheme.primaryIndigo.withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 8)),
+          BoxShadow(color: AppTheme.primaryViolet.withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 8)),
         ],
       ),
       child: Column(
@@ -142,8 +143,8 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: CircleAvatar(
-          backgroundColor: AppTheme.primaryIndigo.withOpacity(0.1),
-          child: Text(member['full_name'][0], style: const TextStyle(color: AppTheme.primaryIndigo, fontWeight: FontWeight.bold)),
+          backgroundColor: AppTheme.primaryViolet.withOpacity(0.1),
+          child: Text(member['full_name'][0], style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.bold)),
         ),
         title: Row(
           children: [
