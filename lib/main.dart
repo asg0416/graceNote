@@ -96,7 +96,9 @@ class GraceNoteApp extends StatelessWidget {
         title: AppConstants.appName,
         theme: AppTheme.light,
         debugShowCheckedModeBanner: false,
-        builder: (context, child) => ShadAppBuilder(child: child ?? const SizedBox.shrink()),
+        builder: (context, child) => ShadAppBuilder(
+          child: child ?? Container(color: Colors.white, child: const Center(child: CircularProgressIndicator())),
+        ),
         home: const AuthGate(),
       ),
     );

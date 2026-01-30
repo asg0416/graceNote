@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class AppTheme {
@@ -69,12 +68,12 @@ class AppTheme {
         onSurface: textMain,
         error: error,
       ),
-      // Material 텍스트 테마 초정밀 교정 (letterSpacing -0.5 고정)
-      textTheme: GoogleFonts.notoSansKrTextTheme().copyWith(
-        displayLarge: const TextStyle(fontWeight: FontWeight.bold, color: textMain, letterSpacing: -0.5, fontFamily: 'Pretendard'),
-        titleLarge: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: textMain, letterSpacing: -0.5, fontFamily: 'Pretendard'),
-        bodyLarge: const TextStyle(fontSize: 14, color: textMain, height: 1.5, letterSpacing: -0.5, fontFamily: 'Pretendard'), // 이름 등
-        bodyMedium: const TextStyle(fontSize: 13, color: textSub, height: 1.4, letterSpacing: -0.5, fontFamily: 'Pretendard'), // 보조텍스트
+      // Material 텍스트 테마 초정밀 교정 (Pretendard 로컬 폰트 강제)
+      textTheme: const TextTheme(
+        displayLarge: TextStyle(fontWeight: FontWeight.bold, color: textMain, letterSpacing: -0.5, fontFamily: 'Pretendard'),
+        titleLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: textMain, letterSpacing: -0.5, fontFamily: 'Pretendard'),
+        bodyLarge: TextStyle(fontSize: 14, color: textMain, height: 1.5, letterSpacing: -0.5, fontFamily: 'Pretendard'), // 이름 등
+        bodyMedium: TextStyle(fontSize: 13, color: textSub, height: 1.4, letterSpacing: -0.5, fontFamily: 'Pretendard'), // 보조텍스트
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.white,
