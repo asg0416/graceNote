@@ -55,8 +55,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     try {
       // member_directory에서 이름이 일치하는 모든 성도 조회
       final response = await Supabase.instance.client
-          .from('member_directory')
-          .select('*, departments!department_id(name)')
+          .select('*, department:departments!department_id(name)')
           .eq('church_id', widget.churchId)
           .eq('full_name', name);
 
@@ -69,8 +68,13 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         } else if (matches.length == 1) {
           // 2. 한 명만 매칭된 경우
           final match = Map<String, dynamic>.from(matches.first);
-          if (match['departments'] != null) {
-            match['department_name'] = match['departments']['name'];
+          if (match['department'] != null) {
+            // Supabase 조인 결과가 List로 올 경우와 Map으로 올 경우 모두 대응
+            if (match['department'] is List && (match['department'] as List).isNotEmpty) {
+              match['department_name'] = match['department'][0]['name'];
+            } else if (match['department'] is Map) {
+              match['department_name'] = match['department']['name'];
+            }
           }
           
           // 연락처가 DB에 있다면 비교 (선택 사항)
@@ -120,7 +124,14 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                 separatorBuilder: (context, index) => const Divider(),
                 itemBuilder: (context, index) {
                   final m = Map<String, dynamic>.from(matches[index]);
-                  final deptName = m['departments']?['name'] ?? '부서 미정';
+                  String deptName = '부서 미정';
+                  if (m['department'] != null) {
+                    if (m['department'] is List && (m['department'] as List).isNotEmpty) {
+                      deptName = m['department'][0]['name'] ?? '부서 미정';
+                    } else if (m['department'] is Map) {
+                      deptName = m['department']['name'] ?? '부서 미정';
+                    }
+                  }
                   final groupName = m['group_name'] ?? '조 미정';
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -129,8 +140,12 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     onTap: () {
                       Navigator.pop(context);
-                      if (m['departments'] != null) {
-                        m['department_name'] = m['departments']['name'];
+                      if (m['department'] != null) {
+                        if (m['department'] is List && (m['department'] as List).isNotEmpty) {
+                          m['department_name'] = m['department'][0]['name'];
+                        } else if (m['department'] is Map) {
+                          m['department_name'] = m['department']['name'];
+                        }
                       }
                       _showMatchSuccessDialog(m);
                     },

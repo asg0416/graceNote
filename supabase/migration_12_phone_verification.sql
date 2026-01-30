@@ -9,7 +9,7 @@ ALTER TABLE public.member_directory ADD CONSTRAINT member_directory_phone_key UN
 
 -- 3. Create Phone Verifications table for Custom OTP
 CREATE TABLE IF NOT EXISTS public.phone_verifications (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     phone TEXT NOT NULL,
     code TEXT NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,

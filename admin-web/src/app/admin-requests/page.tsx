@@ -59,9 +59,17 @@ export default function AdminRequestsPage() {
             let query = supabase
                 .from('profiles')
                 .select(`
-                    *,
+                    id,
+                    full_name,
+                    email,
+                    phone,
+                    admin_status,
+                    role,
+                    is_master,
+                    church_id,
+                    created_at,
                     churches (name),
-                    department:departments!department_id(name)
+                    departments (name)
                 `)
                 .neq('admin_status', 'none');
 
@@ -72,7 +80,37 @@ export default function AdminRequestsPage() {
             const { data, error } = await query.order('created_at', { ascending: false });
 
             if (error) throw error;
-            setRequests(data || []);
+
+            console.log('Raw data from Supabase:', data);
+
+            // 데이터 구조 가공: Supabase 조인이 배열로 오거나 객체로 올 경우 모두 대응
+            const formattedData = (data || []).map(item => {
+                // 교회 정보 추출
+                let churchObj = null;
+                if (item.churches) {
+                    const churchData = Array.isArray(item.churches) ? item.churches[0] : item.churches;
+                    if (churchData && (churchData as any).name) {
+                        churchObj = { name: (churchData as any).name };
+                    }
+                }
+
+                // 부서 정보 추출
+                let deptObj = null;
+                if (item.departments) {
+                    const deptData = Array.isArray(item.departments) ? item.departments[0] : item.departments;
+                    if (deptData && (deptData as any).name) {
+                        deptObj = { name: (deptData as any).name };
+                    }
+                }
+
+                return {
+                    ...item,
+                    churches: churchObj,
+                    departments: deptObj
+                };
+            });
+
+            setRequests(formattedData as any[]);
         } catch (error) {
             console.error('Error fetching requests:', error);
         } finally {

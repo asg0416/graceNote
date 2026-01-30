@@ -25,7 +25,7 @@ BEGIN
 
     -- If not found, generate new UI
     IF v_person_id IS NULL THEN
-        v_person_id := uuid_generate_v4();
+        v_person_id := gen_random_uuid();
     END IF;
 
     RETURN v_person_id;
@@ -35,7 +35,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- 3. Initialize person_id for existing records
 UPDATE public.member_directory m1
 SET person_id = (
-    SELECT MIN(COALESCE(sub.person_id, uuid_generate_v4())::text)::uuid
+    SELECT MIN(COALESCE(sub.person_id, gen_random_uuid())::text)::uuid
     FROM public.member_directory sub
     WHERE sub.full_name = m1.full_name AND sub.phone = m1.phone
 )

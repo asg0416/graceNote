@@ -6,7 +6,7 @@ ALTER TABLE public.member_directory ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 
 -- 2. 공지사항 (Notices) 테이블 생성
 CREATE TABLE IF NOT EXISTS public.notices (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
     department_id UUID REFERENCES public.departments(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS public.notices (
 
 -- 3. 문의하기 (Inquiries) 테이블 생성
 CREATE TABLE IF NOT EXISTS public.inquiries (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     content TEXT NOT NULL,
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS public.inquiries (
 
 -- 4. 문의 답변 (Inquiry Responses) 테이블 생성
 CREATE TABLE IF NOT EXISTS public.inquiry_responses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     inquiry_id UUID REFERENCES public.inquiries(id) ON DELETE CASCADE,
     admin_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     content TEXT NOT NULL,
