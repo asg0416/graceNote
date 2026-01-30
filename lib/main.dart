@@ -27,40 +27,58 @@ Future<void> main() async {
   // Initialize Environment Variables
   try {
     await dotenv.load(fileName: ".env");
-    debugPrint("Environment loaded successfully");
+    debugPrint("DEBUG: .env load success");
   } catch (e) {
-    debugPrint("Warning: .env file not found or failed to load. Using fallback values.");
+    debugPrint("DEBUG: .env load skipped/failed (expected in production)");
   }
 
-  // Debug Constants
-  debugPrint("Supabase URL: ${AppConstants.supabaseUrl}");
-  debugPrint("Supabase Key length: ${AppConstants.supabaseAnonKey.length}");
+  // Debug Constants (Wrap in try-catch to prevent initialization crash)
+  try {
+    debugPrint("DEBUG: Supabase URL target: ${AppConstants.supabaseUrl}");
+    final keyLen = AppConstants.supabaseAnonKey.length;
+    debugPrint("DEBUG: Supabase Key length: $keyLen");
+    if (keyLen == 0) {
+      debugPrint("WARNING: Supabase Anon Key is EMPTY. Auth will not work.");
+    }
+  } catch (e) {
+    debugPrint("DEBUG: AppConstants access error: $e");
+  }
 
   // Initialize SharedPreferences
-  final prefs = await SharedPreferences.getInstance();
+  SharedPreferences? prefs;
+  try {
+    prefs = await SharedPreferences.getInstance();
+    debugPrint("DEBUG: SharedPreferences success");
+  } catch (e) {
+    debugPrint("DEBUG: SharedPreferences error: $e");
+  }
 
   // Initialize Supabase
   try {
-    await Supabase.initialize(
-      url: AppConstants.supabaseUrl,
-      anonKey: AppConstants.supabaseAnonKey,
-    );
-    debugPrint("Supabase initialized successfully");
+    if (AppConstants.supabaseUrl.isNotEmpty && AppConstants.supabaseAnonKey.isNotEmpty) {
+      await Supabase.initialize(
+        url: AppConstants.supabaseUrl,
+        anonKey: AppConstants.supabaseAnonKey,
+      );
+      debugPrint("DEBUG: Supabase initialized");
+    } else {
+      debugPrint("DEBUG: Supabase initialization skipped due to missing config");
+    }
   } catch (e) {
-    debugPrint("CRITICAL: Supabase initialization failed: $e");
+    debugPrint("DEBUG: Supabase error: $e");
   }
 
   // Initialize AI
   try {
     AIService().init();
   } catch (e) {
-    debugPrint("AI Service init error: $e");
+    debugPrint("DEBUG: AI init error: $e");
   }
 
   runApp(
     ProviderScope(
       overrides: [
-        sharedPreferencesProvider.overrideWithValue(prefs),
+        if (prefs != null) sharedPreferencesProvider.overrideWithValue(prefs),
       ],
       child: const GraceNoteApp(),
     ),
@@ -78,7 +96,7 @@ class GraceNoteApp extends StatelessWidget {
         title: AppConstants.appName,
         theme: AppTheme.light,
         debugShowCheckedModeBanner: false,
-        builder: (context, child) => ShadAppBuilder(child: child!),
+        builder: (context, child) => ShadAppBuilder(child: child ?? const SizedBox.shrink()),
         home: const AuthGate(),
       ),
     );
