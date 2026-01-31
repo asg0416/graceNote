@@ -15,7 +15,7 @@ class AppConstants {
   
   static String get geminiApiKey => _getEnv('GEMINI_API_KEY', _envGeminiApiKey);
 
-  static const String appVersion = '1.3.0';
+  static const String appVersion = '1.3.1';
 
   static String _getEnv(String key, String defaultValue) {
     try {

@@ -684,7 +684,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildControlBtn(icon: lucide.LucideIcons.rotateCcw, label: '되돌리기', isActive: _undoStack.isNotEmpty, onTap: _undoRefinement, isPrimary: false),
+              _buildControlBtn(icon: lucide.LucideIcons.rotateCcw, isActive: _undoStack.isNotEmpty, onTap: _undoRefinement, isPrimary: false), // [FIX] 라벨 제거
               const SizedBox(width: 8),
               _buildControlBtn(icon: lucide.LucideIcons.sparkles, label: _isRefining ? '정리중' : 'AI 정리', isActive: !_isRefining, onTap: _refineAllPrayers, isPrimary: true),
             ],
@@ -694,7 +694,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     );
   }
 
-  Widget _buildControlBtn({required IconData icon, required String label, required bool isActive, required VoidCallback onTap, bool isPrimary = false}) {
+  Widget _buildControlBtn({required IconData icon, String? label, required bool isActive, required VoidCallback onTap, bool isPrimary = false}) {
     final color = isPrimary ? AppTheme.primaryViolet : AppTheme.textSub;
     final bgColor = isPrimary ? AppTheme.accentViolet : const Color(0xFFF8FAFC);
     final borderColor = isPrimary ? Colors.transparent : AppTheme.border.withOpacity(0.5);
@@ -705,7 +705,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         height: 36,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(color: isActive ? bgColor : Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: isActive ? borderColor : Colors.grey[100]!)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 16, color: isActive ? color : Colors.grey[300]), const SizedBox(width: 4), Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isActive ? color : Colors.grey[300], fontFamily: 'Pretendard', letterSpacing: -0.26))]),
+        child: Row(
+          mainAxisSize: MainAxisSize.min, 
+          children: [
+            Icon(icon, size: 16, color: isActive ? color : Colors.grey[300]), 
+            if (label != null && label.isNotEmpty) ...[
+              const SizedBox(width: 4), 
+              Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isActive ? color : Colors.grey[300], fontFamily: 'Pretendard', letterSpacing: -0.26))
+            ]
+          ]
+        ),
       ),
     );
   }
