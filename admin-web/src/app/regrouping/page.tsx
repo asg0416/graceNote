@@ -690,8 +690,8 @@ function RegroupingPageInner() {
             }
 
             // Upsert remaining groups (Add new / Rename existing)
-            const groupsToUpsert = groups.map(g => ({
-                ...(g.id.startsWith('temp-') ? {} : { id: g.id }),
+            const existingGroupsToUpdate = groups.filter(g => !g.id.startsWith('temp-')).map(g => ({
+                id: g.id,
                 name: g.name,
                 color_hex: g.color_hex,
                 department_id: selectedDeptId,
@@ -699,18 +699,38 @@ function RegroupingPageInner() {
                 is_active: true
             }));
 
-            const { data: upsertedGroups, error: upsertError } = await supabase
-                .from('groups')
-                .upsert(groupsToUpsert, { onConflict: 'church_id,department_id,name' })
-                .select();
+            const newGroupsToInsert = groups.filter(g => g.id.startsWith('temp-')).map(g => ({
+                name: g.name,
+                color_hex: g.color_hex,
+                department_id: selectedDeptId,
+                church_id: currentChurchId,
+                is_active: true
+            }));
 
-            if (upsertError) throw upsertError;
+            let upsertedGroups: any[] = [];
+
+            if (existingGroupsToUpdate.length > 0) {
+                const { data: updated, error: updateError } = await supabase
+                    .from('groups')
+                    .upsert(existingGroupsToUpdate, { onConflict: 'id' })
+                    .select();
+                if (updateError) throw updateError;
+                if (updated) upsertedGroups = [...upsertedGroups, ...updated];
+            }
+
+            if (newGroupsToInsert.length > 0) {
+                const { data: inserted, error: insertError } = await supabase
+                    .from('groups')
+                    .upsert(newGroupsToInsert, { onConflict: 'church_id,department_id,name' })
+                    .select();
+                if (insertError) throw insertError;
+                if (inserted) upsertedGroups = [...upsertedGroups, ...inserted];
+            }
 
             // Map temp group IDs to real ones for member updates
             const groupIdMap: Record<string, string> = {};
-            groups.forEach((lg, idx) => {
+            groups.forEach((lg) => {
                 if (lg.id.startsWith('temp-')) {
-                    // Try to match by name or order if necessary, but upsert should return in same order or we can match
                     const matched = upsertedGroups.find(ug => ug.name === lg.name);
                     if (matched) groupIdMap[lg.id] = matched.id;
                 } else {

@@ -22,30 +22,20 @@ class GraceNoteRepository {
         .maybeSingle();
     
     if (existing != null) return existing['id'];
-    if (!createIfMissing) return null;
+  if (!createIfMissing) return null;
 
-    try {
-      final res = await _supabase
-          .from('weeks')
-          .upsert({
-            'church_id': churchId,
-            'week_date': dateStr,
-          }, onConflict: 'church_id,week_date')
-          .select('id')
-          .single();
-      return res['id'];
-    } catch (e) {
-      debugPrint('GraceNoteRepository: Error in getOrCreateWeek: $e');
-      // If error (e.g., uniqueness), try one last select
-      final retry = await _supabase
-          .from('weeks')
-          .select('id')
-          .eq('church_id', churchId)
-          .eq('week_date', dateStr)
-          .maybeSingle();
-      return retry?['id'];
-    }
+  try {
+    // [FIX] RLS 권한 문제 해결을 위해 RPC 함수 사용 (Security Definer)
+    final res = await _supabase.rpc('ensure_week_exists', params: {
+      'p_church_id': churchId,
+      'p_week_date': dateStr,
+    });
+    return res as String;
+  } catch (e) {
+    debugPrint('GraceNoteRepository: Error in getOrCreateWeek: $e');
+    return null;
   }
+}
 
   // 특정 조원의 활성 Group Member ID 조회
   Future<String?> getActiveGroupMemberId(String groupId, String profileId) async {
@@ -210,7 +200,7 @@ class GraceNoteRepository {
     // 1. 부서 내 모든 조 조회
     final groupsResponse = await _supabase
         .from('groups')
-        .select('id, name')
+        .select('id, name, color_hex')
         .eq('department_id', departmentId);
     
     final groups = List<Map<String, dynamic>>.from(groupsResponse);
@@ -220,9 +210,9 @@ class GraceNoteRepository {
     final prayersResponse = await _supabase
         .from('prayer_entries')
         .select('*, member_directory!directory_member_id(family_name, full_name, person_id)')
+        .eq('status', 'published')
         .eq('week_id', weekId)
         .inFilter('group_id', groupIds)
-        .eq('status', 'published')
         .order('family_name', referencedTable: 'member_directory', ascending: true, nullsFirst: false)
         .order('full_name', referencedTable: 'member_directory', ascending: true);
 
@@ -245,13 +235,14 @@ class GraceNoteRepository {
   Future<List<Map<String, dynamic>>> getGroupsInDepartment(String departmentId) async {
     final response = await _supabase
         .from('groups')
-        .select('id, name')
+        .select('id, name, color_hex') // [NEW] color_hex 추가
         .eq('department_id', departmentId)
         .order('name');
         
     return (response as List).map((e) => {
       'id': e['id'],
       'name': e['name'],
+      'color_hex': e['color_hex'], // [NEW] 매핑 추가
     }).toList();
   }
 

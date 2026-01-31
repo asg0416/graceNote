@@ -4,6 +4,7 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import '../../../../core/utils/snack_bar_util.dart';
 import '../../../../core/utils/database_error_helper.dart';
 
@@ -71,31 +72,75 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
         initialDate = DateTime.parse(controller.text);
       } catch (_) {}
     }
+    
+    // Future date restriction
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    initialDate ??= today;
 
-    final DateTime? picked = await showDatePicker(
+    // [FIX] ShadCalendar Dialog 적용 (미래 날짜 제한)
+    await showDialog(
       context: context,
-      initialDate: initialDate ?? DateTime.now(),
-      firstDate: DateTime(1900),
-      lastDate: DateTime(2100),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppTheme.primaryViolet,
-              onPrimary: Colors.white,
-              onSurface: AppTheme.textMain,
+      builder: (context) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 320,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                )
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '날짜 선택', 
+                  style: TextStyle(
+                    fontSize: 16, 
+                    fontWeight: FontWeight.w800, 
+                    color: AppTheme.textMain, 
+                    fontFamily: 'Pretendard'
+                  )
+                ),
+                const SizedBox(height: 20),
+                shad.ShadCalendar(
+                  selected: initialDate,
+                  hideNavigation: false,
+                  showOutsideDays: true, 
+                  weekStartsOn: 7, // [NEW] 일요일부터 시작
+                  captionLayout: shad.ShadCalendarCaptionLayout.dropdown, // [NEW] 년/월 드롭다운 활성화
+                  selectableDayPredicate: (date) {
+                    // 미래 날짜 선택 불가
+                    return !date.isAfter(today);
+                  },
+                  onChanged: (picked) {
+                    if (picked != null) {
+                      setState(() {
+                        controller.text = DateFormat('yyyy-MM-dd').format(picked);
+                      });
+                      Navigator.pop(context);
+                    }
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('닫기', style: TextStyle(color: AppTheme.textSub)),
+                )
+              ],
             ),
           ),
-          child: child!,
-        );
-      },
+        ),
+      ),
     );
-
-    if (picked != null) {
-      setState(() {
-        controller.text = DateFormat('yyyy-MM-dd').format(picked);
-      });
-    }
   }
 
   Future<void> _save() async {

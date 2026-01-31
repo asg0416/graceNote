@@ -39,18 +39,14 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
   }
 
   Future<void> _refreshData() async {
-    // [FIX] 데이터 정합성을 위해 연관된 모든 Provider 초기화
-    // 1. 소속 정보 갱신
     ref.invalidate(userGroupsProvider);
     final groups = await ref.read(userGroupsProvider.future);
     
-    // 2. 주차 ID 갱신 (소속이 변경되면 주차 계산 로직도 달라질 수 있음)
     final profile = ref.read(userProfileProvider).value;
     if (profile != null && profile.churchId != null) {
       ref.invalidate(weekIdProvider(profile.churchId!));
     }
 
-    // 3. 실제 기도 데이터 갱신
     ref.invalidate(weeklyDataProvider);
     ref.invalidate(departmentWeeklyDataProvider);
   }
@@ -79,13 +75,13 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
 
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(vertical: 8), // v0 축소
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
             onPressed: () => _moveWeek(-1),
-            icon: Icon(lucide.LucideIcons.chevronLeft, color: AppTheme.textSub, size: 18), // v0 축소
+            icon: Icon(lucide.LucideIcons.chevronLeft, color: AppTheme.textSub, size: 18),
           ),
           const SizedBox(width: 4),
           InkWell(
@@ -114,7 +110,11 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                           shad.ShadCalendar(
                             selected: date,
                             weekStartsOn: 7,
-                            selectableDayPredicate: (date) => date.weekday == DateTime.sunday,
+                            selectableDayPredicate: (date) {
+                              final now = DateTime.now();
+                              final today = DateTime(now.year, now.month, now.day);
+                              return date.weekday == DateTime.sunday && !date.isAfter(today);
+                            },
                             onChanged: (newDate) {
                               if (newDate != null) {
                                 ref.read(selectedWeekDateProvider.notifier).state = newDate;
@@ -133,16 +133,16 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC), // v1 연한 회색 배경
+                color: const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: const Color(0xFFE2E8F0)), // v1 회색 테두리
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
               child: Text(
                 weekStr,
                 style: const TextStyle(
-                  fontSize: 15, // v1 폰트 크기
-                  fontWeight: FontWeight.w600, // v1 폰트 굵기
-                  color: Color(0xFF1E293B), // v1 폰트 색상
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
                   fontFamily: 'Pretendard',
                 ),
               ),
@@ -151,7 +151,7 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           const SizedBox(width: 4),
           IconButton(
             onPressed: () => _moveWeek(1),
-            icon: Icon(lucide.LucideIcons.chevronRight, color: AppTheme.textSub, size: 18), // v0 축소
+            icon: Icon(lucide.LucideIcons.chevronRight, color: AppTheme.textSub, size: 18),
           ),
         ],
       ),
@@ -168,12 +168,11 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     final userGroups = userGroupsAsync.value ?? [];
 
     String appBarTitle = '기도소식';
-    // ... 기존 타이틀 결정 로직 동일 ...
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        toolbarHeight: 52, // v0 명시적 높이
+        toolbarHeight: 52,
         leadingWidth: 56,
         leading: IconButton(
           onPressed: () => _refreshData(),
@@ -194,7 +193,6 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
       body: Column(
         children: [
           _buildWeekNavigator(selectedDate),
-          // const Divider(height: 1), // v1 하단 선 제거 요청 반영
           Expanded(
             child: userProfileAsync.when(
               data: (profile) {
@@ -251,6 +249,7 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     final List<Map<String, dynamic>> unifiedGroups = groups.map((g) => {
       'id': (g['id'] ?? g['group_id']).toString(),
       'name': (g['name'] ?? g['group_name'] ?? '').toString(),
+      'color_hex': g['color_hex'], // [NEW] 색상 정보 전달
       'role_in_group': g['role_in_group'],
     }).toList();
 
@@ -276,19 +275,19 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
             decoration: const BoxDecoration(
               color: Colors.white, 
               border: Border(
-                bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1), // v1 아래 선만 남김
+                bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1),
               ),
             ),
             child: TabBar(
               controller: _tabController,
               isScrollable: true,
               indicator: BoxDecoration(
-                color: const Color(0xFFF3F0FF), // v1 연보라 배경 (활성)
+                color: const Color(0xFFF3F0FF),
                 borderRadius: BorderRadius.circular(12),
               ),
               indicatorSize: TabBarIndicatorSize.tab,
               indicatorPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              labelColor: const Color(0xFF7C3AED), // v1 짙은 보라 글씨 (활성)
+              labelColor: const Color(0xFF7C3AED),
               unselectedLabelColor: const Color(0xFF64748B), 
               labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, fontFamily: 'Pretendard'),
               unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13, fontFamily: 'Pretendard'),
@@ -321,6 +320,11 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     return _buildSingleGroupView(groupId, churchId);
   }
 
+// [FIX] ListView 스크롤 시 아코디언 상태 초기화 방지
+  final Map<String, bool> _expandedStates = {};
+
+  // ... (existing code)
+
   Widget _buildAllTabExpandedView(String departmentId, String churchId) {
     if (departmentId.isEmpty || churchId.isEmpty) {
       return const Center(child: Text('소속 정보가 누락되었습니다.'));
@@ -332,7 +336,6 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         final allPrayers = List<Map<String, dynamic>>.from(data['prayers']);
         
         if (allPrayers.isEmpty) {
-          // [UI] 빈 화면이라도 당겨서 새로고침 가능하게 처리
           return RefreshIndicator(
             onRefresh: _refreshData,
             color: AppTheme.primaryViolet,
@@ -346,7 +349,6 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           );
         }
 
-        // [SORT] 클라이언트 사이드 부부 정렬 보강
         allPrayers.sort((a, b) {
           final m1 = a['member_directory'] ?? {};
           final m2 = b['member_directory'] ?? {};
@@ -371,26 +373,34 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
             itemCount: groups.length,
             itemBuilder: (context, index) {
               final group = groups[index];
-              final gId = group['id'];
+              final gId = (group['id'] ?? '').toString(); // Ensure String
               final gName = group['name'];
+              final gColor = _parseColor(group['color_hex']); // [NEW] 색상 파싱
               final groupPrayers = allPrayers.where((p) => p['group_id'] == gId).toList();
               
               if (groupPrayers.isEmpty) return const SizedBox.shrink();
 
+              // 상태가 없으면 기본값 true (펼침)
+              final isExpanded = _expandedStates[gId] ?? true;
+
               return Theme(
                 data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
-                  initiallyExpanded: true,
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), // v1 타일 패딩 추가
+                  key: PageStorageKey('group_expansion_$gId'), // [FIX] 상태 보존을 위한 키 추가
+                  initiallyExpanded: isExpanded,
+                  onExpansionChanged: (expanded) {
+                    _expandedStates[gId] = expanded; // 상태 저장 (setState 불필요, 다음 빌드 시 적용됨)
+                  },
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   title: Text(
                     '$gName (${groupPrayers.length})', 
                     style: const TextStyle(fontWeight: FontWeight.w900, color: AppTheme.primaryViolet, fontSize: 16)
                   ),
                   childrenPadding: const EdgeInsets.symmetric(horizontal: 20),
                   children: [
-                    const SizedBox(height: 12), // v1 그룹 헤더와 첫 카드 사이 여백 추가
+                    const SizedBox(height: 12),
                     ...groupPrayers.map((prayer) {
-                      return _buildPrayerItemInList(prayer, gId, churchId, gName);
+                      return _buildPrayerItemInList(prayer, gId, churchId, gName, groupColor: gColor); // [NEW] 색상 전달
                     }),
                   ],
                 ),
@@ -425,7 +435,6 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           );
         }
 
-        // [SORT] 클라이언트 사이드 부부 정렬 보강
         publishedPrayers.sort((a, b) {
           final m1 = a['member_directory'] ?? {};
           final m2 = b['member_directory'] ?? {};
@@ -449,10 +458,11 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           color: AppTheme.primaryViolet,
           child: ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 40), // v1 상단 24px로 확대
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
             itemCount: publishedPrayers.length,
             itemBuilder: (context, index) {
-              return _buildPrayerItemInList(publishedPrayers[index], groupId, churchId, gName);
+              final gColor = _parseColor(groupInfo['color_hex']); // [NEW] 단일 조 뷰에서도 색상 적용
+              return _buildPrayerItemInList(publishedPrayers[index], groupId, churchId, gName, groupColor: gColor);
             },
           ),
         );
@@ -462,7 +472,19 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     );
   }
 
-  Widget _buildPrayerItemInList(Map<String, dynamic> prayer, String groupId, String churchId, String groupName) {
+  Color? _parseColor(String? hexString) {
+    if (hexString == null || hexString.isEmpty) return null;
+    try {
+      final buffer = StringBuffer();
+      if (hexString.length == 6 || hexString.length == 7) buffer.write('ff');
+      buffer.write(hexString.replaceFirst('#', ''));
+      return Color(int.parse(buffer.toString(), radix: 16));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _buildPrayerItemInList(Map<String, dynamic> prayer, String groupId, String churchId, String groupName, {Color? groupColor}) {
     return ref.watch(groupMembersProvider(groupId)).when(
       data: (members) {
         final dirId = prayer['directory_member_id'];
@@ -480,7 +502,9 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           name: memberName,
           groupName: groupName.toString(),
           content: (prayer['content'] ?? '').toString(),
+          isDraft: prayer['status'] != 'published',
           togetherCount: prayer['together_count'] ?? 0,
+          groupColor: groupColor, // [NEW] PrayerCard에 색상 전달
         );
       },
       loading: () => const SizedBox(height: 100, child: Center(child: CircularProgressIndicator())),
@@ -488,4 +512,3 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     );
   }
 }
-

@@ -74,6 +74,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   Future<void> _refreshData() async {
+    // [FIX] 페이지 이동이나 데이터 갱신 시 기존 컨트롤러 텍스트 초기화
+    for (final controller in _controllers.values) {
+      controller.clear();
+    }
+    
     final groups = await ref.read(userGroupsProvider.future);
     if (groups.isNotEmpty) {
       _currentGroupId = groups.first['group_id'];
@@ -91,52 +96,60 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     try {
       final repo = ref.read(repositoryProvider);
       final weekIdResult = await ref.read(weekIdProvider(churchId).future);
-      if (weekIdResult == null) {
-        setState(() {
-          _isLoading = false;
-          _isFetching = false;
-        });
-        return;
-      }
       final weekId = weekIdResult;
+      
+      // [FIX] weekId가 없더라도 멤버 목록은 항상 가져옴 (빈 화면 방지)
       final membersData = await repo.getGroupMembers(groupId);
-      final weeklyData = await repo.getWeeklyData(groupId, weekId);
-      final existingAttendance = List<Map<String, dynamic>>.from(weeklyData['attendance']);
-      final existingPrayers = List<Map<String, dynamic>>.from(weeklyData['prayers']);
+      
+      final List<Map<String, dynamic>> existingAttendance;
+      final List<Map<String, dynamic>> existingPrayers;
+      
+      if (weekId != null) {
+        final weeklyData = await repo.getWeeklyData(groupId, weekId);
+        existingAttendance = List<Map<String, dynamic>>.from(weeklyData['attendance']);
+        existingPrayers = List<Map<String, dynamic>>.from(weeklyData['prayers']);
+      } else {
+        existingAttendance = [];
+        existingPrayers = [];
+        debugPrint('AttendancePrayerScreen: weekId is null, showing default members list.');
+      }
 
       setState(() {
         final Map<String, Map<String, dynamic>> combinedMembers = {};
-        for (final att in existingAttendance) {
-          final directoryId = att['directory_member_id'];
-          final member = att['member_directory'];
-          if (directoryId == null || member == null) continue;
-          final prayer = (existingPrayers as List).firstWhere(
-            (p) => p['directory_member_id'] == directoryId, 
-            orElse: () => <String, dynamic>{'content': ''}
-          );
-          combinedMembers[directoryId] = {
-            'id': member['profile_id'], 
-            'directoryMemberId': directoryId,
-            'name': member['full_name'],
-            'isPresent': att['status'] == 'present' || att['status'] == 'late',
-            'prayerNote': prayer['content'] ?? '',
-            'familyId': _generateFamilyId(member['full_name'], member['spouse_name'], member['family_id'], directoryId),
-            'source': 'snapshot',
-          };
-        }
+        
+        // 1. 명단 기본 구조 생성 (member_directory 기준)
         for (final m in membersData) {
           final directoryId = m['id'];
-          if (combinedMembers.containsKey(directoryId)) continue;
           combinedMembers[directoryId] = {
             'id': m['profiles']?['id'], 
             'directoryMemberId': directoryId,
             'name': m['full_name'],
             'isPresent': false,
             'prayerNote': '',
+            'prayerStatus': 'draft',
             'familyId': _generateFamilyId(m['full_name'], m['spouse_name'], m['family_id'], directoryId),
             'source': 'current',
           };
         }
+
+        // 2. 기록된 데이터가 있다면 덮어쓰기
+        if (weekId != null) {
+          for (final att in existingAttendance) {
+            final directoryId = att['directory_member_id'];
+            if (directoryId == null || !combinedMembers.containsKey(directoryId)) continue;
+            
+            final prayer = (existingPrayers as List).firstWhere(
+              (p) => p['directory_member_id'] == directoryId, 
+              orElse: () => <String, dynamic>{'content': '', 'status': 'draft'}
+            );
+            
+            combinedMembers[directoryId]!['isPresent'] = att['status'] == 'present' || att['status'] == 'late';
+            combinedMembers[directoryId]!['prayerNote'] = prayer['content'] ?? '';
+            combinedMembers[directoryId]!['prayerStatus'] = prayer['status'] ?? 'draft';
+            combinedMembers[directoryId]!['source'] = 'snapshot';
+          }
+        }
+        
         _members = combinedMembers.values.toList();
         for (final m in _members) {
           final directoryId = m['directoryMemberId'];
@@ -153,6 +166,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         if (widget.isActive) _checkAndShowAttendancePopup();
       });
     } catch (e) {
+      debugPrint('AttendancePrayerScreen: Error fetching data: $e');
       if (mounted) SnackBarUtil.showSnackBar(context, message: '데이터를 불러오지 못했습니다.', isError: true);
     } finally {
       if (mounted) setState(() { _isLoading = false; _isFetching = false; });
@@ -179,42 +193,47 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     return 'single_$directoryId';
   }
 
-  void _launchAttendanceCheck() {
+  Future<void> _launchAttendanceCheck() async {
     final selectedDate = ref.read(selectedWeekDateProvider);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     // 선택된 날짜와 오늘 날짜를 비교하여 과거 주차 여부 확인 (일요일 기준이므로 < 오늘)
     final bool isPastWeek = selectedDate.isBefore(today);
 
-    Navigator.of(context).push(
+    final result = await Navigator.of(context).push(
       SharedAxisPageRoute(
         page: AttendanceCheckScreen(
           initialMembers: _members,
           isPastWeek: isPastWeek,
-          onComplete: (updated) async {
-            setState(() {
-              // 업데이트된 명단에는 있고 이전 명단에는 없는 dirId 확인 (거의 없을 테지만 방어적)
-              // 업데이트된 명단에 없는 dirId는 제외된 성도이므로 컨트롤러 등에서도 삭제
-              final updatedIds = updated.map((m) => m['directoryMemberId']).toSet();
-              _controllers.removeWhere((id, _) => !updatedIds.contains(id));
-              
-              _members = updated;
-              for (final m in _members) {
-                final dirId = m['directoryMemberId'];
-                if (_controllers.containsKey(dirId)) {
-                  _controllers[dirId]!.text = m['prayerNote'] ?? '';
-                } else {
-                  _controllers[dirId] = TextEditingController(text: m['prayerNote'] ?? '');
-                }
-              }
-              _sortMembers();
-              _isCheckScreenShowing = false;
-            });
-            await _saveData(status: 'draft');
-          },
         ),
       ),
-    ).then((_) { if (mounted) setState(() => _isCheckScreenShowing = false); });
+    );
+
+    if (result != null && result is List<Map<String, dynamic>>) {
+      final updated = result;
+      setState(() {
+        // 업데이트된 명단에는 있고 이전 명단에는 없는 dirId 확인 (거의 없을 테지만 방어적)
+        // 업데이트된 명단에 없는 dirId는 제외된 성도이므로 컨트롤러 등에서도 삭제
+        final updatedIds = updated.map((m) => m['directoryMemberId']).toSet();
+        _controllers.removeWhere((id, _) => !updatedIds.contains(id));
+        
+        _members = updated;
+        for (final m in _members) {
+          final dirId = m['directoryMemberId'];
+          if (_controllers.containsKey(dirId)) {
+            _controllers[dirId]!.text = m['prayerNote'] ?? '';
+          } else {
+            _controllers[dirId] = TextEditingController(text: m['prayerNote'] ?? '');
+          }
+        }
+        _sortMembers();
+        _isCheckScreenShowing = false;
+      });
+      await _saveData(status: 'draft');
+    } else {
+      // 취소되거나 완료 없이 닫힌 경우
+      if (mounted) setState(() => _isCheckScreenShowing = false);
+    }
   }
 
   void _saveToHistory() {
@@ -296,10 +315,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     try {
       final repo = ref.read(repositoryProvider);
       final weekIdResult = await ref.read(weekIdProvider(_currentChurchId!).future);
-      if (weekIdResult == null) {
-        if (mounted) Navigator.pop(context);
-        throw Exception('주차 정보를 생성할 수 없습니다.');
-      }
+    if (weekIdResult == null) {
+      if (mounted) setState(() => _isLoading = false);
+      if (mounted) SnackBarUtil.showSnackBar(context, message: '주차 정보를 확인하지 못했습니다.', isError: true);
+      return;
+    }
       final weekId = weekIdResult;
       final List<AttendanceModel> attendance = [];
       final List<PrayerEntryModel> prayers = [];
@@ -314,29 +334,37 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           status: m['isPresent'] ? 'present' : 'absent',
         ));
         final note = (m['prayerNote'] as String).trim();
-        if (note.isNotEmpty) {
-          prayers.add(PrayerEntryModel(
-            weekId: weekId,
-            groupId: _currentGroupId!,
-            memberId: memberId,
-            directoryMemberId: dirId,
-            content: note,
-            status: status,
-          ));
-        }
+      if (note.isNotEmpty) {
+        // [FIX] 사용자가 '임시 저장'을 명시적으로 눌렀다면, 기존 상태가 published라도 draft로 변경(Unpublish)해야 함.
+        // Sticky Logic 제거: final newStatus = (status == 'draft' && m['prayerStatus'] == 'published') ? 'published' : status;
+        final newStatus = status; 
+              
+        prayers.add(PrayerEntryModel(
+          weekId: weekId,
+          groupId: _currentGroupId!,
+          memberId: memberId,
+          directoryMemberId: dirId,
+          content: note,
+          status: newStatus,
+        ));
+        
+        // [UI UPDATE] 저장 후 즉시 배지를 업데이트하기 위해 로컬 상태 변경
+        m['prayerStatus'] = newStatus;
       }
-      await repo.saveAttendanceAndPrayers(attendanceList: attendance, prayerList: prayers);
+    }
+    await repo.saveAttendanceAndPrayers(attendanceList: attendance, prayerList: prayers);
       ref.invalidate(weeklyDataProvider);
       ref.invalidate(departmentWeeklyDataProvider);
       ref.invalidate(attendanceHistoryProvider);
       
       if (mounted) setState(() => _isLoading = false);
-      if (mounted) SnackBarUtil.showSnackBar(context, message: status == 'published' ? '등록되었습니다.' : '저장되었습니다.');
-    } catch (e) {
-      if (mounted) Navigator.pop(context);
-      if (mounted) SnackBarUtil.showSnackBar(context, message: '저장 실패', isError: true);
-    }
+    if (mounted) SnackBarUtil.showSnackBar(context, message: status == 'published' ? '등록되었습니다.' : '저장되었습니다.');
+  } catch (e) {
+    if (mounted) setState(() => _isLoading = false);
+    debugPrint('Save Error: $e');
+    if (mounted) SnackBarUtil.showSnackBar(context, message: '저장 중 오류가 발생했습니다.', isError: true);
   }
+}
 
   String _formatPrayersForSharing() {
     final settings = ref.read(aiSettingsProvider);
@@ -554,7 +582,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                     ShadCalendar(
                       selected: selectedDate,
                       weekStartsOn: 7, // [FIX] 일요일이 가장 왼쪽에 오도록 설정
-                      selectableDayPredicate: (date) => date.weekday == DateTime.sunday,
+                      selectableDayPredicate: (date) {
+                        final now = DateTime.now();
+                        final today = DateTime(now.year, now.month, now.day);
+                        return date.weekday == DateTime.sunday && !date.isAfter(today);
+                      },
                       onChanged: (date) {
                         if (date != null) {
                           ref.read(selectedWeekDateProvider.notifier).state = date;
@@ -579,6 +611,62 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           ),
           const SizedBox(width: 4),
           const Icon(lucide.LucideIcons.chevronDown, size: 20, color: AppTheme.textSub),
+          const SizedBox(width: 8),
+          _buildStatusBadge(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge() {
+    if (_members.isEmpty) return const SizedBox.shrink();
+    
+    final bool hasPublished = _members.any((m) => m['prayerStatus'] == 'published');
+    final bool isAllDraft = _members.every((m) => m['prayerStatus'] == 'draft');
+    final bool hasContent = _members.any((m) => (m['prayerNote'] as String).isNotEmpty);
+
+    String label = '작성 전';
+    Color bgColor = const Color(0xFFF1F5F9);
+    Color textColor = const Color(0xFF64748B);
+
+    if (hasPublished) {
+      label = '등록 완료';
+      bgColor = const Color(0xFFECFDF5);
+      textColor = const Color(0xFF10B981);
+    } else if (hasContent) {
+      label = '임시저장 중';
+      bgColor = const Color(0xFFFFF7ED);
+      textColor = const Color(0xFFF59E0B);
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: bgColor.withOpacity(0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(
+              color: textColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: textColor,
+              fontFamily: 'Pretendard',
+            ),
+          ),
         ],
       ),
     );
@@ -774,6 +862,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
   // [기존 _buildCopySpouseButton 삭제됨]
   Widget _buildBottomActions() {
+    final bool hasPublished = _members.any((m) => m['prayerStatus'] == 'published');
+    
     return Container(
       padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + math.max(12, MediaQuery.of(context).padding.bottom)),
       decoration: BoxDecoration(

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart'; // [FIX] import 추가
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
@@ -96,6 +97,14 @@ class GraceNoteApp extends StatelessWidget {
         title: AppConstants.appName,
         theme: AppTheme.light,
         debugShowCheckedModeBanner: false,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('ko', 'KR'),
+        ],
         builder: (context, child) => ShadAppBuilder(
           child: child ?? Container(color: Colors.white, child: const Center(child: CircularProgressIndicator())),
         ),

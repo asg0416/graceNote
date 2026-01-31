@@ -13,9 +13,11 @@ class PrayerCard extends ConsumerStatefulWidget {
   final String name;
   final String profileId; // Author profile ID
   final String content;
+  final bool isDraft;
   final int togetherCount;
   final String? date;
   final Function(String type, bool isPositive)? onInteractionToggle;
+  final Color? groupColor; // [NEW] 조 색상
 
   const PrayerCard({
     super.key,
@@ -24,9 +26,11 @@ class PrayerCard extends ConsumerStatefulWidget {
     required this.name,
     required this.profileId,
     required this.content,
+    this.isDraft = false,
     this.togetherCount = 0,
     this.date,
     this.onInteractionToggle,
+    this.groupColor,
   });
 
   @override
@@ -34,6 +38,7 @@ class PrayerCard extends ConsumerStatefulWidget {
 }
 
 class _PrayerCardState extends ConsumerState<PrayerCard> {
+  // ... (existing state variables)
   bool _isExpanded = false;
   bool _isToggling = false;
 
@@ -41,6 +46,7 @@ class _PrayerCardState extends ConsumerState<PrayerCard> {
   bool _optimisticSaved = false;
   int _optimisticCount = 0;
 
+  // ... (existing _toggleInteraction)
   Future<void> _toggleInteraction(String type) async {
     final profile = ref.read(userProfileProvider).value;
     if (profile == null) return;
@@ -100,7 +106,12 @@ class _PrayerCardState extends ConsumerState<PrayerCard> {
     }
   }
 
+
   Color _getGroupColor(String groupName) {
+    // [FIX] Admin에서 설정한 색상이 있으면 우선 적용
+    if (widget.groupColor != null) return widget.groupColor!;
+    
+    // Fallback logic
     if (groupName.contains('효석') || groupName.contains('해비')) return const Color(0xFFEF4444); // Red
     if (groupName.contains('인철') || groupName.contains('호산나')) return const Color(0xFFF59E0B); // Orange
     if (groupName.contains('Re-born') || groupName.contains('새가족')) return const Color(0xFF14B8A6); // Teal/Mint
@@ -252,6 +263,21 @@ class _PrayerCardState extends ConsumerState<PrayerCard> {
                               widget.date!, 
                               style: const TextStyle(color: AppTheme.textSub, fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')
                             ),
+                          if (widget.isDraft) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.orange.withOpacity(0.2)),
+                              ),
+                              child: const Text(
+                                '작성 중',
+                                style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       if (widget.groupName.isNotEmpty)

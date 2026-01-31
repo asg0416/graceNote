@@ -258,3 +258,51 @@ class FamilyModel {
     };
   }
 }
+
+class UserMembership {
+  final String groupId;
+  final String groupName;
+  final String roleInGroup; // 'leader', 'member', 'admin'
+  final String? departmentName;
+  final String? churchId;
+
+  UserMembership({
+    required this.groupId,
+    required this.groupName,
+    required this.roleInGroup,
+    this.departmentName,
+    this.churchId,
+  });
+
+  factory UserMembership.fromMap(Map<String, dynamic> map) {
+    return UserMembership(
+      groupId: map['group_id'] ?? '',
+      groupName: map['group_name'] ?? '',
+      roleInGroup: map['role_in_group'] ?? 'member',
+      departmentName: map['department_name'],
+      churchId: map['church_id'],
+    );
+  }
+
+  String get roleLabel {
+    switch (roleInGroup) {
+      case 'admin':
+        return '관리자';
+      case 'leader':
+        return '조장';
+      default:
+        return '조원';
+    }
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UserMembership &&
+          runtimeType == other.runtimeType &&
+          groupId == other.groupId &&
+          roleInGroup == other.roleInGroup;
+
+  @override
+  int get hashCode => groupId.hashCode ^ roleInGroup.hashCode;
+}

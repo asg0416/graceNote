@@ -167,30 +167,50 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 });
 
 // Helper for re-fetching detailed group data with joins
-// [ENHANCEMENT] Join with member_directory to ensure newest assignment
+// [ENHANCEMENT] Use synced role_in_group from group_members and sort by privilege
 Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
   final response = await Supabase.instance.client
       .from('group_members')
-      .select('group_id, role_in_group, groups(name, church_id, departments!department_id(name)), profiles(member_directory!member_directory_profile_id_fkey(group_name, role_in_group, is_active))')
+      .select('group_id, role_in_group, groups(name, church_id, color_hex, departments!department_id(name))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
       .order('joined_at', ascending: false);
       
-  return (response as List).map<Map<String, dynamic>>((e) {
-    // [LOGIC UPGRADE] Prefer directory data if it matches, to handle trigger delays
-    final dir = (e['profiles']?['member_directory'] as List?)?.firstWhere(
-      (d) => d['is_active'] == true,
-      orElse: () => null
-    );
-
+  final List<Map<String, dynamic>> rawGroups = (response as List).map<Map<String, dynamic>>((e) {
     return {
       'group_id': e['group_id']?.toString() ?? '',
-      'group_name': dir?['group_name'] ?? e['groups']?['name']?.toString() ?? '알 수 없는 조',
+      'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
       'church_id': e['groups']?['church_id']?.toString() ?? '',
+      'color_hex': e['groups']?['color_hex']?.toString() ?? '', // [NEW] 조 색상 추가
       'department_name': e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
-      'role_in_group': dir?['role_in_group'] ?? (e['role_in_group'] ?? 'member').toString(),
+      'role_in_group': (e['role_in_group'] ?? 'member').toString(),
     };
   }).toList();
+
+  // [UNIQUE] 중복 데이터 제거 (group_id와 role_in_group의 조합이 동일한 경우 제거)
+  final Set<String> seen = {};
+  final groups = rawGroups.where((g) {
+    final key = '${g['group_id']}_${g['role_in_group']}';
+    if (seen.contains(key)) return false;
+    seen.add(key);
+    return true;
+  }).toList();
+
+  // [ROLE PRIORITY] 정렬 로직 추가: 관리자 > 조장 > 조원 순으로 정렬하여 대표 소속 결정 시 유리하게 함
+  groups.sort((a, b) {
+    final roleA = a['role_in_group'];
+    final roleB = b['role_in_group'];
+    
+    int getPriority(String role) {
+      if (role == 'admin') return 0;
+      if (role == 'leader') return 1;
+      return 2;
+    }
+    
+    return getPriority(roleA).compareTo(getPriority(roleB));
+  });
+
+  return groups;
 }
 
 // Selected Week Provider (Current context for app)

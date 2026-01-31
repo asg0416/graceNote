@@ -4,13 +4,12 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 class AttendanceCheckScreen extends StatefulWidget {
   final List<Map<String, dynamic>> initialMembers;
-  final Function(List<Map<String, dynamic>>) onComplete;
+
   final bool isPastWeek;
 
   const AttendanceCheckScreen({
     super.key, 
     required this.initialMembers, 
-    required this.onComplete,
     this.isPastWeek = false,
   });
 
@@ -167,8 +166,7 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
                                 ),
                               ],
                             ),
-                            if (widget.isPastWeek) ...[
-                              const SizedBox(height: 8),
+                            const SizedBox(height: 8),
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -191,7 +189,6 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
                                   ),
                                 ],
                               ),
-                            ],
                           ],
                         ),
                       );
@@ -289,8 +286,7 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
           height: 50,
           child: ShadButton(
             onPressed: () {
-              widget.onComplete(_tempMembers);
-              Navigator.pop(context);
+              Navigator.pop(context, _tempMembers);
             },
             backgroundColor: const Color(0xFF8B5CF6),
             child: const Text('출석체크 완료', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, fontFamily: 'Pretendard', letterSpacing: -0.5)),

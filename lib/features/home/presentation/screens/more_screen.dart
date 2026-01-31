@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
+import 'package:grace_note/core/models/models.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/constants/app_constants.dart';
@@ -222,7 +223,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     ref.invalidate(weekIdProvider);
                     ref.invalidate(selectedWeekDateProvider); // 날짜 선택 상태도 초기화
                     ref.invalidate(memberPrayerHistoryProvider); // 패밀리 전체 무효화
-                    ref.read(activeRoleProvider.notifier).reset(); // 저장된 역할 초기화
+                    ref.read(activeMembershipProvider.notifier).reset(); // 저장된 소속 및 역할 초기화
 
                     if (context.mounted) {
                       // 3. Clear all navigations and go to Login
@@ -340,68 +341,35 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
             data: (groups) {
               final profile = profileAsync.value;
               final isGlobalAdmin = profile != null && (profile.role == 'admin' || profile.isMaster);
-              final availableRoles = ref.watch(availableRolesProvider);
 
               // [FIX] UI 렌더링 전 데이터 준비
-              Map<String, dynamic>? displayGroup;
-              String displayRoleStr = '조원';
-              Color displayRoleColor = AppTheme.textSub;
-
-              if (groups.isNotEmpty) {
-                final activeRole = ref.watch(activeRoleProvider);
-                
-                // [Logic Refinement] 현재 역할에 맞는 그룹 찾기
-                if (activeRole == AppRole.leader) {
-                  displayGroup = groups.firstWhere(
-                    (g) => g['role_in_group'] == 'leader', 
-                    orElse: () => groups.first
-                  );
-                  displayRoleStr = '조장';
-                  displayRoleColor = const Color(0xFF6366F1);
-                } else if (activeRole == AppRole.member) {
-                  // 멤버 역할일 때는 role_in_group이 member인 것을 우선하되, 없으면 아무거나
-                  displayGroup = groups.firstWhere(
-                    (g) => g['role_in_group'] == 'member', 
-                    orElse: () => groups.first
-                  );
-                  displayRoleStr = '조원';
-                  displayRoleColor = AppTheme.textSub;
-                } else if (activeRole == AppRole.admin) {
-                  displayGroup = groups.firstWhere(
-                    (g) => g['role_in_group'] == 'admin', 
-                    orElse: () => groups.first
-                  );
-                  displayRoleStr = '관리자';
-                  displayRoleColor = const Color(0xFFF59E0B);
-                } else {
-                  displayGroup = groups.first;
-                }
-              }
+              UserMembership? activeMembership = ref.watch(activeMembershipProvider);
+              final availableMemberships = ref.watch(availableMembershipsProvider);
 
               return InkWell(
-                onTap: availableRoles.length > 1 ? () => _showRoleSelectionSheet(context, ref) : null,
+                onTap: availableMemberships.length > 1 ? () => _showRoleSelectionSheet(context, ref) : null,
                 borderRadius: BorderRadius.circular(20),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                   child: Column(
                     children: [
-                      if (groups.isEmpty)
+                      if (groups.isEmpty && !isGlobalAdmin)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                           decoration: BoxDecoration(
-                            color: isGlobalAdmin ? const Color(0xFFF59E0B).withOpacity(0.1) : AppTheme.divider.withOpacity(0.3),
+                            color: AppTheme.divider.withOpacity(0.3),
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Text(
-                            isGlobalAdmin ? (profile.isMaster ? '전체 관리자' : '교회 관리자') : '소속 정보 없음', 
+                          child: const Text(
+                            '소속 정보 없음', 
                             style: TextStyle(
-                              color: isGlobalAdmin ? const Color(0xFFF59E0B) : AppTheme.textSub, 
+                              color: AppTheme.textSub, 
                               fontSize: 13, 
                               fontWeight: FontWeight.w600
                             )
                           ),
                         )
-                      else if (displayGroup != null)
+                      else if (activeMembership != null)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           decoration: BoxDecoration(
@@ -416,7 +384,9 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                '${displayGroup['group_name']} | $displayRoleStr',
+                                activeMembership.groupId == 'global_admin' 
+                                  ? '전체 관리자' 
+                                  : '${activeMembership.groupName} | ${activeMembership.roleLabel}',
                                 style: const TextStyle(
                                   color: AppTheme.textMain,
                                   fontSize: 14,
@@ -424,7 +394,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                                   fontFamily: 'Pretendard',
                                 ),
                               ),
-                              if (availableRoles.length > 1) ...[
+                              if (availableMemberships.length > 1) ...[
                                 const SizedBox(width: 8),
                                 Icon(
                                    lucide.LucideIcons.chevronDown,
@@ -559,10 +529,8 @@ class _MenuItem {
 
 extension MoreScreenRoleExtension on _MoreScreenState {
   void _showRoleSelectionSheet(BuildContext context, WidgetRef ref) {
-    final availableRoles = ref.watch(availableRolesProvider);
-    final activeRole = ref.watch(activeRoleProvider);
-    final groups = ref.watch(userGroupsProvider).value ?? [];
-    final groupName = groups.isNotEmpty ? groups.first['group_name'] : '소속 조';
+    final memberships = ref.watch(availableMembershipsProvider);
+    final activeMembership = ref.watch(activeMembershipProvider);
 
     showModalBottomSheet(
       context: context,
@@ -589,63 +557,65 @@ extension MoreScreenRoleExtension on _MoreScreenState {
             ),
             const SizedBox(height: 24),
             const Text(
-              '역할 선택',
+              '소속 선택',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppTheme.textMain),
             ),
             const SizedBox(height: 8),
             const Text(
-              '전환할 역할을 선택해 주세요.',
+              '활동하실 소속과 역할을 선택해 주세요.',
               style: TextStyle(fontSize: 14, color: AppTheme.textSub),
             ),
             const SizedBox(height: 24),
-            ...availableRoles.map((role) {
-              final isSelected = activeRole == role;
-              String label = role.label;
-              if (role == AppRole.leader) {
-                label = '$groupName 조장';
-              } else if (role == AppRole.member) {
-                label = '$groupName 조원';
-              } else if (role == AppRole.admin) {
-                label = '전체 관리자';
-              }
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: memberships.length,
+                itemBuilder: (context, index) {
+                  final membership = memberships[index];
+                  final isSelected = activeMembership == membership;
+                  final String label = membership.groupId == 'global_admin'
+                      ? '전체 관리자'
+                      : '${membership.groupName} ${membership.roleLabel}';
 
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: InkWell(
-                  onTap: () {
-                    ref.read(activeRoleProvider.notifier).setRole(role);
-                    Navigator.pop(context);
-                  },
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: isSelected ? AppTheme.primaryViolet.withOpacity(0.05) : AppTheme.background,
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: InkWell(
+                      onTap: () {
+                        ref.read(activeMembershipProvider.notifier).setMembership(membership);
+                        Navigator.pop(context);
+                      },
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isSelected ? AppTheme.primaryViolet.withOpacity(0.3) : Colors.transparent,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
-                            color: isSelected ? AppTheme.primaryViolet : AppTheme.textMain,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppTheme.primaryViolet.withOpacity(0.05) : AppTheme.background,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isSelected ? AppTheme.primaryViolet.withOpacity(0.3) : Colors.transparent,
+                            width: 1.5,
                           ),
                         ),
-                        if (isSelected)
-                          const Icon(Icons.check_circle_rounded, color: AppTheme.primaryViolet, size: 24),
-                      ],
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
+                                color: isSelected ? AppTheme.primaryViolet : AppTheme.textMain,
+                              ),
+                            ),
+                            if (isSelected)
+                              const Icon(Icons.check_circle_rounded, color: AppTheme.primaryViolet, size: 24),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              );
-            }).toList(),
+                  );
+                },
+              ),
+            ),
             const SizedBox(height: 16),
           ],
         ),
