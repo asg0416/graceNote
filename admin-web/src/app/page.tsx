@@ -345,37 +345,80 @@ export default function DashboardPage() {
 
 function StatsCard({ title, value, change, icon: Icon, color, isWarning, onClick }: any) {
   const colorMap: any = {
-    indigo: "from-indigo-600/10 to-indigo-600/[0.02] dark:from-indigo-500/20 dark:to-indigo-500/5 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/20",
-    blue: "from-blue-600/10 to-blue-600/[0.02] dark:from-blue-500/20 dark:to-blue-500/5 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/20",
-    amber: "from-amber-600/10 to-amber-600/[0.02] dark:from-amber-500/20 dark:to-amber-500/5 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-500/20",
-    emerald: "from-emerald-600/10 to-emerald-600/[0.02] dark:from-emerald-500/20 dark:to-emerald-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20",
-    rose: "from-rose-600/10 to-rose-600/[0.02] dark:from-rose-500/20 dark:to-rose-500/5 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/20",
+    indigo: {
+      bg: "bg-indigo-50/50 dark:bg-indigo-500/5",
+      iconBg: "from-indigo-600 to-indigo-700 text-white shadow-indigo-200 dark:shadow-indigo-900/20",
+      text: "text-indigo-600 dark:text-indigo-400",
+      border: "border-indigo-100 dark:border-indigo-500/20",
+      badge: "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/20"
+    },
+    emerald: {
+      bg: "bg-emerald-50/50 dark:bg-emerald-500/5",
+      iconBg: "from-emerald-500 to-emerald-600 text-white shadow-emerald-200 dark:shadow-emerald-900/20",
+      text: "text-emerald-600 dark:text-emerald-400",
+      border: "border-emerald-100 dark:border-emerald-500/20",
+      badge: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20"
+    },
+    rose: {
+      bg: "bg-rose-50/50 dark:bg-rose-500/5",
+      iconBg: "from-rose-500 to-rose-600 text-white shadow-rose-200 dark:shadow-rose-900/20",
+      text: "text-rose-600 dark:text-rose-400",
+      border: "border-rose-100 dark:border-rose-500/20",
+      badge: "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/20"
+    },
+    amber: {
+      bg: "bg-amber-50/50 dark:bg-amber-500/5",
+      iconBg: "from-amber-500 to-amber-600 text-white shadow-amber-200 dark:shadow-amber-900/20",
+      text: "text-amber-600 dark:text-amber-400",
+      border: "border-amber-100 dark:border-amber-500/20",
+      badge: "bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/20"
+    },
+    slate: {
+      bg: "bg-slate-50/50 dark:bg-slate-500/5",
+      iconBg: "from-slate-600 to-slate-700 text-white shadow-slate-200 dark:shadow-slate-900/20",
+      text: "text-slate-600 dark:text-slate-400",
+      border: "border-slate-100 dark:border-slate-500/20",
+      badge: "bg-slate-50 dark:bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-100 dark:border-slate-500/20"
+    }
   };
+
+  const style = colorMap[color] || colorMap.indigo;
 
   return (
     <button
       onClick={onClick}
       disabled={!onClick}
       className={cn(
-        "bg-white dark:bg-[#111827]/60 backdrop-blur-xl p-6 rounded-[32px] sm:rounded-[40px] border border-slate-200 dark:border-slate-800/80 transition-all duration-300 group shadow-lg dark:shadow-none text-left w-full cursor-pointer overflow-hidden relative",
-        onClick ? "hover:border-indigo-300 dark:hover:border-slate-700 hover:scale-[1.02] active:scale-[0.98]" : "cursor-default"
+        "relative overflow-hidden p-8 rounded-[40px] border transition-all duration-500 group text-left w-full",
+        style.bg,
+        style.border,
+        onClick ? "hover:scale-[1.02] active:scale-[0.98] hover:shadow-2xl hover:shadow-slate-200/50 dark:hover:shadow-indigo-500/5 cursor-pointer" : "cursor-default"
       )}
     >
-      <div className="flex items-center justify-between mb-8">
-        <div className={cn("p-4 rounded-2xl bg-gradient-to-br border shadow-sm dark:shadow-lg group-hover:scale-110 transition-transform duration-300", colorMap[color])}>
+      {/* Decorative Gradient Background */}
+      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-white/20 to-transparent dark:from-white/5 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-150 transition-transform duration-700" />
+
+      <div className="relative z-10 flex items-center justify-between mb-10">
+        <div className={cn(
+          "p-4 rounded-2xl bg-gradient-to-br shadow-xl group-hover:rotate-6 transition-all duration-500",
+          style.iconBg
+        )}>
           <Icon className="w-6 h-6" />
         </div>
         <div className={cn(
-          "px-3 py-1.5 rounded-xl text-[10px] font-black tracking-widest uppercase",
-          isWarning ? "bg-red-500/10 text-red-500 border border-red-500/20" : "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+          "px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase border backdrop-blur-md",
+          isWarning ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200/50" : style.badge
         )}>
           {change}
         </div>
       </div>
 
-      <div className="space-y-1">
-        <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 tracking-[0.2em] uppercase truncate">{title}</p>
-        <h4 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">{value}</h4>
+      <div className="relative z-10 space-y-2">
+        <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 tracking-[0.25em] uppercase truncate pl-1">{title}</p>
+        <div className="flex items-end gap-2">
+          <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter tabular-nums">{value}</h4>
+          <ArrowUpRight className="w-5 h-5 text-slate-300 dark:text-slate-700 group-hover:text-indigo-500 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all duration-300" />
+        </div>
       </div>
     </button>
   );

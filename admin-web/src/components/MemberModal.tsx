@@ -35,6 +35,7 @@ interface MemberModalProps {
     groupName?: string;
     departments: { id: string; name: string }[];
     groups?: { department_id: string; name: string }[]; // For local state support (Regrouping Dashboard)
+    persistImmediately?: boolean; // If false, will not call Supabase and just return the data on success
 }
 
 export const MemberModal: React.FC<MemberModalProps> = ({
@@ -47,7 +48,8 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     groupId,
     groupName,
     departments,
-    groups
+    groups,
+    persistImmediately = true
 }) => {
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState<Partial<MemberProfile>>({
@@ -140,7 +142,14 @@ export const MemberModal: React.FC<MemberModalProps> = ({
             });
 
             let result;
-            if (member?.id && !member.id.startsWith('temp-')) {
+            if (!persistImmediately) {
+                // Return dummy ID for temporary member
+                result = {
+                    ...dataToSave,
+                    id: `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    is_new: true
+                };
+            } else if (member?.id && !member.id.startsWith('temp-')) {
                 // Real update
                 const { data, error } = await supabase
                     .from('member_directory')

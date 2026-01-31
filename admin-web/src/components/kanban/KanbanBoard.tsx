@@ -42,6 +42,8 @@ interface KanbanBoardProps {
     profileMode?: string;
     autoMoveCouples?: boolean;
     onToggleLeader?: (id: string) => void;
+    onDeleteMember?: (id: string) => void;
+    isDeletableMap?: Record<string, boolean>;
 }
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
@@ -50,6 +52,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     onMoveMembers,
     onReorderMembers,
     onToggleLeader,
+    onDeleteMember,
+    isDeletableMap,
     selectedMemberIds,
     onMemberClick,
     onMemberDoubleClick,
@@ -289,6 +293,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     onMemberClick={onMemberClick}
                     onMemberDoubleClick={onMemberDoubleClick}
                     onToggleLeader={onToggleLeader}
+                    onDeleteMember={onDeleteMember}
+                    isDeletableMap={isDeletableMap}
                     color="#94a3b8"
                     onQuickAdd={onQuickAddMember ? (name) => onQuickAddMember(null, name) : undefined}
                     onAddMembers={onAddMembers ? () => onAddMembers(null) : undefined}
@@ -310,6 +316,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         onMemberClick={onMemberClick}
                         onMemberDoubleClick={onMemberDoubleClick}
                         onToggleLeader={onToggleLeader}
+                        onDeleteMember={onDeleteMember}
+                        isDeletableMap={isDeletableMap}
                         onDelete={onDeleteGroup ? () => onDeleteGroup(group.id) : undefined}
                         onUpdate={onUpdateGroup ? (updates) => onUpdateGroup(group.id, updates) : undefined}
                         onQuickAdd={onQuickAddMember ? (name) => onQuickAddMember(group.id, name) : undefined}

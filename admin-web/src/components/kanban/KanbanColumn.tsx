@@ -23,6 +23,8 @@ interface KanbanColumnProps {
     activeId?: string | null;
     movingMembersCount?: number;
     onToggleLeader?: (id: string) => void;
+    onDeleteMember?: (id: string) => void;
+    isDeletableMap?: Record<string, boolean>;
     autoMoveCouples?: boolean;
 }
 
@@ -43,6 +45,8 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     activeId,
     movingMembersCount = 1,
     onToggleLeader,
+    onDeleteMember,
+    isDeletableMap,
     autoMoveCouples = true
 }) => {
     const { setNodeRef, isOver } = useDroppable({ id });
@@ -310,6 +314,8 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                     onClick={onMemberClick}
                                     onDoubleClick={onMemberDoubleClick}
                                     onToggleLeader={onToggleLeader}
+                                    onDeleteMember={onDeleteMember}
+                                    isDeletableMap={isDeletableMap}
                                     profileMode={profileMode}
                                     isDraggingElsewhere={isBeingDragged}
                                     movingMembersCount={movingMembersCount}

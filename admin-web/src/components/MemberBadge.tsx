@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { User, ShieldCheck, Crown } from 'lucide-react';
+import { User, ShieldCheck, Crown, Trash2 } from 'lucide-react';
 
 interface MemberBadgeProps {
     member: {
@@ -20,6 +20,8 @@ interface MemberBadgeProps {
     className?: string;
     profileMode?: string;
     onToggleLeader?: (id: string) => void;
+    onDeleteMember?: (id: string) => void;
+    isDeletable?: boolean;
 }
 
 export const MemberBadge: React.FC<MemberBadgeProps> = ({
@@ -29,7 +31,9 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
     onDoubleClick,
     className,
     profileMode,
-    onToggleLeader
+    onToggleLeader,
+    onDeleteMember,
+    isDeletable
 }) => {
     const isLeader = member.role_in_group === 'leader';
 
@@ -92,26 +96,43 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
                 </div>
             </div>
 
-            {/* Leader Toggle Button */}
-            {onToggleLeader && (
-                <button
-                    onClick={handleToggleLeader}
-                    className={cn(
-                        "p-2 rounded-xl transition-all duration-300 transform",
-                        isLeader
-                            ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 opacity-100 scale-110"
-                            : "text-slate-200 dark:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500 opacity-0 group-hover:opacity-100"
-                    )}
-                    title={isLeader ? "조장 해제" : "조장으로 지정"}
-                >
-                    <Crown
+            {/* Actions: Leader Toggle & Delete */}
+            <div className="flex items-center gap-1">
+                {onToggleLeader && (
+                    <button
+                        onClick={handleToggleLeader}
                         className={cn(
-                            "w-4 h-4 transition-all duration-300",
-                            isLeader && "fill-amber-500"
+                            "p-2 rounded-xl transition-all duration-300 transform",
+                            isLeader
+                                ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 opacity-100 scale-110"
+                                : "text-slate-200 dark:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-amber-500 opacity-0 group-hover:opacity-100"
                         )}
-                    />
-                </button>
-            )}
+                        title={isLeader ? "조장 해제" : "조장으로 지정"}
+                    >
+                        <Crown
+                            className={cn(
+                                "w-4 h-4 transition-all duration-300",
+                                isLeader && "fill-amber-500"
+                            )}
+                        />
+                    </button>
+                )}
+
+                {onDeleteMember && isDeletable && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`${member.full_name} 성도님을 이 조에서 제외하시겠습니까?`)) {
+                                onDeleteMember(member.id);
+                            }
+                        }}
+                        className="p-2 text-slate-200 dark:text-slate-800 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300"
+                        title="조에서 제외"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                )}
+            </div>
 
             {/* Selection Indicator */}
             {isSelected && (

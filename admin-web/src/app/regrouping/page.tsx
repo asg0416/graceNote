@@ -72,6 +72,28 @@ function RegroupingPageInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
 
+    // Calculate duplicate status for members (only show delete button if duplicated)
+    const isDeletableMap = useMemo(() => {
+        const counts: Record<string, number> = {};
+
+        // Count by identity (person_id or normalized name+phone)
+        localMembers.forEach(m => {
+            const normalizedPhone = (m.phone || '').replace(/[^0-9]/g, '');
+            const key = m.person_id || `${m.full_name}-${normalizedPhone}`;
+            counts[key] = (counts[key] || 0) + 1;
+        });
+
+        const map: Record<string, boolean> = {};
+        localMembers.forEach(m => {
+            const normalizedPhone = (m.phone || '').replace(/[^0-9]/g, '');
+            const key = m.person_id || `${m.full_name}-${normalizedPhone}`;
+            // Member is deletable if their identity appears more than once
+            // OR if it's a temporary copy/new member
+            map[m.id] = counts[key] > 1 || m.id.startsWith('temp-');
+        });
+        return map;
+    }, [localMembers]);
+
     useEffect(() => {
         const init = async () => {
             setLoading(true);
@@ -220,6 +242,29 @@ function RegroupingPageInner() {
     };
 
     const handleReorderMembers = useMemo(() => (ids: string[], targetGroupId: string | null) => {
+        // Prevent duplicates in the target group
+        if (targetGroupId) {
+            const targetGroupMembers = localMembers.filter(m => m.group_id === targetGroupId);
+            const duplicates = ids.filter(id => {
+                const memberToMove = localMembers.find(m => m.id === id);
+                if (!memberToMove || ids.includes(memberToMove.id) && memberToMove.group_id === targetGroupId) return false;
+
+                const normalizedPhone = (memberToMove.phone || '').replace(/[^0-9]/g, '');
+                return targetGroupMembers.some(tm =>
+                    !ids.includes(tm.id) && (
+                        (tm.person_id && tm.person_id === memberToMove.person_id) ||
+                        (tm.full_name === memberToMove.full_name && (tm.phone || '').replace(/[^0-9]/g, '') === normalizedPhone)
+                    )
+                );
+            });
+
+            if (duplicates.length > 0) {
+                const duplicateNames = duplicates.map(id => localMembers.find(m => m.id === id)?.full_name).join(', ');
+                alert(`${duplicateNames} 성도님은 이미 해당 조에 편성되어 있습니다.`);
+                return;
+            }
+        }
+
         setLocalMembers(prev => {
             // Check if anything actually changed to avoid unnecessary re-renders
             let changed = false;
@@ -233,7 +278,7 @@ function RegroupingPageInner() {
             return changed ? next : prev;
         });
         setHasChanges(true);
-    }, []); // Memoized to prevent frequent recreation
+    }, [localMembers]); // Needs localMembers for duplicate check
 
     const handleMoveMembers = (ids: string[], targetGroupId: string | null, isCopy: boolean = false, targetIndex?: number) => {
         let finalIdsToMove = [...ids];
@@ -255,6 +300,35 @@ function RegroupingPageInner() {
                 }
             });
             finalIdsToMove = [...finalIdsToMove, ...spousesToInclude];
+        }
+
+        // Prevent duplicates in the target group
+        if (targetGroupId) {
+            const targetGroupMembers = localMembers.filter(m => m.group_id === targetGroupId);
+            const duplicates = ids.filter(id => {
+                const memberToMove = localMembers.find(m => m.id === id);
+                if (!memberToMove) return false;
+
+                // Check if someone with same identity already exists in the target group (excluding the ones being moved)
+                return targetGroupMembers.some(tm =>
+                    !ids.includes(tm.id) && (
+                        (tm.person_id && tm.person_id === memberToMove.person_id) ||
+                        (tm.full_name === memberToMove.full_name && (tm.phone || '').replace(/[^0-9]/g, '') === (memberToMove.phone || '').replace(/[^0-9]/g, ''))
+                    )
+                );
+            });
+
+            if (duplicates.length > 0) {
+                const duplicateNames = duplicates.map(id => localMembers.find(m => m.id === id)?.full_name).join(', ');
+                alert(`${duplicateNames} 성도님은 이미 해당 조에 편성되어 있습니다.`);
+
+                // Filter out duplicates from moves
+                finalIdsToMove = finalIdsToMove.filter(id => !duplicates.includes(id));
+                if (finalIdsToMove.length === 0) {
+                    setSelectedMemberIds([]);
+                    return;
+                }
+            }
         }
 
         if (isCopy) {
@@ -304,6 +378,30 @@ function RegroupingPageInner() {
         }
         setSelectedMemberIds([]);
         setHasChanges(true);
+    };
+
+    const handleDeleteMember = async (id: string) => {
+        const member = localMembers.find(m => m.id === id);
+        if (!member) return;
+
+        const personIdCount = localMembers.filter(m => m.person_id === member.person_id).length;
+
+        if (id.startsWith('temp-')) {
+            // Temporary members are always safe to remove locally
+            setLocalMembers(prev => prev.filter(m => m.id !== id));
+            setHasChanges(true);
+        } else if (personIdCount > 1) {
+            // If the member is duplicated (exists in other groups), we only remove this instance
+            // This is effectively "de-assigning" from THIS group.
+            if (confirm(`${member.full_name} 성도님을 이 조에서 제외하시겠습니까? (다른 조에 등록된 정보는 유지됩니다.)`)) {
+                setLocalMembers(prev => prev.filter(m => m.id !== id));
+                setHasChanges(true); // User needs to click "Save" to persist this "de-assignment"
+            }
+        } else {
+            // If it's the last remaining card, we MUST NOT delete or remove it.
+            // The user requested that the actual member info never be deleted.
+            alert('이 성도는 현재 한 곳에만 편성되어 있어 삭제할 수 없습니다. 대신 다른 조로 이동시키거나 명단에 유지해 주세요.');
+        }
     };
 
     const handleToggleLeader = (memberId: string) => {
@@ -509,14 +607,29 @@ function RegroupingPageInner() {
     };
 
     const handleMemberModalSuccess = (memberData: any) => {
+        const normalizedNewPhone = (memberData.phone || '').replace(/[^0-9]/g, '');
+
         if (memberToEdit) {
             // Edit existing
             setLocalMembers(prev => prev.map(m => m.id === memberData.id ? { ...m, ...memberData } : m));
         } else {
-            // Add new
+            // Add new - Check for duplicates in the target group first
+            const targetGroupId = targetGroupForNewMember?.id || null;
+            const isDuplicate = localMembers.some(m =>
+                m.group_id === targetGroupId && (
+                    (m.person_id && memberData.person_id && m.person_id === memberData.person_id) ||
+                    (m.full_name === memberData.full_name && (m.phone || '').replace(/[^0-9]/g, '') === normalizedNewPhone)
+                )
+            );
+
+            if (isDuplicate) {
+                alert(`${memberData.full_name} 성도님은 이미 이 조에 편성되어 있습니다.`);
+                return;
+            }
+
             const newMember = {
                 ...memberData,
-                group_id: targetGroupForNewMember?.id || null,
+                group_id: targetGroupId,
                 is_new: true
             };
             setLocalMembers(prev => [...prev, newMember]);
@@ -608,6 +721,50 @@ function RegroupingPageInner() {
             // 2. Process Member Changes
             // Identify new members, moved members, and renamed groups
             const existingMemberUpdates = localMembers.filter(m => !m.id.startsWith('temp-'));
+
+            // CRITICAL: Identify members that were REMOVED from the view (duplicate cards that were deleted)
+            const removedMembers = members.filter(orig => !localMembers.find(lm => lm.id === orig.id));
+
+            const idsToUnassign: string[] = [];
+            const idsToDelete: string[] = [];
+
+            removedMembers.forEach(rm => {
+                const normalizedPhone = (rm.phone || '').replace(/[^0-9]/g, '');
+                // Check if this person still exists in any group in the local state
+                const stillExists = localMembers.some(lm =>
+                    (rm.person_id && lm.person_id === rm.person_id) ||
+                    (lm.full_name === rm.full_name && (lm.phone || '').replace(/[^0-9]/g, '') === normalizedPhone)
+                );
+
+                if (stillExists) {
+                    // It's a redundant duplicate being removed - physically delete to avoid "Unassigned" clutter
+                    idsToDelete.push(rm.id);
+                } else {
+                    // It's the last/only record - move to unassigned
+                    idsToUnassign.push(rm.id);
+                }
+            });
+
+            if (idsToDelete.length > 0) {
+                // Before deleting, deactivate their specific group memberships if linked to a profile
+                for (const rid of idsToDelete) {
+                    const m = removedMembers.find(rm => rm.id === rid);
+                    if (m?.profile_id && m.group_id) {
+                        await supabase
+                            .from('group_members')
+                            .update({ is_active: false })
+                            .eq('profile_id', m.profile_id)
+                            .eq('group_id', m.group_id);
+                    }
+                }
+
+                const { error: delError } = await supabase
+                    .from('member_directory')
+                    .delete()
+                    .in('id', idsToDelete);
+                if (delError) throw delError;
+            }
+
             const groupedChanges = existingMemberUpdates.reduce((acc, m) => {
                 const original = members.find(orig => orig.id === m.id);
                 const mappedGroupId = m.group_id ? (groupIdMap[m.group_id] || m.group_id) : null;
@@ -630,6 +787,12 @@ function RegroupingPageInner() {
                 }
                 return acc;
             }, {} as Record<string, string[]>);
+
+            // Add members to be unassigned (the ones that are not redundant deletes)
+            if (idsToUnassign.length > 0) {
+                if (!groupedChanges['unassigned']) groupedChanges['unassigned'] = [];
+                groupedChanges['unassigned'] = [...new Set([...groupedChanges['unassigned'], ...idsToUnassign])];
+            }
 
             for (const [groupId, memberIds] of Object.entries(groupedChanges)) {
                 const targetId = groupId === 'unassigned' ? null : groupId;
@@ -955,6 +1118,8 @@ function RegroupingPageInner() {
                         onAddMembers={handleOpenAddMemberModal}
                         profileMode={departments.find(d => d.id === selectedDeptId)?.profile_mode}
                         autoMoveCouples={autoMoveCouples}
+                        onDeleteMember={handleDeleteMember}
+                        isDeletableMap={isDeletableMap}
                     />
                 </div>
 
@@ -995,6 +1160,7 @@ function RegroupingPageInner() {
                     groupName={targetGroupForNewMember?.name || undefined}
                     departments={departments}
                     groups={groups}
+                    persistImmediately={false}
                 />
             )}
 

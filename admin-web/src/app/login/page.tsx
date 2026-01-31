@@ -140,17 +140,21 @@ export default function LoginPage() {
                     </button>
                 </div>
 
-                <div className="w-full max-w-[440px] space-y-10">
-                    <div className="space-y-2 lg:hidden">
-                        <div className="inline-flex items-center justify-center w-20 h-20 mb-2">
-                            <img src="/logo-icon.png" alt="Logo" className="w-20 h-20 object-contain filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.1)]" />
+                <div className="w-full max-w-[440px] space-y-12">
+                    <div className="space-y-4 lg:hidden text-center">
+                        <div className="inline-flex items-center justify-center w-24 h-24 bg-white dark:bg-slate-900 rounded-[32px] shadow-xl border border-slate-100 dark:border-slate-800 animate-bounce-slow">
+                            <img src="/logo-icon.png" alt="Logo" className="w-16 h-16 object-contain" />
                         </div>
-                        <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">Grace Note Admin</h1>
+                        <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Grace Note</h1>
                     </div>
 
-                    <div className="hidden lg:block space-y-2">
-                        <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">로그인</h1>
-                        <p className="text-slate-500 dark:text-slate-500 font-bold text-sm tracking-tight text-balance">시스템에 접속하기 위해 인증 정보를 입력해 주세요.</p>
+                    <div className="hidden lg:block space-y-4">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-full">
+                            <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                            <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">보안 로그인 세션</span>
+                        </div>
+                        <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter">로그인</h1>
+                        <p className="text-slate-500 dark:text-slate-500 font-bold text-base tracking-tight leading-relaxed">준비된 관리자 계정으로 <br />안전하게 시스템에 접속하세요.</p>
                     </div>
 
                     <div className="bg-white/80 dark:bg-[#111827]/60 backdrop-blur-2xl p-8 sm:p-10 rounded-[40px] border border-white dark:border-slate-800/80 shadow-2xl dark:shadow-none">
@@ -206,16 +210,19 @@ export default function LoginPage() {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600"
+                                className="w-full relative group overflow-hidden"
                             >
-                                {loading ? (
-                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                ) : (
-                                    <>
-                                        로그인 시스템 접속
-                                        <ArrowRight className="w-4 h-4" />
-                                    </>
-                                )}
+                                <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 group-hover:scale-105 transition-transform duration-500" />
+                                <div className="relative h-16 sm:h-18 flex items-center justify-center gap-3 text-white font-black text-sm uppercase tracking-widest">
+                                    {loading ? (
+                                        <Loader2 className="w-6 h-6 animate-spin" />
+                                    ) : (
+                                        <>
+                                            인증 및 시스템 접속
+                                            <ArrowRight className="w-5 h-5 group-hover:translate-x-1.5 transition-transform" />
+                                        </>
+                                    )}
+                                </div>
                             </button>
                         </form>
 
