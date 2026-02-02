@@ -25,6 +25,7 @@ class PrayerListScreen extends ConsumerStatefulWidget {
 class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with TickerProviderStateMixin {
   TabController? _tabController;
   List<Map<String, dynamic>> _allGroups = [{'id': 'all', 'name': '전체'}];
+  String _sortBy = 'name'; // 'name' 또는 'latest'
 
   @override
   void initState() {
@@ -173,16 +174,53 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
       backgroundColor: Colors.white,
       appBar: AppBar(
         toolbarHeight: 52,
-        leadingWidth: 56,
-        leading: IconButton(
-          onPressed: () => _refreshData(),
-          icon: Icon(lucide.LucideIcons.refreshCw, color: AppTheme.primaryViolet, size: 18),
+        leading: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(width: 8),
+            PopupMenuButton<String>(
+              icon: Icon(lucide.LucideIcons.listFilter, color: AppTheme.primaryViolet, size: 20),
+              onSelected: (value) {
+                setState(() {
+                  _sortBy = value;
+                });
+              },
+              offset: const Offset(0, 40),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'name',
+                  child: Row(
+                    children: [
+                      Icon(lucide.LucideIcons.list, size: 18),
+                      SizedBox(width: 8),
+                      Text('조 이름순', style: TextStyle(fontSize: 14)),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'latest',
+                  child: Row(
+                    children: [
+                      Icon(lucide.LucideIcons.clock, size: 18),
+                      SizedBox(width: 8),
+                      Text('조 활동순', style: TextStyle(fontSize: 14)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
         title: Text(appBarTitle, style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 18)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            onPressed: () => _refreshData(),
+            icon: Icon(lucide.LucideIcons.refreshCw, color: AppTheme.primaryViolet, size: 18),
+          ),
           IconButton(
             onPressed: () => Navigator.push(context, SharedAxisPageRoute(page: const SearchScreen())),
             icon: Icon(lucide.LucideIcons.search, color: AppTheme.primaryViolet, size: 20),
@@ -349,20 +387,58 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           );
         }
 
+        // [SORT] 전체 기도 목록 정렬 로직 (Marriage Key Sort)
         allPrayers.sort((a, b) {
           final m1 = a['member_directory'] ?? {};
           final m2 = b['member_directory'] ?? {};
-          final f1 = (m1['family_name'] as String?)?.trim() ?? '';
-          final f2 = (m2['family_name'] as String?)?.trim() ?? '';
           
-          if (f1.isNotEmpty && f2.isEmpty) return -1;
-          if (f1.isEmpty && f2.isNotEmpty) return 1;
-          if (f1.isNotEmpty && f2.isNotEmpty && f1 != f2) return f1.compareTo(f2);
+          String getMarriageKey(Map<String, dynamic> m) {
+            final name = (m['full_name'] as String?)?.trim() ?? '';
+            final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+            
+            if (spouse.isEmpty) return name;
+            
+            // 이름과 배우자 이름을 가나다순으로 정렬하여 키 생성
+            // 예: "김철수", 배우자 "이영희" -> "김철수_이영희"
+            // 예: "이영희", 배우자 "김철수" -> "김철수_이영희" (동일 키 발생 -> 묶임)
+            final list = [name, spouse];
+            list.sort(); 
+            return list.join('_');
+          }
           
+          final k1 = getMarriageKey(m1);
+          final k2 = getMarriageKey(m2);
+          
+          if (k1 != k2) return k1.compareTo(k2);
+          
+          // 키가 같으면(부부) 이름순 정렬 (보통 가나다순, 남편/아내 구분 필드가 없으므로 이름순)
           final n1 = (m1['full_name'] as String?)?.trim() ?? '';
           final n2 = (m2['full_name'] as String?)?.trim() ?? '';
           return n1.compareTo(n2);
         });
+
+        // [SORT] 전체 부서의 조(Group) 목록 정렬
+        if (_sortBy == 'name') {
+          groups.sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
+        } else if (_sortBy == 'latest') {
+          groups.sort((a, b) {
+            final gIdA = (a['id'] ?? '').toString();
+            final gIdB = (b['id'] ?? '').toString();
+            
+            // 각 조별 가장 최신 기도제목의 시간 찾기
+            final latestA = allPrayers
+                .where((p) => p['group_id'] == gIdA)
+                .map((p) => DateTime.parse(p['created_at'] ?? '2000-01-01'))
+                .fold(DateTime(2000), (prev, curr) => curr.isAfter(prev) ? curr : prev);
+            
+            final latestB = allPrayers
+                .where((p) => p['group_id'] == gIdB)
+                .map((p) => DateTime.parse(p['created_at'] ?? '2000-01-01'))
+                .fold(DateTime(2000), (prev, curr) => curr.isAfter(prev) ? curr : prev);
+            
+            return latestB.compareTo(latestA); // 최신이 위로
+          });
+        }
 
         return RefreshIndicator(
           onRefresh: _refreshData,
@@ -373,12 +449,36 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
             itemCount: groups.length,
             itemBuilder: (context, index) {
               final group = groups[index];
-              final gId = (group['id'] ?? '').toString(); // Ensure String
+              final gId = (group['id'] ?? '').toString(); 
               final gName = group['name'];
-              final gColor = _parseColor(group['color_hex']); // [NEW] 색상 파싱
+              final gColor = _parseColor(group['color_hex']);
               final groupPrayers = allPrayers.where((p) => p['group_id'] == gId).toList();
               
               if (groupPrayers.isEmpty) return const SizedBox.shrink();
+
+              // [SORT] 조 내부 정렬 (Marriage Key Sort)
+              groupPrayers.sort((a, b) {
+                final m1 = a['member_directory'] ?? {};
+                final m2 = b['member_directory'] ?? {};
+                
+                String getMarriageKey(Map<String, dynamic> m) {
+                  final name = (m['full_name'] as String?)?.trim() ?? '';
+                  final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+                  if (spouse.isEmpty) return name;
+                  final list = [name, spouse];
+                  list.sort(); 
+                  return list.join('_');
+                }
+                
+                final k1 = getMarriageKey(m1);
+                final k2 = getMarriageKey(m2);
+                
+                if (k1 != k2) return k1.compareTo(k2);
+                
+                final n1 = (m1['full_name'] as String?)?.trim() ?? '';
+                final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+                return n1.compareTo(n2);
+              });
 
               // 상태가 없으면 기본값 true (펼침)
               final isExpanded = _expandedStates[gId] ?? true;
@@ -435,15 +535,24 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           );
         }
 
+         // [SORT] 이름순(부부순) 정렬 (Marriage Key Sort)
         publishedPrayers.sort((a, b) {
           final m1 = a['member_directory'] ?? {};
           final m2 = b['member_directory'] ?? {};
-          final f1 = (m1['family_name'] as String?)?.trim() ?? '';
-          final f2 = (m2['family_name'] as String?)?.trim() ?? '';
           
-          if (f1.isNotEmpty && f2.isEmpty) return -1;
-          if (f1.isEmpty && f2.isNotEmpty) return 1;
-          if (f1.isNotEmpty && f2.isNotEmpty && f1 != f2) return f1.compareTo(f2);
+          String getMarriageKey(Map<String, dynamic> m) {
+            final name = (m['full_name'] as String?)?.trim() ?? '';
+            final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+            if (spouse.isEmpty) return name;
+            final list = [name, spouse];
+            list.sort(); 
+            return list.join('_');
+          }
+          
+          final k1 = getMarriageKey(m1);
+          final k2 = getMarriageKey(m2);
+          
+          if (k1 != k2) return k1.compareTo(k2);
           
           final n1 = (m1['full_name'] as String?)?.trim() ?? '';
           final n2 = (m2['full_name'] as String?)?.trim() ?? '';

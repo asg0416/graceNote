@@ -209,7 +209,7 @@ class GraceNoteRepository {
     // 2. 모든 조의 기도제목 조회
     final prayersResponse = await _supabase
         .from('prayer_entries')
-        .select('*, member_directory!directory_member_id(family_name, full_name, person_id)')
+        .select('*, member_directory!directory_member_id(family_name, full_name, person_id, spouse_name)') // [FIX] 없는 컬럼 family_id 제거
         .eq('status', 'published')
         .eq('week_id', weekId)
         .inFilter('group_id', groupIds)
@@ -352,7 +352,7 @@ class GraceNoteRepository {
     if (profileIds.isNotEmpty) {
       final profilesResponse = await _supabase
           .from('profiles')
-          .select('*, group_members(*)')
+          .select('*, group_members(*), families(name)') // [FIX] 가족 이름 추가 조회
           .inFilter('id', profileIds);
       allProfiles = List<Map<String, dynamic>>.from(profilesResponse);
     } else {
@@ -368,7 +368,7 @@ class GraceNoteRepository {
     if (missingNames.isNotEmpty) {
       final extraProfilesResponse = await _supabase
           .from('profiles')
-          .select('*, group_members(*)')
+          .select('*, group_members(*), families(name)') // [FIX] 가족 이름 추가 조회
           .eq('church_id', churchId)
           .eq('department_id', departmentId)
           .inFilter('full_name', missingNames);
