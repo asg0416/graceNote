@@ -112,7 +112,8 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
       final user = Supabase.instance.client.auth.currentUser;
       final repo = ref.read(repositoryProvider);
       final result = await repo.verifySMS(phone, code, fullName: name);
-      final matchedMember = result['matched_member'];
+      final List<dynamic> matchedMembers = result['matched_members'] ?? [];
+      
       final profile = ref.read(userProfileProvider).value;
       final isAdmin = profile?.role == 'admin' || (profile?.adminStatus != null && profile!.adminStatus != 'none');
 
@@ -132,7 +133,7 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
         }
       }
 
-      if (matchedMember == null) {
+      if (matchedMembers.isEmpty) {
         if (isAdmin) {
           await repo.completeOnboarding(
             profileId: user!.id,
@@ -156,7 +157,11 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
         return;
       }
 
-      final churchId = matchedMember['church_id'];
+      // [NEW] 중복 성도 or 단일 성도 처리
+      // 모두 동일한 churchId를 가진다고 가정 (같은 전화번호니까)
+      final firstMatch = matchedMembers.first;
+      final churchId = firstMatch['church_id'];
+      
       final churchRes = await Supabase.instance.client
           .from('churches')
           .select('name')
@@ -175,50 +180,75 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
               'phone': phone,
             });
           }
+          // 관리자는 첫 번째 매칭 정보로 진행 (또는 관리자용 로직)
           await repo.completeOnboarding(
-            profileId: user!.id,
-            fullName: profile!.fullName,
-            churchId: churchId,
-            phone: phone,
-            matchedData: Map<String, dynamic>.from(matchedMember),
+             profileId: user!.id,
+             fullName: profile!.fullName,
+             churchId: churchId,
+             phone: phone,
+             matchedData: Map<String, dynamic>.from(firstMatch),
           );
+
+          // [FIX] 관리자도 데이터 동기화 대기
           if (mounted) {
+            setState(() => _isLoading = true);
+            await ref.read(userProfileFutureProvider.future);
+          }
+
+           if (mounted) {
             SnackBarUtil.showSnackBar(context, message: '관리자 인증이 완료되었습니다.');
             ref.invalidate(userProfileProvider);
+            Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
           }
           return;
         }
 
-        final String departmentName = matchedMember['departments']?['name'] ?? '부서 미정';
-        if (mounted) {
-          final isConfirmed = await _showMatchConfirmationDialog(
-            churchName: churchName,
-            departmentName: departmentName,
-            groupName: matchedMember['group_name'] ?? '조 미정',
-            role: matchedMember['role_in_group'] == 'leader' ? '조장' : '조원',
-          );
+        // 일반 사용자: 중복 여부에 따라 다이얼로그 분기
+        bool? isConfirmed;
+        Map<String, dynamic>? selectedMatch;
 
-          if (isConfirmed == true) {
-            if (user != null) {
-              await Supabase.instance.client.from('profiles').upsert({
-                'id': user.id,
-                'full_name': name,
-                'email': user.email,
-                'church_id': churchId,
-                'phone': phone,
-              });
-            }
+        if (matchedMembers.length > 1) {
+           // 중복 성도 다이얼로그 표시
+           isConfirmed = await _showMultipleMatchesConfirmationDialog(
+             churchName: churchName,
+             matches: List<Map<String, dynamic>>.from(matchedMembers),
+           );
+           // 확인 시 첫 번째 항목 사용 (DB 트리거가 person_id로 나머지 자동 연결)
+           if (isConfirmed == true) selectedMatch = Map<String, dynamic>.from(firstMatch);
+        } else {
+           // 단일 성도 다이얼로그 표시
+           selectedMatch = Map<String, dynamic>.from(firstMatch);
+           final String departmentName = selectedMatch['departments']?['name'] ?? '부서 미정';
+           isConfirmed = await _showMatchConfirmationDialog(
+             churchName: churchName,
+             departmentName: departmentName,
+             groupName: selectedMatch['group_name'] ?? '조 미정',
+             role: selectedMatch['role_in_group'] == 'leader' ? '조장' : '조원',
+           );
+        }
+
+        if (isConfirmed == true && selectedMatch != null) {
             await repo.completeOnboarding(
               profileId: user!.id,
               fullName: name,
               churchId: churchId,
               phone: phone,
-              matchedData: Map<String, dynamic>.from(matchedMember),
+              matchedData: selectedMatch,
             );
+            
+            // [FIX] 가입 완료 후 프로필 정보가 DB 트리거에 의해 생성/업데이트될 때까지 대기
+            // AuthGate가 로딩 상태에 빠지는 것을 방지하기 위해 확실히 데이터가 생길 때까지 기다립니다.
+            if (mounted) {
+              setState(() => _isLoading = true); // 대기 중 로딩 인디케이터 유지
+              await ref.read(userProfileFutureProvider.future);
+            }
+
             ref.invalidate(userProfileProvider);
             ref.invalidate(userGroupsProvider);
+            
             if (mounted) {
               SnackBarUtil.showSnackBar(context, message: '인증이 완료되었습니다.');
+              // [SAFE] 명시적으로 '/'로 이동하여 AuthGate가 다시 판단하게 함
               Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
             }
           } else if (isConfirmed == false) {
@@ -226,7 +256,6 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
                _showContactAdminDialog();
              }
           }
-        }
       }
     } catch (e) {
       if (mounted) {
@@ -267,6 +296,108 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
               _buildInfoRow(LucideIcons.layers, '부서', departmentName),
               _buildInfoRow(LucideIcons.users, '소속', groupName),
               _buildInfoRow(LucideIcons.userCheck, '역할', role),
+            ],
+          ),
+        ),
+        actions: [
+          ShadButton.ghost(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('정보가 틀려요', style: TextStyle(color: AppTheme.textSub, fontFamily: 'Pretendard')),
+          ),
+          ShadButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('네, 맞아요', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // [NEW] 중복 성도 확인 다이얼로그
+  Future<bool?> _showMultipleMatchesConfirmationDialog({
+    required String churchName,
+    required List<Map<String, dynamic>> matches,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ShadDialog(
+        title: const Text('정보 확인', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
+        description: Text(
+          '${matches.length}개의 소속 정보가 발견되었습니다.\n모두 본인의 정보가 맞으신가요?',
+          style: const TextStyle(height: 1.5, fontFamily: 'Pretendard'),
+        ),
+        actionsAxis: Axis.horizontal,
+        expandActionsWhenTiny: false,
+        removeBorderRadiusWhenTiny: false,
+        titleTextAlign: TextAlign.start,
+        descriptionTextAlign: TextAlign.start,
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.9,
+          minWidth: 320,
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildInfoRow(LucideIcons.church, '교회', churchName),
+              const SizedBox(height: 12),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: matches.map((m) {
+                      final deptName = m['departments']?['name'] ?? '부서 미정';
+                      final groupName = m['group_name'] ?? '조 미정';
+                      final role = m['role_in_group'] == 'leader' ? '조장' : '조원';
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.background,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(LucideIcons.layers, size: 14, color: AppTheme.textSub),
+                                const SizedBox(width: 8),
+                                Text(deptName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(LucideIcons.users, size: 14, color: AppTheme.textSub),
+                                const SizedBox(width: 8),
+                                Text(groupName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.accentViolet,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(role, style: const TextStyle(fontSize: 11, color: AppTheme.primaryViolet, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '확인을 누르면 위 모든 소속이\n계정과 자동으로 연결됩니다.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.primaryViolet, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
             ],
           ),
         ),

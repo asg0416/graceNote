@@ -435,11 +435,13 @@ class GraceNoteRepository {
     if (matchedData != null) {
       if (matchedData['family_name'] != null) {
         // 이미 생성된 가족이 있는지 확인 (간소화 위해 이름 기반)
-        final existingFamily = await _supabase.from('families')
-            .select('id')
-            .eq('church_id', churchId!)
-            .eq('name', matchedData['family_name'])
-            .maybeSingle();
+        final existingFamily = (churchId != null) 
+            ? await _supabase.from('families')
+                .select('id')
+                .eq('church_id', churchId)
+                .eq('name', matchedData['family_name'])
+                .maybeSingle()
+            : null;
         
         if (existingFamily != null) {
           familyId = existingFamily['id'];
@@ -466,41 +468,14 @@ class GraceNoteRepository {
     if (churchId != null) updateData['church_id'] = churchId;
     if (departmentId != null) updateData['department_id'] = departmentId;
     if (familyId != null) updateData['family_id'] = familyId;
+    if (matchedData != null && matchedData['person_id'] != null) {
+      updateData['person_id'] = matchedData['person_id'];
+    }
 
     await _supabase.from('profiles').upsert(updateData, onConflict: 'id');
 
-    // 3. 소그룹(조) 가입 (groupId가 없을 경우 matchedData에서 찾기)
-    String? finalGroupId = groupId;
-    if (finalGroupId == null && matchedData != null && matchedData['group_name'] != null && churchId != null && departmentId != null) {
-      final existingGroup = await _supabase.from('groups')
-          .select('id')
-          .eq('church_id', churchId)
-          .eq('department_id', departmentId)
-          .eq('name', matchedData['group_name'])
-          .maybeSingle();
-      if (existingGroup != null) {
-        finalGroupId = existingGroup['id'];
-      }
-    }
-
-    if (finalGroupId != null) {
-      await _supabase.from('group_members').upsert({
-        'group_id': finalGroupId,
-        'profile_id': profileId,
-        'role_in_group': matchedData?['role_in_group'] ?? 'member',
-        'is_active': true,
-      }, onConflict: 'group_id,profile_id');
-    }
-
-    // 4. member_directory 레코드 완료 처리
-    if (matchedData != null && matchedData['id'] != null) {
-      await _supabase.from('member_directory')
-          .update({
-            'is_linked': true,
-            'profile_id': profileId,
-          })
-          .eq('id', matchedData['id']);
-    }
+    // [NOTE] 나머지 group_members 및 member_directory 연결은 
+    // 백엔드의 sync_profile_to_all_memberships 트리거가 person_id 할당 시 자동으로 처리합니다.
   }
 
   // 소셜 로그인 (Kakao, Google)

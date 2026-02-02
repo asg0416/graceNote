@@ -69,13 +69,13 @@ serve(async (req) => {
             query = query.eq('full_name', fullName.trim());
         }
 
-        const { data: memberMatch } = await query.maybeSingle();
+        const { data: memberMatches } = await query.limit(10);
 
         // 4. Return Success + Match Data
         return new Response(
             JSON.stringify({
                 success: true,
-                matched_member: memberMatch // null if no match found (Newcomer)
+                matched_members: memberMatches // Returns array of matches
             }),
             {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },

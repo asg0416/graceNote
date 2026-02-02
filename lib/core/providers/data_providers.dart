@@ -22,26 +22,22 @@ final userProfileProvider = StreamProvider<ProfileModel?>((ref) {
   return Supabase.instance.client
       .from('profiles')
       .stream(primaryKey: ['id'])
+      .eq('id', user.id) // [OPTIMIZED] Only stream current user's profile
       .map((data) {
         if (data.isEmpty) return null;
-        try {
-          // Filter by ID in memory since stream().eq() isn't supported
-          final userProfile = data.firstWhere((p) => p['id'] == user.id);
-          return ProfileModel.fromJson(userProfile);
-        } catch (_) {
-          return null;
-        }
+        return ProfileModel.fromJson(data.first);
       })
       .distinct(); // Prevent unnecessary rebuilds
-});
+}) ;
 
 // [NEW] Helper provider for a definitive profile fetch (used to speed up redirection)
 final userProfileFutureProvider = FutureProvider<ProfileModel?>((ref) async {
   final user = Supabase.instance.client.auth.currentUser;
   if (user == null) return null;
 
-  // Retry up to 3 times for the profile to appear (DB trigger delay)
-  for (int i = 0; i < 3; i++) {
+  // Retry up to 10 times for the profile to appear (DB trigger delay can be high under load)
+  for (int i = 0; i < 10; i++) {
+    debugPrint('userProfileFutureProvider: Fetching profile (attempt ${i + 1})');
     final response = await Supabase.instance.client
         .from('profiles')
         .select()
@@ -49,10 +45,16 @@ final userProfileFutureProvider = FutureProvider<ProfileModel?>((ref) async {
         .maybeSingle();
 
     if (response != null) {
-      return ProfileModel.fromJson(response);
+      final profile = ProfileModel.fromJson(response);
+      if (profile.isOnboardingComplete) {
+        debugPrint('userProfileFutureProvider: Found completed profile');
+        return profile;
+      }
+      debugPrint('userProfileFutureProvider: Found profile but onboarding incomplete. Retrying...');
     }
     await Future.delayed(const Duration(milliseconds: 500));
   }
+  debugPrint('userProfileFutureProvider: Failed to find completed profile after retires');
   return null;
 });
 
@@ -126,8 +128,8 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   
   // Re-fetch logic with a small protective delay for DB triggers/sync
   Future<void> triggerUpdate() async {
-    // 0.8s is enough for triggers and publication to sync
-    await Future.delayed(const Duration(milliseconds: 800));
+    // 0.2s is enough for triggers and publication to sync
+    await Future.delayed(const Duration(milliseconds: 200));
     if (controller.isClosed) return;
     try {
       final data = await _fetchUserGroups(user.id);

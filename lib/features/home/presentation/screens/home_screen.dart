@@ -17,6 +17,7 @@ import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/features/search/presentation/screens/search_screen.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:animations/animations.dart' as animations;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -50,7 +51,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return groupsAsync.when(
       data: (groups) {
-        if (activeRole == null) return Scaffold(body: Center(child: ShadcnSpinner(size: 32)));
+        if (activeRole == null) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(lucide.LucideIcons.alertCircle, size: 48, color: AppTheme.textSub),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '소속 정보를 불러올 수 없습니다',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '관리자가 아직 조를 배정하지 않았거나\n데이터 동기화 중일 수 있습니다.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppTheme.textSub, fontSize: 13),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: () {
+                      ref.invalidate(userGroupsProvider);
+                      ref.invalidate(userProfileProvider);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryViolet,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('다시 시도'),
+                  ),
+                  TextButton(
+                    onPressed: () => Supabase.instance.client.auth.signOut(),
+                    child: const Text('로그아웃 및 다시 로그인', style: TextStyle(color: AppTheme.textSub)),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
 
         final List<Widget> screens;
         String title = '';

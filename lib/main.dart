@@ -169,7 +169,7 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
     // 1. Auth State Handling with Resilience
     // 이미 데이터가 있는 경우(hasValue) 에러나 로딩 중이라도 기존 화면을 최대한 유지합니다.
     if (authStateAsync.isLoading && !authStateAsync.hasValue) {
-      return _buildLoadingScreen();
+      return _buildLoadingScreen('인증 상태 확인 중...');
     }
 
     if (authStateAsync.hasError && !authStateAsync.hasValue) {
@@ -207,7 +207,7 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
         }
         return const HomeScreen();
       },
-      loading: () => _buildLoadingScreen(),
+      loading: () => _buildLoadingScreen('사용자 프로필 불러오는 중...'),
       error: (error, _) => _AutoRetryErrorScreen(
         error: error,
         onRetry: _refreshAllData,
@@ -220,11 +220,25 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
     );
   }
 
-  Widget _buildLoadingScreen() {
-    return const Scaffold(
+  Widget _buildLoadingScreen(String message) {
+    return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
-        child: CircularProgressIndicator(),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 24),
+            Text(
+              message,
+              style: const TextStyle(
+                color: AppTheme.textSub,
+                fontSize: 14,
+                fontFamily: 'Pretendard',
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
