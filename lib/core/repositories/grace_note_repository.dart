@@ -817,7 +817,7 @@ class GraceNoteRepository {
   }
 
   // 특정 멤버의 전체 기도제목 히스토리 가져오기 (타임라인용)
-  Future<List<Map<String, dynamic>>> getMemberPrayerHistory(String directoryMemberId) async {
+  Future<List<Map<String, dynamic>>> getMemberPrayerHistory(String directoryMemberId, {int? page, int? pageSize}) async {
     debugPrint('GraceNoteRepository: Fetching history for directoryMemberId: $directoryMemberId');
     
     // 1. Find the profile_id or identifiers for the given member
@@ -853,7 +853,8 @@ class GraceNoteRepository {
     debugPrint('GraceNoteRepository: Related directory IDs for person: $allIds');
 
     // 3. Fetch all prayers for those IDs
-    final response = await _supabase
+    // 3. Fetch all prayers for those IDs
+    var query = _supabase
         .from('prayer_entries')
         .select('''
           *,
@@ -862,9 +863,17 @@ class GraceNoteRepository {
         ''')
         .inFilter('directory_member_id', allIds)
         .order('week_date', referencedTable: 'weeks', ascending: false);
+
+    if (page != null && pageSize != null) {
+      final start = page * pageSize;
+      final end = start + pageSize - 1;
+      query = query.range(start, end);
+    }
+    
+    final response = await query;
     
     final result = List<Map<String, dynamic>>.from(response);
-    debugPrint('GraceNoteRepository: Found ${result.length} history entries');
+    debugPrint('GraceNoteRepository: Found ${result.length} history entries (page $page)');
     return result;
   }
 

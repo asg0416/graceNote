@@ -104,10 +104,34 @@ class _GroupMemberAccordionState extends ConsumerState<_GroupMemberAccordion> {
                     child: Text('조원이 없습니다.', style: TextStyle(color: AppTheme.textSub, fontSize: 13)),
                   );
                 }
+                // [SORT] 이름순(부부순) 정렬 (Marriage Key Sort)
+                // final sortedMembers = List<Map<String, dynamic>>.from(members); // This creates a copy, but 'members' is likely immutable.
+                final sortedMembers = [...members];
+                
+                sortedMembers.sort((a, b) {
+                  String getMarriageKey(Map<String, dynamic> m) {
+                    final name = (m['full_name'] as String?)?.trim() ?? '';
+                    final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+                    if (spouse.isEmpty) return name;
+                    final list = [name, spouse];
+                    list.sort(); 
+                    return list.join('_');
+                  }
+                  
+                  final k1 = getMarriageKey(a);
+                  final k2 = getMarriageKey(b);
+                  
+                  if (k1 != k2) return k1.compareTo(k2);
+                  
+                  final n1 = (a['full_name'] as String?)?.trim() ?? '';
+                  final n2 = (b['full_name'] as String?)?.trim() ?? '';
+                  return n1.compareTo(n2); 
+                });
+
                 return Column(
                   children: [
                     const Divider(height: 1),
-                    ...members.map((member) => _buildMemberItem(context, member)),
+                    ...sortedMembers.map((member) => _buildMemberItem(context, member)), // Use sortedMembers
                     const SizedBox(height: 8),
                   ],
                 );
