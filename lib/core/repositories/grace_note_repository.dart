@@ -674,7 +674,7 @@ class GraceNoteRepository {
     // 2. 부서 내 모든 멤버 조회 (매칭용)
     final directoryResponse = await _supabase
         .from('member_directory')
-        .select('id, full_name, group_name, profile_id')
+        .select('id, full_name, group_name, profile_id, family_id')
         .eq('department_id', departmentId)
         .eq('is_active', true);
     final allMembers = List<Map<String, dynamic>>.from(directoryResponse);

@@ -210,15 +210,15 @@ export default function LoginPage() {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full relative group overflow-hidden"
+                                className="w-full relative group overflow-hidden rounded-2xl"
                             >
                                 <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 group-hover:scale-105 transition-transform duration-500" />
-                                <div className="relative h-16 sm:h-18 flex items-center justify-center gap-3 text-white font-black text-sm uppercase tracking-widest">
+                                <div className="relative h-14 sm:h-16 flex items-center justify-center gap-3 text-white font-black text-lg uppercase tracking-widest">
                                     {loading ? (
                                         <Loader2 className="w-6 h-6 animate-spin" />
                                     ) : (
                                         <>
-                                            인증 및 시스템 접속
+                                            로그인
                                             <ArrowRight className="w-5 h-5 group-hover:translate-x-1.5 transition-transform" />
                                         </>
                                     )}
