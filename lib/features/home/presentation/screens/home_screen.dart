@@ -49,134 +49,137 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? ref.watch(departmentNameProvider(profile!.departmentId!))
         : const AsyncValue<String>.data('내 부서');
 
-    return groupsAsync.when(
-      data: (groups) {
-        if (activeRole == null) {
-          return Scaffold(
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(lucide.LucideIcons.alertCircle, size: 48, color: AppTheme.textSub),
-                  const SizedBox(height: 16),
-                  const Text(
-                    '소속 정보를 불러올 수 없습니다',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '관리자가 아직 조를 배정하지 않았거나\n데이터 동기화 중일 수 있습니다.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppTheme.textSub, fontSize: 13),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () {
-                      ref.invalidate(userGroupsProvider);
-                      ref.invalidate(userProfileProvider);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryViolet,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('다시 시도'),
-                  ),
-                  TextButton(
-                    onPressed: () => Supabase.instance.client.auth.signOut(),
-                    child: const Text('로그아웃 및 다시 로그인', style: TextStyle(color: AppTheme.textSub)),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        final List<Widget> screens;
-        String title = '';
-        
-        switch (activeRole) {
-          case AppRole.admin:
-            title = departmentNameAsync.value ?? '구성원';
-            screens = [
-              profile?.departmentId != null && profile!.departmentId!.isNotEmpty
-                ? DepartmentMemberDirectoryScreen(
-                    departmentId: profile.departmentId!,
-                    departmentName: departmentNameAsync.value ?? '내 부서',
-                  )
-                : const Scaffold(body: Center(child: Text('부서 정보가 없습니다.'))),
-              const PrayerListScreen(),
-              profile?.departmentId != null && profile!.departmentId!.isNotEmpty
-                ? DepartmentAttendanceDashboardScreen(
-                    departmentId: profile.departmentId!,
-                    departmentName: departmentNameAsync.value ?? '내 부서',
-                  )
-                : const Scaffold(body: Center(child: Text('출석 데이터가 없습니다.'))),
-              const MoreScreen(),
-            ];
-            break;
-          case AppRole.leader:
-            title = _selectedIndex == 0 
-                ? (groups.isNotEmpty ? '${groups.first['group_name']} 기록' : '기록')
-                : (_selectedIndex == 1 ? '기도소식' : (_selectedIndex == 2 ? '출석 통계' : '더보기'));
-            screens = [
-              groups.isNotEmpty
-                ? AttendancePrayerScreen(isActive: _selectedIndex == 0)
-                : const Scaffold(body: Center(child: Text('기록할 조가 없습니다.'))),
-              const PrayerListScreen(),
-              groups.isNotEmpty 
-                ? AttendanceDashboardScreen(groupId: groups.first['group_id'], groupName: groups.first['group_name'])
-                : const Scaffold(body: Center(child: Text('출석 데이터가 없습니다.'))),
-              const MoreScreen(),
-            ];
-            break;
-          case AppRole.member:
-            title = _selectedIndex == 0 ? '나의 기도' : (_selectedIndex == 1 ? '기도소식' : '더보기');
-            screens = [
-              const MemberMyPrayerScreen(),
-              const PrayerListScreen(),
-              const MoreScreen(),
-            ];
-            break;
-        }
-
+    // [FIX] Resilience: 이미 데이터가 있는 경우, 로딩이나 에러 중이라도 기존 화면을 유지하여 깜빡임을 방지합니다.
+    if (groupsAsync.hasValue) {
+      final groups = groupsAsync.value ?? [];
+      if (activeRole == null) {
         return Scaffold(
-          backgroundColor: Colors.white,
-          body: IndexedStack(
-            index: _selectedIndex >= screens.length ? 0 : _selectedIndex,
-            children: screens,
-          ),
-          bottomNavigationBar: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                top: BorderSide(color: Color(0xFFF1F5F9), width: 1), // v0 정밀 보더
-              ),
-            ),
-            padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
-            child: SizedBox(
-              height: 60, // v0 높이 축소
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: _buildBottomNavBarItems(ref, activeRole),
-              ),
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(lucide.LucideIcons.alertCircle, size: 48, color: AppTheme.textSub),
+                const SizedBox(height: 16),
+                const Text(
+                  '소속 정보를 불러올 수 없습니다',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '관리자가 아직 조를 배정하지 않았거나\n데이터 동기화 중일 수 있습니다.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppTheme.textSub, fontSize: 13),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    ref.invalidate(userGroupsProvider);
+                    ref.invalidate(userProfileProvider);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryViolet,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('다시 시도'),
+                ),
+                TextButton(
+                  onPressed: () => Supabase.instance.client.auth.signOut(),
+                  child: const Text('로그아웃 및 다시 로그인', style: TextStyle(color: AppTheme.textSub)),
+                ),
+              ],
             ),
           ),
         );
-      },
-      loading: () => Scaffold(
+      }
+
+      final List<Widget> screens;
+      String title = '';
+      
+      switch (activeRole) {
+        case AppRole.admin:
+          title = departmentNameAsync.value ?? '구성원';
+          screens = [
+            profile?.departmentId != null && profile!.departmentId!.isNotEmpty
+              ? DepartmentMemberDirectoryScreen(
+                  departmentId: profile.departmentId!,
+                  departmentName: departmentNameAsync.value ?? '내 부서',
+                )
+              : const Scaffold(body: Center(child: Text('부서 정보가 없습니다.'))),
+            const PrayerListScreen(),
+            profile?.departmentId != null && profile!.departmentId!.isNotEmpty
+              ? DepartmentAttendanceDashboardScreen(
+                  departmentId: profile.departmentId!,
+                  departmentName: departmentNameAsync.value ?? '내 부서',
+                )
+              : const Scaffold(body: Center(child: Text('출석 데이터가 없습니다.'))),
+            const MoreScreen(),
+          ];
+          break;
+        case AppRole.leader:
+          title = _selectedIndex == 0 
+              ? (groups.isNotEmpty ? '${groups.first['group_name']} 기록' : '기록')
+              : (_selectedIndex == 1 ? '기도소식' : (_selectedIndex == 2 ? '출석 통계' : '더보기'));
+          screens = [
+            groups.isNotEmpty
+              ? AttendancePrayerScreen(isActive: _selectedIndex == 0)
+              : const Scaffold(body: Center(child: Text('기록할 조가 없습니다.'))),
+            const PrayerListScreen(),
+            groups.isNotEmpty 
+              ? AttendanceDashboardScreen(groupId: groups.first['group_id'], groupName: groups.first['group_name'])
+              : const Scaffold(body: Center(child: Text('출석 데이터가 없습니다.'))),
+            const MoreScreen(),
+          ];
+          break;
+        case AppRole.member:
+          title = _selectedIndex == 0 ? '나의 기도' : (_selectedIndex == 1 ? '기도소식' : '더보기');
+          screens = [
+            const MemberMyPrayerScreen(),
+            const PrayerListScreen(),
+            const MoreScreen(),
+          ];
+          break;
+      }
+
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: IndexedStack(
+          index: _selectedIndex >= screens.length ? 0 : _selectedIndex,
+          children: screens,
+        ),
+        bottomNavigationBar: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              top: BorderSide(color: Color(0xFFF1F5F9), width: 1),
+            ),
+          ),
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
+          child: SizedBox(
+            height: 60,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: _buildBottomNavBarItems(ref, activeRole),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (groupsAsync.isLoading) {
+      return Scaffold(
         backgroundColor: Colors.white,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ShadcnSpinner(size: 32), // v0 축소
+              ShadcnSpinner(size: 32),
               const SizedBox(height: 24),
               const Text(
                 '그레이스노트를 준비하고 있습니다',
                 style: TextStyle(
                   color: AppTheme.textMain,
                   fontWeight: FontWeight.w700,
-                  fontSize: 15, // v0 축소
+                  fontSize: 15,
                   letterSpacing: -0.5,
                   fontFamily: 'Pretendard',
                 ),
@@ -184,8 +187,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
         ),
+      );
+    }
+
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(lucide.LucideIcons.alertCircle, size: 48, color: AppTheme.textSub),
+            const SizedBox(height: 16),
+            Text('데이터 로드 오류: ${groupsAsync.error}'),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => ref.invalidate(userGroupsProvider),
+              child: const Text('다시 시도'),
+            ),
+          ],
+        ),
       ),
-      error: (e, s) => Scaffold(body: Center(child: Text('데이터 로드 오류: $e'))),
     );
   }
 

@@ -195,28 +195,33 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
     // 2. Profile Handling with Resilience
     final profileAsync = ref.watch(userProfileProvider);
 
-    return profileAsync.when(
-      data: (profile) {
-        if (profile == null || !profile.isOnboardingComplete) {
-          return const PhoneVerificationScreen();
-        }
-        final bool isPendingAdmin = profile.adminStatus == 'pending' || 
-                                    (profile.role == 'admin' && profile.adminStatus != 'approved');
-        if (isPendingAdmin && !profile.isMaster) {
-          return const AdminPendingScreen();
-        }
-        return const HomeScreen();
+    // [FIX] Resilience: 이미 데이터가 있는 경우(hasValue), 로딩이나 에러 중이라도 기존 화면을 유지하여 깜빡임을 방지합니다.
+    if (profileAsync.hasValue) {
+      final profile = profileAsync.value;
+      if (profile == null || !profile.isOnboardingComplete) {
+        return const PhoneVerificationScreen();
+      }
+      final bool isPendingAdmin = profile.adminStatus == 'pending' || 
+                                  (profile.role == 'admin' && profile.adminStatus != 'approved');
+      if (isPendingAdmin && !profile.isMaster) {
+        return const AdminPendingScreen();
+      }
+      return const HomeScreen();
+    }
+
+    if (profileAsync.isLoading) {
+      return _buildLoadingScreen('사용자 프로필 불러오는 중...');
+    }
+
+    // 데이터가 전혀 없고 에러인 경우(최초 진입 등)에만 에러 화면 노출
+    return _AutoRetryErrorScreen(
+      error: profileAsync.error ?? 'Unknown error',
+      onRetry: _refreshAllData,
+      onLogout: () async {
+        await Supabase.instance.client.auth.signOut();
+        ref.invalidate(userProfileProvider);
+        ref.invalidate(userGroupsProvider);
       },
-      loading: () => _buildLoadingScreen('사용자 프로필 불러오는 중...'),
-      error: (error, _) => _AutoRetryErrorScreen(
-        error: error,
-        onRetry: _refreshAllData,
-        onLogout: () async {
-          await Supabase.instance.client.auth.signOut();
-          ref.invalidate(userProfileProvider);
-          ref.invalidate(userGroupsProvider);
-        },
-      ),
     );
   }
 
