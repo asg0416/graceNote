@@ -218,10 +218,6 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         elevation: 0,
         actions: [
           IconButton(
-            onPressed: () => _refreshData(),
-            icon: Icon(lucide.LucideIcons.refreshCw, color: AppTheme.primaryViolet, size: 18),
-          ),
-          IconButton(
             onPressed: () => Navigator.push(context, SharedAxisPageRoute(page: const SearchScreen())),
             icon: Icon(lucide.LucideIcons.search, color: AppTheme.primaryViolet, size: 20),
           ),

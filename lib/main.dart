@@ -198,7 +198,13 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
     // [FIX] Resilience: 이미 데이터가 있는 경우(hasValue), 로딩이나 에러 중이라도 기존 화면을 유지하여 깜빡임을 방지합니다.
     if (profileAsync.hasValue) {
       final profile = profileAsync.value;
-      if (profile == null || !profile.isOnboardingComplete) {
+      
+      // [FIX] 프로필 생성/로딩 지연 시 깜빡임 방지: 프로필이 null이면 로딩 중으로 간주
+      if (profile == null) {
+        return _buildLoadingScreen('프로필 정보를 확인하고 있습니다...'); 
+      }
+
+      if (!profile.isOnboardingComplete) {
         return const PhoneVerificationScreen();
       }
       final bool isPendingAdmin = profile.adminStatus == 'pending' || 

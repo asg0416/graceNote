@@ -315,15 +315,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                       dashArray: [4, 4],
                     ),
                   ),
-                  borderData: FlBorderData(
-                    show: true,
-                    border: const Border(
-                      bottom: BorderSide(color: Color(0xFFCBD5E1), width: 1),
-                      left: BorderSide(color: Color(0xFFCBD5E1), width: 1),
-                      top: BorderSide.none,
-                      right: BorderSide.none,
-                    ),
-                  ),
+                  borderData: FlBorderData(show: false),
                 ),
               ),
             ),
