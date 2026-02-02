@@ -150,7 +150,7 @@ export default function AttendancePage() {
                     setSelectedDeptId('');
                 }
 
-                // 2. Load Weeks
+                // 2. Load Weeks - Remove setWeeks here to avoid conflict with monthly filter
                 const { data: weekList } = await supabase
                     .from('weeks')
                     .select('*')
@@ -158,25 +158,27 @@ export default function AttendancePage() {
                     .order('week_date', { ascending: false });
 
                 const sortedWeeks = weekList || [];
-                setWeeks(sortedWeeks);
+                // setWeeks(sortedWeeks); // Conflicted with monthly filter
 
                 if (sortedWeeks.length > 0) {
-                    // Group by Month for Tabs
+                    // Group by Month for Tabs (if needed in future, but not used now)
+                    /*
                     const groups: any = {};
                     sortedWeeks.forEach(w => {
-                        const m = w.week_date.substring(0, 7); // YYYY-MM
+                        const m = w.week_date.substring(0, 7); 
                         if (!groups[m]) groups[m] = [];
                         groups[m].push(w);
                     });
-
                     const mList = Object.keys(groups).sort().reverse();
                     setMonthWeeks(mList.map(m => ({ month: m, weeks: groups[m].reverse() })));
+                    */
 
-                    // Initial Selection: Latest Month, Latest Week
-                    setSelectedWeekId(sortedWeeks[0].id);
+                    // Initial Selection: Latest Week
+                    if (!selectedWeekId) {
+                        setSelectedWeekId(sortedWeeks[0].id);
+                    }
                 } else {
                     setSelectedWeekId('');
-                    setMonthWeeks([]);
                 }
             };
             fetchData();
@@ -190,7 +192,8 @@ export default function AttendancePage() {
                 setIsTrendLoading(true);
                 // 1. Fetch weeks for the selected year/month
                 const startOfMonth = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-01`;
-                const endOfMonth = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-31`;
+                const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
+                const endOfMonth = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
 
                 const { data: monthWeeksList } = await supabase
                     .from('weeks')
@@ -394,7 +397,8 @@ export default function AttendancePage() {
                 const qStartMonth = (insightQuarter - 1) * 3 + 1;
                 const qEndMonth = insightQuarter * 3;
                 startDate = `${insightYear}-${qStartMonth.toString().padStart(2, '0')}-01`;
-                endDate = `${insightYear}-${qEndMonth.toString().padStart(2, '0')}-31`;
+                const lastDayOfQuarter = new Date(insightYear, qEndMonth, 0).getDate();
+                endDate = `${insightYear}-${qEndMonth.toString().padStart(2, '0')}-${lastDayOfQuarter.toString().padStart(2, '0')}`;
             }
 
             // Fetch weeks in the period
@@ -492,7 +496,8 @@ export default function AttendancePage() {
         try {
             // 1. Get all weeks in target range
             const startStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-01`;
-            const endStr = `${endYear}-${endMonth.toString().padStart(2, '0')}-31`;
+            const lastDay = new Date(endYear, endMonth, 0).getDate();
+            const endStr = `${endYear}-${endMonth.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
 
             const { data: rangeWeeks } = await supabase
                 .from('weeks')
