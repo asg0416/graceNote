@@ -21,12 +21,22 @@ jobs:
         with:
           node-version: 18
 
+      - name: Set Supabase Environment
+        run: |
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_PROD }}" >> $GITHUB_ENV
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY_PROD }}" >> $GITHUB_ENV
+          else
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL_DEV }}" >> $GITHUB_ENV
+            echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY_DEV }}" >> $GITHUB_ENV
+          fi
+
       - name: Build Flutter Web
         run: |
           touch .env
           flutter build web --release \
-            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} \
+            --dart-define=SUPABASE_URL=${{ env.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }} \
             --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
 
       - name: Deploy to Vercel

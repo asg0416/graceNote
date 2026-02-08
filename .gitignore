@@ -53,3 +53,11 @@ testsprite_tests/
 testsprite_prd.txt
 models_list.json
 *.log
+
+# Supabase Temp & Dump Files
+supabase/.temp/
+supabase/*_dump.sql
+supabase/*.sql
+!supabase/schema.sql
+!supabase/migrations/*.sql
+!supabase/seed.sql
