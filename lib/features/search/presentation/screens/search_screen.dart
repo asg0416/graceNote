@@ -120,7 +120,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 shad.ShadCalendar(
                   selected: _selectedDate,
                   weekStartsOn: 7,
-                  selectableDayPredicate: (date) => date.weekday == DateTime.sunday,
+                  selectableDayPredicate: (date) {
+                    final profile = ref.read(userProfileProvider).value;
+                    if (profile?.churchId == null) return false;
+                    
+                    // 동기적으로 provider 값을 읽어옴 (이미 로드되었을 가능성 높음)
+                    // 만약 로드되지 않았다면 기본적으로 false가 되어 선택 등 불가하거나,
+                    // 사용자 경험상 로딩 스피너를 보여주는게 맞지만, 
+                    // 여기서는 간단히 availableWeeksProvider값 확인
+                    final weeksAsync = ref.read(availableWeeksProvider(profile!.churchId!));
+                    
+                    if (weeksAsync.hasValue) {
+                      return weeksAsync.value!.any((w) => 
+                        w.year == date.year && w.month == date.month && w.day == date.day
+                      );
+                    }
+                    return false;
+                  },
                   onChanged: (newDate) {
                     if (newDate != null) {
                       setState(() => _selectedDate = newDate);

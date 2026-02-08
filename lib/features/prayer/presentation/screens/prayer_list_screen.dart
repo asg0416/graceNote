@@ -65,97 +65,185 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     }
   }
 
-  void _moveWeek(int weeks) {
-    final current = ref.read(selectedWeekDateProvider);
-    ref.read(selectedWeekDateProvider.notifier).state = current.add(Duration(days: 7 * weeks));
+  // [FIX] 유효한 주차(DB에 있는 주차)로만 이동
+  void _moveWeek(int direction) {
+    // 1. 현재 교회 ID 가져오기
+    final profile = ref.read(userProfileProvider).value;
+    if (profile?.churchId == null) return;
+
+    // 2. 가용한 주차 목록 가져오기 (비동기 상태일 수 있으므로 동기적으로 읽을 수 있는지 확인)
+    //    이미 화면이 그려진 상태라면 provider가 값을 가지고 있을 가능성이 높음
+    final weeksAsync = ref.read(availableWeeksProvider(profile!.churchId!));
+    
+    weeksAsync.whenData((weeks) {
+      if (weeks.isEmpty) return;
+
+      final current = ref.read(selectedWeekDateProvider);
+      // week_date와 current가 시,분,초 차이로 다를 수 있으므로 날짜만 비교
+      final currentDateOnly = DateTime(current.year, current.month, current.day);
+
+      // weeks는 내림차순(최신순) 정렬되어 있음 -> [2024-02-11, 2024-02-04, ...]
+      // currentIndex 찾기
+      int currentIndex = -1;
+      for (int i = 0; i < weeks.length; i++) {
+        final w = weeks[i];
+        if (w.year == currentDateOnly.year && w.month == currentDateOnly.month && w.day == currentDateOnly.day) {
+          currentIndex = i;
+          break;
+        }
+      }
+
+      // 현재 날짜가 리스트에 없다면(예: 생성되지 않은 이번주) 리스트에 임시 추가해서 위치 계산
+      // 단, 이번 로직은 "생성된 주차"만 탐색이므로, 만약 현재 날짜가 리스트에 없다면 가장 가까운 날짜로 이동 등을 고려해야 하지만,
+      // 초기 진입 시점에 이미 availableWeeks의 첫 번째 값(최신)으로 세팅하거나 해야 함.
+      // 여기서는 현재 날짜가 리스트에 없으면 아무 동작 안하거나 가장 최신으로 이동
+      if (currentIndex == -1) {
+        // 예외 처리: 현재 날짜가 유효 목록에 없으면 가장 최신(0번)으로 이동
+        ref.read(selectedWeekDateProvider.notifier).state = weeks.first;
+        return;
+      }
+
+      // direction: -1 (이전, 과거), +1 (다음, 미래)
+      // 리스트가 내림차순(미래 -> 과거)이므로:
+      // 이전(과거)로 가려면 인덱스 증가 (+1)
+      // 다음(미래)로 가려면 인덱스 감소 (-1)
+      
+      // 화살표 방향과 리스트 인덱스 방향이 반대임에 유의
+      // UI 상 왼쪽(<) 버튼은 '이전 주(과거)' -> moveWeek(-1) 호출
+      // UI 상 오른쪽(>) 버튼은 '다음 주(미래)' -> moveWeek(1) 호출
+
+      int nextIndex;
+      if (direction < 0) {
+        // 과거로 이동 (인덱스 증가)
+        nextIndex = currentIndex + 1;
+      } else {
+        // 미래로 이동 (인덱스 감소)
+        nextIndex = currentIndex - 1;
+      }
+
+      if (nextIndex >= 0 && nextIndex < weeks.length) {
+        ref.read(selectedWeekDateProvider.notifier).state = weeks[nextIndex];
+      }
+    });
   }
 
   Widget _buildWeekNavigator(DateTime date) {
     final int weekNumber = ((date.day - 1) / 7).floor() + 1;
     final String weekStr = '${date.month}월 ${weekNumber}주차';
+    
+    final profile = ref.watch(userProfileProvider).value;
+    final weeksAsync = profile?.churchId != null 
+        ? ref.watch(availableWeeksProvider(profile!.churchId!)) 
+        : const AsyncValue.data(<DateTime>[]);
 
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconButton(
-            onPressed: () => _moveWeek(-1),
-            icon: Icon(lucide.LucideIcons.chevronLeft, color: AppTheme.textSub, size: 18),
-          ),
-          const SizedBox(width: 4),
-          InkWell(
-            onTap: () {
-              showDialog(
-                context: context,
-                builder: (context) => Center(
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Container(
-                      width: 340,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Text('주차 선택 (일요일)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textMain, fontFamily: 'Pretendard')),
+    return weeksAsync.when(
+      data: (weeks) {
+        // 현재 날짜 매칭
+        final currentDateOnly = DateTime(date.year, date.month, date.day);
+        int currentIndex = -1;
+        for (int i = 0; i < weeks.length; i++) {
+          final w = weeks[i];
+          if (w.year == currentDateOnly.year && w.month == currentDateOnly.month && w.day == currentDateOnly.day) {
+            currentIndex = i;
+            break;
+          }
+        }
+
+        // 네비게이션 가능 여부 (weeks: 내림차순 [미래 ... 과거])
+        // currentIndex가 -1이면(리스트에 없음) 네비게이션 불가 혹은 예외
+        // 과거로 가기(<): 인덱스가 (length - 1)보다 작아야 함 (더 큰 인덱스가 있어야 함)
+        // 미래로 가기(>): 인덱스가 0보다 커야 함 (더 작은 인덱스가 있어야 함)
+        
+        final bool canGoPrev = currentIndex != -1 && currentIndex < weeks.length - 1;
+        final bool canGoNext = currentIndex != -1 && currentIndex > 0;
+
+        return Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                onPressed: canGoPrev ? () => _moveWeek(-1) : null,
+                icon: Icon(lucide.LucideIcons.chevronLeft, color: canGoPrev ? AppTheme.textSub : AppTheme.border, size: 18),
+              ),
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => Center(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          width: 340,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))],
                           ),
-                          const Divider(height: 24),
-                          shad.ShadCalendar(
-                            selected: date,
-                            weekStartsOn: 7,
-                            selectableDayPredicate: (date) {
-                              final now = DateTime.now();
-                              final today = DateTime(now.year, now.month, now.day);
-                              return date.weekday == DateTime.sunday && !date.isAfter(today);
-                            },
-                            onChanged: (newDate) {
-                              if (newDate != null) {
-                                ref.read(selectedWeekDateProvider.notifier).state = newDate;
-                                Navigator.pop(context);
-                              }
-                            },
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8),
+                                child: Text('주차 선택 (일요일)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textMain, fontFamily: 'Pretendard')),
+                              ),
+                              const Divider(height: 24),
+                              shad.ShadCalendar(
+                                selected: date,
+                                weekStartsOn: 7,
+                                // [FIX] DB에 존재하는 주차만 선택 가능
+                                selectableDayPredicate: (d) {
+                                  return weeks.any((w) => 
+                                    w.year == d.year && w.month == d.month && w.day == d.day
+                                  );
+                                },
+                                onChanged: (newDate) {
+                                  if (newDate != null) {
+                                    ref.read(selectedWeekDateProvider.notifier).state = newDate;
+                                    Navigator.pop(context);
+                                  }
+                                },
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
+                    ),
+                  );
+                },
+                borderRadius: BorderRadius.circular(24),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Text(
+                    weekStr,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1E293B),
+                      fontFamily: 'Pretendard',
                     ),
                   ),
                 ),
-              );
-            },
-            borderRadius: BorderRadius.circular(24),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: Text(
-                weekStr,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
-                  fontFamily: 'Pretendard',
-                ),
+              const SizedBox(width: 4),
+              IconButton(
+                onPressed: canGoNext ? () => _moveWeek(1) : null,
+                icon: Icon(lucide.LucideIcons.chevronRight, color: canGoNext ? AppTheme.textSub : AppTheme.border, size: 18),
               ),
-            ),
+            ],
           ),
-          const SizedBox(width: 4),
-          IconButton(
-            onPressed: () => _moveWeek(1),
-            icon: Icon(lucide.LucideIcons.chevronRight, color: AppTheme.textSub, size: 18),
-          ),
-        ],
-      ),
+        );
+      },
+      loading: () => const SizedBox(height: 50, child: Center(child: CircularProgressIndicator())),
+      error: (e, s) => SizedBox(height: 50, child: Center(child: Text('error: $e'))),
     );
   }
 
