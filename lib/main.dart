@@ -106,7 +106,37 @@ class GraceNoteApp extends StatelessWidget {
           Locale('ko', 'KR'),
         ],
         builder: (context, child) => ShadAppBuilder(
-          child: child ?? Container(color: Colors.white, child: const Center(child: CircularProgressIndicator())),
+          child: Stack(
+            textDirection: TextDirection.ltr,
+            children: [
+              child ?? Container(color: Colors.white, child: const Center(child: CircularProgressIndicator())),
+              
+              // DEV MODE INDICATOR
+              if (AppConstants.supabaseUrl.contains('eftdf') || AppConstants.supabaseUrl.contains('127.0.0.1')) 
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: const BoxDecoration(
+                        color: Color(0xCCEF4444), // Red-500 with 80% opacity
+                        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(8)),
+                      ),
+                      child: const Text(
+                        'DEV MODE',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
         home: const AuthGate(),
       ),
