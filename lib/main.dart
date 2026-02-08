@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart'; // [FIX] import 추가
@@ -107,7 +108,7 @@ class GraceNoteApp extends StatelessWidget {
         ],
         builder: (context, child) => ShadAppBuilder(
           child: Stack(
-            textDirection: TextDirection.ltr,
+            textDirection: ui.TextDirection.ltr,
             children: [
               child ?? Container(color: Colors.white, child: const Center(child: CircularProgressIndicator())),
               
