@@ -121,7 +121,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             'name': m['full_name'],
             'isPresent': false,
             'prayerNote': '',
-            'prayerStatus': 'draft',
+            'prayerStatus': 'initial',
             'familyId': _generateFamilyId(m['full_name'], m['spouse_name'], m['family_id'], directoryId),
             'source': 'current',
           };
@@ -135,12 +135,12 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             
             final prayer = (existingPrayers as List).firstWhere(
               (p) => p['directory_member_id'] == directoryId, 
-              orElse: () => <String, dynamic>{'content': '', 'status': 'draft'}
+              orElse: () => <String, dynamic>{'content': '', 'status': 'initial'}
             );
             
             combinedMembers[directoryId]!['isPresent'] = att['status'] == 'present' || att['status'] == 'late';
             combinedMembers[directoryId]!['prayerNote'] = prayer['content'] ?? '';
-            combinedMembers[directoryId]!['prayerStatus'] = prayer['status'] ?? 'draft';
+            combinedMembers[directoryId]!['prayerStatus'] = prayer['status'] ?? 'initial';
             combinedMembers[directoryId]!['source'] = 'snapshot';
           }
         }
@@ -383,16 +383,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       }
 
       final currentFamilyId = m['familyId'];
-      List<String> names = [m['name']];
+      List<Map<String, dynamic>> familyGroup = [m];
       int j = i + 1;
 
-      // 같은 가족이고 기도제목이 완전히 일치하는 경우 그룹화
+      // 부부/가족 그룹화 로직
       if (currentFamilyId != null && currentFamilyId.toString().startsWith('couple_')) {
         while (j < processedMembers.length) {
           final nextM = processedMembers[j];
           final nextNote = (nextM['prayerNote'] as String).trim();
-          if (nextM['familyId'] == currentFamilyId && nextNote == note) {
-            names.add(nextM['name']);
+          if (nextM['familyId'] == currentFamilyId && nextNote.isNotEmpty) {
+            familyGroup.add(nextM);
             j++;
           } else {
             break;
@@ -400,16 +400,56 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         }
       }
 
-      final combinedNames = names.join(', ');
-      buffer.writeln('$icon$combinedNames$icon');
-      final lines = note.split('\n').where((l) => l.trim().isNotEmpty).toList();
-      for (int lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-        final line = lines[lineIdx].trim();
-        final cleanLine = line.replaceFirst(RegExp(r'^\d+[\.\)]\s*'), '').replaceFirst(RegExp(r'^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*', unicode: true), '');
-        buffer.writeln('${lineIdx + 1}. $cleanLine');
+      final bool isIdentical = familyGroup.length > 1 && 
+          familyGroup.every((fm) => (fm['prayerNote'] as String).trim() == (familyGroup[0]['prayerNote'] as String).trim());
+
+      final bool shouldGroup = settings.alwaysGroupFamily || isIdentical;
+
+      if (shouldGroup && familyGroup.length > 1) {
+        // 이름 합치기
+        final combinedNames = familyGroup.map((fm) => fm['name']).join(', ');
+        buffer.writeln('$icon$combinedNames$icon');
+
+        if (isIdentical) {
+          // 동일한 경우 본문 한 번만 출력
+          final entryLines = note.split('\n').where((l) => l.trim().isNotEmpty).toList();
+          for (int lineIdx = 0; lineIdx < entryLines.length; lineIdx++) {
+            final line = entryLines[lineIdx].trim();
+            final cleanLine = line.replaceFirst(RegExp(r'^\d+[\.\)]\s*'), '').replaceFirst(RegExp(r'^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*', unicode: true), '');
+            buffer.writeln('${lineIdx + 1}. $cleanLine');
+          }
+        } else {
+          // 다른 경우에도 기도제목들을 합치되, 중복되는 라인은 제거하여 출력
+          final Set<String> uniqueLines = {};
+          for (final fm in familyGroup) {
+            final fNote = (fm['prayerNote'] as String).trim();
+            final entryLines = fNote.split('\n').where((l) => l.trim().isNotEmpty).toList();
+            for (final line in entryLines) {
+              final cleanLine = line.replaceFirst(RegExp(r'^\d+[\.\)]\s*'), '').replaceFirst(RegExp(r'^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*', unicode: true), '');
+              uniqueLines.add(cleanLine);
+            }
+          }
+          
+          int totalLineCount = 1;
+          for (final line in uniqueLines) {
+            buffer.writeln('$totalLineCount. $line');
+            totalLineCount++;
+          }
+        }
+        buffer.writeln();
+        i = j;
+      } else {
+        // 단독 출력 또는 개별 출력
+        buffer.writeln('$icon${m['name']}$icon');
+        final entryLines = note.split('\n').where((l) => l.trim().isNotEmpty).toList();
+        for (int lineIdx = 0; lineIdx < entryLines.length; lineIdx++) {
+          final line = entryLines[lineIdx].trim();
+          final cleanLine = line.replaceFirst(RegExp(r'^\d+[\.\)]\s*'), '').replaceFirst(RegExp(r'^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*', unicode: true), '');
+          buffer.writeln('${lineIdx + 1}. $cleanLine');
+        }
+        buffer.writeln();
+        i++;
       }
-      buffer.writeln();
-      i = j;
     }
 
     return buffer.toString().trim();
@@ -645,7 +685,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     if (_members.isEmpty) return const SizedBox.shrink();
     
     final bool hasPublished = _members.any((m) => m['prayerStatus'] == 'published');
-    final bool hasContent = _members.any((m) => (m['prayerNote'] as String).isNotEmpty);
+    final bool hasSavedDraft = _members.any((m) => m['prayerStatus'] == 'draft');
 
     String label = '작성 전';
     Color bgColor = const Color(0xFFF1F5F9);
@@ -655,7 +695,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       label = '등록 완료';
       bgColor = const Color(0xFFECFDF5);
       textColor = const Color(0xFF10B981);
-    } else if (hasContent) {
+    } else if (hasSavedDraft) {
       label = '임시저장 중';
       bgColor = const Color(0xFFFFF7ED);
       textColor = const Color(0xFFF59E0B);

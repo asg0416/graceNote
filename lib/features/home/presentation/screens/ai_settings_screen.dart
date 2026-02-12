@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
-import 'package:grace_note/core/constants/app_constants.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 
 class AISettingsScreen extends ConsumerStatefulWidget {
@@ -148,11 +147,22 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
 
             _buildSectionHeader('기도제목 공유 스타일', '카카오톡 공유 시 사용할 텍스트 포맷을 설정합니다.'),
             _buildSelectionContainer(
-              child: _buildSwitchTile(
-                title: '해당 주차 날짜 표시',
-                subtitle: '제목 부분에 "1/18" 과 같이 날짜를 포함합니다.',
-                value: settings.showDateInShare,
-                onChanged: (val) => ref.read(aiSettingsProvider.notifier).setShowDateInShare(val),
+              child: Column(
+                children: [
+                  _buildSwitchTile(
+                    title: '해당 주차 날짜 표시',
+                    subtitle: '제목 부분에 "1/18" 과 같이 날짜를 포함합니다.',
+                    value: settings.showDateInShare,
+                    onChanged: (val) => ref.read(aiSettingsProvider.notifier).setShowDateInShare(val),
+                  ),
+                  _buildInnerDivider(),
+                  _buildSwitchTile(
+                    title: '부부 기도제목 항상 묶기',
+                    subtitle: '기도제목이 달라도 부부는 한 항목에 표시합니다.',
+                    value: settings.alwaysGroupFamily,
+                    onChanged: (val) => ref.read(aiSettingsProvider.notifier).setAlwaysGroupFamily(val),
+                  ),
+                ],
               ),
             ),
 

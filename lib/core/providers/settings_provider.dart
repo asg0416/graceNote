@@ -26,6 +26,7 @@ class AISettings {
   final bool showFamilyInShare;
   final String shareHeaderIcon; // 예: 🩵, ✨, 📋
   final String customEndingStyle;
+  final bool alwaysGroupFamily;
 
   AISettings({
     this.indicatorType = AIIndicatorType.number,
@@ -35,6 +36,7 @@ class AISettings {
     this.showFamilyInShare = true,
     this.shareHeaderIcon = '💙',
     this.customEndingStyle = '',
+    this.alwaysGroupFamily = false,
   }) : endingStyle = endingStyle ?? AIEndingStyle.pray;
 
   AISettings copyWith({
@@ -45,6 +47,7 @@ class AISettings {
     bool? showFamilyInShare,
     String? shareHeaderIcon,
     String? customEndingStyle,
+    bool? alwaysGroupFamily,
   }) {
     return AISettings(
       indicatorType: indicatorType ?? this.indicatorType,
@@ -54,6 +57,7 @@ class AISettings {
       showFamilyInShare: showFamilyInShare ?? this.showFamilyInShare,
       shareHeaderIcon: shareHeaderIcon ?? this.shareHeaderIcon,
       customEndingStyle: customEndingStyle ?? this.customEndingStyle,
+      alwaysGroupFamily: alwaysGroupFamily ?? this.alwaysGroupFamily,
     );
   }
 }
@@ -79,7 +83,8 @@ class AISettingsNotifier extends StateNotifier<AISettings> {
     final showDateInShare = _prefs.getBool(_getKey('share_show_date')) ?? true;
     final showFamilyInShare = _prefs.getBool(_getKey('share_show_family')) ?? true;
     final shareHeaderIcon = _prefs.getString(_getKey('share_header_icon')) ?? '💙';
-    
+    final alwaysGroupFamily = _prefs.getBool(_getKey('share_always_group_family')) ?? false;
+
     state = AISettings(
       indicatorType: AIIndicatorType.values[typeIndex],
       customIndicator: customIndicator,
@@ -88,6 +93,7 @@ class AISettingsNotifier extends StateNotifier<AISettings> {
       showDateInShare: showDateInShare,
       showFamilyInShare: showFamilyInShare,
       shareHeaderIcon: shareHeaderIcon,
+      alwaysGroupFamily: alwaysGroupFamily,
     );
   }
 
@@ -104,6 +110,11 @@ class AISettingsNotifier extends StateNotifier<AISettings> {
   Future<void> setShareHeaderIcon(String icon) async {
     await _prefs.setString(_getKey('share_header_icon'), icon);
     state = state.copyWith(shareHeaderIcon: icon);
+  }
+
+  Future<void> setAlwaysGroupFamily(bool value) async {
+    await _prefs.setBool(_getKey('share_always_group_family'), value);
+    state = state.copyWith(alwaysGroupFamily: value);
   }
 
   Future<void> setIndicatorType(AIIndicatorType type) async {
