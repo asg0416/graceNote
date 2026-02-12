@@ -8,15 +8,10 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/attendance/presentation/screens/attendance_check_screen.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
-import 'package:intl/intl.dart';
-import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:grace_note/core/widgets/ai_processing_loader.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:flutter/services.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
-import 'package:animations/animations.dart';
 import 'package:grace_note/core/utils/route_util.dart';
 import 'prayer_share_screen.dart';
 
@@ -300,7 +295,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           }
         }
       });
-      SnackBarUtil.showSnackBar(context, message: 'AI가 내용을 정돈했습니다.');
+      if (mounted) SnackBarUtil.showSnackBar(context, message: 'AI가 내용을 정돈했습니다.');
     } finally {
       setState(() => _isRefining = false);
     }
@@ -377,7 +372,6 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     buffer.writeln('$formattedGroupName \n');
     final icon = settings.shareHeaderIcon;
     for (final m in _members) {
-      if (!m['isPresent']) continue;
       final note = (m['prayerNote'] as String).trim();
       if (note.isEmpty) continue;
       buffer.writeln('$icon${m['name']}$icon');
@@ -622,7 +616,6 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     if (_members.isEmpty) return const SizedBox.shrink();
     
     final bool hasPublished = _members.any((m) => m['prayerStatus'] == 'published');
-    final bool isAllDraft = _members.every((m) => m['prayerStatus'] == 'draft');
     final bool hasContent = _members.any((m) => (m['prayerNote'] as String).isNotEmpty);
 
     String label = '작성 전';
@@ -871,7 +864,6 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
   // [기존 _buildCopySpouseButton 삭제됨]
   Widget _buildBottomActions() {
-    final bool hasPublished = _members.any((m) => m['prayerStatus'] == 'published');
     
     return Container(
       padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + math.max(12, MediaQuery.of(context).padding.bottom)),
