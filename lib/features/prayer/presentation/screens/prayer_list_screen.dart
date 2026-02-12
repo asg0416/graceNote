@@ -5,9 +5,6 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/search/presentation/screens/search_screen.dart';
 import 'package:grace_note/features/prayer/presentation/widgets/prayer_card.dart';
 import 'package:grace_note/core/models/models.dart';
-import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
@@ -41,7 +38,7 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
 
   Future<void> _refreshData() async {
     ref.invalidate(userGroupsProvider);
-    final groups = await ref.read(userGroupsProvider.future);
+    await ref.read(userGroupsProvider.future);
     
     final profile = ref.read(userProfileProvider).value;
     if (profile != null && profile.churchId != null) {
@@ -52,30 +49,36 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     ref.invalidate(departmentWeeklyDataProvider);
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    final selectedDate = ref.read(selectedWeekDateProvider);
-    final date = await showDatePicker(
-      context: context, 
-      initialDate: selectedDate, 
-      firstDate: DateTime(2023), 
-      lastDate: DateTime(2030)
-    );
-    if (date != null) {
-      ref.read(selectedWeekDateProvider.notifier).state = date;
+  // [NEW] 가상 주차 헬퍼 (DB에 없는 현재 주차도 포함)
+  List<DateTime> _getDisplayWeeks(List<DateTime> dbWeeks) {
+    if (dbWeeks.isEmpty) return [];
+
+    final now = DateTime.now();
+    // 가장 최근의 일요일 계산 (오늘이 일요일이면 오늘)
+    final thisSunday = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday % 7));
+
+    // DB에 있는 최신 주차 확인
+    final latestDbDate = dbWeeks.first;
+
+    // 만약 '이번 주 일요일'이 DB 최신 주차보다 미래라면, 리스트 맨 앞에 추가 (가상 주차)
+    // 시간까지 고려하지 않고 날짜만 비교
+    if (thisSunday.isAfter(latestDbDate)) {
+      return [thisSunday, ...dbWeeks];
     }
+    
+    return dbWeeks;
   }
 
-  // [FIX] 유효한 주차(DB에 있는 주차)로만 이동
+  // [FIX] 유효한 주차(DB + 가상 주차)로만 이동
   void _moveWeek(int direction) {
-    // 1. 현재 교회 ID 가져오기
     final profile = ref.read(userProfileProvider).value;
     if (profile?.churchId == null) return;
 
-    // 2. 가용한 주차 목록 가져오기 (비동기 상태일 수 있으므로 동기적으로 읽을 수 있는지 확인)
-    //    이미 화면이 그려진 상태라면 provider가 값을 가지고 있을 가능성이 높음
     final weeksAsync = ref.read(availableWeeksProvider(profile!.churchId!));
     
-    weeksAsync.whenData((weeks) {
+    weeksAsync.whenData((dbWeeks) { // dbWeeks: 원본 데이터
+      final weeks = _getDisplayWeeks(dbWeeks); // [FIX] 가상 주차 포함
       if (weeks.isEmpty) return;
 
       final current = ref.read(selectedWeekDateProvider);
@@ -94,23 +97,11 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
       }
 
       // 현재 날짜가 리스트에 없다면(예: 생성되지 않은 이번주) 리스트에 임시 추가해서 위치 계산
-      // 단, 이번 로직은 "생성된 주차"만 탐색이므로, 만약 현재 날짜가 리스트에 없다면 가장 가까운 날짜로 이동 등을 고려해야 하지만,
-      // 초기 진입 시점에 이미 availableWeeks의 첫 번째 값(최신)으로 세팅하거나 해야 함.
-      // 여기서는 현재 날짜가 리스트에 없으면 아무 동작 안하거나 가장 최신으로 이동
       if (currentIndex == -1) {
         // 예외 처리: 현재 날짜가 유효 목록에 없으면 가장 최신(0번)으로 이동
         ref.read(selectedWeekDateProvider.notifier).state = weeks.first;
         return;
       }
-
-      // direction: -1 (이전, 과거), +1 (다음, 미래)
-      // 리스트가 내림차순(미래 -> 과거)이므로:
-      // 이전(과거)로 가려면 인덱스 증가 (+1)
-      // 다음(미래)로 가려면 인덱스 감소 (-1)
-      
-      // 화살표 방향과 리스트 인덱스 방향이 반대임에 유의
-      // UI 상 왼쪽(<) 버튼은 '이전 주(과거)' -> moveWeek(-1) 호출
-      // UI 상 오른쪽(>) 버튼은 '다음 주(미래)' -> moveWeek(1) 호출
 
       int nextIndex;
       if (direction < 0) {
@@ -137,8 +128,13 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         : const AsyncValue.data(<DateTime>[]);
 
     return weeksAsync.when(
-      data: (weeks) {
+      data: (dbWeeks) {
+        // [FIX] 가상 주차 포함하여 렌더링
+        final weeks = _getDisplayWeeks(dbWeeks);
+        if (weeks.isEmpty) return const SizedBox.shrink(); // 데이터 없으면 표시 안 함
+
         // 현재 날짜 매칭
+
         final currentDateOnly = DateTime(date.year, date.month, date.day);
         int currentIndex = -1;
         for (int i = 0; i < weeks.length; i++) {
@@ -150,10 +146,6 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         }
 
         // 네비게이션 가능 여부 (weeks: 내림차순 [미래 ... 과거])
-        // currentIndex가 -1이면(리스트에 없음) 네비게이션 불가 혹은 예외
-        // 과거로 가기(<): 인덱스가 (length - 1)보다 작아야 함 (더 큰 인덱스가 있어야 함)
-        // 미래로 가기(>): 인덱스가 0보다 커야 함 (더 작은 인덱스가 있어야 함)
-        
         final bool canGoPrev = currentIndex != -1 && currentIndex < weeks.length - 1;
         final bool canGoNext = currentIndex != -1 && currentIndex > 0;
 
@@ -247,15 +239,15 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     final userProfileAsync = ref.watch(userProfileProvider);
     final selectedDate = ref.watch(selectedWeekDateProvider);
     final activeRole = ref.watch(activeRoleProvider);
     
-    final userGroupsAsync = ref.watch(userGroupsProvider);
-    final userGroups = userGroupsAsync.value ?? [];
-
+    // userGroups variable removed because it's shadowed in .when() below
+    
     String appBarTitle = '기도소식';
 
     return Scaffold(

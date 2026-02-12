@@ -117,16 +117,17 @@ final churchGroupsProvider = FutureProvider.family<List<Map<String, dynamic>>, S
 });
 
 // [NEW] Get all existing week dates for navigation restriction
-final availableWeeksProvider = FutureProvider.family<List<DateTime>, String>((ref, churchId) async {
-  final response = await Supabase.instance.client
+final availableWeeksProvider = StreamProvider.family<List<DateTime>, String>((ref, churchId) {
+  return Supabase.instance.client
       .from('weeks')
-      .select('week_date')
+      .stream(primaryKey: ['id'])
       .eq('church_id', churchId)
-      .order('week_date', ascending: false); // 최신순 정렬
-
-  return (response as List).map<DateTime>((e) {
-    return DateTime.parse(e['week_date'] as String);
-  }).toList();
+      .order('week_date', ascending: false) // 최신순 정렬
+      .map((data) {
+        return data.map<DateTime>((e) {
+          return DateTime.parse(e['week_date'] as String);
+        }).toList();
+      });
 });
 
 // User's assigned groups (Real-time Reactive)
