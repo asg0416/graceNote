@@ -371,18 +371,47 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     final formattedGroupName = groupName.trim().endsWith('조') ? groupName : '$groupName조';
     buffer.writeln('$formattedGroupName \n');
     final icon = settings.shareHeaderIcon;
-    for (final m in _members) {
+
+    final List<Map<String, dynamic>> processedMembers = List.from(_members);
+    int i = 0;
+    while (i < processedMembers.length) {
+      final m = processedMembers[i];
       final note = (m['prayerNote'] as String).trim();
-      if (note.isEmpty) continue;
-      buffer.writeln('$icon${m['name']}$icon');
+      if (note.isEmpty) {
+        i++;
+        continue;
+      }
+
+      final currentFamilyId = m['familyId'];
+      List<String> names = [m['name']];
+      int j = i + 1;
+
+      // 같은 가족이고 기도제목이 완전히 일치하는 경우 그룹화
+      if (currentFamilyId != null && currentFamilyId.toString().startsWith('couple_')) {
+        while (j < processedMembers.length) {
+          final nextM = processedMembers[j];
+          final nextNote = (nextM['prayerNote'] as String).trim();
+          if (nextM['familyId'] == currentFamilyId && nextNote == note) {
+            names.add(nextM['name']);
+            j++;
+          } else {
+            break;
+          }
+        }
+      }
+
+      final combinedNames = names.join(', ');
+      buffer.writeln('$icon$combinedNames$icon');
       final lines = note.split('\n').where((l) => l.trim().isNotEmpty).toList();
-      for (int i = 0; i < lines.length; i++) {
-        final line = lines[i].trim();
+      for (int lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+        final line = lines[lineIdx].trim();
         final cleanLine = line.replaceFirst(RegExp(r'^\d+[\.\)]\s*'), '').replaceFirst(RegExp(r'^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*', unicode: true), '');
-        buffer.writeln('${i + 1}. $cleanLine');
+        buffer.writeln('${lineIdx + 1}. $cleanLine');
       }
       buffer.writeln();
+      i = j;
     }
+
     return buffer.toString().trim();
   }
 
