@@ -71,10 +71,6 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(lucide.LucideIcons.chevronLeft, color: AppTheme.textMain, size: 24),
-        ),
       ),
       body: Column(
         children: [

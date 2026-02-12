@@ -51,10 +51,11 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('출석 통계', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 18, fontFamily: 'Pretendard')),
+        title: const Text('우리 조 출석 통계', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 18, fontFamily: 'Pretendard')),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
+        automaticallyImplyLeading: false,
         actions: const [],
       ),
       body: Column(
