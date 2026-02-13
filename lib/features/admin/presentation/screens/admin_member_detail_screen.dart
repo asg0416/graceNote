@@ -11,6 +11,7 @@ class AdminMemberDetailScreen extends ConsumerStatefulWidget {
   final String directoryMemberId;
   final String fullName;
   final String groupName;
+  final String groupId;
   final String departmentId;
 
   const AdminMemberDetailScreen({
@@ -18,6 +19,7 @@ class AdminMemberDetailScreen extends ConsumerStatefulWidget {
     required this.directoryMemberId,
     required this.fullName,
     required this.groupName,
+    required this.groupId,
     required this.departmentId,
   });
 
@@ -89,6 +91,7 @@ class _AdminMemberDetailScreenState extends ConsumerState<AdminMemberDetailScree
 
   @override
   Widget build(BuildContext context) {
+    final groupsAsync = ref.watch(departmentGroupsProvider(widget.departmentId)); // [NEW] Fetch groups to check New Family status
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA), // Slightly off-white bg for cards to pop
       appBar: AppBar(
@@ -107,25 +110,8 @@ class _AdminMemberDetailScreenState extends ConsumerState<AdminMemberDetailScree
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(color: Colors.white, child: _buildProfileCard()),
-            
-            // [NEW] 등반/조 이동 버튼
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _showMoveGroupDialog(),
-                  icon: const Icon(Icons.swap_horiz, size: 18),
-                  label: const Text('조 이동 / 등반 처리'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.primaryViolet,
-                    side: const BorderSide(color: AppTheme.primaryViolet),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ),
+            // 등반 현황 카드 (새가족 조 일반 조원에게만)
+            _buildClimbingStatusCard(groupsAsync),
             
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
@@ -226,6 +212,155 @@ class _AdminMemberDetailScreenState extends ConsumerState<AdminMemberDetailScree
     );
   }
 
+  Widget _buildClimbingStatusCard(AsyncValue<List<Map<String, dynamic>>> groupsAsync) {
+    return groupsAsync.when(
+      data: (groups) {
+        final currentGroup = groups.cast<Map<String, dynamic>?>().firstWhere(
+          (g) => g?['name'] == widget.groupName,
+          orElse: () => null,
+        );
+
+        if (currentGroup == null || !(currentGroup['is_new_member_group'] ?? false)) {
+          return const SizedBox.shrink();
+        }
+
+        final groupId = currentGroup['id'] as String?;
+        final threshold = currentGroup['climbing_threshold'] ?? 4;
+
+        return FutureBuilder<Map<String, dynamic>?>(
+          future: ref.read(repositoryProvider).getDirectoryMember(widget.directoryMemberId),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const SizedBox.shrink();
+            final memberData = snapshot.data;
+            final role = memberData?['role_in_group'];
+
+            // 조장에게는 등반 카드 비노출
+            if (role == 'leader') return const SizedBox.shrink();
+
+            return Consumer(
+              builder: (context, ref, _) {
+                final progressAsync = groupId != null
+                    ? ref.watch(memberClimbingProgressProvider('${widget.directoryMemberId}:$groupId'))
+                    : const AsyncValue<int>.data(0);
+
+                return progressAsync.when(
+                  data: (count) {
+                    final isComplete = count >= threshold;
+                    final progress = (count / threshold).clamp(0.0, 1.0);
+
+                    return Container(
+                      margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppTheme.border,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 상단: 라벨 + 배지 + 버튼
+                          Row(
+                            children: [
+                              Icon(
+                                isComplete ? LucideIcons.circleCheck : LucideIcons.trendingUp,
+                                size: 18,
+                                color: AppTheme.textMain,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '등반 현황',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.textMain,
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isComplete
+                                      ? const Color(0xFF22C55E).withValues(alpha: 0.1)
+                                      : const Color(0xFFF472B6).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '$count / $threshold회',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: isComplete ? const Color(0xFF16A34A) : const Color(0xFFEC4899),
+                                    fontFamily: 'Pretendard',
+                                  ),
+                                ),
+                              ),
+                              const Spacer(),
+                              // 조 이동 / 등반 처리 버튼
+                              GestureDetector(
+                                onTap: _showMoveGroupDialog,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primaryViolet.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: AppTheme.primaryViolet.withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(LucideIcons.arrowLeftRight, size: 14, color: AppTheme.primaryViolet),
+                                      const SizedBox(width: 6),
+                                      const Text(
+                                        '조 편성',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppTheme.primaryViolet,
+                                          fontFamily: 'Pretendard',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          // 하단: 프로그레스 바
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: LinearProgressIndicator(
+                              value: progress,
+                              minHeight: 8,
+                              backgroundColor: AppTheme.primaryViolet.withValues(alpha: 0.08),
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                AppTheme.primaryViolet,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                );
+              },
+            );
+          },
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
   Widget _buildPrayerCard(Map<String, dynamic> prayer) {
     final title = (prayer['title'] ?? '') as String;
     final content = (prayer['content'] ?? '') as String;
@@ -291,6 +426,7 @@ class _AdminMemberDetailScreenState extends ConsumerState<AdminMemberDetailScree
       context: context,
       builder: (context) => _MoveGroupDialog(
         departmentId: widget.departmentId,
+        currentGroupId: widget.groupId,
         currentGroupName: widget.groupName,
         directoryMemberId: widget.directoryMemberId,
         memberFullName: widget.fullName,
@@ -301,6 +437,7 @@ class _AdminMemberDetailScreenState extends ConsumerState<AdminMemberDetailScree
 
 class _MoveGroupDialog extends ConsumerStatefulWidget {
   final String departmentId;
+  final String currentGroupId;
   final String currentGroupName;
   final String directoryMemberId;
   final String memberFullName;
@@ -308,6 +445,7 @@ class _MoveGroupDialog extends ConsumerStatefulWidget {
   const _MoveGroupDialog({
     super.key,
     required this.departmentId,
+    required this.currentGroupId,
     required this.currentGroupName,
     required this.directoryMemberId,
     required this.memberFullName,
@@ -320,64 +458,113 @@ class _MoveGroupDialog extends ConsumerStatefulWidget {
 class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
   String? _selectedGroupId;
   bool _isSaving = false;
+  String _groupSearchQuery = '';
 
   @override
   Widget build(BuildContext context) {
     final groupsAsync = ref.watch(departmentGroupsProvider(widget.departmentId));
 
-    return AlertDialog(
-      title: const Text('조 이동 / 등반', style: TextStyle(fontWeight: FontWeight.bold)),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${widget.memberFullName} 성도님을 어느 조로 이동하시겠습니까?', style: const TextStyle(fontSize: 14, color: AppTheme.textSub)),
-            const SizedBox(height: 20),
-            groupsAsync.when(
-              data: (groups) {
-                // 현재 조 제외하고 옵션 제공
-                final options = groups.where((g) => g['name'] != widget.currentGroupName).toList();
-                
-                if (options.isEmpty) {
-                  return const Text('이동 가능한 다른 조가 없습니다.');
-                }
+    return ShadDialog(
+        title: const Text('조 이동 / 등반', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+        description: Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 20),
+          child: Text(
+            '${widget.memberFullName} 성도님을\n어느 조로 이동하시겠습니까?',
+            style: const TextStyle(fontSize: 14, color: AppTheme.textSub, height: 1.5, fontFamily: 'Pretendard'),
+          ),
+        ),
+        actionsAxis: Axis.horizontal,
+        expandActionsWhenTiny: false,
+        removeBorderRadiusWhenTiny: false,
+        titleTextAlign: TextAlign.start,
+        descriptionTextAlign: TextAlign.start,
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.9,
+          minWidth: 320,
+        ),
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('이동할 조 선택', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.2)),
+              const SizedBox(height: 10),
+              groupsAsync.when(
+                data: (groups) {
+                  final options = groups.where((g) => g['name'] != widget.currentGroupName).toList();
+                  final filteredOptions = _groupSearchQuery.isEmpty
+                      ? options
+                      : options.where((g) => (g['name'] as String).toLowerCase().contains(_groupSearchQuery.toLowerCase())).toList();
+                  
+                  if (options.isEmpty) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Text('이동 가능한 다른 조가 없습니다.', style: TextStyle(color: AppTheme.textSub)),
+                      ),
+                    );
+                  }
 
-                return DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: '이동할 조 선택',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                  value: _selectedGroupId,
-                  items: options.map((g) => DropdownMenuItem(
-                    value: g['id'] as String,
-                    child: Text(g['name'] as String),
-                  )).toList(),
-                  onChanged: (val) => setState(() => _selectedGroupId = val),
-                  hint: const Text('조를 선택해주세요'),
-                );
-              },
-              loading: () => const Center(child: ShadcnSpinner()),
-              error: (e, _) => Text('조 목록 로딩 실패: $e'),
-            ),
-          ],
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      return ShadSelect<String>.withSearch(
+                        placeholder: const Text('조를 선택해주세요', style: TextStyle(fontSize: 14, color: AppTheme.textSub, fontFamily: 'Pretendard')),
+                        initialValue: _selectedGroupId,
+                        minWidth: constraints.maxWidth,
+                        maxHeight: 300,
+                        decoration: ShadDecoration(
+                          color: Colors.white,
+                          border: ShadBorder.all(
+                            radius: BorderRadius.circular(12),
+                            width: 1,
+                            color: AppTheme.border,
+                          ),
+                          shape: BoxShape.rectangle,
+                        ),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedGroupId = val);
+                        },
+                        selectedOptionBuilder: (context, value) {
+                          final group = options.firstWhere((g) => g['id'] == value, orElse: () => options.first);
+                          return Text(group['name'] as String, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textMain, fontFamily: 'Pretendard'));
+                        },
+                        options: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                            child: Text('조 목록', style: TextStyle(fontSize: 12, color: AppTheme.textSub, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
+                          ),
+                          ...filteredOptions.map((g) => ShadOption(
+                            value: g['id'] as String,
+                            child: Text(g['name'] as String, style: const TextStyle(fontFamily: 'Pretendard', fontWeight: FontWeight.w500, fontSize: 14)),
+                          )),
+                        ],
+                        searchPlaceholder: const Text('조 이름 검색', style: TextStyle(fontFamily: 'Pretendard', fontSize: 14)),
+                        onSearchChanged: (query) => setState(() => _groupSearchQuery = query),
+                      );
+                    },
+                  );
+                },
+                loading: () => Center(child: ShadcnSpinner()),
+                error: (e, _) => Text('조 목록 로딩 실패: $e'),
+              ),
+            ],
+          ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isSaving ? null : () => Navigator.pop(context),
-          child: const Text('취소', style: TextStyle(color: AppTheme.textSub)),
-        ),
-        TextButton(
-          onPressed: _isSaving || _selectedGroupId == null ? null : _save,
-          child: _isSaving 
-            ? const SizedBox(width: 16, height: 16, child: ShadcnSpinner()) 
-            : const Text('이동 / 등반 완료', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryViolet)),
-        ),
-      ],
-    );
+        actions: [
+          ShadButton.ghost(
+            onPressed: _isSaving ? null : () => Navigator.pop(context),
+            child: const Text('취소', style: TextStyle(color: AppTheme.textSub, fontFamily: 'Pretendard')),
+          ),
+          ShadButton(
+            onPressed: _isSaving || _selectedGroupId == null ? null : _save,
+            child: _isSaving 
+              ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
+              : const Text('이동 완료', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
+          ),
+        ],
+      );
   }
 
   Future<void> _save() async {
@@ -414,8 +601,10 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
         'group_name': targetGroup['name'],
       });
 
-      // Refresh providers
+      // Refresh providers — invalidate both old and new group member lists
       ref.invalidate(departmentGroupsProvider(widget.departmentId));
+      ref.invalidate(groupMembersProvider(widget.currentGroupId));
+      ref.invalidate(groupMembersProvider(_selectedGroupId!));
       if (profileId != null) ref.invalidate(userProfileProvider);
 
       if (mounted) {

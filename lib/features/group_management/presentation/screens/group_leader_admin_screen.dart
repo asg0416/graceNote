@@ -24,6 +24,12 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
   @override
   Widget build(BuildContext context) {
     final membersAsync = ref.watch(groupMembersProvider(widget.groupId));
+    final profile = ref.watch(userProfileProvider).value;
+    
+    // Fetch group details to check if it's a New Family group
+    final groupsAsync = profile?.departmentId != null 
+        ? ref.watch(departmentGroupsProvider(profile!.departmentId!))
+        : const AsyncValue.data([]);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -59,6 +65,21 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
             );
           }
 
+          // Check New Family Group Status
+          bool isNewFamilyGroup = false;
+          int climbingThreshold = 4;
+          
+          if (groupsAsync.hasValue && groupsAsync.value != null) {
+            final currentGroup = groupsAsync.value!.cast<Map<String, dynamic>?>().firstWhere(
+              (g) => g?['id'] == widget.groupId,
+              orElse: () => null,
+            );
+            if (currentGroup != null) {
+              isNewFamilyGroup = currentGroup['is_new_member_group'] ?? false;
+              climbingThreshold = currentGroup['climbing_threshold'] ?? 4;
+            }
+          }
+
           return Column(
             children: [
               _buildHeader(members),
@@ -68,7 +89,7 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
                   itemCount: members.length,
                   itemBuilder: (context, index) {
                     final member = members[index];
-                    return _buildMemberTile(context, ref, member);
+                    return _buildMemberTile(context, ref, member, isNewFamilyGroup, climbingThreshold);
                   },
                 ),
               ),
@@ -163,8 +184,9 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
     );
   }
 
-  Widget _buildMemberTile(BuildContext context, WidgetRef ref, Map<String, dynamic> member) {
+  Widget _buildMemberTile(BuildContext context, WidgetRef ref, Map<String, dynamic> member, bool isNewFamilyGroup, int threshold) {
     final bool isLinked = member['profile_id'] != null;
+    final bool isLeader = member['role_in_group'] == 'leader';
     
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -174,14 +196,42 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
         border: Border.all(color: AppTheme.divider),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: CircleAvatar(
-          backgroundColor: AppTheme.primaryViolet.withOpacity(0.1),
-          child: Text(member['full_name'][0], style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.bold)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), 
+        leading: Stack(
+          children: [
+            CircleAvatar(
+              backgroundColor: AppTheme.primaryViolet.withOpacity(0.1),
+              child: Text(member['full_name'][0], style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.bold)),
+            ),
+            if (isNewFamilyGroup && !isLeader)
+              Positioned(
+                right: -2,
+                bottom: -2,
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final progressAsync = ref.watch(memberClimbingProgressProvider('${member['id']}:${widget.groupId}'));
+                    return progressAsync.when(
+                      data: (count) {
+                        if (count >= threshold) {
+                          return Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                            child: const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                      loading: () => const SizedBox.shrink(),
+                      error: (_,__) => const SizedBox.shrink(),
+                    );
+                  }
+                ),
+              ),
+          ],
         ),
         title: Row(
           children: [
-            Text(member['full_name'], style: const TextStyle(fontWeight: FontWeight.w800)),
+            Text(member['full_name'], style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             const SizedBox(width: 8),
             if (isLinked)
               Container(
@@ -191,7 +241,61 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
               ),
           ],
         ),
-        subtitle: Text(member['phone'] ?? '연락처 없음', style: const TextStyle(fontSize: 12, color: AppTheme.textSub)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(member['phone'] ?? '연락처 없음', style: const TextStyle(fontSize: 12, color: AppTheme.textSub)),
+            if (isNewFamilyGroup && !isLeader) ...[
+              const SizedBox(height: 6),
+              Consumer(
+                builder: (context, ref, _) {
+                  final progressAsync = ref.watch(memberClimbingProgressProvider('${member['id']}:${widget.groupId}'));
+                  return progressAsync.when(
+                    data: (count) {
+                      final isComplete = count >= threshold;
+                      return Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isComplete ? AppTheme.primaryViolet.withOpacity(0.1) : Colors.amber.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: isComplete ? AppTheme.primaryViolet.withOpacity(0.5) : Colors.amber.withOpacity(0.5),
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isComplete ? Icons.check_circle_rounded : Icons.trending_up, 
+                                  size: 11, 
+                                  color: isComplete ? AppTheme.primaryViolet : Colors.amber.shade800
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  isComplete ? '등반 완료' : '등반 $count / $threshold',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: isComplete ? AppTheme.primaryViolet : Colors.amber.shade800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (_,__) => const SizedBox.shrink(),
+                  );
+                },
+              ),
+            ],
+          ],
+        ),
         trailing: IconButton(
           icon: const Icon(Icons.edit_outlined, size: 20, color: AppTheme.textSub),
           onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => MemberEditScreen(groupId: widget.groupId, groupName: widget.groupName, member: member))),
@@ -201,6 +305,7 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
     );
   }
 
+  // _confirmDelete method remains same
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref, Map<String, dynamic> member) async {
     final confirm = await showDialog<bool>(
       context: context,

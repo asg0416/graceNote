@@ -17,6 +17,7 @@ import 'package:grace_note/features/settings/presentation/screens/change_passwor
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:grace_note/features/home/presentation/screens/service_guide_screen.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
+import 'package:grace_note/core/utils/snack_bar_util.dart';
 
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
@@ -90,11 +91,22 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             icon: lucide.LucideIcons.users, 
                             label: '조원 관리', 
                             onTap: () {
+                              final activeMembership = ref.read(activeMembershipProvider);
+                              if (activeMembership == null) {
+                                SnackBarUtil.showSnackBar(context, message: '활성화된 소속 정보가 없습니다.', isError: true);
+                                return;
+                              }
+                              
                               final group = groups.firstWhere(
-                                (g) => g['role_in_group'] == 'leader' || g['role_in_group'] == 'admin',
-                                orElse: () => groups.isNotEmpty ? groups.first : <String, dynamic>{},
+                                (g) => g['group_id'] == activeMembership.groupId,
+                                orElse: () => <String, dynamic>{},
                               );
-                              if (group.isEmpty) return;
+                              
+                              if (group.isEmpty) {
+                                SnackBarUtil.showSnackBar(context, message: '관리할 수 있는 조가 없습니다.', isError: true);
+                                return;
+                              }
+                              
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(

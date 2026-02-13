@@ -799,6 +799,22 @@ class GraceNoteRepository {
     return List<Map<String, dynamic>>.from(response);
   }
 
+  // Directory Member ID로 단일 멤버 조회
+  Future<Map<String, dynamic>?> getDirectoryMember(String directoryMemberId) async {
+    try {
+      final res = await _supabase
+          .from('member_directory')
+          .select()
+          .eq('id', directoryMemberId)
+          .maybeSingle();
+      return res;
+    } catch (e) {
+      debugPrint('GraceNoteRepository: Error in getDirectoryMember: $e');
+      return null;
+    }
+  }
+
+
   Future<List<Map<String, dynamic>>> getSavedPrayers(String profileId) async {
     final response = await _supabase
         .from('prayer_interactions')

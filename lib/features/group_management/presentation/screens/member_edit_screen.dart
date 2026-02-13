@@ -7,6 +7,7 @@ import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import '../../../../core/utils/snack_bar_util.dart';
 import '../../../../core/utils/database_error_helper.dart';
+import 'package:grace_note/core/providers/user_role_provider.dart';
 
 class MemberEditScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic>? member;
@@ -218,6 +219,9 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final activeRole = ref.watch(activeRoleProvider);
+    final isAdmin = activeRole == AppRole.admin;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -290,21 +294,26 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
                   
                   _buildDivider(),
                   
-                  _buildSectionHeader('소속 관리', '부서 내에서의 소속 조와 성도 상태를 관리합니다.'),
-                  _buildGroupSelector(),
+                  // [NEW] 관리자만 소속 변경 및 계정 비활성화 가능
+                  if (isAdmin) ...[
+                    _buildSectionHeader('소속 관리', '부서 내에서의 소속 조와 성도 상태를 관리합니다.'),
+                    _buildGroupSelector(),
+                  ],
                   
                   if (widget.member != null) ...[
                     const SizedBox(height: 16),
                     _buildClimbingStatusInfo(),
                   ],
 
-                  const SizedBox(height: 24),
-                  _buildSwitchField(
-                    label: '성도 활성화 상태',
-                    subtitle: '비활성화 시 앱에서 보이지 않으며 출석부에서 제외됩니다.',
-                    value: _isActive,
-                    onChanged: (val) => setState(() => _isActive = val),
-                  ),
+                  if (isAdmin) ...[
+                    const SizedBox(height: 24),
+                    _buildSwitchField(
+                      label: '성도 활성화 상태',
+                      subtitle: '비활성화 시 앱에서 보이지 않으며 출석부에서 제외됩니다.',
+                      value: _isActive,
+                      onChanged: (val) => setState(() => _isActive = val),
+                    ),
+                  ],
 
                   const SizedBox(height: 40),
                 ],

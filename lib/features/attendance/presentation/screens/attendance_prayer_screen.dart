@@ -24,7 +24,6 @@ class AttendancePrayerScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<AttendancePrayerScreen> createState() => _AttendancePrayerScreenState();
 }
-
 class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen> {
   bool _isRefining = false;
   bool _isLoading = false;
@@ -136,6 +135,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             'prayerStatus': 'initial',
             'familyId': _generateFamilyId(m['full_name'], m['spouse_name'], m['family_id'], directoryId),
             'source': 'current',
+            'role_in_group': m['role_in_group'],
           };
         }
 
@@ -207,11 +207,29 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     // 선택된 날짜와 오늘 날짜를 비교하여 과거 주차 여부 확인 (일요일 기준이므로 < 오늘)
     final bool isPastWeek = selectedDate.isBefore(today);
 
+    // [NEW] 새가족 그룹 여부 확인
+    bool isNewFamilyGroup = false;
+    final groups = ref.read(userGroupsProvider).value ?? [];
+    if (_currentGroupId != null && groups.isNotEmpty) {
+      final currentGroup = groups.firstWhere(
+        (g) => g['group_id'] == _currentGroupId,
+        orElse: () => {},
+      );
+      // userGroupsProvider의 데이터 구조에 따라 is_new_member_group 필드가 있을지 확인 필요
+      // 만약 없다면 departmentGroupsProvider 등을 통해 확인해야 함.
+      // 하지만 userGroupsProvider는 보통 join된 뷰나 rpc 결과를 가져오므로 
+      // is_new_member_group 필드가 포함되어 있어야 함. 
+      // (GraceNoteRepository.getUserGroups 참고)
+      isNewFamilyGroup = currentGroup['is_new_member_group'] ?? false;
+    }
+
     final result = await Navigator.of(context).push(
       SharedAxisPageRoute(
         page: AttendanceCheckScreen(
           initialMembers: _members,
           isPastWeek: isPastWeek,
+          groupId: _currentGroupId,
+          isNewFamilyGroup: isNewFamilyGroup,
         ),
       ),
     );

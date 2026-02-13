@@ -4,6 +4,7 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/admin/presentation/screens/admin_member_detail_screen.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DepartmentMemberDirectoryScreen extends ConsumerWidget {
   final String departmentId;
@@ -206,6 +207,7 @@ class _GroupMemberAccordionState extends ConsumerState<_GroupMemberAccordion> {
               directoryMemberId: directoryMemberId,
               fullName: fullName,
               groupName: widget.groupName,
+              groupId: widget.groupId,
               departmentId: ref.read(userProfileProvider).value!.departmentId!,
             ),
           ),
@@ -247,33 +249,44 @@ class _GroupMemberAccordionState extends ConsumerState<_GroupMemberAccordion> {
           ),
           if (widget.isNewMemberGroup && roleInGroup != 'leader') ...[
             const SizedBox(width: 8),
-            const Text('|', style: TextStyle(fontSize: 10, color: AppTheme.divider)),
+            Container(width: 1, height: 10, color: AppTheme.divider),
             const SizedBox(width: 8),
             ref.watch(memberClimbingProgressProvider('${member['id']}:${widget.groupId}')).when(
-              data: (count) => Row(
-                children: [
-                  const Text('등반 진행 ', style: TextStyle(fontSize: 12, color: AppTheme.textSub)),
-                  Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 12, 
-                      fontWeight: FontWeight.bold,
-                      color: count >= widget.climbingThreshold ? AppTheme.primaryViolet : AppTheme.textMain,
+              data: (count) {
+                final isComplete = count >= widget.climbingThreshold;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isComplete ? const Color(0xFF22C55E).withOpacity(0.1) : const Color(0xFFF472B6).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isComplete ? const Color(0xFF22C55E).withOpacity(0.3) : const Color(0xFFF472B6).withOpacity(0.5),
+                      width: 0.5
                     ),
                   ),
-                  Text(
-                    ' / ${widget.climbingThreshold}',
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textSub),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isComplete ? Icons.check_circle_rounded : Icons.trending_up_rounded,
+                        size: 10,
+                        color: isComplete ? const Color(0xFF16A34A) : const Color(0xFFEC4899),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isComplete ? '등반 완료' : '등반 $count/${widget.climbingThreshold}',
+                        style: TextStyle(
+                          fontSize: 10, 
+                          fontWeight: FontWeight.w700, 
+                          color: isComplete ? const Color(0xFF16A34A) : const Color(0xFFEC4899)
+                        ),
+                      ),
+                    ],
                   ),
-                  if (count >= widget.climbingThreshold)
-                    const Padding(
-                      padding: EdgeInsets.only(left: 4),
-                      child: Icon(Icons.check_circle, size: 14, color: AppTheme.primaryViolet),
-                    ),
-                ],
-              ),
-              loading: () => const SizedBox(width: 12, height: 12, child: ShadcnSpinner()),
-              error: (_, __) => const Text('!', style: TextStyle(color: Colors.red)),
+                );
+              },
+              loading: () => const SizedBox(width: 10, height: 10, child: ShadcnSpinner()),
+              error: (_, __) => const SizedBox.shrink(),
             ),
           ],
         ],
@@ -287,31 +300,56 @@ class _GroupMemberAccordionState extends ConsumerState<_GroupMemberAccordion> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('새가족 등반 기준 설정', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('등반에 필요한 출석 횟수를 입력하세요.'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: '출석 주차 수',
-                border: OutlineInputBorder(),
-                suffixText: '주',
+      builder: (context) => ShadDialog(
+        title: const Text('새가족 등반 기준 설정', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+        description: const Padding(
+          padding: EdgeInsets.only(top: 8, bottom: 20),
+          child: Text(
+            '등반에 필요한 출석 횟수를 입력하세요.',
+            style: TextStyle(fontSize: 14, color: AppTheme.textSub, height: 1.5, fontFamily: 'Pretendard'),
+          ),
+        ),
+        actionsAxis: Axis.horizontal,
+        expandActionsWhenTiny: false,
+        removeBorderRadiusWhenTiny: false,
+        titleTextAlign: TextAlign.start,
+        descriptionTextAlign: TextAlign.start,
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.9,
+          minWidth: 320,
+        ),
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('출석 주차 수', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.2)),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: ShadInput(
+                      controller: controller,
+                      keyboardType: TextInputType.number,
+                      placeholder: const Text('4'),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('주', style: TextStyle(color: AppTheme.textSub)),
+                ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
-          TextButton(
+          ShadButton.ghost(
             onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
+            child: const Text('취소', style: TextStyle(color: AppTheme.textSub, fontFamily: 'Pretendard')),
           ),
-          TextButton(
+          ShadButton(
             onPressed: () async {
               final val = int.tryParse(controller.text);
               if (val == null || val < 1) {
@@ -340,7 +378,7 @@ class _GroupMemberAccordionState extends ConsumerState<_GroupMemberAccordion> {
                 );
               }
             },
-            child: const Text('저장'),
+            child: const Text('저장', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
           ),
         ],
       ),

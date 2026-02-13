@@ -1,23 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
+import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-class AttendanceCheckScreen extends StatefulWidget {
+class AttendanceCheckScreen extends ConsumerStatefulWidget {
   final List<Map<String, dynamic>> initialMembers;
-
   final bool isPastWeek;
+  final String? groupId;
+  final bool isNewFamilyGroup;
 
   const AttendanceCheckScreen({
     super.key, 
     required this.initialMembers, 
     this.isPastWeek = false,
+    this.groupId,
+    this.isNewFamilyGroup = false,
   });
 
   @override
-  State<AttendanceCheckScreen> createState() => _AttendanceCheckScreenState();
+  ConsumerState<AttendanceCheckScreen> createState() => _AttendanceCheckScreenState();
 }
 
-class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
+class _AttendanceCheckScreenState extends ConsumerState<AttendanceCheckScreen> {
   late List<Map<String, dynamic>> _tempMembers;
 
   @override
@@ -242,6 +247,46 @@ class _AttendanceCheckScreenState extends State<AttendanceCheckScreen> {
                                 ),
                               ),
                             ),
+                            if (widget.isNewFamilyGroup && widget.groupId != null && member['role_in_group'] != 'leader') ...[
+                              const SizedBox(width: 12),
+                              Consumer(
+                                builder: (context, ref, _) {
+                                  final memberId = member['directoryMemberId'] ?? member['id'];
+                                  final progressAsync = ref.watch(memberClimbingProgressProvider('$memberId:${widget.groupId}'));
+                                  
+                                  return progressAsync.when(
+                                    data: (count) {
+                                      final isComplete = count >= 4; 
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: isComplete ? const Color(0xFF22C55E).withOpacity(0.1) : const Color(0xFFF472B6).withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: isComplete ? const Color(0xFF22C55E).withOpacity(0.5) : const Color(0xFFF472B6).withOpacity(0.5),
+                                            width: 0.5,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (isComplete) 
+                                              const Icon(Icons.check_circle_rounded, size: 10, color: Color(0xFF16A34A))
+                                            else
+                                              Text('등반중', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: const Color(0xFFEC4899))),
+                                            const SizedBox(width: 3),
+                                            Text('$count/4', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: isComplete ? const Color(0xFF16A34A) : const Color(0xFFEC4899))),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                    loading: () => const SizedBox.shrink(),
+                                    error: (_, __) => const SizedBox.shrink(),
+                                  );
+                                }
+                              ),
+                              const SizedBox(width: 6),
+                            ],
                             if (isNewInHistory) ...[
                               IconButton(
                                 constraints: const BoxConstraints(),
