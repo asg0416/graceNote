@@ -330,7 +330,13 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                           return _buildTabLayout(profile, deptGroups, activeRole);
                         },
                         loading: () => const Center(child: CircularProgressIndicator()),
-                        error: (e, s) => Center(child: Text('부서 조 목록 로딩 실패: $e')),
+                        error: (e, s) {
+                          final errorStr = e.toString();
+                          if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          return Center(child: Text('부서 조 목록 로딩 실패: $e'));
+                        },
                       );
                     } else {
                       final memberGroups = userGroups.where((g) => g['role_in_group'] == 'member').toList();
@@ -343,11 +349,23 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                     }
                   },
                   loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (e, s) => Center(child: Text('소속 정보 로딩 실패: $e')),
+                  error: (e, s) {
+                    final errorStr = e.toString();
+                    if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    return Center(child: Text('소속 정보 로딩 실패: $e'));
+                  },
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, s) => Center(child: Text('프로필 로딩 실패: $e')),
+              error: (e, s) {
+                final errorStr = e.toString();
+                if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return Center(child: Text('프로필 로딩 실패: $e'));
+              },
             ),
           ),
         ],
@@ -586,7 +604,13 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, s) => Center(child: Text('데이터 로딩 실패: $e')),
+      error: (e, s) {
+        final errorStr = e.toString();
+        if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
+          return const Center(child: ShadcnSpinner());
+        }
+        return Center(child: Text('데이터 로딩 실패: $e'));
+      },
     );
   }
 
@@ -653,7 +677,13 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         );
       },
       loading: () => Center(child: ShadcnSpinner()),
-      error: (e, s) => Center(child: Text('기도제목 로딩 실패: $e')),
+      error: (e, s) {
+        final errorStr = e.toString();
+        if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
+          return Center(child: ShadcnSpinner());
+        }
+        return Center(child: Text('기도제목 로딩 실패: $e'));
+      },
     );
   }
 
@@ -693,7 +723,13 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         );
       },
       loading: () => const SizedBox(height: 100, child: Center(child: CircularProgressIndicator())),
-      error: (e, s) => Text('로딩 실패: $e'),
+      error: (e, s) {
+        final errorStr = e.toString();
+        if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
+          return const SizedBox(height: 100, child: Center(child: CircularProgressIndicator()));
+        }
+        return Text('로딩 실패: $e');
+      },
     );
   }
 }
