@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:grace_note/features/prayer/presentation/widgets/prayer_card.dart';
+import 'package:grace_note/core/widgets/app_skeleton.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
@@ -205,7 +206,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ],
                     );
                   },
-                  loading: () => SizedBox(height: 48, child: Center(child: ShadcnSpinner())),
+                  loading: () => const SizedBox(height: 48, child: AppSkeleton(height: 40, width: double.infinity, borderRadius: BorderRadius.all(Radius.circular(16)))),
                   error: (e, s) => const Text('로드 실패'),
                 ),
               ],
@@ -213,7 +214,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
           Expanded(
             child: _isLoading 
-              ? Center(child: ShadcnSpinner())
+              ? ListView.builder(
+                  padding: const EdgeInsets.all(24),
+                  itemCount: 3,
+                  itemBuilder: (context, index) => const AppSkeleton(
+                    height: 120,
+                    width: double.infinity,
+                    borderRadius: BorderRadius.all(Radius.circular(24)),
+                    margin: EdgeInsets.only(bottom: 20),
+                  ),
+                )
               : !_searchInitiated 
                 ? _buildInitialState() // 검색 전 안내 문구
                 : _searchResults.isEmpty

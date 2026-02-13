@@ -187,6 +187,9 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
 
   Future<void> _refreshAllDataSilently() async {
     try {
+      // [FIX] 앱 복구 직후 네트워크 스택이 안정화될 시간을 줌 (Web/Mobile 공통)
+      await Future.delayed(const Duration(milliseconds: 300));
+      
       // 1. 세션 유효성 확인 (비동기로 조용히 확인만 시도)
       final session = Supabase.instance.client.auth.currentSession;
       if (session == null || session.isExpired) {
@@ -268,9 +271,11 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
       return _buildLoadingScreen('사용자 프로필 불러오는 중...');
     }
 
-    // [FIX] RealtimeSubscribeException 등 일시적 에러 시 에러 화면으로 튕기지 않도록 방어
+    // [FIX] RealtimeSubscribeException 이나 Web 기동 시 'Failed to fetch' 등 일시적 에러 시 에러 화면으로 튕기지 않도록 방어
     final errorStr = profileAsync.error.toString();
-    final isTransientError = errorStr.contains('Realtime') || errorStr.contains('1006');
+    final isTransientError = errorStr.contains('Realtime') || 
+                            errorStr.contains('1006') || 
+                            errorStr.contains('Failed to fetch');
     
     if (isTransientError) {
       return _buildLoadingScreen('연결을 복구하고 있습니다...');

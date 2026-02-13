@@ -328,7 +328,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
           padding: EdgeInsets.fromLTRB(26, 20, 24, 16),
           child: Text('조별 상세 현황', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
         ),
-        ref.watch(departmentWeeklyAttendanceProvider('${widget.departmentId}:$weekId')).when(
+        ref.watch(departmentWeeklyAttendanceProvider('${widget.departmentId}:$weekId')).maybeWhen(
           data: (data) {
             final groups = List<Map<String, dynamic>>.from(data['groups']);
             return ListView.builder(
@@ -339,14 +339,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
               itemBuilder: (context, index) => _GroupAttendanceAccordion(group: groups[index]),
             );
           },
-          loading: () => Center(child: ShadcnSpinner()),
-          error: (e, s) {
-            final errorStr = e.toString();
-            if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
-              return Center(child: ShadcnSpinner());
-            }
-            return Center(child: Text('로딩 실패: $e'));
-          },
+          orElse: () => Center(child: ShadcnSpinner()),
         ),
       ],
     );

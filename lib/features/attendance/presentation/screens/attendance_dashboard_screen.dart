@@ -513,7 +513,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
             padding: EdgeInsets.fromLTRB(24, 32, 24, 16),
             child: Text('상세 현황 (누가 오고 안왔는지)', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
           ),
-          ref.watch(weeklyDataProvider('${widget.groupId}:$churchId:$weekId')).when(
+          ref.watch(weeklyDataProvider('${widget.groupId}:$churchId:$weekId')).maybeWhen(
             data: (data) {
               final attendanceList = List<Map<String, dynamic>>.from(data['attendance']);
               if (attendanceList.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(40), child: Text('데이터가 없습니다.')));
@@ -584,14 +584,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                 ),
               );
             },
-            loading: () => Center(child: Padding(padding: EdgeInsets.all(40), child: ShadcnSpinner())),
-            error: (e, s) {
-              final errorStr = e.toString();
-              if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
-                return Center(child: Padding(padding: EdgeInsets.all(40), child: ShadcnSpinner()));
-              }
-              return Center(child: Text('로딩 실패: $e'));
-            },
+            orElse: () => const Center(child: Padding(padding: EdgeInsets.all(40), child: ShadcnSpinner())),
           ),
         ],
       ),

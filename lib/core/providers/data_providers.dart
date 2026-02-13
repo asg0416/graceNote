@@ -42,20 +42,24 @@ final userProfileFutureProvider = FutureProvider<ProfileModel?>((ref) async {
 
   // Retry up to 10 times for the profile to appear (DB trigger delay can be high under load)
   for (int i = 0; i < 10; i++) {
-    debugPrint('userProfileFutureProvider: Fetching profile (attempt ${i + 1})');
-    final response = await Supabase.instance.client
-        .from('profiles')
-        .select()
-        .eq('id', user.id)
-        .maybeSingle();
+    try {
+      final response = await Supabase.instance.client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
 
-    if (response != null) {
-      final profile = ProfileModel.fromJson(response);
-      if (profile.isOnboardingComplete) {
-        debugPrint('userProfileFutureProvider: Found completed profile');
-        return profile;
+      if (response != null) {
+        final profile = ProfileModel.fromJson(response);
+        if (profile.isOnboardingComplete) {
+          debugPrint('userProfileFutureProvider: Found completed profile');
+          return profile;
+        }
+        debugPrint('userProfileFutureProvider: Found profile but onboarding incomplete. Retrying...');
       }
-      debugPrint('userProfileFutureProvider: Found profile but onboarding incomplete. Retrying...');
+    } catch (e) {
+      debugPrint('userProfileFutureProvider: Fetch attempt ${i + 1} failed: $e');
+      // [FIX] Failed to fetch 등 네트워크 에러 시에도 잠시 대기 후 재시도
     }
     await Future.delayed(const Duration(milliseconds: 500));
   }
@@ -132,6 +136,10 @@ final availableWeeksProvider = StreamProvider.family<List<DateTime>, String>((re
         return data.map<DateTime>((e) {
           return DateTime.parse(e['week_date'] as String);
         }).toList();
+      })
+      .handleError((e) {
+        debugPrint('availableWeeksProvider error: $e');
+        return <DateTime>[];
       });
 });
 
@@ -170,13 +178,19 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
       .from('group_members')
       .stream(primaryKey: ['id'])
       .eq('profile_id', user.id)
-      .listen((_) => triggerUpdate());
+      .listen(
+        (_) => triggerUpdate(),
+        onError: (e) => debugPrint('userGroupsProvider: group_members stream error: $e'),
+      );
 
   final mdSub = Supabase.instance.client
       .from('member_directory')
       .stream(primaryKey: ['id'])
       .eq('profile_id', user.id)
-      .listen((_) => triggerUpdate());
+      .listen(
+        (_) => triggerUpdate(),
+        onError: (e) => debugPrint('userGroupsProvider: member_directory stream error: $e'),
+      );
 
   ref.onDispose(() {
     gmSub.cancel();
@@ -418,10 +432,10 @@ final allNoticesProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final subscription = Supabase.instance.client
       .from('notices')
       .stream(primaryKey: ['id'])
-      .listen((_) {
-        // Trigger fetch on any change
-        fetchNotices();
-      });
+      .listen(
+        (_) => fetchNotices(),
+        onError: (e) => debugPrint('allNoticesProvider: stream error: $e'),
+      );
 
   ref.onDispose(() {
     subscription.cancel();
@@ -447,6 +461,10 @@ final userReadNoticeIdsProvider = StreamProvider<Set<String>>((ref) {
             .where((row) => row['user_id'] == user.id)
             .map((row) => row['notice_id'].toString())
             .toSet();
+      })
+      .handleError((e) {
+        debugPrint('userReadNoticeIdsProvider error: $e');
+        return <String>{};
       });
 });
 

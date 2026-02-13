@@ -11,6 +11,7 @@ import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/core/utils/route_util.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
+import 'package:grace_note/core/widgets/app_skeleton.dart';
 
 class PrayerListScreen extends ConsumerStatefulWidget {
   const PrayerListScreen({super.key});
@@ -127,13 +128,10 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         ? ref.watch(availableWeeksProvider(profile!.churchId!)) 
         : const AsyncValue.data(<DateTime>[]);
 
-    return weeksAsync.when(
+    return weeksAsync.maybeWhen(
       data: (dbWeeks) {
-        // [FIX] 가상 주차 포함하여 렌더링
         final weeks = _getDisplayWeeks(dbWeeks);
-        if (weeks.isEmpty) return const SizedBox.shrink(); // 데이터 없으면 표시 안 함
-
-        // 현재 날짜 매칭
+        if (weeks.isEmpty) return const SizedBox.shrink();
 
         final currentDateOnly = DateTime(date.year, date.month, date.day);
         int currentIndex = -1;
@@ -145,103 +143,116 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           }
         }
 
-        // 네비게이션 가능 여부 (weeks: 내림차순 [미래 ... 과거])
         final bool canGoPrev = currentIndex != -1 && currentIndex < weeks.length - 1;
         final bool canGoNext = currentIndex != -1 && currentIndex > 0;
 
-        return Container(
-          color: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton(
-                onPressed: canGoPrev ? () => _moveWeek(-1) : null,
-                icon: Icon(lucide.LucideIcons.chevronLeft, color: canGoPrev ? AppTheme.textSub : AppTheme.border, size: 18),
-              ),
-              const SizedBox(width: 4),
-              InkWell(
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => Center(
-                      child: Material(
-                        color: Colors.transparent,
-                        child: Container(
-                          width: 340,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))],
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 8),
-                                child: Text('주차 선택 (일요일)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textMain, fontFamily: 'Pretendard')),
-                              ),
-                              const Divider(height: 24),
-                              shad.ShadCalendar(
-                                selected: date,
-                                weekStartsOn: 7,
-                                // [FIX] DB에 존재하는 주차만 선택 가능
-                                selectableDayPredicate: (d) {
-                                  return weeks.any((w) => 
-                                    w.year == d.year && w.month == d.month && w.day == d.day
-                                  );
-                                },
-                                onChanged: (newDate) {
-                                  if (newDate != null) {
-                                    ref.read(selectedWeekDateProvider.notifier).state = newDate;
-                                    Navigator.pop(context);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
+        return _buildNavigatorUI(
+          weekStr: weekStr,
+          canGoPrev: canGoPrev,
+          canGoNext: canGoNext,
+          weeks: weeks,
+          date: date,
+        );
+      },
+      orElse: () => _buildNavigatorUI(
+        weekStr: weekStr,
+        canGoPrev: false,
+        canGoNext: false,
+        weeks: [],
+        date: date,
+      ),
+    );
+  }
+
+  Widget _buildNavigatorUI({
+    required String weekStr,
+    required bool canGoPrev,
+    required bool canGoNext,
+    required List<DateTime> weeks,
+    required DateTime date,
+  }) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            onPressed: canGoPrev ? () => _moveWeek(-1) : null,
+            icon: Icon(lucide.LucideIcons.chevronLeft, color: canGoPrev ? AppTheme.textSub : AppTheme.border, size: 18),
+          ),
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: weeks.isEmpty ? null : () {
+              showDialog(
+                context: context,
+                builder: (context) => Center(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Container(
+                      width: 340,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))],
                       ),
-                    ),
-                  );
-                },
-                borderRadius: BorderRadius.circular(24),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Text(
-                    weekStr,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1E293B),
-                      fontFamily: 'Pretendard',
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text('주차 선택 (일요일)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textMain, fontFamily: 'Pretendard')),
+                          ),
+                          const Divider(height: 24),
+                          shad.ShadCalendar(
+                            selected: date,
+                            weekStartsOn: 7,
+                            selectableDayPredicate: (d) {
+                              return weeks.any((w) => 
+                                w.year == d.year && w.month == d.month && w.day == d.day
+                              );
+                            },
+                            onChanged: (newDate) {
+                              if (newDate != null) {
+                                ref.read(selectedWeekDateProvider.notifier).state = newDate;
+                                Navigator.pop(context);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
+              );
+            },
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              const SizedBox(width: 4),
-              IconButton(
-                onPressed: canGoNext ? () => _moveWeek(1) : null,
-                icon: Icon(lucide.LucideIcons.chevronRight, color: canGoNext ? AppTheme.textSub : AppTheme.border, size: 18),
+              child: Text(
+                weekStr,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                  fontFamily: 'Pretendard',
+                ),
               ),
-            ],
+            ),
           ),
-        );
-      },
-      loading: () => const SizedBox(height: 50, child: Center(child: CircularProgressIndicator())),
-      error: (e, s) {
-        final errorStr = e.toString();
-        if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
-          return const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()));
-        }
-        return SizedBox(height: 50, child: Center(child: Text('error: $e')));
-      },
+          const SizedBox(width: 4),
+          IconButton(
+            onPressed: canGoNext ? () => _moveWeek(1) : null,
+            icon: Icon(lucide.LucideIcons.chevronRight, color: canGoNext ? AppTheme.textSub : AppTheme.border, size: 18),
+          ),
+        ],
+      ),
     );
   }
 
@@ -314,13 +325,14 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         children: [
           _buildWeekNavigator(selectedDate),
           Expanded(
-            child: userProfileAsync.when(
+            child: userProfileAsync.maybeWhen(
               data: (profile) {
                 if (profile == null) return const Center(child: Text('로그인이 필요합니다.'));
-                if (activeRole == null) return const Center(child: CircularProgressIndicator());
+                if (activeRole == null) return _buildSkeletonList();
                 
-                return ref.watch(userGroupsProvider).when(
+                return ref.watch(userGroupsProvider).maybeWhen(
                   data: (userGroups) {
+                    // ... (data handling)
                     final bool isLeaderOrAdmin = activeRole == AppRole.admin || activeRole == AppRole.leader;
                     
                     if (isLeaderOrAdmin) {
@@ -329,20 +341,14 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                         return const Center(child: Text('소속 부서 정보가 없습니다.'));
                       }
 
-                      return ref.watch(departmentGroupsProvider(deptId)).when(
+                      return ref.watch(departmentGroupsProvider(deptId)).maybeWhen(
                         skipLoadingOnRefresh: true,
                         data: (deptGroups) {
                           if (deptGroups.isEmpty) return _buildTabLayout(profile, userGroups, activeRole);
                           return _buildTabLayout(profile, deptGroups, activeRole);
                         },
-                        loading: () => const Center(child: CircularProgressIndicator()),
-                        error: (e, s) {
-                          final errorStr = e.toString();
-                          if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
-                            return const Center(child: CircularProgressIndicator());
-                          }
-                          return Center(child: Text('부서 조 목록 로딩 실패: $e'));
-                        },
+                        loading: () => _buildSkeletonList(),
+                        orElse: () => _buildSkeletonList(),
                       );
                     } else {
                       final memberGroups = userGroups.where((g) => g['role_in_group'] == 'member').toList();
@@ -354,24 +360,12 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                       return _buildPrayerListContainer(firstGroupId, profile.churchId ?? '', profile.departmentId ?? '');
                     }
                   },
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (e, s) {
-                    final errorStr = e.toString();
-                    if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    return Center(child: Text('소속 정보 로딩 실패: $e'));
-                  },
+                  loading: () => _buildSkeletonList(),
+                  orElse: () => _buildSkeletonList(),
                 );
               },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, s) {
-                final errorStr = e.toString();
-                if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                return Center(child: Text('프로필 로딩 실패: $e'));
-              },
+              loading: () => _buildSkeletonList(),
+              orElse: () => _buildSkeletonList(),
             ),
           ),
         ],
@@ -609,13 +603,17 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           ),
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => _buildSkeletonList(),
       error: (e, s) {
         final errorStr = e.toString();
-        if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
-          return const Center(child: ShadcnSpinner());
+        final isTransient = errorStr.contains('Realtime') || 
+                           errorStr.contains('1006') || 
+                           errorStr.contains('Failed to fetch');
+        
+        if (isTransient) {
+          return _buildSkeletonList();
         }
-        return Center(child: Text('데이터 로딩 실패: $e'));
+        return Center(child: Text('데이터를 불러올 수 없습니다.\n잠시 후 다시 시도해주세요.'));
       },
     );
   }
@@ -682,13 +680,17 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           ),
         );
       },
-      loading: () => Center(child: ShadcnSpinner()),
+      loading: () => _buildSkeletonList(),
       error: (e, s) {
         final errorStr = e.toString();
-        if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
-          return Center(child: ShadcnSpinner());
+        final isTransient = errorStr.contains('Realtime') || 
+                           errorStr.contains('1006') || 
+                           errorStr.contains('Failed to fetch');
+        
+        if (isTransient) {
+          return _buildSkeletonList();
         }
-        return Center(child: Text('기도제목 로딩 실패: $e'));
+        return Center(child: Text('기도제목을 불러올 수 없습니다.\n잠시 후 다시 시도해주세요.'));
       },
     );
   }
@@ -728,14 +730,84 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           groupColor: groupColor, // [NEW] PrayerCard에 색상 전달
         );
       },
-      loading: () => const SizedBox(height: 100, child: Center(child: CircularProgressIndicator())),
+      loading: () => const PrayerCardSkeleton(),
       error: (e, s) {
         final errorStr = e.toString();
-        if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
-          return const SizedBox(height: 100, child: Center(child: CircularProgressIndicator()));
+        final isTransient = errorStr.contains('Realtime') || 
+                           errorStr.contains('1006') || 
+                           errorStr.contains('Failed to fetch');
+        
+        if (isTransient) {
+          return const PrayerCardSkeleton();
         }
-        return Text('로딩 실패: $e');
+        return const SizedBox.shrink();
       },
+    );
+  }
+
+  Widget _buildSkeletonList() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(20),
+      itemCount: 3,
+      itemBuilder: (context, index) => const PrayerCardSkeleton(),
+    );
+  }
+}
+
+class PrayerCardSkeleton extends StatelessWidget {
+  const PrayerCardSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), // [FIX] Slightly reduced vertical padding
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppTheme.divider),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min, // [FIX] Use minimum space
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const AppSkeleton(
+                width: 40,
+                height: 40,
+                borderRadius: BorderRadius.all(Radius.circular(20)),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                mainAxisSize: MainAxisSize.min, // [FIX]
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  AppSkeleton(
+                    width: 80,
+                    height: 14,
+                  ),
+                  SizedBox(height: 6),
+                  AppSkeleton(
+                    width: 120,
+                    height: 10,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const AppSkeleton(
+            width: double.infinity,
+            height: 14,
+          ),
+          const SizedBox(height: 8),
+          const AppSkeleton(
+            width: 200,
+            height: 14,
+          ),
+        ],
+      ),
     );
   }
 }
