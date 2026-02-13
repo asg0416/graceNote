@@ -179,9 +179,27 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('App resumed: Skipping auto-refresh to maintain UI state');
-      // [FIX] 포커스 돌아올 때마다 새로고침되는 문제 해결을 위해 자동 갱신 중단
-      // _refreshAllData(); 
+      debugPrint('App resumed: Silently refreshing session and data');
+      // [FIX] Seamless Recovery: 앱 복합 시 강점 새로고침이 아닌 '무소음' 갱신 시도
+      _refreshAllDataSilently();
+    }
+  }
+
+  Future<void> _refreshAllDataSilently() async {
+    try {
+      // 1. 세션 유효성 확인 (비동기로 조용히 확인만 시도)
+      final session = Supabase.instance.client.auth.currentSession;
+      if (session == null || session.isExpired) {
+        // 세션이 만료되었을 가능성이 있다면 다시 시도 (에러 발생 시 무시)
+        try { await Supabase.instance.client.auth.getUser(); } catch (_) {}
+      }
+      
+      // 2. 주요 프로바이더들만 뒤에서 조용히 무효화 (에러 화면으로 튕기지 않음)
+      ref.invalidate(userProfileProvider);
+      ref.invalidate(userGroupsProvider);
+      // userProfileFutureProvider는 FutureProvider라 invalidate 시 로딩 상태가 될 수 있으므로 주의
+    } catch (e) {
+      debugPrint('Silent refresh failed: $e');
     }
   }
 
@@ -250,7 +268,15 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
       return _buildLoadingScreen('사용자 프로필 불러오는 중...');
     }
 
-    // 데이터가 전혀 없고 에러인 경우(최초 진입 등)에만 에러 화면 노출
+    // [FIX] RealtimeSubscribeException 등 일시적 에러 시 에러 화면으로 튕기지 않도록 방어
+    final errorStr = profileAsync.error.toString();
+    final isTransientError = errorStr.contains('Realtime') || errorStr.contains('1006');
+    
+    if (isTransientError) {
+      return _buildLoadingScreen('연결을 복구하고 있습니다...');
+    }
+
+    // 데이터가 전혀 없고 심각한 에러인 경우에만 에러 화면 노출
     return _AutoRetryErrorScreen(
       error: profileAsync.error ?? 'Unknown error',
       onRetry: _refreshAllData,

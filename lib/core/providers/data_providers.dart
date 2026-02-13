@@ -23,6 +23,11 @@ final userProfileProvider = StreamProvider<ProfileModel?>((ref) {
       .from('profiles')
       .stream(primaryKey: ['id'])
       .eq('id', user.id) // [OPTIMIZED] Only stream current user's profile
+      .handleError((error) {
+        debugPrint('userProfileProvider: Stream error (likely Realtime): $error');
+        // 일시적 에러(1006 등) 시 스트림을 유지하기 위해 에러를 삼키거나 
+        // 필요한 경우 나중에 _refreshAllDataSilently에서 다시 시도하게 함
+      })
       .map((data) {
         if (data.isEmpty) return null;
         return ProfileModel.fromJson(data.first);
