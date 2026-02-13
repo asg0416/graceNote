@@ -235,7 +235,13 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         );
       },
       loading: () => const SizedBox(height: 50, child: Center(child: CircularProgressIndicator())),
-      error: (e, s) => SizedBox(height: 50, child: Center(child: Text('error: $e'))),
+      error: (e, s) {
+        final errorStr = e.toString();
+        if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
+          return const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()));
+        }
+        return SizedBox(height: 50, child: Center(child: Text('error: $e')));
+      },
     );
   }
 

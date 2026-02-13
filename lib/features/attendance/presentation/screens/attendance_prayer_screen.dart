@@ -611,7 +611,13 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           }
           return const Center(child: CircularProgressIndicator());
         },
-        error: (e, s) => Center(child: Text('에러: $e')),
+        error: (e, s) {
+          final errorStr = e.toString();
+          if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return Center(child: Text('에러: $e'));
+        },
       ),
       bottomNavigationBar: _buildBottomActions(),
     );

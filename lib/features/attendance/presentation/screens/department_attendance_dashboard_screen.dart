@@ -340,7 +340,13 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
             );
           },
           loading: () => Center(child: ShadcnSpinner()),
-          error: (e, s) => Center(child: Text('로딩 실패: $e')),
+          error: (e, s) {
+            final errorStr = e.toString();
+            if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
+              return Center(child: ShadcnSpinner());
+            }
+            return Center(child: Text('로딩 실패: $e'));
+          },
         ),
       ],
     );
