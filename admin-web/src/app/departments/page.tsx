@@ -42,6 +42,8 @@ export default function DepartmentsPage() {
     const [deptColor, setDeptColor] = useState('#4f46e5');
     const [groupName, setGroupName] = useState('');
     const [groupColor, setGroupColor] = useState('#4f46e5');
+    const [isNewMemberGroup, setIsNewMemberGroup] = useState(false);
+    const [climbingThreshold, setClimbingThreshold] = useState(4);
 
     const colorPalette = [
         { name: 'Indigo', hex: '#4f46e5' },
@@ -205,7 +207,9 @@ export default function DepartmentsPage() {
                     .from('groups')
                     .update({
                         name: groupName,
-                        color_hex: groupColor
+                        color_hex: groupColor,
+                        is_new_member_group: isNewMemberGroup,
+                        climbing_threshold: climbingThreshold
                     })
                     .eq('id', editingGroup.id);
                 if (error) throw error;
@@ -232,7 +236,9 @@ export default function DepartmentsPage() {
                         name: groupName,
                         department_id: selectedDeptId,
                         church_id: currentChurchId,
-                        color_hex: groupColor
+                        color_hex: groupColor,
+                        is_new_member_group: isNewMemberGroup,
+                        climbing_threshold: isNewMemberGroup ? climbingThreshold : null
                     });
                 if (error) throw error;
             }
@@ -435,6 +441,8 @@ export default function DepartmentsPage() {
                                             setEditingGroup(null);
                                             setGroupName('');
                                             setGroupColor(dept.color_hex || '#4f46e5');
+                                            setIsNewMemberGroup(false);
+                                            setClimbingThreshold(4);
                                             setIsGroupModalOpen(true);
                                         }}
                                         className="text-[10px] sm:text-[11px] font-black text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 transition-all flex items-center gap-2 uppercase tracking-widest bg-indigo-50 dark:bg-indigo-500/10 px-3 py-1.5 rounded-lg"
@@ -456,6 +464,8 @@ export default function DepartmentsPage() {
                                                         setEditingGroup(group);
                                                         setGroupName(group.name);
                                                         setGroupColor(group.color_hex || dept.color_hex || '#4f46e5');
+                                                        setIsNewMemberGroup(group.is_new_member_group || false);
+                                                        setClimbingThreshold(group.climbing_threshold || 4);
                                                         setSelectedDeptId(dept.id);
                                                         setIsGroupModalOpen(true);
                                                     }}
@@ -677,6 +687,42 @@ export default function DepartmentsPage() {
                                     </label>
                                 </div>
                             </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-6">
+                            <div className="flex items-center justify-between p-4 bg-indigo-50/30 dark:bg-indigo-500/5 rounded-2xl border border-indigo-100/50 dark:border-indigo-500/10">
+                                <div className="space-y-0.5">
+                                    <h4 className="text-sm font-black text-slate-900 dark:text-white">새가족 조 설정</h4>
+                                    <p className="text-[10px] text-slate-500 font-bold">이 조를 새가족을 위한 조로 지정합니다.</p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="sr-only peer"
+                                        checked={isNewMemberGroup}
+                                        onChange={(e) => setIsNewMemberGroup(e.target.checked)}
+                                    />
+                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </label>
+                            </div>
+
+                            {isNewMemberGroup && (
+                                <div className="space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">등반 기준 출석 횟수</label>
+                                    <div className="flex items-center gap-4">
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="52"
+                                            required={isNewMemberGroup}
+                                            value={climbingThreshold}
+                                            onChange={(e) => setClimbingThreshold(parseInt(e.target.value))}
+                                            className="w-24 px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-black transition-all text-sm"
+                                        />
+                                        <p className="text-xs font-bold text-slate-500">회 출석 시 등반 가능</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 

@@ -200,7 +200,7 @@ class GraceNoteRepository {
     // 1. 부서 내 모든 조 조회
     final groupsResponse = await _supabase
         .from('groups')
-        .select('id, name, color_hex')
+        .select('id, name, color_hex, is_new_member_group, climbing_threshold')
         .eq('department_id', departmentId);
     
     final groups = List<Map<String, dynamic>>.from(groupsResponse);
@@ -235,14 +235,16 @@ class GraceNoteRepository {
   Future<List<Map<String, dynamic>>> getGroupsInDepartment(String departmentId) async {
     final response = await _supabase
         .from('groups')
-        .select('id, name, color_hex') // [NEW] color_hex 추가
+        .select('id, name, color_hex, is_new_member_group, climbing_threshold')
         .eq('department_id', departmentId)
         .order('name');
         
     return (response as List).map((e) => {
       'id': e['id'],
       'name': e['name'],
-      'color_hex': e['color_hex'], // [NEW] 매핑 추가
+      'color_hex': e['color_hex'],
+      'is_new_member_group': e['is_new_member_group'] ?? false,
+      'climbing_threshold': e['climbing_threshold'], // [REFINED] Remove default value
     }).toList();
   }
 
@@ -316,7 +318,7 @@ class GraceNoteRepository {
     // 1. 조 정보 가져오기
     final groupResponse = await _supabase
         .from('groups')
-        .select('church_id, department_id, name')
+        .select('church_id, department_id, name, is_new_member_group, climbing_threshold')
         .eq('id', groupId)
         .single();
     
@@ -1028,5 +1030,22 @@ class GraceNoteRepository {
       throw Exception(error);
     }
     throw Exception(e.toString());
+  }
+
+  // 성도의 등반 진행도 (출석 횟수) 조회
+  Future<int> getMemberClimbingProgress(String directoryMemberId, String groupId) async {
+    final response = await _supabase
+        .from('attendance')
+        .select('id')
+        .eq('directory_member_id', directoryMemberId)
+        .eq('group_id', groupId)
+        .eq('status', 'present');
+    
+    return (response as List).length;
+  }
+
+  // 그룹 정보 업데이트 (이름, 새가족 등반 기준 등)
+  Future<void> updateGroup(String groupId, Map<String, dynamic> data) async {
+    await _supabase.from('groups').update(data).eq('id', groupId);
   }
 }

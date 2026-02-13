@@ -287,10 +287,25 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
                     hint: '심방 내용이나 특이사항을 자유롭게 기록하세요',
                     maxLines: 5,
                   ),
+                  
+                  _buildDivider(),
+                  
+                  _buildSectionHeader('소속 관리', '부서 내에서의 소속 조와 성도 상태를 관리합니다.'),
+                  _buildGroupSelector(),
+                  
+                  if (widget.member != null) ...[
+                    const SizedBox(height: 16),
+                    _buildClimbingStatusInfo(),
+                  ],
 
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 24),
+                  _buildSwitchField(
+                    label: '성도 활성화 상태',
+                    subtitle: '비활성화 시 앱에서 보이지 않으며 출석부에서 제외됩니다.',
+                    value: _isActive,
+                    onChanged: (val) => setState(() => _isActive = val),
+                  ),
 
-                  const SizedBox(height: 48),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -428,6 +443,218 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
                 filled: true,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupSelector() {
+    final profile = ref.watch(userProfileProvider).value;
+    if (profile == null || profile.departmentId == null) return const SizedBox.shrink();
+
+    final groupsAsync = ref.watch(departmentGroupsProvider(profile.departmentId!));
+
+    return groupsAsync.when(
+      data: (groups) {
+        // [SAFETY] _selectedGroupId가 목록에 없는 경우 대처
+        final isValidSelection = groups.any((g) => g['id'] == _selectedGroupId);
+        
+        return _buildDropdownField(
+          label: '소속 조',
+          value: isValidSelection ? _selectedGroupId : null,
+          items: groups.map((g) => DropdownMenuItem<String>(
+            value: g['id'] as String,
+            child: Text(g['name'] as String, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, fontFamily: 'Pretendard')),
+          )).toList(),
+          onChanged: (val) {
+            if (val != null) {
+              setState(() {
+                _selectedGroupId = val;
+                _selectedGroupName = groups.firstWhere((g) => g['id'] == val)['name'] as String;
+              });
+            }
+          },
+        );
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(child: ShadcnSpinner()),
+      ),
+      error: (e, _) => Text('조 목록 로딩 실패: $e', style: const TextStyle(color: Colors.red, fontSize: 12)),
+    );
+  }
+
+  Widget _buildClimbingStatusInfo() {
+    if (widget.member == null) return const SizedBox.shrink();
+    
+    final profile = ref.watch(userProfileProvider).value;
+    if (profile == null || profile.departmentId == null) return const SizedBox.shrink();
+
+    final groupsAsync = ref.watch(departmentGroupsProvider(profile.departmentId!));
+    
+    return groupsAsync.when(
+      data: (groups) {
+        final currentGroup = groups.cast<Map<String, dynamic>?>().firstWhere(
+          (g) => g?['id'] == _selectedGroupId,
+          orElse: () => null,
+        );
+        
+        final roleInGroup = widget.member?['role_in_group'] ?? 'member';
+        
+        if (currentGroup == null || !(currentGroup['is_new_member_group'] ?? false) || roleInGroup == 'leader') {
+          return const SizedBox.shrink();
+        }
+
+        final threshold = currentGroup['climbing_threshold'] ?? 4;
+        final progressAsync = ref.watch(memberClimbingProgressProvider('${widget.member!['id']}:${_selectedGroupId}'));
+
+        return progressAsync.when(
+          data: (count) {
+            final isClimbingReady = count >= threshold;
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isClimbingReady ? AppTheme.primaryViolet.withOpacity(0.05) : Colors.amber.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isClimbingReady ? AppTheme.primaryViolet.withOpacity(0.2) : Colors.amber.withOpacity(0.2),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isClimbingReady ? Icons.stars : Icons.info_outline,
+                    color: isClimbingReady ? AppTheme.primaryViolet : Colors.orange,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isClimbingReady ? '등반 가능 대상자입니다' : '새가족 등반 진행 중',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                            color: isClimbingReady ? AppTheme.primaryViolet : Colors.orange.shade800,
+                            fontFamily: 'Pretendard',
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '현재 출석: $count회 (등반 기준: $threshold회)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isClimbingReady ? AppTheme.primaryViolet.withOpacity(0.8) : Colors.orange.shade700,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Pretendard',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+          loading: () => const SizedBox.shrink(),
+          error: (_, __) => const SizedBox.shrink(),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildDropdownField({
+    required String label,
+    required String? value,
+    required List<DropdownMenuItem<String>> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppTheme.textMain,
+            fontWeight: FontWeight.w800,
+            fontSize: 13,
+            fontFamily: 'Pretendard',
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: value,
+              items: items,
+              onChanged: onChanged,
+              isExpanded: true,
+              icon: const Icon(Icons.keyboard_arrow_down, color: AppTheme.textSub),
+              dropdownColor: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSwitchField({
+    required String label,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    color: AppTheme.textMain,
+                    fontFamily: 'Pretendard',
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSub.withOpacity(0.7),
+                    fontFamily: 'Pretendard',
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: AppTheme.primaryViolet,
           ),
         ],
       ),

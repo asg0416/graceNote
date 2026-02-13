@@ -116,16 +116,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ];
           break;
         case AppRole.leader:
+          final activeMembership = ref.watch(activeMembershipProvider);
+          // [FIX] 선택된 그룹 정보 사용
+          final targetGroupId = activeMembership?.groupId ?? (groups.isNotEmpty ? groups.first['group_id'] : '');
+          final targetGroupName = activeMembership?.groupName ?? (groups.isNotEmpty ? groups.first['group_name'] : '');
+
           title = _selectedIndex == 0 
-              ? (groups.isNotEmpty ? '${groups.first['group_name']} 기록' : '기록')
+              ? '$targetGroupName 기록'
               : (_selectedIndex == 1 ? '기도소식' : (_selectedIndex == 2 ? '출석 통계' : '더보기'));
+          
           screens = [
             groups.isNotEmpty
               ? AttendancePrayerScreen(isActive: _selectedIndex == 0)
               : const Scaffold(body: Center(child: Text('기록할 조가 없습니다.'))),
             const PrayerListScreen(),
             groups.isNotEmpty 
-              ? AttendanceDashboardScreen(groupId: groups.first['group_id'], groupName: groups.first['group_name'])
+              ? AttendanceDashboardScreen(groupId: targetGroupId, groupName: targetGroupName)
               : const Scaffold(body: Center(child: Text('출석 데이터가 없습니다.'))),
             const MoreScreen(),
           ];

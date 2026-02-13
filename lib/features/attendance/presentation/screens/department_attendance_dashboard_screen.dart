@@ -264,14 +264,19 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                       tooltipPadding: EdgeInsets.zero,
                       tooltipMargin: 8,
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        return BarTooltipItem(
-                          rod.toY.toInt().toString(),
-                          const TextStyle(
-                            color: AppTheme.primaryViolet,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 12,
-                          ),
-                        );
+                        // [FIX] Index Safety Check
+                        if (group.x.toInt() < 0 || group.x.toInt() >= reversedHistory.length) {
+                          return null;
+                        }
+
+                          return BarTooltipItem(
+                            rod.toY.toInt().toString(),
+                            const TextStyle(
+                              color: AppTheme.primaryViolet,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                            ),
+                          );
                       },
                     ),
                   ),

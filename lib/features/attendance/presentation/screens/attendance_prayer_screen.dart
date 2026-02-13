@@ -15,6 +15,8 @@ import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:grace_note/core/utils/route_util.dart';
 import 'prayer_share_screen.dart';
 
+import 'package:grace_note/core/providers/user_role_provider.dart';
+
 class AttendancePrayerScreen extends ConsumerStatefulWidget {
   final bool isActive;
   const AttendancePrayerScreen({super.key, this.isActive = true});
@@ -75,9 +77,19 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     }
     
     final groups = await ref.read(userGroupsProvider.future);
-    if (groups.isNotEmpty) {
+    final activeMembership = ref.read(activeMembershipProvider);
+
+    if (activeMembership != null) {
+      // 선택된 그룹이 있으면 그 그룹 사용
+      _currentGroupId = activeMembership.groupId;
+      _currentChurchId = activeMembership.churchId ?? groups.firstWhere((g) => g['group_id'] == activeMembership.groupId, orElse: () => {})['church_id'];
+    } else if (groups.isNotEmpty) {
+      // 선택된 그룹이 없으면 첫 번째 그룹 사용
       _currentGroupId = groups.first['group_id'];
       _currentChurchId = groups.first['church_id'];
+    }
+
+    if (_currentGroupId != null && _currentChurchId != null) {
       await _fetchInitialData(_currentChurchId!, _currentGroupId!);
     } else {
       if (mounted) setState(() => _isLoading = false);
@@ -459,6 +471,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   @override
   Widget build(BuildContext context) {
     final groupsAsync = ref.watch(userGroupsProvider);
+    final activeMembership = ref.watch(activeMembershipProvider);
+
     ref.listen(selectedWeekDateProvider, (previous, next) { if (previous != next) _refreshData(); });
     ref.listen(userGroupsProvider, (previous, next) {
        if (next.hasValue) {
@@ -467,6 +481,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
          if (oldId != newId) _refreshData();
        }
     });
+
+    // [FIX] 활성 멤버십(선택된 조) 변경 감지
+    ref.listen(activeMembershipProvider, (previous, next) {
+      if (previous?.groupId != next?.groupId) {
+        _refreshData();
+      }
+    });
+
     ref.listen(attendanceActionProvider, (previous, next) {
       if (next != null) {
         if (next == AttendanceAction.share) {
@@ -486,7 +508,13 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     });
     if (groupsAsync.hasValue && !_isInitialized) { _isInitialized = true; Future.microtask(() => _refreshData()); }
 
-    final groupName = groupsAsync.value?.isNotEmpty == true ? groupsAsync.value!.first['group_name'] : '우리 조';
+    // [FIX] 타이틀도 선택된 그룹명으로 표시
+    String groupName = '우리 조';
+    if (activeMembership != null) {
+      groupName = activeMembership.groupName;
+    } else if (groupsAsync.value?.isNotEmpty == true) {
+      groupName = groupsAsync.value!.first['group_name'] ?? '우리 조';
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,

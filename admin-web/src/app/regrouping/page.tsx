@@ -855,9 +855,28 @@ function RegroupingPageInner() {
                     birth_date: m.birth_date,
                     wedding_anniversary: m.wedding_anniversary,
                     notes: m.notes,
-                    person_id: m.person_id || null
+                    person_id: m.person_id || null,
+                    profile_id: m.profile_id || null
                 });
                 if (insError) throw insError;
+
+                // [FIX] If member has profile_id, also add to group_members table
+                // This ensures real-time access and role visibility in the app
+                if (m.profile_id && targetGroup) {
+                    const { error: gmError } = await supabase.from('group_members').upsert({
+                        group_id: targetGroup.id,
+                        profile_id: m.profile_id,
+                        role_in_group: m.role_in_group || 'member',
+                        is_active: true,
+                        joined_at: new Date().toISOString()
+                    }, { onConflict: 'group_id, profile_id' });
+
+                    if (gmError) {
+                        console.error('Failed to sync group_members:', gmError);
+                        // We don't throw here to avoid blocking the main flow, 
+                        // as member_directory is the primary source for this screen.
+                    }
+                }
             }
 
             // 3. Refresh State

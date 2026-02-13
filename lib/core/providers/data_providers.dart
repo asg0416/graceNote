@@ -206,7 +206,7 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
   final response = await Supabase.instance.client
       .from('group_members')
-      .select('group_id, role_in_group, groups(name, church_id, color_hex, departments!department_id(name))')
+      .select('group_id, role_in_group, groups(name, church_id, color_hex, departments(name))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
       .order('joined_at', ascending: false);
@@ -300,6 +300,27 @@ final departmentWeeklyDataProvider = FutureProvider.family<Map<String, dynamic>,
 // Group Members Provider
 final groupMembersProvider = FutureProvider.family<List<Map<String, dynamic>>, String>((ref, groupId) async {
   return ref.watch(repositoryProvider).getGroupMembers(groupId);
+});
+
+// [NEW] Member Climbing Progress Provider (Params: "directoryMemberId:groupId")
+// [FIX] Member Climbing Progress Provider (Real-time Stream)
+// Params: "directoryMemberId:groupId"
+final memberClimbingProgressProvider = StreamProvider.family<int, String>((ref, params) {
+  final parts = params.split(':');
+  if (parts.length < 2) return Stream.value(0);
+  final String directoryMemberId = parts[0];
+  final String groupId = parts[1];
+  
+  return Supabase.instance.client
+      .from('attendance')
+      .stream(primaryKey: ['id'])
+      .map((data) {
+        return data.where((a) => 
+          a['directory_member_id'] == directoryMemberId && 
+          a['group_id'] == groupId &&
+          a['status'] == 'present'
+        ).length;
+      });
 });
 
 // Weekly Data Provider (Attendance + Prayers)

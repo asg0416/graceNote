@@ -5,17 +5,20 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdminMemberDetailScreen extends ConsumerStatefulWidget {
   final String directoryMemberId;
   final String fullName;
   final String groupName;
+  final String departmentId;
 
   const AdminMemberDetailScreen({
     super.key,
     required this.directoryMemberId,
     required this.fullName,
     required this.groupName,
+    required this.departmentId,
   });
 
   @override
@@ -104,6 +107,25 @@ class _AdminMemberDetailScreenState extends ConsumerState<AdminMemberDetailScree
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(color: Colors.white, child: _buildProfileCard()),
+            
+            // [NEW] 등반/조 이동 버튼
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _showMoveGroupDialog(),
+                  icon: const Icon(Icons.swap_horiz, size: 18),
+                  label: const Text('조 이동 / 등반 처리'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primaryViolet,
+                    side: const BorderSide(color: AppTheme.primaryViolet),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ),
             
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
@@ -262,5 +284,156 @@ class _AdminMemberDetailScreenState extends ConsumerState<AdminMemberDetailScree
         ),
       ),
     );
+  }
+
+  void _showMoveGroupDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => _MoveGroupDialog(
+        departmentId: widget.departmentId,
+        currentGroupName: widget.groupName,
+        directoryMemberId: widget.directoryMemberId,
+        memberFullName: widget.fullName,
+      ),
+    );
+  }
+}
+
+class _MoveGroupDialog extends ConsumerStatefulWidget {
+  final String departmentId;
+  final String currentGroupName;
+  final String directoryMemberId;
+  final String memberFullName;
+
+  const _MoveGroupDialog({
+    super.key,
+    required this.departmentId,
+    required this.currentGroupName,
+    required this.directoryMemberId,
+    required this.memberFullName,
+  });
+
+  @override
+  ConsumerState<_MoveGroupDialog> createState() => _MoveGroupDialogState();
+}
+
+class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
+  String? _selectedGroupId;
+  bool _isSaving = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final groupsAsync = ref.watch(departmentGroupsProvider(widget.departmentId));
+
+    return AlertDialog(
+      title: const Text('조 이동 / 등반', style: TextStyle(fontWeight: FontWeight.bold)),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${widget.memberFullName} 성도님을 어느 조로 이동하시겠습니까?', style: const TextStyle(fontSize: 14, color: AppTheme.textSub)),
+            const SizedBox(height: 20),
+            groupsAsync.when(
+              data: (groups) {
+                // 현재 조 제외하고 옵션 제공
+                final options = groups.where((g) => g['name'] != widget.currentGroupName).toList();
+                
+                if (options.isEmpty) {
+                  return const Text('이동 가능한 다른 조가 없습니다.');
+                }
+
+                return DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(
+                    labelText: '이동할 조 선택',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  value: _selectedGroupId,
+                  items: options.map((g) => DropdownMenuItem(
+                    value: g['id'] as String,
+                    child: Text(g['name'] as String),
+                  )).toList(),
+                  onChanged: (val) => setState(() => _selectedGroupId = val),
+                  hint: const Text('조를 선택해주세요'),
+                );
+              },
+              loading: () => const Center(child: ShadcnSpinner()),
+              error: (e, _) => Text('조 목록 로딩 실패: $e'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.pop(context),
+          child: const Text('취소', style: TextStyle(color: AppTheme.textSub)),
+        ),
+        TextButton(
+          onPressed: _isSaving || _selectedGroupId == null ? null : _save,
+          child: _isSaving 
+            ? const SizedBox(width: 16, height: 16, child: ShadcnSpinner()) 
+            : const Text('이동 / 등반 완료', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryViolet)),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _save() async {
+    setState(() => _isSaving = true);
+    
+    try {
+      final repo = ref.read(repositoryProvider);
+      
+      // 1. 프로필 연결 여부 확인
+      final memberRes = await Supabase.instance.client
+          .from('member_directory')
+          .select('profile_id, full_name, church_id')
+          .eq('id', widget.directoryMemberId)
+          .single();
+          
+      final String? profileId = memberRes['profile_id'];
+      final String churchId = memberRes['church_id'];
+      
+      if (profileId != null) {
+        // 2-A. 프로필이 있는 경우: completeOnboarding 등으로 전체 업데이트
+        await repo.completeOnboarding(
+          profileId: profileId,
+          fullName: memberRes['full_name'],
+          churchId: churchId,
+          groupId: _selectedGroupId,
+        );
+      } 
+      
+      // 2-B. Directory 정보 업데이트
+      final groups = await ref.read(departmentGroupsProvider(widget.departmentId).future);
+      final targetGroup = groups.firstWhere((g) => g['id'] == _selectedGroupId);
+      
+      await repo.updateDirectoryMember(widget.directoryMemberId, {
+        'group_name': targetGroup['name'],
+      });
+
+      // Refresh providers
+      ref.invalidate(departmentGroupsProvider(widget.departmentId));
+      if (profileId != null) ref.invalidate(userProfileProvider);
+
+      if (mounted) {
+        Navigator.pop(context); // Close dialog
+        Navigator.pop(context); // Go back
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${targetGroup['name']}로 이동되었습니다.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        debugPrint('Error: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('업데이트 중 오류가 발생했습니다.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 }
