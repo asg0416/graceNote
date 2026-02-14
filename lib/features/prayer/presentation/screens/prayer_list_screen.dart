@@ -534,67 +534,224 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           });
         }
 
+        // Separate groups into those with prayers and those without
+        final groupsWithPrayers = <Map<String, dynamic>>[];
+        final groupsWithoutPrayers = <Map<String, dynamic>>[];
+        for (final group in groups) {
+          final gId = (group['id'] ?? '').toString();
+          final hasPrayers = allPrayers.any((p) => p['group_id'] == gId);
+          if (hasPrayers) {
+            groupsWithPrayers.add(group);
+          } else {
+            groupsWithoutPrayers.add(group);
+          }
+        }
+        final totalGroups = groups.length;
+        final completedGroups = groupsWithPrayers.length;
+        final allComplete = completedGroups == totalGroups;
+
+        // itemCount: 1 (progress bar) + groupsWithPrayers + (empty section if needed)
+        final hasEmptySection = groupsWithoutPrayers.isNotEmpty;
+        final totalItems = 1 + groupsWithPrayers.length + (hasEmptySection ? 1 : 0);
+
         return RefreshIndicator(
           onRefresh: _refreshData,
           color: AppTheme.primaryViolet,
           child: ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            itemCount: groups.length,
+            padding: EdgeInsets.zero,
+            itemCount: totalItems,
             itemBuilder: (context, index) {
-              final group = groups[index];
-              final gId = (group['id'] ?? '').toString(); 
-              final gName = group['name'];
-              final gColor = _parseColor(group['color_hex']);
-              final groupPrayers = allPrayers.where((p) => p['group_id'] == gId).toList();
-              
-              if (groupPrayers.isEmpty) return const SizedBox.shrink();
-
-              // [SORT] 조 내부 정렬 (Marriage Key Sort)
-              groupPrayers.sort((a, b) {
-                final m1 = a['member_directory'] ?? {};
-                final m2 = b['member_directory'] ?? {};
-                
-                String getMarriageKey(Map<String, dynamic> m) {
-                  final name = (m['full_name'] as String?)?.trim() ?? '';
-                  final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
-                  if (spouse.isEmpty) return name;
-                  final list = [name, spouse];
-                  list.sort(); 
-                  return list.join('_');
-                }
-                
-                final k1 = getMarriageKey(m1);
-                final k2 = getMarriageKey(m2);
-                
-                if (k1 != k2) return k1.compareTo(k2);
-                
-                final n1 = (m1['full_name'] as String?)?.trim() ?? '';
-                final n2 = (m2['full_name'] as String?)?.trim() ?? '';
-                return n1.compareTo(n2);
-              });
-
-              // 상태가 없으면 기본값 true (펼침)
-              final isExpanded = _expandedStates[gId] ?? true;
-
-              return Theme(
-                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                child: ExpansionTile(
-                  key: PageStorageKey('group_expansion_$gId'), // [FIX] 상태 보존을 위한 키 추가
-                  initiallyExpanded: isExpanded,
-                  onExpansionChanged: (expanded) {
-                    _expandedStates[gId] = expanded; // 상태 저장 (setState 불필요, 다음 빌드 시 적용됨)
-                  },
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                  title: Text(
-                    '$gName (${groupPrayers.length})', 
-                    style: const TextStyle(fontWeight: FontWeight.w900, color: AppTheme.primaryViolet, fontSize: 16)
+              // --- Item 0: Progress bar ---
+              if (index == 0) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      bottom: BorderSide(color: AppTheme.divider.withOpacity(0.5), width: 1),
+                    ),
                   ),
-                  childrenPadding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Icon(
+                        allComplete ? Icons.check_circle_rounded : Icons.edit_note_rounded,
+                        size: 18,
+                        color: allComplete ? AppTheme.primaryViolet : const Color(0xFFF59E0B),
+                      ),
+                      const SizedBox(width: 8),
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '$completedGroups',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                                color: allComplete ? AppTheme.primaryViolet : const Color(0xFFF59E0B),
+                                fontFamily: 'Pretendard',
+                              ),
+                            ),
+                            TextSpan(
+                              text: '/$totalGroups조 작성 완료',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: AppTheme.textSub,
+                                fontFamily: 'Pretendard',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: totalGroups > 0 ? completedGroups / totalGroups : 0,
+                            minHeight: 6,
+                            backgroundColor: AppTheme.divider.withOpacity(0.4),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              allComplete ? AppTheme.primaryViolet : const Color(0xFFF59E0B),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              // --- Groups with prayers ---
+              final groupIndex = index - 1;
+              if (groupIndex < groupsWithPrayers.length) {
+                final group = groupsWithPrayers[groupIndex];
+                final gId = (group['id'] ?? '').toString(); 
+                final gName = group['name'];
+                final gColor = _parseColor(group['color_hex']);
+                final groupPrayers = allPrayers.where((p) => p['group_id'] == gId).toList();
+
+                // [SORT] 조 내부 정렬 (Marriage Key Sort)
+                groupPrayers.sort((a, b) {
+                  final m1 = a['member_directory'] ?? {};
+                  final m2 = b['member_directory'] ?? {};
+                  
+                  String getMarriageKey(Map<String, dynamic> m) {
+                    final name = (m['full_name'] as String?)?.trim() ?? '';
+                    final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+                    if (spouse.isEmpty) return name;
+                    final list = [name, spouse];
+                    list.sort(); 
+                    return list.join('_');
+                  }
+                  
+                  final k1 = getMarriageKey(m1);
+                  final k2 = getMarriageKey(m2);
+                  
+                  if (k1 != k2) return k1.compareTo(k2);
+                  
+                  final n1 = (m1['full_name'] as String?)?.trim() ?? '';
+                  final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+                  return n1.compareTo(n2);
+                });
+
+                final isExpanded = _expandedStates[gId] ?? true;
+
+                return Padding(
+                  padding: groupIndex == 0 ? const EdgeInsets.only(top: 12) : EdgeInsets.zero,
+                  child: Theme(
+                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      key: PageStorageKey('group_expansion_$gId'),
+                      initiallyExpanded: isExpanded,
+                      onExpansionChanged: (expanded) {
+                        _expandedStates[gId] = expanded;
+                      },
+                      tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      title: Text(
+                        '$gName (${groupPrayers.length})', 
+                        style: const TextStyle(fontWeight: FontWeight.w900, color: AppTheme.primaryViolet, fontSize: 16)
+                      ),
+                      childrenPadding: const EdgeInsets.symmetric(horizontal: 20),
+                      children: [
+                        const SizedBox(height: 12),
+                        ...groupPrayers.map((prayer) {
+                          return _buildPrayerItemInList(prayer, gId, churchId, gName, groupColor: gColor);
+                        }),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              // --- Empty groups section (at the bottom) ---
+              return Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 12),
-                    ...groupPrayers.map((prayer) {
-                      return _buildPrayerItemInList(prayer, gId, churchId, gName, groupColor: gColor); // [NEW] 색상 전달
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: AppTheme.textSub.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '미작성 (${groupsWithoutPrayers.length}조)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              color: AppTheme.textSub.withOpacity(0.7),
+                              fontFamily: 'Pretendard',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ...groupsWithoutPrayers.map((group) {
+                      final gName = group['name'] ?? '';
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          tileColor: AppTheme.divider.withOpacity(0.15),
+                          leading: Icon(
+                            Icons.hourglass_empty_rounded,
+                            size: 18,
+                            color: AppTheme.textSub.withOpacity(0.5),
+                          ),
+                          title: Text(
+                            gName,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: AppTheme.textSub.withOpacity(0.7),
+                              fontFamily: 'Pretendard',
+                            ),
+                          ),
+                          trailing: Text(
+                            '대기중',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.textSub.withOpacity(0.5),
+                              fontFamily: 'Pretendard',
+                            ),
+                          ),
+                        ),
+                      );
                     }),
                   ],
                 ),
