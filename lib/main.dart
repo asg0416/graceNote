@@ -23,6 +23,7 @@ import 'package:grace_note/features/auth/presentation/screens/password_reset_scr
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:grace_note/core/services/update_notifier.dart';
+import 'package:grace_note/core/services/push_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,6 +78,13 @@ Future<void> main() async {
     AIService().init();
   } catch (e) {
     debugPrint("DEBUG: AI init error: $e");
+  }
+
+  // Initialize Push Notification Service (Firebase)
+  try {
+    await PushNotificationService().initialize();
+  } catch (e) {
+    debugPrint("DEBUG: Push notification init error: $e");
   }
 
   runApp(
@@ -338,6 +346,8 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
       if (isPendingAdmin && !profile.isMaster) {
         return const AdminPendingScreen();
       }
+      // 로그인 완료 후 푸시 알림 권한 요청 + 토큰 저장
+      _requestPushPermission();
       return const HomeScreen();
     }
 
@@ -365,6 +375,17 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
         ref.invalidate(userGroupsProvider);
       },
     );
+  }
+
+  /// 로그인 후 푸시 알림 권한 요청 (1회)
+  bool _pushRequested = false;
+  void _requestPushPermission() {
+    if (_pushRequested) return;
+    _pushRequested = true;
+    // 약간의 딜레이를 줘서 앱 로딩이 완료된 후에 권한 팝업 표시
+    Future.delayed(const Duration(seconds: 2), () {
+      PushNotificationService().requestPermissionAndSaveToken();
+    });
   }
 
   Widget _buildLoadingScreen(String message) {
