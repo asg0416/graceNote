@@ -79,7 +79,13 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
           Expanded(
             child: (history.isEmpty && isLoading)
                 ? Center(child: ShadcnSpinner())
-                : SingleChildScrollView(
+                : RefreshIndicator(
+                    onRefresh: () async {
+                      ref.invalidate(departmentAttendanceHistoryProvider('${widget.departmentId}:$_viewYear:$_viewMonth'));
+                      await ref.read(departmentAttendanceHistoryProvider('${widget.departmentId}:$_viewYear:$_viewMonth').future);
+                    },
+                    color: AppTheme.primaryViolet,
+                    child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: Column(
                       children: [
@@ -90,6 +96,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                         const SizedBox(height: 40),
                       ],
                     ),
+                  ),
                   ),
           ),
         ],

@@ -71,7 +71,13 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
           Expanded(
             child: (history.isEmpty && isLoading)
                 ? Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
-                : SingleChildScrollView(
+                : RefreshIndicator(
+                    onRefresh: () async {
+                      ref.invalidate(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth'));
+                      await ref.read(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth').future);
+                    },
+                    color: AppTheme.primaryViolet,
+                    child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -83,6 +89,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                           _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], isLoading: isLoading),
                         const SizedBox(height: 40),
                       ],
+                    ),
                     ),
                   ),
           ),

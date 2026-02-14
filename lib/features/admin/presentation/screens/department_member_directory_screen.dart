@@ -38,7 +38,13 @@ class DepartmentMemberDirectoryScreen extends ConsumerWidget {
           if (groups.isEmpty) {
             return const Center(child: Text('등록된 조가 없습니다.'));
           }
-          return ListView.builder(
+          return RefreshIndicator(
+            onRefresh: () async {
+              ref.invalidate(departmentGroupsProvider(departmentId));
+              await ref.read(departmentGroupsProvider(departmentId).future);
+            },
+            color: AppTheme.primaryViolet,
+            child: ListView.builder(
             padding: const EdgeInsets.all(20),
             itemCount: groups.length,
             itemBuilder: (context, index) {
@@ -50,6 +56,7 @@ class DepartmentMemberDirectoryScreen extends ConsumerWidget {
                 climbingThreshold: group['climbing_threshold'] ?? 4,
               );
             },
+          ),
           );
         },
         loading: () => Center(child: ShadcnSpinner()),

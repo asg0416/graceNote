@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
@@ -18,6 +19,8 @@ import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:grace_note/features/home/presentation/screens/service_guide_screen.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:grace_note/core/utils/snack_bar_util.dart';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
@@ -27,6 +30,10 @@ class MoreScreen extends ConsumerStatefulWidget {
 }
 
 class _MoreScreenState extends ConsumerState<MoreScreen> {
+  void _reloadApp() {
+    html.window.location.reload();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -195,64 +202,107 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               ],
             ),
             const SizedBox(height: 48),
+            // Refresh & Logout section - same card style as other menu sections
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: TextButton.icon(
-                onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      backgroundColor: Colors.white,
-                      surfaceTintColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                      title: const Text('로그아웃', style: TextStyle(fontWeight: FontWeight.w900, fontFamily: 'Pretendard')),
-                      content: const Text('정말 로그아웃 하시겠습니까?', style: TextStyle(fontWeight: FontWeight.w500, fontFamily: 'Pretendard')),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false), 
-                          child: const Text('취소', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w700))
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true), 
-                          child: const Text('로그아웃', style: TextStyle(color: AppTheme.error, fontWeight: FontWeight.w900))
-                        ),
-                      ],
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: AppTheme.border, width: 1.0),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
                     ),
-                  );
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(9),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryViolet.withOpacity(0.07),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(lucide.LucideIcons.refreshCw, size: 20, color: AppTheme.primaryViolet),
+                      ),
+                      title: const Text('앱 새로고침', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textMain, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+                      trailing: Icon(lucide.LucideIcons.chevronRight, color: AppTheme.textSub, size: 16),
+                      onTap: _reloadApp,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Divider(height: 1, color: AppTheme.divider.withOpacity(0.5)),
+                    ),
+                    ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(9),
+                        decoration: BoxDecoration(
+                          color: AppTheme.error.withOpacity(0.07),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.logout_rounded, size: 20, color: AppTheme.error),
+                      ),
+                      title: const Text('로그아웃', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.error, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+                      trailing: Icon(lucide.LucideIcons.chevronRight, color: AppTheme.textSub, size: 16),
+                      onTap: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            backgroundColor: Colors.white,
+                            surfaceTintColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                            title: const Text('로그아웃', style: TextStyle(fontWeight: FontWeight.w900, fontFamily: 'Pretendard')),
+                            content: const Text('정말 로그아웃 하시겠습니까?', style: TextStyle(fontWeight: FontWeight.w500, fontFamily: 'Pretendard')),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false), 
+                                child: const Text('취소', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w700))
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true), 
+                                child: const Text('로그아웃', style: TextStyle(color: AppTheme.error, fontWeight: FontWeight.w900))
+                              ),
+                            ],
+                          ),
+                        );
 
-                  if (confirm == true) {
-                    // 1. Sign out from Supabase
-                    await Supabase.instance.client.auth.signOut();
-                    
-                    // 2. [CRITICAL] Invalidate ALL user-specific providers to clear memory cache
-                    ref.invalidate(userProfileProvider);
-                    ref.invalidate(userProfileFutureProvider); 
-                    ref.invalidate(userGroupsProvider);
-                    ref.invalidate(prayerInteractionsProvider);
-                    ref.invalidate(savedPrayersProvider);
-                    ref.invalidate(weeklyDataProvider);
-                    ref.invalidate(departmentWeeklyDataProvider);
-                    ref.invalidate(weekIdProvider);
-                    ref.invalidate(selectedWeekDateProvider); // 날짜 선택 상태도 초기화
-                    ref.invalidate(memberPrayerHistoryProvider); // 패밀리 전체 무효화
-                    ref.read(activeMembershipProvider.notifier).reset(); // 저장된 소속 및 역할 초기화
+                        if (confirm == true) {
+                          await Supabase.instance.client.auth.signOut();
+                          ref.invalidate(userProfileProvider);
+                          ref.invalidate(userProfileFutureProvider); 
+                          ref.invalidate(userGroupsProvider);
+                          ref.invalidate(prayerInteractionsProvider);
+                          ref.invalidate(savedPrayersProvider);
+                          ref.invalidate(weeklyDataProvider);
+                          ref.invalidate(departmentWeeklyDataProvider);
+                          ref.invalidate(weekIdProvider);
+                          ref.invalidate(selectedWeekDateProvider);
+                          ref.invalidate(memberPrayerHistoryProvider);
+                          ref.read(activeMembershipProvider.notifier).reset();
 
-                    if (context.mounted) {
-                      // 3. Clear all navigations and go to Login
-                      Navigator.pushAndRemoveUntil(
-                        context, 
-                        MaterialPageRoute(builder: (context) => const LoginScreen()),
-                        (route) => false
-                      );
-                    }
-                  }
-                },
-                icon: const Icon(Icons.logout_rounded, color: AppTheme.error, size: 20),
-                label: const Text('로그아웃', style: TextStyle(color: AppTheme.error, fontWeight: FontWeight.w800, fontSize: 15)),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  backgroundColor: AppTheme.error.withOpacity(0.05),
+                          if (context.mounted) {
+                            Navigator.pushAndRemoveUntil(
+                              context, 
+                              MaterialPageRoute(builder: (context) => const LoginScreen()),
+                              (route) => false
+                            );
+                          }
+                        }
+                      },
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

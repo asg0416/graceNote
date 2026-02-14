@@ -576,7 +576,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                   _buildAIHeader(),
                   if (_isRefining) const LinearProgressIndicator(backgroundColor: Colors.transparent, valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet), minHeight: 2),
                   Expanded(
-                    child: ReorderableListView.builder(
+                    child: RefreshIndicator(
+                      onRefresh: _refreshData,
+                      color: AppTheme.primaryViolet,
+                      child: ReorderableListView.builder(
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
                       proxyDecorator: (child, index, animation) {
                         return AnimatedBuilder(
@@ -612,6 +615,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                           child: _buildMemberCard(_members[index], index),
                         );
                       },
+                    ),
                     ),
                   ),
                 ],

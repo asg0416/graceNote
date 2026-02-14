@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart'; // [FIX] import 추가
 import 'package:flutter_web_plugins/url_strategy.dart';
@@ -21,6 +22,7 @@ import 'package:grace_note/features/auth/presentation/screens/password_reset_scr
 
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:grace_note/core/services/update_notifier.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -87,6 +89,9 @@ Future<void> main() async {
   );
 }
 
+// Global update notifier for PWA version detection
+final UpdateNotifier _updateNotifier = kIsWeb ? UpdateNotifier() : UpdateNotifier();
+
 class GraceNoteApp extends StatelessWidget {
   const GraceNoteApp({super.key});
 
@@ -134,6 +139,75 @@ class GraceNoteApp extends StatelessWidget {
                         ),
                       ),
                     ),
+                  ),
+                ),
+              // UPDATE BANNER
+              if (kIsWeb)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: ListenableBuilder(
+                    listenable: _updateNotifier,
+                    builder: (context, _) {
+                      if (!_updateNotifier.updateAvailable) return const SizedBox.shrink();
+                      return Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF7C3AED), Color(0xFF6D28D9)],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF7C3AED).withOpacity(0.3),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.system_update_rounded, color: Colors.white, size: 22),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  '새로운 버전이 있습니다',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    decoration: TextDecoration.none,
+                                  ),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () => _updateNotifier.applyUpdate(),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    '업데이트',
+                                    style: TextStyle(
+                                      color: Color(0xFF7C3AED),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      decoration: TextDecoration.none,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
             ],
