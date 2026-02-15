@@ -16,7 +16,7 @@ class PushNotificationService {
   factory PushNotificationService() => _instance;
   PushNotificationService._internal();
 
-  static const String _vapidKey = 'BHct41-ppJSfXJ5vTmPXDoRZ18qPE6Jk9u9Dv3qpI5wekoSAAJO49PuTn4fCDgoz8y9-OJW21d3mvvlpAjfrjEM';
+  static const String _vapidKey = 'BKs48C2r24xErHWw892q9JK7IQbBY4fkcI_yEPSpZVWNR10iOz5sdCrYOVT1s0WJs2JgnDwQ-yrVM4Q2WaDUOvo';
 
   bool _initialized = false;
   String? _currentToken;
