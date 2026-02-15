@@ -109,21 +109,28 @@ Deno.serve(async (req: Request) => {
   let preferenceField: string = "";
 
   if (table === 'prayer_entries') {
-    // 1. Batch check (INSERT only): Only notify for the FIRST entry in a potential batch (to avoid spam)
-    if (type === 'INSERT') {
-      const { data: batchCheck } = await supabase
-        .from("prayer_entries")
-        .select("id")
-        .eq("group_id", record.group_id)
-        .eq("week_id", record.week_id)
-        .order("id", { ascending: true })
-        .limit(1);
+    // 1. Dedup check: Skip if same group+week+event was notified within last 60 seconds
+    const DEDUP_WINDOW_SECONDS = 60;
+    const { data: recentNotif } = await supabase
+      .from("notification_dedup")
+      .select("id")
+      .eq("group_id", record.group_id)
+      .eq("week_id", record.week_id)
+      .eq("event_type", type)
+      .gte("created_at", new Date(Date.now() - DEDUP_WINDOW_SECONDS * 1000).toISOString())
+      .limit(1);
 
-      if (batchCheck && batchCheck.length > 0 && batchCheck[0].id !== record.id) {
-        console.log("[notify-event] Skipping duplicate batch prayer notification");
-        return new Response(JSON.stringify({ skipped: true }));
-      }
+    if (recentNotif && recentNotif.length > 0) {
+      console.log(`[notify-event] Skipping duplicate ${type} notification (within ${DEDUP_WINDOW_SECONDS}s window)`);
+      return new Response(JSON.stringify({ skipped: true, reason: "dedup" }));
     }
+
+    // Record this notification for dedup
+    await supabase.from("notification_dedup").insert({
+      group_id: record.group_id,
+      week_id: record.week_id,
+      event_type: type,
+    });
 
     // 2. Data fetching
     const { data: group } = await supabase.from("groups").select("name, church_id").eq("id", record.group_id).single();
@@ -206,6 +213,13 @@ Deno.serve(async (req: Request) => {
 
   const uniqueTokens = Array.from(userToToken.values());
   const results = await Promise.allSettled(uniqueTokens.map(token => sendPush(accessToken, token, title, body, { link, tag: table })));
+
+  // Cleanup: delete dedup records older than 5 minutes (fire and forget)
+  supabase.from("notification_dedup")
+    .delete()
+    .lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString())
+    .then(() => console.log("[notify-event] Dedup cleanup done"))
+    .catch(() => {});
 
   return new Response(JSON.stringify({
     sent: results.filter(r => r.status === 'fulfilled').length,
