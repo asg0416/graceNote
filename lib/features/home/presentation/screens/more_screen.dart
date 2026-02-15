@@ -19,6 +19,7 @@ import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:grace_note/features/home/presentation/screens/service_guide_screen.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:grace_note/core/utils/snack_bar_util.dart';
+import 'package:grace_note/features/settings/presentation/screens/notification_settings_screen.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -151,6 +152,16 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(builder: (context) => const ProfileScreen()),
+                            );
+                          }
+                        ),
+                        _MenuItem(
+                          icon: lucide.LucideIcons.bell, 
+                          label: '알림 설정', 
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const NotificationSettingsScreen()),
                             );
                           }
                         ),

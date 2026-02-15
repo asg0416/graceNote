@@ -44,8 +44,16 @@ app.*.map.json
 
 # Security & Secrets
 .env*
+!.env.example
 *.local_only
 admin-web/.env.local
+
+# Firebase config files (contain API keys - use .example files as template)
+lib/firebase_options.dart
+web/firebase-messaging-sw.js
+
+# Firebase Admin SDK service account keys
+*-firebase-adminsdk-*.json
 
 # Temp & Test Files
 check_data.js

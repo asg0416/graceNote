@@ -29,3 +29,6 @@
 ## 4. Code Quality
 - Follow clean code principles.
 - Ensure test coverage.
+
+## 5. Tool Usage (도구 사용 규칙)
+- **Browser Subagent (브라우저 자동 검증)**: 브라우저를 띄워 직접 검증하는 기능(`browser_subagent`)을 자동으로 실행하지 마세요. 사용자가 명시적으로 요청한 경우에만 실행합니다.

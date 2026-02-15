@@ -31,6 +31,65 @@ jobs:
             echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY_DEV }}" >> $GITHUB_ENV
           fi
 
+      - name: Generate Firebase config files
+        run: |
+          cat > lib/firebase_options.dart << 'DART'
+          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+          import 'package:flutter/foundation.dart' show kIsWeb;
+          class DefaultFirebaseOptions {
+            static FirebaseOptions get currentPlatform {
+              if (kIsWeb) { return web; }
+              throw UnsupportedError('DefaultFirebaseOptions are not configured for this platform.');
+            }
+            static const FirebaseOptions web = FirebaseOptions(
+              apiKey: '${{ secrets.FIREBASE_API_KEY }}',
+              appId: '${{ secrets.FIREBASE_APP_ID }}',
+              messagingSenderId: '${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}',
+              projectId: '${{ secrets.FIREBASE_PROJECT_ID }}',
+              authDomain: '${{ secrets.FIREBASE_PROJECT_ID }}.firebaseapp.com',
+              storageBucket: '${{ secrets.FIREBASE_PROJECT_ID }}.firebasestorage.app',
+            );
+          }
+          DART
+
+          cat > web/firebase-messaging-sw.js << SWJS
+          importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
+          importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
+          firebase.initializeApp({
+              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
+              authDomain: "${{ secrets.FIREBASE_PROJECT_ID }}.firebaseapp.com",
+              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
+              storageBucket: "${{ secrets.FIREBASE_PROJECT_ID }}.firebasestorage.app",
+              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
+              appId: "${{ secrets.FIREBASE_APP_ID }}"
+          });
+          const messaging = firebase.messaging();
+          messaging.onBackgroundMessage((payload) => {
+              const notificationTitle = payload.notification?.title || 'Grace Note';
+              const notificationOptions = {
+                  body: payload.notification?.body || '',
+                  icon: '/icons/Icon-192.png',
+                  badge: '/icons/Icon-192.png',
+                  data: payload.data,
+                  tag: payload.data?.type || 'default',
+              };
+              return self.registration.showNotification(notificationTitle, notificationOptions);
+          });
+          self.addEventListener('notificationclick', (event) => {
+              event.notification.close();
+              event.waitUntil(
+                  clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+                      for (const client of windowClients) {
+                          if (client.url.includes(self.location.origin) && 'focus' in client) {
+                              return client.focus();
+                          }
+                      }
+                      return clients.openWindow(event.notification.data?.url || '/');
+                  })
+              );
+          });
+          SWJS
+
       - name: Build Flutter Web
         run: |
           touch .env

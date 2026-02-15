@@ -1,0 +1,24 @@
+import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+/// Firebase configuration for GraceNote
+///
+/// 사용법: 이 파일을 firebase_options.dart로 복사한 후 Firebase config 값을 채워넣으세요.
+/// cp lib/firebase_options.dart.example lib/firebase_options.dart
+class DefaultFirebaseOptions {
+  static FirebaseOptions get currentPlatform {
+    if (kIsWeb) {
+      return web;
+    }
+    throw UnsupportedError('DefaultFirebaseOptions are not configured for this platform.');
+  }
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'YOUR_FIREBASE_API_KEY',
+    appId: 'YOUR_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
+    storageBucket: 'YOUR_PROJECT_ID.firebasestorage.app',
+  );
+}

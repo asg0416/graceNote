@@ -125,6 +125,9 @@ class ProfileModel {
   final bool isOnboardingComplete;
   final String? avatarUrl;
   final DateTime? lastNoticeCheckedAt;
+  final bool pushPrayerEnabled;
+  final bool pushNoticeEnabled;
+  final bool pushReminderEnabled;
   final DateTime? createdAt;
 
   ProfileModel({
@@ -145,6 +148,9 @@ class ProfileModel {
     this.avatarUrl,
     this.lastNoticeCheckedAt,
     this.createdAt,
+    this.pushPrayerEnabled = true,
+    this.pushNoticeEnabled = true,
+    this.pushReminderEnabled = true,
   });
 
   factory ProfileModel.fromJson(Map<String, dynamic> json) {
@@ -166,6 +172,9 @@ class ProfileModel {
       avatarUrl: json['avatar_url'],
       lastNoticeCheckedAt: json['last_notice_checked_at'] != null ? DateTime.parse(json['last_notice_checked_at']) : null,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
+      pushPrayerEnabled: json['push_prayer_enabled'] ?? true,
+      pushNoticeEnabled: json['push_notice_enabled'] ?? true,
+      pushReminderEnabled: json['push_reminder_enabled'] ?? true,
     );
   }
 
@@ -187,6 +196,10 @@ class ProfileModel {
       'is_onboarding_complete': isOnboardingComplete,
       'avatar_url': avatarUrl,
       'last_notice_checked_at': lastNoticeCheckedAt?.toIso8601String(),
+      'created_at': createdAt?.toIso8601String(),
+      'push_prayer_enabled': pushPrayerEnabled,
+      'push_notice_enabled': pushNoticeEnabled,
+      'push_reminder_enabled': pushReminderEnabled,
     };
   }
 }

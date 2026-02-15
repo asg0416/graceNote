@@ -1,0 +1,53 @@
+// Firebase Messaging Service Worker
+// 백그라운드 푸시 알림 수신용
+//
+// 사용법: 이 파일을 firebase-messaging-sw.js로 복사한 후 Firebase config 값을 채워넣으세요.
+// cp web/firebase-messaging-sw.js.example web/firebase-messaging-sw.js
+
+importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+    apiKey: "YOUR_FIREBASE_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
+});
+
+const messaging = firebase.messaging();
+
+// 백그라운드 메시지 핸들러
+messaging.onBackgroundMessage((payload) => {
+    console.log('[firebase-messaging-sw.js] Background message received:', payload);
+
+    const notificationTitle = payload.notification?.title || 'Grace Note';
+    const notificationOptions = {
+        body: payload.notification?.body || '',
+        icon: '/icons/Icon-192.png',
+        badge: '/icons/Icon-192.png',
+        data: payload.data,
+        tag: payload.data?.type || 'default',
+    };
+
+    return self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+// 알림 클릭 핸들러
+self.addEventListener('notificationclick', (event) => {
+    console.log('[firebase-messaging-sw.js] Notification clicked:', event);
+    event.notification.close();
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+            for (const client of windowClients) {
+                if (client.url.includes(self.location.origin) && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+            const urlToOpen = event.notification.data?.url || '/';
+            return clients.openWindow(urlToOpen);
+        })
+    );
+});
