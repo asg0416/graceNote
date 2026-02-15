@@ -1,0 +1,207 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const FIREBASE_PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID");
+const FIREBASE_CLIENT_EMAIL = Deno.env.get("FIREBASE_CLIENT_EMAIL");
+const FIREBASE_PRIVATE_KEY = Deno.env.get("FIREBASE_PRIVATE_KEY");
+
+const APP_BASE_URL = "https://grace-note-app-pwa-asg0416.vercel.app";
+
+async function getAccessToken(): Promise<string> {
+  const privateKey = FIREBASE_PRIVATE_KEY!.replace(/\\n/g, "\n");
+  const header = { alg: "RS256", typ: "JWT" };
+  const now = Math.floor(Date.now() / 1000);
+  const claim = {
+    iss: FIREBASE_CLIENT_EMAIL,
+    aud: "https://oauth2.googleapis.com/token",
+    exp: now + 3600,
+    iat: now,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+  };
+  const toBase64Url = (data: string) =>
+    btoa(data).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const headerB64 = toBase64Url(JSON.stringify(header));
+  const claimB64 = toBase64Url(JSON.stringify(claim));
+  const unsignedToken = `${headerB64}.${claimB64}`;
+  const keyData = privateKey
+    .replace("-----BEGIN PRIVATE KEY-----", "")
+    .replace("-----END PRIVATE KEY-----", "")
+    .replace(/\s/g, "");
+  const binaryKey = Uint8Array.from(atob(keyData), (c) => c.charCodeAt(0));
+  const cryptoKey = await crypto.subtle.importKey(
+    "pkcs8", binaryKey,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false, ["sign"]
+  );
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5", cryptoKey,
+    new TextEncoder().encode(unsignedToken)
+  );
+  const signatureB64 = toBase64Url(String.fromCharCode(...new Uint8Array(signature)));
+  const jwt = `${unsignedToken}.${signatureB64}`;
+
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+  const tokenData = await tokenRes.json();
+  return tokenData.access_token;
+}
+
+// Internal function to send push via Google's fcm v1 api
+async function sendPush(accessToken: string, token: string, title: string, body: string, payload: any = {}) {
+  const iconUrl = `${APP_BASE_URL}/icons/Icon-192.png`;
+  const badgeUrl = `${APP_BASE_URL}/icons/Icon-192.png`;
+
+  const res = await fetch(
+    `https://fcm.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/messages:send`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: {
+          token,
+          notification: { title, body },
+          webpush: {
+            notification: { 
+              title, 
+              body, 
+              icon: iconUrl,
+              badge: badgeUrl,
+              tag: payload.tag || "grace-note-default",
+              renotify: true
+            },
+            fcm_options: { link: payload.link || "/" }
+          },
+          data: {
+            click_action: payload.link || "/",
+            ...payload
+          }
+        },
+      }),
+    }
+  );
+  const data = await res.json();
+  if (!res.ok) console.error("[notify-event] Send failed:", data);
+  return res.ok;
+}
+
+Deno.serve(async (req: Request) => {
+  const payload = await req.json();
+  const { table, record, type } = payload;
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  console.log(`[notify-event] Triggered for ${table} on ${type}`);
+
+  if (type !== 'INSERT') return new Response(JSON.stringify({ skipped: true }));
+
+  const accessToken = await getAccessToken();
+  let title = "";
+  let body = "";
+  let link = "/";
+  let targetUserIds: string[] = [];
+  let preferenceField: string = "";
+
+  if (table === 'prayer_entries') {
+    // 1. Batch check: Only notify for the FIRST entry in a potential batch (to avoid spam)
+    const { data: batchCheck } = await supabase
+      .from("prayer_entries")
+      .select("id")
+      .eq("group_id", record.group_id)
+      .eq("week_id", record.week_id)
+      .order("id", { ascending: true })
+      .limit(1);
+
+    if (batchCheck && batchCheck.length > 0 && batchCheck[0].id !== record.id) {
+      console.log("[notify-event] Skipping duplicate batch prayer notification");
+      return new Response(JSON.stringify({ skipped: true }));
+    }
+
+    // 2. Data fetching
+    const { data: group } = await supabase.from("groups").select("name, church_id").eq("id", record.group_id).single();
+    const { data: member } = await supabase.from("member_directory").select("full_name").eq("id", record.member_id).single();
+
+    title = `\ud83d\ude4f [${group?.name || '조'}] \uae30\ub3c4\uc81c\ubaa9 \uc5c5\ub370\uc774\ud2b8`;
+    body = `${member?.full_name || '성도'}\ub2d8\uc758 \uae30\ub3c4\uc81c\ubaa9\uc774 \ub4f1\ub85d\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \ud568\uaed8 \uae30\ub3c4\ud574\uc8fc\uc138\uc694!`;
+    link = `/attendance/share?groupId=${record.group_id}`;
+    preferenceField = "push_prayer_enabled";
+
+    // 2. Target users (Current group members)
+    const { data: members } = await supabase
+      .from("group_members")
+      .select("profile_id")
+      .eq("group_id", record.group_id)
+      .eq("is_active", true);
+
+    const { data: admins } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("church_id", group.church_id)
+      .in("role", ["admin", "system_admin"]);
+
+    targetUserIds = [...new Set([
+      ...(members || []).map(m => m.profile_id).filter(Boolean),
+      ...(admins || []).map(a => a.id).filter(Boolean)
+    ])];
+
+  } else if (table === 'notices') {
+    title = `\ud83d\udce2 \uc0c8 \uacf5\uc9c0\uc0ac\ud56d: ${record.title}`;
+    body = record.content.substring(0, 50) + "...";
+    link = "/home/notices";
+    preferenceField = "push_notice_enabled";
+
+    // Global notice or department notice?
+    if (record.is_global) {
+      const { data: allUsers } = await supabase.from("profiles").select("id");
+      targetUserIds = (allUsers || []).map(u => u.id);
+    } else if (record.department_id) {
+      const { data: deptGroups } = await supabase.from("groups").select("id").eq("department_id", record.department_id);
+      const groupIds = (deptGroups || []).map(g => g.id);
+      const { data: deptMembers } = await supabase.from("group_members").select("profile_id").in("group_id", groupIds).eq("is_active", true);
+      targetUserIds = [...new Set((deptMembers || []).map(m => m.profile_id).filter(Boolean))];
+    }
+  }
+
+  if (targetUserIds.length === 0) return new Response(JSON.stringify({ skipped: true }));
+
+  // 3. Filter targets by preference (NEW)
+  const { data: preferredProfiles } = await supabase
+    .from("profiles")
+    .select("id")
+    .in("id", targetUserIds)
+    .eq(preferenceField, true);
+  
+  const finalRecipientIds = (preferredProfiles || []).map(p => p.id);
+  if (finalRecipientIds.length === 0) return new Response(JSON.stringify({ filtered: true }));
+
+  // 4. Token identification: Send only to the MOST RECENT device for each user
+  const { data: tokens } = await supabase
+    .from("fcm_tokens")
+    .select("token, user_id")
+    .in("user_id", finalRecipientIds)
+    .order("updated_at", { ascending: false });
+
+  if (!tokens?.length) return new Response(JSON.stringify({ skipped: true }));
+
+  // Token deduplication (One per user)
+  const userToToken = new Map();
+  tokens.forEach(t => {
+    if (!userToToken.has(t.user_id)) {
+      userToToken.set(t.user_id, t.token);
+    }
+  });
+
+  const uniqueTokens = Array.from(userToToken.values());
+  const results = await Promise.allSettled(uniqueTokens.map(token => sendPush(accessToken, token, title, body, { link, tag: table })));
+
+  return new Response(JSON.stringify({
+    sent: results.filter(r => r.status === 'fulfilled').length,
+    total: uniqueTokens.length
+  }));
+});
