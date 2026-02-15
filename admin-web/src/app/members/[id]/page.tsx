@@ -88,6 +88,10 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
 
                 // Restrict Church Admin to their own church
                 if (memberData && !currentProfile.is_master && memberData.church_id !== currentProfile.church_id) {
+                    console.error('Redirecting due to church_id mismatch:', {
+                        memberChurchId: memberData.church_id,
+                        adminChurchId: currentProfile.church_id
+                    });
                     router.push('/members');
                     return;
                 }
@@ -106,7 +110,8 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                         .eq('church_id', memberData.church_id);
                 }
 
-                const { data: allAffiliations } = await relatedQuery;
+                const { data: allAffiliations, error: affiliationError } = await relatedQuery;
+                if (affiliationError) console.error('Error fetching affiliations:', affiliationError);
 
                 const directoryIds = allAffiliations?.map(m => m.id) || [id];
                 const profileIds = Array.from(new Set([
@@ -374,9 +379,9 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column: Profile Card */}
                 <div className="lg:col-span-1 space-y-6">
-                    <div className="bg-white dark:bg-[#111827]/60 rounded-[40px] border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden group/profile">
+                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden group/profile">
                         <div className="p-10 flex flex-col items-center text-center space-y-6">
-                            <div className="w-24 h-24 rounded-[32px] bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-4xl font-black shadow-2xl shadow-indigo-500/20">
+                            <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-4xl font-black shadow-2xl shadow-indigo-500/20">
                                 {member.full_name?.[0]}
                             </div>
                             <div className="w-full relative">
@@ -473,7 +478,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                     </div>
 
                     {/* Affiliations Info Card - Separated */}
-                    <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-[40px] border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6">
+                    <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6">
                         <div className="flex items-center justify-between px-2">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
                                 <Layers className="w-4 h-4 text-indigo-600" /> 소속 정보
@@ -511,7 +516,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                     </div>
 
                     {/* Family Info Card */}
-                    <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-[40px] border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6 group/family">
+                    <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6 group/family">
                         <div className="flex items-center justify-between px-2">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
                                 <Heart className="w-4 h-4 text-rose-500" /> 가족 정보
@@ -568,7 +573,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 {/* Right Column: Detailed Info & Timeline */}
                 <div className="lg:col-span-2 space-y-8">
                     {/* Notes Section */}
-                    <div className="bg-white dark:bg-[#111827]/60 rounded-[40px] border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden group/notes">
+                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden group/notes">
                         <div className="p-8 border-b border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
                             <div className="flex items-center gap-4">
                                 <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center text-amber-500">
@@ -611,7 +616,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                     </div>
 
                     {/* Prayer Timeline */}
-                    <div className="bg-white dark:bg-[#111827]/60 rounded-[40px] border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
+                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
                         <div className="p-8 border-b border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
                             <div className="flex items-center gap-4">
                                 <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-600">
