@@ -99,7 +99,7 @@ Deno.serve(async (req: Request) => {
 
   console.log(`[notify-event] Triggered for ${table} on ${type}`);
 
-  if (type !== 'INSERT') return new Response(JSON.stringify({ skipped: true }));
+  if (type !== 'INSERT' && type !== 'UPDATE') return new Response(JSON.stringify({ skipped: true }));
 
   const accessToken = await getAccessToken();
   let title = "";
@@ -109,26 +109,33 @@ Deno.serve(async (req: Request) => {
   let preferenceField: string = "";
 
   if (table === 'prayer_entries') {
-    // 1. Batch check: Only notify for the FIRST entry in a potential batch (to avoid spam)
-    const { data: batchCheck } = await supabase
-      .from("prayer_entries")
-      .select("id")
-      .eq("group_id", record.group_id)
-      .eq("week_id", record.week_id)
-      .order("id", { ascending: true })
-      .limit(1);
+    // 1. Batch check (INSERT only): Only notify for the FIRST entry in a potential batch (to avoid spam)
+    if (type === 'INSERT') {
+      const { data: batchCheck } = await supabase
+        .from("prayer_entries")
+        .select("id")
+        .eq("group_id", record.group_id)
+        .eq("week_id", record.week_id)
+        .order("id", { ascending: true })
+        .limit(1);
 
-    if (batchCheck && batchCheck.length > 0 && batchCheck[0].id !== record.id) {
-      console.log("[notify-event] Skipping duplicate batch prayer notification");
-      return new Response(JSON.stringify({ skipped: true }));
+      if (batchCheck && batchCheck.length > 0 && batchCheck[0].id !== record.id) {
+        console.log("[notify-event] Skipping duplicate batch prayer notification");
+        return new Response(JSON.stringify({ skipped: true }));
+      }
     }
 
     // 2. Data fetching
     const { data: group } = await supabase.from("groups").select("name, church_id").eq("id", record.group_id).single();
     const { data: member } = await supabase.from("member_directory").select("full_name").eq("id", record.member_id).single();
 
-    title = `\ud83d\ude4f [${group?.name || '조'}] \uae30\ub3c4\uc81c\ubaa9 \uc5c5\ub370\uc774\ud2b8`;
-    body = `${member?.full_name || '성도'}\ub2d8\uc758 \uae30\ub3c4\uc81c\ubaa9\uc774 \ub4f1\ub85d\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \ud568\uaed8 \uae30\ub3c4\ud574\uc8fc\uc138\uc694!`;
+    const isUpdate = type === 'UPDATE';
+    title = isUpdate
+      ? `\u270f\ufe0f [${group?.name || '조'}] \uae30\ub3c4\uc81c\ubaa9 \uc218\uc815`
+      : `\ud83d\ude4f [${group?.name || '조'}] \uae30\ub3c4\uc81c\ubaa9 \uc5c5\ub370\uc774\ud2b8`;
+    body = isUpdate
+      ? `${member?.full_name || '성도'}\ub2d8\uc758 \uae30\ub3c4\uc81c\ubaa9\uc774 \uc218\uc815\ub418\uc5c8\uc2b5\ub2c8\ub2e4.`
+      : `${member?.full_name || '성도'}\ub2d8\uc758 \uae30\ub3c4\uc81c\ubaa9\uc774 \ub4f1\ub85d\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \ud568\uaed8 \uae30\ub3c4\ud574\uc8fc\uc138\uc694!`;
     link = `/attendance/share?groupId=${record.group_id}`;
     preferenceField = "push_prayer_enabled";
 
