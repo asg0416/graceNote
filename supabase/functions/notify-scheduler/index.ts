@@ -52,9 +52,6 @@ async function getAccessToken(): Promise<string> {
 }
 
 async function sendPush(accessToken: string, token: string, title: string, body: string) {
-  const iconUrl = `${APP_BASE_URL}/icons/Icon-192.png`;
-  const badgeUrl = `${APP_BASE_URL}/icons/Icon-192.png`;
-
   const res = await fetch(
     `https://fcm.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/messages:send`,
     {
@@ -66,17 +63,11 @@ async function sendPush(accessToken: string, token: string, title: string, body:
       body: JSON.stringify({
         message: {
           token,
-          notification: { title, body },
-          webpush: {
-            notification: { 
-              title, 
-              body, 
-              icon: iconUrl,
-              badge: badgeUrl,
-              tag: "grace-note-scheduler",
-              renotify: true
-            },
-            fcm_options: { link: "/" }
+          data: {
+            title,
+            body,
+            tag: "grace-note-scheduler",
+            link: "/",
           },
         },
       }),

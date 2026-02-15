@@ -52,10 +52,8 @@ async function getAccessToken(): Promise<string> {
 }
 
 // Internal function to send push via Google's fcm v1 api
+// Data-only message: no "notification" field to prevent browser auto-display (which causes duplicates)
 async function sendPush(accessToken: string, token: string, title: string, body: string, payload: any = {}) {
-  const iconUrl = `${APP_BASE_URL}/icons/Icon-192.png`;
-  const badgeUrl = `${APP_BASE_URL}/icons/Icon-192.png`;
-
   const res = await fetch(
     `https://fcm.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/messages:send`,
     {
@@ -67,22 +65,12 @@ async function sendPush(accessToken: string, token: string, title: string, body:
       body: JSON.stringify({
         message: {
           token,
-          notification: { title, body },
-          webpush: {
-            notification: { 
-              title, 
-              body, 
-              icon: iconUrl,
-              badge: badgeUrl,
-              tag: payload.tag || "grace-note-default",
-              renotify: true
-            },
-            fcm_options: { link: payload.link || "/" }
-          },
           data: {
-            click_action: payload.link || "/",
-            ...payload
-          }
+            title,
+            body,
+            tag: payload.tag || "grace-note-default",
+            link: payload.link || "/",
+          },
         },
       }),
     }

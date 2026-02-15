@@ -88,22 +88,17 @@ async function sendFCMMessage(
   data?: Record<string, string>
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // Data-only message: no "notification" field to prevent duplicate display
     const message = {
       message: {
         token: fcmToken,
-        notification: { title, body },
-        webpush: {
-          notification: {
-            title,
-            body,
-            icon: "/icons/Icon-192.png",
-            badge: "/icons/Icon-192.png",
-          },
-          fcm_options: {
-            link: data?.url || "/",
-          },
+        data: {
+          title,
+          body,
+          tag: "grace-note-default",
+          link: data?.url || "/",
+          ...(data || {}),
         },
-        ...(data && { data }),
       },
     };
 

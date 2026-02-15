@@ -150,16 +150,16 @@ class PushNotificationService {
     }
   }
 
-  /// 포그라운드 메시지 핸들러
+  /// 포그라운드 메시지 핸들러 (data-only messages)
   void _handleForegroundMessage(RemoteMessage message) {
-    debugPrint('PushNotificationService: Foreground message: ${message.notification?.title}');
-    
-    // 포그라운드에서는 브라우저 Notification API로 직접 표시
-    if (message.notification != null) {
-      final title = message.notification!.title ?? 'Grace Note';
-      final body = message.notification!.body ?? '';
-      
-      // 브라우저 알림 표시
+    debugPrint('PushNotificationService: Foreground message received');
+
+    // data-only 메시지에서 title/body 추출
+    final data = message.data;
+    final title = data['title'] ?? message.notification?.title ?? 'Grace Note';
+    final body = data['body'] ?? message.notification?.body ?? '';
+
+    if (title.isNotEmpty) {
       try {
         html.Notification(title, body: body, icon: '/icons/Icon-192.png');
       } catch (e) {
