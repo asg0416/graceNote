@@ -334,7 +334,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 {!isAddingNew ? (
                     <button
                         onClick={() => setIsAddingNew(true)}
-                        className="w-96 shrink-0 h-24 border-2 border-dashed border-slate-300 dark:border-slate-800 rounded-[32px] flex items-center justify-center group cursor-pointer hover:border-indigo-500/50 hover:bg-white dark:hover:bg-slate-900 transition-all active:scale-[0.98] shadow-sm"
+                        className="w-96 shrink-0 h-24 border-2 border-dashed border-slate-300 dark:border-slate-800 rounded-2xl flex items-center justify-center group cursor-pointer hover:border-indigo-500/50 hover:bg-white dark:hover:bg-slate-900 transition-all active:scale-[0.98] shadow-sm"
                     >
                         <div className="flex items-center gap-3 text-slate-400 group-hover:text-indigo-500 transition-colors">
                             <Plus className="w-5 h-5" />
@@ -342,7 +342,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         </div>
                     </button>
                 ) : (
-                    <div className="w-96 shrink-0 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 p-6 rounded-[32px] animate-in zoom-in-95 duration-200">
+                    <div className="w-96 shrink-0 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 p-6 rounded-2xl animate-in zoom-in-95 duration-200">
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2 text-slate-400">

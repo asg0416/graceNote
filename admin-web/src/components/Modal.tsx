@@ -42,7 +42,7 @@ export function Modal({ isOpen, onClose, title, subtitle, children, maxWidth = '
         <div className="fixed top-16 sm:top-20 lg:left-64 left-0 right-0 bottom-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 dark:bg-[#030712]/80 backdrop-blur-md">
             <div className="absolute inset-0" onClick={onClose} />
             <div className={cn(
-                "relative bg-white dark:bg-[#0a0f1d] w-full rounded-[32px] sm:rounded-[40px] border border-slate-200 dark:border-slate-800/80 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 flex flex-col max-h-[calc(100vh-8rem)]",
+                "relative bg-white dark:bg-[#0a0f1d] w-full rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800/80 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 flex flex-col max-h-[calc(100vh-8rem)]",
                 maxWidthClasses[maxWidth],
                 className
             )}>

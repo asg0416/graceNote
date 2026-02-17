@@ -132,7 +132,7 @@ export default function ProfilePage() {
                 </div>
 
                 {/* Profile Info Card */}
-                <div className="bg-white dark:bg-slate-900 rounded-[32px] shadow-xl shadow-slate-200/50 dark:shadow-none overflow-hidden border border-slate-100 dark:border-slate-800">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none overflow-hidden border border-slate-100 dark:border-slate-800">
                     <div className="p-8 space-y-8">
                         <div className="flex items-center gap-6">
                             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-3xl font-black shadow-lg shadow-indigo-500/30">
@@ -185,7 +185,7 @@ export default function ProfilePage() {
                 </div>
 
                 {/* Password Change Card */}
-                <div className="bg-white dark:bg-slate-900 rounded-[32px] shadow-xl shadow-slate-200/50 dark:shadow-none overflow-hidden border border-slate-100 dark:border-slate-800">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none overflow-hidden border border-slate-100 dark:border-slate-800">
                     <div className="p-8 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
                         <div className="flex items-center gap-3">
                             <div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg">

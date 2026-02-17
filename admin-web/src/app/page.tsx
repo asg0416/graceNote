@@ -178,9 +178,9 @@ export default function DashboardPage() {
       </header>
 
       {/* Hero Highlight */}
-      <div className="relative group overflow-hidden rounded-[32px] sm:rounded-[40px]">
-        <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-[32px] sm:rounded-[40px] blur opacity-10 dark:opacity-20 group-hover:opacity-20 dark:group-hover:opacity-30 transition duration-1000 group-hover:duration-200" />
-        <div className="relative bg-white dark:bg-[#111827]/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-[32px] sm:rounded-[40px] p-6 sm:p-10 flex flex-col lg:flex-row lg:items-center justify-between overflow-hidden gap-10">
+      <div className="relative group overflow-hidden rounded-2xl sm:rounded-3xl">
+        <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl sm:rounded-3xl blur opacity-10 dark:opacity-20 group-hover:opacity-20 dark:group-hover:opacity-30 transition duration-1000 group-hover:duration-200" />
+        <div className="relative bg-white dark:bg-[#111827]/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-2xl sm:rounded-3xl p-6 sm:p-10 flex flex-col lg:flex-row lg:items-center justify-between overflow-hidden gap-10">
           <div className="absolute top-[-50%] right-[-10%] w-64 sm:w-96 h-64 sm:h-96 bg-indigo-600/5 dark:bg-indigo-600/10 rounded-full blur-[60px] sm:blur-[100px]" />
           <div className="relative z-10 space-y-4 sm:space-y-6 max-w-xl">
             <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-full">
@@ -277,7 +277,7 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-10 pb-10">
             <div className={cn(
-              "bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800/60 backdrop-blur-xl rounded-[32px] sm:rounded-[40px] p-6 sm:p-10 shadow-xl dark:shadow-2xl space-y-8",
+              "bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800/60 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-6 sm:p-10 shadow-xl dark:shadow-2xl space-y-8",
               !profile?.is_master && "lg:col-span-2"
             )}>
               <div className="flex items-center justify-between">
@@ -308,7 +308,7 @@ export default function DashboardPage() {
 
             {profile?.is_master && (
               <div className="space-y-6 flex flex-col">
-                <div className="bg-gradient-to-br from-indigo-700 to-purple-800 rounded-[32px] sm:rounded-[40px] p-6 sm:p-10 flex flex-col justify-between h-full relative overflow-hidden group shadow-2xl shadow-indigo-500/20">
+                <div className="bg-gradient-to-br from-indigo-700 to-purple-800 rounded-2xl sm:rounded-3xl p-6 sm:p-10 flex flex-col justify-between h-full relative overflow-hidden group shadow-2xl shadow-indigo-500/20">
                   <div className="absolute top-0 right-0 p-8">
                     <Bell className={cn("w-10 h-10 text-white/20 transition-all", stats.pendingInquiries > 0 && "animate-bounce text-rose-300/40")} />
                   </div>
@@ -389,7 +389,7 @@ function StatsCard({ title, value, change, icon: Icon, color, isWarning, onClick
       onClick={onClick}
       disabled={!onClick}
       className={cn(
-        "relative overflow-hidden p-8 rounded-[40px] border transition-all duration-500 group text-left w-full",
+        "relative overflow-hidden p-8 rounded-3xl border transition-all duration-500 group text-left w-full",
         style.bg,
         style.border,
         onClick ? "hover:scale-[1.02] active:scale-[0.98] hover:shadow-2xl hover:shadow-slate-200/50 dark:hover:shadow-indigo-500/5 cursor-pointer" : "cursor-default"

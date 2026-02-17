@@ -142,7 +142,7 @@ export default function LoginPage() {
 
                 <div className="w-full max-w-[440px] space-y-12">
                     <div className="space-y-4 lg:hidden text-center">
-                        <div className="inline-flex items-center justify-center w-24 h-24 bg-white dark:bg-slate-900 rounded-[32px] shadow-xl border border-slate-100 dark:border-slate-800 animate-bounce-slow">
+                        <div className="inline-flex items-center justify-center w-24 h-24 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 animate-bounce-slow">
                             <img src="/logo-icon.png" alt="Logo" className="w-16 h-16 object-contain" />
                         </div>
                         <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Grace Note</h1>
@@ -157,7 +157,7 @@ export default function LoginPage() {
                         <p className="text-slate-500 dark:text-slate-500 font-bold text-base tracking-tight leading-relaxed">준비된 관리자 계정으로 <br />안전하게 시스템에 접속하세요.</p>
                     </div>
 
-                    <div className="bg-white/80 dark:bg-[#111827]/60 backdrop-blur-2xl p-8 sm:p-10 rounded-[40px] border border-white dark:border-slate-800/80 shadow-2xl dark:shadow-none">
+                    <div className="bg-white/80 dark:bg-[#111827]/60 backdrop-blur-2xl p-8 sm:p-10 rounded-3xl border border-white dark:border-slate-800/80 shadow-2xl dark:shadow-none">
                         <form onSubmit={handleLogin} className="space-y-8">
                             {error && (
                                 <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-600 dark:text-red-400 text-xs font-black text-center flex items-center justify-center gap-2 animate-shake">

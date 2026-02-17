@@ -131,7 +131,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     }, [filteredMembers, profileMode]);
 
     return (
-        <div className="flex flex-col w-96 shrink-0 max-h-[820px] bg-white dark:bg-slate-900/60 rounded-[32px] border border-slate-200/80 dark:border-slate-800/60 transition-all group/column shadow-sm hover:shadow-xl hover:shadow-slate-200/40 dark:hover:shadow-none">
+        <div className="flex flex-col w-96 shrink-0 max-h-[820px] bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800/60 transition-all group/column shadow-sm hover:shadow-xl hover:shadow-slate-200/40 dark:hover:shadow-none">
             {/* Header - Sticky within column */}
             <div className="sticky top-0 z-20 p-5 flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800/60 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-t-[31px]">
                 <div className="flex items-center gap-3 flex-1 min-w-0">

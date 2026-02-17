@@ -670,9 +670,9 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                                 {/* Upload Area */}
                                 <div
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="h-72 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[32px] flex flex-col items-center justify-center gap-4 hover:border-indigo-500/50 hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-all cursor-pointer group relative overflow-hidden bg-white dark:bg-[#0a0f1d]"
+                                    className="h-72 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col items-center justify-center gap-4 hover:border-indigo-500/50 hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-all cursor-pointer group relative overflow-hidden bg-white dark:bg-[#0a0f1d]"
                                 >
-                                    <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-500/10 rounded-[28px] flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform duration-500">
+                                    <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform duration-500">
                                         {loading ? <Loader2 className="w-10 h-10 animate-spin" /> : <Upload className="w-10 h-10" />}
                                     </div>
                                     <div className="text-center px-10">
@@ -720,7 +720,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
 
                                 {/* Text Area */}
                                 <div className="flex flex-col gap-3">
-                                    <div className="flex-1 min-h-[200px] bg-slate-50/50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 rounded-[32px] p-6 relative group focus-within:border-indigo-500/50 transition-all">
+                                    <div className="flex-1 min-h-[200px] bg-slate-50/50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 relative group focus-within:border-indigo-500/50 transition-all">
                                         <div className="absolute top-5 right-6 pointer-events-none opacity-20 group-focus-within:opacity-40 transition-opacity">
                                             <PencilLine className="w-6 h-6 text-slate-400" />
                                         </div>
@@ -734,7 +734,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                                     <button
                                         onClick={handleProcessText}
                                         disabled={!selectedDeptId || !rawText.trim()}
-                                        className="w-full py-5 bg-indigo-600 dark:bg-indigo-500 text-white font-black rounded-[28px] hover:bg-indigo-500 dark:hover:bg-indigo-400 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-3"
+                                        className="w-full py-5 bg-indigo-600 dark:bg-indigo-500 text-white font-black rounded-2xl hover:bg-indigo-500 dark:hover:bg-indigo-400 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-3"
                                     >
                                         <Sparkles className="w-5 h-5" />
                                         텍스트 데이터 분석하기
@@ -810,7 +810,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                             </div>
                         </div>
 
-                        <div className="bg-slate-50 dark:bg-slate-900/60 rounded-[32px] border border-slate-200 dark:border-slate-800 overflow-hidden">
+                        <div className="bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                             <div className="max-h-[600px] overflow-y-auto">
                                 <table className="w-full text-left">
                                     <thead className="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 z-50">
@@ -984,13 +984,13 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                         <div className="flex flex-col sm:flex-row gap-4 mt-6 pb-6">
                             <button
                                 onClick={onClose}
-                                className="flex-1 py-4 bg-slate-100 dark:bg-slate-950 text-slate-500 font-black rounded-[28px] hover:bg-slate-200 dark:hover:bg-slate-900 transition-all border border-slate-200 dark:border-slate-800"
+                                className="flex-1 py-4 bg-slate-100 dark:bg-slate-950 text-slate-500 font-black rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-900 transition-all border border-slate-200 dark:border-slate-800"
                             >
                                 취소
                             </button>
                             <button
                                 onClick={handleUploadToDB}
-                                className="flex-2 py-4 bg-indigo-600 text-white font-black rounded-[28px] hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 flex items-center justify-center gap-2"
+                                className="flex-2 py-4 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 flex items-center justify-center gap-2"
                             >
                                 <CheckCircle2 className="w-5 h-5" />
                                 최종 등록 및 저장

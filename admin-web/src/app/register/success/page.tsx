@@ -8,8 +8,8 @@ export default function RegisterSuccessPage() {
 
     return (
         <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 dark:bg-[#0a0f1d]">
-            <div className="w-full max-w-md text-center space-y-8 bg-white dark:bg-[#111827]/60 backdrop-blur-2xl p-10 rounded-[40px] border border-white dark:border-slate-800/80 shadow-2xl animate-in zoom-in duration-500">
-                <div className="inline-flex items-center justify-center w-20 h-20 bg-emerald-500 rounded-[28px] shadow-2xl shadow-emerald-500/20 mb-4 animate-bounce-slow">
+            <div className="w-full max-w-md text-center space-y-8 bg-white dark:bg-[#111827]/60 backdrop-blur-2xl p-10 rounded-3xl border border-white dark:border-slate-800/80 shadow-2xl animate-in zoom-in duration-500">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-emerald-500 rounded-2xl shadow-2xl shadow-emerald-500/20 mb-4 animate-bounce-slow">
                     <ShieldCheck className="w-10 h-10 text-white" />
                 </div>
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
     Loader2,
@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 export default function DepartmentSettingsPage() {
     const { id: deptId } = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [dept, setDept] = useState<any>(null);
@@ -87,14 +88,6 @@ export default function DepartmentSettingsPage() {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) throw new Error('로그인이 필요합니다.');
 
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('church_id')
-                .eq('id', session.user.id)
-                .single();
-
-            if (!profile?.church_id) throw new Error('교회 정보가 없습니다.');
-
             const payload = {
                 name: dept.name,
                 profile_mode: dept.profile_mode,
@@ -104,16 +97,28 @@ export default function DepartmentSettingsPage() {
                 leader_reminder_time: dept.leader_reminder_time,
                 climbing_alert_enabled: dept.climbing_alert_enabled,
                 climbing_alert_day: dept.climbing_alert_day,
-                climbing_alert_time: dept.climbing_alert_time,
-                updated_at: new Date().toISOString()
+                climbing_alert_time: dept.climbing_alert_time
             };
 
             if (deptId === 'new') {
+                // 신규 생성 시에만 church_id 필요
+                const churchIdFromQuery = searchParams.get('churchId');
+                let churchId = churchIdFromQuery;
+                if (!churchId) {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('church_id')
+                        .eq('id', session.user.id)
+                        .single();
+                    churchId = profile?.church_id || null;
+                }
+                if (!churchId) throw new Error('교회 정보가 없습니다.');
+
                 const { error } = await supabase
                     .from('departments')
                     .insert({
                         ...payload,
-                        church_id: profile.church_id
+                        church_id: churchId
                     });
                 if (error) throw error;
                 alert('부서가 생성되었습니다.');
@@ -175,7 +180,7 @@ export default function DepartmentSettingsPage() {
 
                 <form onSubmit={handleSave} className="space-y-6 pb-24">
                     {/* Section 1: Basic Information */}
-                    <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-slate-800 p-7 sm:p-8 shadow-sm space-y-8">
+                    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-7 sm:p-8 shadow-sm space-y-8">
                         <div className="flex items-center gap-3.5">
                             <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center">
                                 <Layers className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -285,7 +290,7 @@ export default function DepartmentSettingsPage() {
                     </div>
 
                     {/* Section 2: Notifications */}
-                    <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-slate-800 p-7 sm:p-8 shadow-sm space-y-8">
+                    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-7 sm:p-8 shadow-sm space-y-8">
                         <div className="flex items-center gap-3.5">
                             <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center">
                                 <Bell className="w-5 h-5 text-amber-600 dark:text-amber-400" />

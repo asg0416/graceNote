@@ -154,7 +154,7 @@ export default function ChurchesPage() {
                         setNewChurchLocation('');
                         setIsModalOpen(true);
                     }}
-                    className="w-full sm:w-fit bg-indigo-600 text-white px-8 py-4 rounded-2xl sm:rounded-[28px] font-black text-sm hover:bg-indigo-500 hover:scale-105 transition-all flex items-center justify-center gap-2.5 shadow-xl shadow-indigo-600/20 active:scale-95 border border-indigo-400/20"
+                    className="w-full sm:w-fit bg-indigo-600 text-white px-8 py-4 rounded-2xl sm:rounded-2xl font-black text-sm hover:bg-indigo-500 hover:scale-105 transition-all flex items-center justify-center gap-2.5 shadow-xl shadow-indigo-600/20 active:scale-95 border border-indigo-400/20"
                 >
                     <PlusCircle className="w-5 h-5" />
                     신규 교회 등록
@@ -177,13 +177,13 @@ export default function ChurchesPage() {
                         placeholder="교회 이름 또는 주소로 검색..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-14 pr-6 py-4 bg-white dark:bg-[#111827]/60 backdrop-blur-xl border border-slate-200 dark:border-slate-800/80 rounded-[28px] focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-all shadow-lg dark:shadow-none"
+                        className="w-full pl-14 pr-6 py-4 bg-white dark:bg-[#111827]/60 backdrop-blur-xl border border-slate-200 dark:border-slate-800/80 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-all shadow-lg dark:shadow-none"
                     />
                 </div>
             </div>
 
             {/* Church List */}
-            <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl rounded-[32px] sm:rounded-[40px] border border-slate-200 dark:border-slate-800/80 overflow-hidden shadow-xl dark:shadow-2xl">
+            <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800/80 overflow-hidden shadow-xl dark:shadow-2xl">
                 {loading ? (
                     <div className="p-32 flex flex-col items-center justify-center gap-6 text-center">
                         <Loader2 className="w-12 h-12 text-indigo-600 dark:text-indigo-500 animate-spin" />
@@ -327,7 +327,7 @@ export default function ChurchesPage() {
 function StatsSummaryCard({ title, value, unit, isPrimary, icon: Icon, color }: any) {
     return (
         <div className={cn(
-            "p-6 sm:p-8 rounded-[32px] sm:rounded-[40px] border relative overflow-hidden group transition-all duration-300 shadow-lg dark:shadow-none",
+            "p-6 sm:p-8 rounded-2xl sm:rounded-3xl border relative overflow-hidden group transition-all duration-300 shadow-lg dark:shadow-none",
             isPrimary
                 ? "bg-gradient-to-br from-indigo-600 to-indigo-800 border-indigo-400/20 shadow-indigo-600/10"
                 : "bg-white dark:bg-[#111827]/60 backdrop-blur-xl border-slate-200 dark:border-slate-800/80 hover:border-indigo-200 dark:hover:border-slate-700"

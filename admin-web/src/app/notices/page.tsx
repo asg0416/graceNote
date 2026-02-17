@@ -235,7 +235,7 @@ export default function NoticesPage() {
             {/* Notices List */}
             <div className="grid grid-cols-1 gap-6 px-2">
                 {notices.length === 0 ? (
-                    <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-[32px] p-20 text-center space-y-4">
+                    <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-20 text-center space-y-4">
                         <div className="w-20 h-20 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto">
                             <Megaphone className="w-10 h-10 text-slate-300" />
                         </div>
@@ -243,7 +243,7 @@ export default function NoticesPage() {
                     </div>
                 ) : (
                     notices.map((notice) => (
-                        <div key={notice.id} className="group bg-white dark:bg-[#111827]/60 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-[32px] p-6 sm:p-8 hover:border-indigo-500/50 transition-all duration-300 shadow-sm hover:shadow-2xl">
+                        <div key={notice.id} className="group bg-white dark:bg-[#111827]/60 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-2xl p-6 sm:p-8 hover:border-indigo-500/50 transition-all duration-300 shadow-sm hover:shadow-2xl">
                             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
                                 <div className="space-y-4 flex-1">
                                     <div className="flex flex-wrap items-center gap-2">

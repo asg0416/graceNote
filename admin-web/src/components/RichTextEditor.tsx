@@ -133,7 +133,7 @@ export default function RichTextEditor({ content, onChange, editable = true, pla
         <div className={cn(
             "w-full overflow-hidden transition-all",
             editable
-                ? "border border-slate-200 dark:border-slate-800 rounded-[32px] bg-white dark:bg-slate-900/40 focus-within:ring-4 focus-within:ring-indigo-500/5 shadow-sm"
+                ? "border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900/40 focus-within:ring-4 focus-within:ring-indigo-500/5 shadow-sm"
                 : "bg-transparent"
         )}>
             {editable && (
@@ -253,7 +253,7 @@ export default function RichTextEditor({ content, onChange, editable = true, pla
             <div
                 className={cn(
                     "relative",
-                    !editable && "bg-slate-50/50 dark:bg-slate-900/20 p-8 rounded-[32px] border border-slate-100 dark:border-slate-800/40"
+                    !editable && "bg-slate-50/50 dark:bg-slate-900/20 p-8 rounded-2xl border border-slate-100 dark:border-slate-800/40"
                 )}
             >
                 {!editable && !content && (

@@ -614,7 +614,7 @@ export default function AttendancePage() {
             </header>
 
             {/* Horizontal Filter Bar - Compact & Glassy */}
-            <div className="sticky top-20 z-[40] bg-white/70 dark:bg-[#0d1221]/70 backdrop-blur-2xl border border-slate-200/60 dark:border-slate-800/60 p-3 sm:p-4 rounded-[32px] shadow-lg flex flex-wrap items-center gap-4">
+            <div className="sticky top-20 z-[40] bg-white/70 dark:bg-[#0d1221]/70 backdrop-blur-2xl border border-slate-200/60 dark:border-slate-800/60 p-3 sm:p-4 rounded-2xl shadow-lg flex flex-wrap items-center gap-4">
                 <div className="flex flex-wrap items-center gap-3 flex-1">
                     {profile?.is_master && (
                         <div className="relative group min-w-[160px]">
@@ -696,7 +696,7 @@ export default function AttendancePage() {
 
             {/* Quick Summary Stats Row */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 px-1">
-                <div className="bg-white dark:bg-slate-800/40 p-6 rounded-[32px] border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-indigo-500/30 transition-all">
+                <div className="bg-white dark:bg-slate-800/40 p-6 rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-indigo-500/30 transition-all">
                     <div>
                         <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">전체 구성원</p>
                         <h4 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">{attendanceData.length}</h4>
@@ -705,7 +705,7 @@ export default function AttendancePage() {
                         <Users className="w-6 h-6" />
                     </div>
                 </div>
-                <div className="bg-white dark:bg-slate-800/40 p-6 rounded-[32px] border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-emerald-500/30 transition-all">
+                <div className="bg-white dark:bg-slate-800/40 p-6 rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-emerald-500/30 transition-all">
                     <div>
                         <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">금주 출석</p>
                         <h4 className="text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tighter">
@@ -716,7 +716,7 @@ export default function AttendancePage() {
                         <CheckCircle2 className="w-6 h-6" />
                     </div>
                 </div>
-                <div className="bg-white dark:bg-slate-800/40 p-6 rounded-[32px] border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-rose-500/30 transition-all">
+                <div className="bg-white dark:bg-slate-800/40 p-6 rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-rose-500/30 transition-all">
                     <div>
                         <p className="text-[10px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest mb-1">금주 결석</p>
                         <h4 className="text-3xl font-black text-rose-600 dark:text-rose-400 tracking-tighter">
@@ -727,7 +727,7 @@ export default function AttendancePage() {
                         <XCircle className="w-6 h-6" />
                     </div>
                 </div>
-                <div className="bg-indigo-600 p-6 rounded-[32px] shadow-xl shadow-indigo-500/20 flex items-center justify-between group hover:scale-[1.02] transition-all">
+                <div className="bg-indigo-600 p-6 rounded-2xl shadow-xl shadow-indigo-500/20 flex items-center justify-between group hover:scale-[1.02] transition-all">
                     <div>
                         <p className="text-[10px] font-black text-indigo-100/60 uppercase tracking-widest mb-1">종합 출석률</p>
                         <h4 className="text-3xl font-black text-white tracking-tighter">
@@ -744,13 +744,13 @@ export default function AttendancePage() {
                 {/* Main Content Column (Left/Center) */}
                 <div className="xl:col-span-8 space-y-8">
                     {loading ? (
-                        <div className="h-64 flex flex-col items-center justify-center bg-white dark:bg-slate-800/40 rounded-[32px] border border-slate-100 dark:border-slate-800/50">
+                        <div className="h-64 flex flex-col items-center justify-center bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/50">
                             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
                             <p className="text-xs font-bold text-slate-400 mt-4 uppercase tracking-widest">데이터 동기화 중...</p>
                         </div>
                     ) : (
                         <>
-                            <div className="bg-white dark:bg-slate-800/40 p-8 rounded-[40px] border border-slate-100 dark:border-slate-800/50 shadow-sm space-y-8 relative overflow-hidden">
+                            <div className="bg-white dark:bg-slate-800/40 p-8 rounded-3xl border border-slate-100 dark:border-slate-800/50 shadow-sm space-y-8 relative overflow-hidden">
                                 <div className="flex items-center justify-between relative z-10">
                                     <div className="flex items-center gap-2">
                                         <TrendingUp className="w-5 h-5 text-indigo-500" />
@@ -853,7 +853,7 @@ export default function AttendancePage() {
                             </div>
 
                             {/* Overall Progress - Segmented Bars */}
-                            <div className="bg-white dark:bg-slate-800/40 p-8 rounded-[40px] border border-slate-100 dark:border-slate-800/50 shadow-sm space-y-8">
+                            <div className="bg-white dark:bg-slate-800/40 p-8 rounded-3xl border border-slate-100 dark:border-slate-800/50 shadow-sm space-y-8">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                         <BarChart3 className="w-5 h-5 text-indigo-500" />
@@ -947,7 +947,7 @@ export default function AttendancePage() {
 
                 {/* Sidebar Column (Right) */}
                 <div className="xl:col-span-4 space-y-6">
-                    <div className="bg-white/60 dark:bg-[#111827]/40 backdrop-blur-2xl rounded-[40px] p-8 border border-white dark:border-slate-800/50 shadow-xl relative overflow-hidden">
+                    <div className="bg-white/60 dark:bg-[#111827]/40 backdrop-blur-2xl rounded-3xl p-8 border border-white dark:border-slate-800/50 shadow-xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 rounded-full -mr-24 -mt-24 blur-3xl" />
 
                         <div className="flex items-center justify-between mb-8 relative">
@@ -1047,7 +1047,7 @@ export default function AttendancePage() {
                                             </div>
                                         ))
                                     ) : (
-                                        <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/20 rounded-[32px] border border-dashed border-slate-200 dark:border-slate-800">
+                                        <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
                                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">기준({hallOfFameTarget === 'rate' ? hallOfFameValue + '%' : hallOfFameValue + '회'}) 이상인 성도가 없습니다.</p>
                                         </div>
                                     )}
@@ -1111,7 +1111,7 @@ export default function AttendancePage() {
                                             </div>
                                         ))
                                     ) : (
-                                        <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/20 rounded-[32px] border border-dashed border-slate-200 dark:border-slate-800">
+                                        <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
                                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">출석 데이터가 없습니다.</p>
                                         </div>
                                     )}
@@ -1149,7 +1149,7 @@ export default function AttendancePage() {
                                             </div>
                                         ))
                                     ) : (
-                                        <div className="py-8 text-center bg-rose-50/30 dark:bg-rose-900/10 rounded-[32px] border border-dashed border-rose-200/50 dark:border-rose-900/30">
+                                        <div className="py-8 text-center bg-rose-50/30 dark:bg-rose-900/10 rounded-2xl border border-dashed border-rose-200/50 dark:border-rose-900/30">
                                             <p className="text-[10px] font-bold text-rose-400 uppercase tracking-tight">관리가 필요한 성도가 없습니다.</p>
                                         </div>
                                     )}

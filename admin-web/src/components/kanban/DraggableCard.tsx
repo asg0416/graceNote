@@ -59,7 +59,7 @@ export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSel
             {...listeners}
             className={cn(
                 "touch-none flex flex-col gap-2 relative",
-                isGhost && "border-2 border-dashed border-indigo-500/20 bg-indigo-500/5 dark:bg-indigo-400/5 rounded-[32px]",
+                isGhost && "border-2 border-dashed border-indigo-500/20 bg-indigo-500/5 dark:bg-indigo-400/5 rounded-2xl",
                 isHidden && "invisible"
             )}
         >

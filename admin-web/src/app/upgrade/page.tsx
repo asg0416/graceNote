@@ -157,8 +157,8 @@ export default function UpgradePage() {
     if (success) {
         return (
             <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 dark:bg-[#0a0f1d]">
-                <div className="w-full max-w-md text-center space-y-8 bg-white dark:bg-[#111827]/60 backdrop-blur-2xl p-10 rounded-[40px] border border-white dark:border-slate-800/80 shadow-2xl">
-                    <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-500 rounded-[28px] shadow-2xl shadow-indigo-500/20 mb-4">
+                <div className="w-full max-w-md text-center space-y-8 bg-white dark:bg-[#111827]/60 backdrop-blur-2xl p-10 rounded-3xl border border-white dark:border-slate-800/80 shadow-2xl">
+                    <div className="inline-flex items-center justify-center w-20 h-20 bg-indigo-500 rounded-2xl shadow-2xl shadow-indigo-500/20 mb-4">
                         <User className="w-10 h-10 text-white" />
                     </div>
                     <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">신청 완료!</h2>
@@ -184,7 +184,7 @@ export default function UpgradePage() {
             <div className="hidden lg:flex lg:w-1/2 relative bg-indigo-600 items-center justify-center p-20 overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800" />
                 <div className="relative z-10 max-w-lg space-y-8">
-                    <div className="w-24 h-24 bg-white/20 backdrop-blur-xl rounded-[32px] flex items-center justify-center shadow-2xl border border-white/30">
+                    <div className="w-24 h-24 bg-white/20 backdrop-blur-xl rounded-2xl flex items-center justify-center shadow-2xl border border-white/30">
                         <Church className="w-12 h-12 text-white" />
                     </div>
                     <div className="space-y-4">
@@ -223,7 +223,7 @@ export default function UpgradePage() {
                         </p>
                     </div>
 
-                    <div className="bg-indigo-600/5 dark:bg-indigo-500/5 border border-indigo-600/10 dark:border-indigo-500/10 p-6 rounded-[32px] space-y-3 relative overflow-hidden group">
+                    <div className="bg-indigo-600/5 dark:bg-indigo-500/5 border border-indigo-600/10 dark:border-indigo-500/10 p-6 rounded-2xl space-y-3 relative overflow-hidden group">
                         <div className="absolute -right-4 -top-4 w-24 h-24 bg-indigo-600/5 rounded-full blur-2xl transition-all group-hover:scale-150" />
                         <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400">
                             <ShieldCheck className="w-5 h-5" />
@@ -235,7 +235,7 @@ export default function UpgradePage() {
                         </p>
                     </div>
 
-                    <div className="bg-white/80 dark:bg-[#111827]/60 backdrop-blur-2xl p-8 sm:p-10 rounded-[40px] border border-white dark:border-slate-800/80 shadow-2xl dark:shadow-none relative">
+                    <div className="bg-white/80 dark:bg-[#111827]/60 backdrop-blur-2xl p-8 sm:p-10 rounded-3xl border border-white dark:border-slate-800/80 shadow-2xl dark:shadow-none relative">
                         <form onSubmit={handleUpgrade} className="space-y-6">
                             {error && (
                                 <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-600 dark:text-red-400 text-xs font-black text-center flex items-center justify-center gap-2">

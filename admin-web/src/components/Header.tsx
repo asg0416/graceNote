@@ -229,7 +229,7 @@ export default function Header() {
                                     {isNotificationOpen && (
                                         <>
                                             {/* Overlay removed, managed by ref */}
-                                            <div className="absolute top-full mt-3 right-0 w-80 bg-white dark:bg-[#0d1221] border border-slate-200 dark:border-slate-800 rounded-[28px] shadow-2xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                                            <div className="absolute top-full mt-3 right-0 w-80 bg-white dark:bg-[#0d1221] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-20 overflow-hidden animate-in fade-in slide-in-from-top-2">
                                                 <div className="p-5 border-b border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-900/20 flex items-center justify-between">
                                                     <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest">새로운 문의 알림</h4>
                                                     {unreadInquiries > 0 && <span className="px-2 py-0.5 bg-rose-500 text-white text-[9px] font-black rounded-full">{unreadInquiries}</span>}

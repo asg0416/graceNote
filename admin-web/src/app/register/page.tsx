@@ -255,8 +255,8 @@ export default function RegisterPage() {
     if (success) {
         return (
             <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 dark:bg-[#0a0f1d]">
-                <div className="w-full max-w-md text-center space-y-8 bg-white dark:bg-[#111827]/60 backdrop-blur-2xl p-10 rounded-[40px] border border-white dark:border-slate-800/80 shadow-2xl">
-                    <div className="inline-flex items-center justify-center w-20 h-20 bg-emerald-500 rounded-[28px] shadow-2xl shadow-emerald-500/20 mb-4">
+                <div className="w-full max-w-md text-center space-y-8 bg-white dark:bg-[#111827]/60 backdrop-blur-2xl p-10 rounded-3xl border border-white dark:border-slate-800/80 shadow-2xl">
+                    <div className="inline-flex items-center justify-center w-20 h-20 bg-emerald-500 rounded-2xl shadow-2xl shadow-emerald-500/20 mb-4">
                         <ShieldCheck className="w-10 h-10 text-white" />
                     </div>
                     <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">신청 완료!</h2>
@@ -283,7 +283,7 @@ export default function RegisterPage() {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[400px] h-[400px] bg-purple-400/20 rounded-full blur-[80px]" />
 
                 <div className="relative z-10 max-w-lg space-y-8">
-                    <div className="w-24 h-24 bg-white/20 backdrop-blur-xl rounded-[32px] flex items-center justify-center shadow-2xl border border-white/30">
+                    <div className="w-24 h-24 bg-white/20 backdrop-blur-xl rounded-2xl flex items-center justify-center shadow-2xl border border-white/30">
                         <Church className="w-12 h-12 text-white" />
                     </div>
                     <div className="space-y-4">
@@ -296,11 +296,11 @@ export default function RegisterPage() {
                         </p>
                     </div>
                     <div className="grid grid-cols-2 gap-6 pt-10">
-                        <div className="p-6 bg-white/5 backdrop-blur-lg border border-white/10 rounded-[28px]">
+                        <div className="p-6 bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl">
                             <p className="text-white font-black text-2xl">99.9%</p>
                             <p className="text-indigo-200/60 text-xs font-bold uppercase tracking-widest mt-1">Uptime SLA</p>
                         </div>
-                        <div className="p-6 bg-white/5 backdrop-blur-lg border border-white/10 rounded-[28px]">
+                        <div className="p-6 bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl">
                             <p className="text-white font-black text-2xl">24/7</p>
                             <p className="text-indigo-200/60 text-xs font-bold uppercase tracking-widest mt-1">Security Monitoring</p>
                         </div>
@@ -339,7 +339,7 @@ export default function RegisterPage() {
                         </p>
                     </div>
 
-                    <div className="bg-white/80 dark:bg-[#111827]/60 backdrop-blur-2xl p-8 sm:p-10 rounded-[40px] border border-white dark:border-slate-800/80 shadow-2xl dark:shadow-none relative">
+                    <div className="bg-white/80 dark:bg-[#111827]/60 backdrop-blur-2xl p-8 sm:p-10 rounded-3xl border border-white dark:border-slate-800/80 shadow-2xl dark:shadow-none relative">
                         {otpSent ? (
                             <form onSubmit={handleVerifyOTP} className="space-y-6">
                                 {error && (
@@ -533,7 +533,7 @@ export default function RegisterPage() {
                                     </div>
 
                                     {/* Password Requirements Checklist */}
-                                    <div className="p-5 bg-slate-50 dark:bg-slate-900/30 rounded-[28px] border border-slate-100 dark:border-slate-800/40 space-y-3">
+                                    <div className="p-5 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800/40 space-y-3">
                                         <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-2">
                                             <ShieldCheck className="w-3 h-3" />
                                             비밀번호 보안 규칙

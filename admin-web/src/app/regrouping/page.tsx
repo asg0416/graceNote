@@ -1021,7 +1021,7 @@ function RegroupingPageInner() {
             )}
 
             {/* Sticky Interaction Toolbar */}
-            <div className="sticky top-16 sm:top-20 z-30 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-[32px] px-6 py-4 mb-12 shadow-sm transition-all">
+            <div className="sticky top-16 sm:top-20 z-30 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 mb-12 shadow-sm transition-all">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex-1 max-w-md relative group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
@@ -1123,7 +1123,7 @@ function RegroupingPageInner() {
             </div>
 
             {/* Kanban Board Container - Brightened background for a premium white theme (Photo ref) */}
-            <div className="bg-white/50 dark:bg-slate-900/10 rounded-[40px] border border-slate-200/50 dark:border-slate-800/50 p-1 sm:p-2 shadow-inner overflow-hidden">
+            <div className="bg-white/50 dark:bg-slate-900/10 rounded-3xl border border-slate-200/50 dark:border-slate-800/50 p-1 sm:p-2 shadow-inner overflow-hidden">
                 <div ref={boardRef} className="relative w-full overflow-x-auto custom-scrollbar p-5 sm:p-8 bg-white/30">
                     <KanbanBoard
                         groups={groups}

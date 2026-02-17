@@ -636,7 +636,7 @@ function MembersPageInner() {
                 {isMaster && (
                     <div className="flex flex-col xl:flex-row gap-6 items-stretch">
                         {/* Selection Group - Left side (Red box in Photo 2) - Visible only to Master */}
-                        <div className="flex-1 bg-white dark:bg-[#111827]/40 p-5 sm:p-6 rounded-[32px] border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <div className="flex-1 bg-white dark:bg-[#111827]/40 p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 {/* Church Selection */}
                                 <div className="relative group/select">
@@ -699,7 +699,7 @@ function MembersPageInner() {
 
             {/* Filters and Search Toolbar */}
             <div className="flex flex-col gap-4 sm:gap-6 px-1">
-                <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center bg-white dark:bg-[#111827]/60 p-3 sm:p-5 rounded-[24px] sm:rounded-[40px] border border-slate-200 dark:border-slate-800/80 shadow-sm">
+                <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center bg-white dark:bg-[#111827]/60 p-3 sm:p-5 rounded-[24px] sm:rounded-3xl border border-slate-200 dark:border-slate-800/80 shadow-sm">
                     {/* Search Field */}
                     <div className="flex-1 relative group">
                         <div className="absolute left-5 top-1/2 -translate-y-1/2">
@@ -887,7 +887,7 @@ function MembersPageInner() {
             {
                 selectedDeptId !== 'all' && departments.length > 0 && (
                     <div className="relative group/tabs w-full max-w-full overflow-hidden min-w-0">
-                        <div className="bg-white dark:bg-[#111827]/40 p-1.5 sm:p-2 rounded-[20px] sm:rounded-[32px] border border-slate-200 dark:border-slate-800 shadow-sm relative min-w-0 overflow-hidden">
+                        <div className="bg-white dark:bg-[#111827]/40 p-1.5 sm:p-2 rounded-[20px] sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative min-w-0 overflow-hidden">
                             <div className="flex items-center gap-1 overflow-x-auto px-2 relative z-10 scroll-smooth min-w-0
                                 [&::-webkit-scrollbar]:h-1.5
                                 [&::-webkit-scrollbar-track]:bg-slate-50/50
@@ -938,7 +938,7 @@ function MembersPageInner() {
                 )
             }
             {/* Members List Table */}
-            <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl rounded-[32px] sm:rounded-[40px] border border-slate-200 dark:border-slate-800/80 overflow-hidden shadow-xl">
+            <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800/80 overflow-hidden shadow-xl">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
@@ -1023,7 +1023,7 @@ function MembersPageInner() {
             {
                 selectedMemberIds.length > 0 && (
                     <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-10 duration-500">
-                        <div className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-8 py-5 rounded-[32px] shadow-2xl flex items-center gap-8 backdrop-blur-xl bg-opacity-95 dark:bg-opacity-95 border border-white/10 dark:border-slate-200">
+                        <div className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-8 py-5 rounded-2xl shadow-2xl flex items-center gap-8 backdrop-blur-xl bg-opacity-95 dark:bg-opacity-95 border border-white/10 dark:border-slate-200">
                             <div className="flex items-center gap-3 pr-8 border-r border-white/10 dark:border-slate-200">
                                 <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center font-black text-sm text-white">
                                     {selectedMemberIds.length}

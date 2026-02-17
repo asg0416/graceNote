@@ -360,7 +360,7 @@ export default function InquiriesPage() {
                     "xl:col-span-5 space-y-6",
                     selectedInquiry && "hidden xl:block"
                 )}>
-                    <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-[32px] overflow-hidden shadow-xl">
+                    <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-2xl overflow-hidden shadow-xl">
                         <div className="p-6 border-b border-slate-100 dark:border-slate-800 space-y-4">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight shrink-0 mr-4">문의 리스트</h3>
@@ -471,8 +471,8 @@ export default function InquiriesPage() {
                     !selectedInquiry && "hidden xl:block"
                 )}>
                     {!selectedInquiry ? (
-                        <div className="h-full min-h-[600px] bg-slate-50 dark:bg-slate-900/40 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[40px] flex flex-col items-center justify-center p-20 text-center gap-4">
-                            <div className="w-24 h-24 bg-white dark:bg-slate-800 rounded-[32px] flex items-center justify-center shadow-xl">
+                        <div className="h-full min-h-[600px] bg-slate-50 dark:bg-slate-900/40 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl flex flex-col items-center justify-center p-20 text-center gap-4">
+                            <div className="w-24 h-24 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center shadow-xl">
                                 <MessageSquare className="w-10 h-10 text-slate-200" />
                             </div>
                             <div className="space-y-1">
@@ -481,7 +481,7 @@ export default function InquiriesPage() {
                             </div>
                         </div>
                     ) : (
-                        <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-[32px] flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right-4 duration-300 min-h-[700px]">
+                        <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-2xl flex flex-col shadow-xl overflow-hidden animate-in slide-in-from-right-4 duration-300 min-h-[700px]">
                             {/* Chat Header */}
                             <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/30 flex items-center justify-between">
                                 <div className="flex items-center gap-4">
@@ -528,7 +528,7 @@ export default function InquiriesPage() {
                                         <span className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">문의 원본 내용</span>
                                         <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
                                     </div>
-                                    <div className="bg-white dark:bg-slate-800/80 p-6 rounded-[32px] border border-slate-100 dark:border-slate-700/50 shadow-sm mx-auto max-w-[90%]">
+                                    <div className="bg-white dark:bg-slate-800/80 p-6 rounded-2xl border border-slate-100 dark:border-slate-700/50 shadow-sm mx-auto max-w-[90%]">
                                         <h5 className="text-base font-black text-slate-900 dark:text-white mb-3 tracking-tight">{selectedInquiry.title}</h5>
                                         <p className="text-slate-600 dark:text-slate-300 font-bold leading-relaxed whitespace-pre-wrap text-sm">{selectedInquiry.content}</p>
 
@@ -685,7 +685,7 @@ export default function InquiriesPage() {
                     onClick={() => setPreviewImage(null)}
                     style={{ marginLeft: 'var(--sidebar-width, 280px)', marginTop: '80px' }} // Approximate sidebar/header offsets
                 >
-                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm rounded-[32px] m-4" />
+                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm rounded-2xl m-4" />
 
                     <button
                         className="absolute top-8 right-8 z-10 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"

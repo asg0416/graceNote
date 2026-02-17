@@ -232,7 +232,7 @@ export default function AdminRequestsPage() {
                 </div>
             </header>
 
-            <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-[32px] sm:rounded-[40px] shadow-xl dark:shadow-2xl overflow-hidden mb-12">
+            <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl border border-slate-200 dark:border-slate-800/60 rounded-2xl sm:rounded-3xl shadow-xl dark:shadow-2xl overflow-hidden mb-12">
                 {loading ? (
                     <div className="py-20 flex flex-col items-center justify-center gap-6">
                         <div className="relative">
@@ -347,7 +347,7 @@ export default function AdminRequestsPage() {
                                             {isExpanded && (
                                                 <tr className="animate-in slide-in-from-top-2 duration-300">
                                                     <td colSpan={4} className="px-6 pb-6 pt-2">
-                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 p-8 bg-slate-50/50 dark:bg-slate-900/50 rounded-[32px] border border-slate-200/50 dark:border-slate-800/50">
+                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 p-8 bg-slate-50/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/50 dark:border-slate-800/50">
                                                             <div className="space-y-4">
                                                                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">기본 연락 정보</h4>
                                                                 <div className="space-y-3">
