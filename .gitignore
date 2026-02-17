@@ -69,3 +69,7 @@ supabase/*.sql
 !supabase/schema.sql
 !supabase/migrations/*.sql
 !supabase/seed.sql
+
+# AI Planning & Context
+ai-plan/
+*.md
