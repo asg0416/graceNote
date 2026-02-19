@@ -100,14 +100,20 @@ Future<void> main() async {
 // Global update notifier for PWA version detection
 final UpdateNotifier _updateNotifier = kIsWeb ? UpdateNotifier() : UpdateNotifier();
 
+final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
 class GraceNoteApp extends StatelessWidget {
   const GraceNoteApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Navigator key를 PushNotificationService에 연결
+    PushNotificationService.navigatorKey = _navigatorKey;
+
     return ShadApp.custom(
       theme: AppTheme.graceNoteTheme,
       appBuilder: (context) => MaterialApp(
+        navigatorKey: _navigatorKey,
         title: AppConstants.appName,
         theme: AppTheme.light,
         debugShowCheckedModeBanner: false,
@@ -377,7 +383,7 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
     );
   }
 
-  /// 로그인 후 푸시 알림 권한 요청 (1회)
+  /// 로그인 후 푸시 알림 권한 요청 (1회) + 딥링크 확인
   bool _pushRequested = false;
   void _requestPushPermission() {
     if (_pushRequested) return;
@@ -386,6 +392,12 @@ class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver
     Future.delayed(const Duration(seconds: 2), () {
       PushNotificationService().requestPermissionAndSaveToken();
     });
+    // 알림 클릭으로 앱이 새로 열린 경우 딥링크 처리
+    if (kIsWeb) {
+      Future.delayed(const Duration(seconds: 1), () {
+        PushNotificationService().checkInitialDeepLink();
+      });
+    }
   }
 
   Widget _buildLoadingScreen(String message) {

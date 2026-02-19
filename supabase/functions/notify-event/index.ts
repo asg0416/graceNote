@@ -121,7 +121,7 @@ Deno.serve(async (req: Request) => {
     });
 
     // 2. Data fetching
-    const { data: group } = await supabase.from("groups").select("name, church_id").eq("id", record.group_id).single();
+    const { data: group } = await supabase.from("groups").select("name, church_id, department_id").eq("id", record.group_id).single();
     const { data: member } = await supabase.from("member_directory").select("full_name").eq("id", record.member_id).single();
 
     const isUpdate = type === 'UPDATE';
@@ -134,39 +134,89 @@ Deno.serve(async (req: Request) => {
     link = `/attendance/share?groupId=${record.group_id}`;
     preferenceField = "push_prayer_enabled";
 
-    // 2. Target users (Current group members)
-    const { data: members } = await supabase
+    // 2. Target users: department leaders + department admins (excluding author)
+    const departmentId = group?.department_id;
+    if (!departmentId) {
+      console.log("[notify-event] No department_id found for group, skipping");
+      return new Response(JSON.stringify({ skipped: true, reason: "no_department" }));
+    }
+
+    // Get all groups in the same department
+    const { data: deptGroups } = await supabase.from("groups").select("id").eq("department_id", departmentId);
+    const deptGroupIds = (deptGroups || []).map(g => g.id);
+
+    // Get leaders from all groups in the department
+    const { data: leaders } = await supabase
       .from("group_members")
       .select("profile_id")
-      .eq("group_id", record.group_id)
+      .in("group_id", deptGroupIds)
+      .eq("role_in_group", "leader")
       .eq("is_active", true);
 
+    // Get department admins
     const { data: admins } = await supabase
       .from("profiles")
       .select("id")
-      .eq("church_id", group.church_id)
+      .eq("department_id", departmentId)
       .in("role", ["admin", "system_admin"]);
 
+    // Exclude the author
+    const authorId = record.created_by || record.user_id;
     targetUserIds = [...new Set([
-      ...(members || []).map(m => m.profile_id).filter(Boolean),
+      ...(leaders || []).map(l => l.profile_id).filter(Boolean),
       ...(admins || []).map(a => a.id).filter(Boolean)
-    ])];
+    ])].filter(id => id !== authorId);
 
   } else if (table === 'notices') {
     title = `\ud83d\udce2 \uc0c8 \uacf5\uc9c0\uc0ac\ud56d: ${record.title}`;
-    body = record.content.substring(0, 50) + "...";
+    const plainContent = (record.content || "").replace(/<[^>]*>/g, "").trim();
+    body = plainContent.substring(0, 50) + (plainContent.length > 50 ? "..." : "");
     link = "/home/notices";
     preferenceField = "push_notice_enabled";
 
-    // Global notice or department notice?
+    // Determine target users based on notice scope
+    const tChurchIds: string[] = record.target_church_ids?.length ? record.target_church_ids : [];
+    const tDeptIds: string[] = record.target_department_ids?.length ? record.target_department_ids : [];
+
     if (record.is_global) {
-      const { data: allUsers } = await supabase.from("profiles").select("id");
-      targetUserIds = (allUsers || []).map(u => u.id);
+      // Global notice
+      if (!record.church_id && tChurchIds.length === 0) {
+        // No church specified: master global → ALL users
+        const { data: author } = await supabase.from("profiles").select("role, is_master").eq("id", record.created_by).single();
+        if (author?.is_master === true || author?.role === 'system_admin') {
+          const { data: allUsers } = await supabase.from("profiles").select("id");
+          targetUserIds = (allUsers || []).map(u => u.id);
+        } else {
+          console.log("[notify-event] Global notice without church_id from non-master, skipping");
+        }
+      } else {
+        // Church-scoped global
+        const churchId = record.church_id;
+        const { data: allUsers } = await supabase.from("profiles").select("id").eq("church_id", churchId);
+        targetUserIds = (allUsers || []).map(u => u.id);
+      }
+    } else if (tDeptIds.length > 0) {
+      // Multi-department target (new array column)
+      const { data: deptGroups } = await supabase.from("groups").select("id").in("department_id", tDeptIds);
+      const groupIds = (deptGroups || []).map(g => g.id);
+      if (groupIds.length > 0) {
+        const { data: deptMembers } = await supabase.from("group_members").select("profile_id").in("group_id", groupIds).eq("is_active", true);
+        targetUserIds = [...new Set((deptMembers || []).map(m => m.profile_id).filter(Boolean))];
+      }
+    } else if (tChurchIds.length > 0) {
+      // Multi-church target (no departments selected → all users in those churches)
+      const { data: churchUsers } = await supabase.from("profiles").select("id").in("church_id", tChurchIds);
+      targetUserIds = (churchUsers || []).map(u => u.id);
     } else if (record.department_id) {
+      // Legacy single department target
       const { data: deptGroups } = await supabase.from("groups").select("id").eq("department_id", record.department_id);
       const groupIds = (deptGroups || []).map(g => g.id);
       const { data: deptMembers } = await supabase.from("group_members").select("profile_id").in("group_id", groupIds).eq("is_active", true);
       targetUserIds = [...new Set((deptMembers || []).map(m => m.profile_id).filter(Boolean))];
+    } else if (record.church_id) {
+      // Legacy single church target (no department)
+      const { data: churchUsers } = await supabase.from("profiles").select("id").eq("church_id", record.church_id);
+      targetUserIds = (churchUsers || []).map(u => u.id);
     }
   }
 
@@ -178,7 +228,7 @@ Deno.serve(async (req: Request) => {
     .select("id")
     .in("id", targetUserIds)
     .eq(preferenceField, true);
-  
+
   const finalRecipientIds = (preferredProfiles || []).map(p => p.id);
   if (finalRecipientIds.length === 0) return new Response(JSON.stringify({ filtered: true }));
 
@@ -207,7 +257,7 @@ Deno.serve(async (req: Request) => {
     .delete()
     .lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString())
     .then(() => console.log("[notify-event] Dedup cleanup done"))
-    .catch(() => {});
+    .catch(() => { });
 
   return new Response(JSON.stringify({
     sent: results.filter(r => r.status === 'fulfilled').length,

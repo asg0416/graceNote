@@ -1,10 +1,12 @@
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../firebase_options.dart';
+import 'package:grace_note/features/home/presentation/screens/notice_list_screen.dart';
 
 /// Push 알림 서비스
 /// - Firebase 초기화
@@ -20,6 +22,9 @@ class PushNotificationService {
 
   bool _initialized = false;
   String? _currentToken;
+
+  /// 글로벌 Navigator Key (main.dart에서 설정)
+  static GlobalKey<NavigatorState>? navigatorKey;
 
   String? get currentToken => _currentToken;
   bool get isInitialized => _initialized;
@@ -40,6 +45,9 @@ class PushNotificationService {
 
       // 3. 포그라운드 메시지 리스너 설정
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+
+      // 4. Service Worker 메시지 리스너 (알림 클릭 딥링크)
+      _listenForNotificationClicks();
 
       _initialized = true;
       debugPrint('PushNotificationService: Initialized successfully');
@@ -104,6 +112,13 @@ class PushNotificationService {
       final userAgent = html.window.navigator.userAgent;
       final deviceInfo = _parseDeviceInfo(userAgent);
 
+      // 같은 토큰이 다른 사용자에게 등록되어 있으면 삭제 (기기 전환 대응)
+      await Supabase.instance.client
+          .from('fcm_tokens')
+          .delete()
+          .eq('token', token)
+          .neq('user_id', userId);
+
       await Supabase.instance.client.from('fcm_tokens').upsert(
         {
           'user_id': userId,
@@ -166,6 +181,61 @@ class PushNotificationService {
         debugPrint('PushNotificationService: Notification display error: $e');
       }
     }
+  }
+
+  /// Service Worker에서 알림 클릭 메시지 수신
+  void _listenForNotificationClicks() {
+    try {
+      final sw = html.window.navigator.serviceWorker;
+      if (sw != null) {
+        sw.onMessage.listen((event) {
+          final data = event.data;
+          if (data is Map && data['type'] == 'notification_click') {
+            final link = data['link'] as String?;
+            if (link != null) {
+              debugPrint('PushNotificationService: Deep link from notification: $link');
+              _handleDeepLink(link);
+            }
+          }
+        });
+        debugPrint('PushNotificationService: SW message listener registered');
+      }
+    } catch (e) {
+      debugPrint('PushNotificationService: SW message listener error: $e');
+    }
+  }
+
+  /// 앱 시작 시 URL의 deeplink 쿼리 파라미터 확인 (새 창으로 열린 경우)
+  void checkInitialDeepLink() {
+    try {
+      final uri = Uri.parse(html.window.location.href);
+      final deeplink = uri.queryParameters['deeplink'];
+      if (deeplink != null && deeplink.isNotEmpty) {
+        debugPrint('PushNotificationService: Initial deep link: $deeplink');
+        // URL에서 deeplink 파라미터 제거
+        html.window.history.replaceState(null, '', '/');
+        // 앱 로딩 완료 후 네비게이션
+        Future.delayed(const Duration(milliseconds: 800), () {
+          _handleDeepLink(deeplink);
+        });
+      }
+    } catch (e) {
+      debugPrint('PushNotificationService: Initial deep link check error: $e');
+    }
+  }
+
+  /// 딥링크 경로에 따라 화면 이동
+  void _handleDeepLink(String link) {
+    final nav = navigatorKey?.currentState;
+    if (nav == null) {
+      debugPrint('PushNotificationService: Navigator not available yet');
+      return;
+    }
+
+    if (link.contains('notices')) {
+      nav.push(MaterialPageRoute(builder: (_) => const NoticeListScreen()));
+    }
+    // 필요 시 다른 딥링크 경로 추가
   }
 
   /// User-Agent에서 간단한 디바이스 정보 추출

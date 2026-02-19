@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -375,9 +376,9 @@ class _NoticeAccordionCardState extends State<NoticeAccordionCard> with SingleTi
               padding: const EdgeInsets.all(20),
               child: SizedBox(
                 width: double.infinity,
-                child: Text(
-                  notice['content'],
-                  style: const TextStyle(
+                child: HtmlWidget(
+                  notice['content'] ?? '',
+                  textStyle: const TextStyle(
                     fontSize: 15,
                     color: Color(0xFF475569),
                     height: 1.6,

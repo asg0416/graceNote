@@ -277,6 +277,7 @@ class UserMembership {
   final String groupName;
   final String roleInGroup; // 'leader', 'member', 'admin'
   final String? departmentName;
+  final String? departmentId;
   final String? churchId;
 
   UserMembership({
@@ -284,6 +285,7 @@ class UserMembership {
     required this.groupName,
     required this.roleInGroup,
     this.departmentName,
+    this.departmentId,
     this.churchId,
   });
 
@@ -293,6 +295,7 @@ class UserMembership {
       groupName: map['group_name'] ?? '',
       roleInGroup: map['role_in_group'] ?? 'member',
       departmentName: map['department_name'],
+      departmentId: map['department_id'],
       churchId: map['church_id'],
     );
   }

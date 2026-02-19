@@ -20,6 +20,7 @@ import 'package:grace_note/features/home/presentation/screens/service_guide_scre
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:grace_note/features/settings/presentation/screens/notification_settings_screen.dart';
+import 'package:grace_note/core/services/push_notification_service.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -286,6 +287,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                         );
 
                         if (confirm == true) {
+                          await PushNotificationService().removeToken();
                           await Supabase.instance.client.auth.signOut();
                           ref.invalidate(userProfileProvider);
                           ref.invalidate(userProfileFutureProvider); 
