@@ -43,27 +43,37 @@ CREATE POLICY "Admins can manage their department settings" ON public.department
 
 -- Migrate data from church_settings to department_settings
 -- For each church_setting, insert a department_setting for every department in that church
-INSERT INTO public.department_settings (
-    department_id,
-    leader_reminder_enabled,
-    leader_reminder_days,
-    leader_reminder_time,
-    climbing_alert_enabled,
-    climbing_alert_day,
-    climbing_alert_time,
-    updated_at
-)
-SELECT 
-    d.id,
-    cs.leader_reminder_enabled,
-    cs.leader_reminder_days,
-    cs.leader_reminder_time,
-    cs.climbing_alert_enabled,
-    cs.climbing_alert_day,
-    cs.climbing_alert_time,
-    cs.updated_at
-FROM public.church_settings cs
-JOIN public.departments d ON d.church_id = cs.church_id
-ON CONFLICT (department_id) DO NOTHING;
+-- Wrap in DO block to handle cases where church_settings doesn't exist on remote environments
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'church_settings'
+    ) THEN
+        INSERT INTO public.department_settings (
+            department_id,
+            leader_reminder_enabled,
+            leader_reminder_days,
+            leader_reminder_time,
+            climbing_alert_enabled,
+            climbing_alert_day,
+            climbing_alert_time,
+            updated_at
+        )
+        SELECT 
+            d.id,
+            cs.leader_reminder_enabled,
+            cs.leader_reminder_days,
+            cs.leader_reminder_time,
+            cs.climbing_alert_enabled,
+            cs.climbing_alert_day,
+            cs.climbing_alert_time,
+            cs.updated_at
+        FROM public.church_settings cs
+        JOIN public.departments d ON d.church_id = cs.church_id
+        ON CONFLICT (department_id) DO NOTHING;
+    END IF;
+END $$;
 
 -- We will drop church_settings after verifying the migration
