@@ -158,15 +158,23 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
     // 0.2s is enough for triggers and publication to sync
     await Future.delayed(const Duration(milliseconds: 200));
     if (controller.isClosed) return;
-    try {
-      final data = await _fetchUserGroups(user.id);
-      if (!controller.isClosed) {
-        controller.add(data);
-        // Removed explicit invalidations to avoid complex cycles during inference.
-        // Dependent providers will naturally rebuild if they watch userGroupsProvider.
+    
+    // [FIX] Add retry logic for initial load when auth might not be fully hydrated
+    for (int i = 0; i < 5; i++) {
+      try {
+        final data = await _fetchUserGroups(user.id);
+        if (!controller.isClosed) {
+          controller.add(data);
+          return; // Success, exit
+        }
+      } catch (e, stack) {
+        debugPrint('Error refreshing user groups (attempt ${i + 1}): $e');
+        if (i == 4) { // Last attempt
+          if (!controller.isClosed) controller.addError(e, stack);
+        } else {
+          await Future.delayed(const Duration(milliseconds: 500)); // Wait before retrying
+        }
       }
-    } catch (e) {
-      debugPrint('Error refreshing user groups: $e');
     }
   }
 
@@ -180,7 +188,10 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
       .eq('profile_id', user.id)
       .listen(
         (_) => triggerUpdate(),
-        onError: (e) => debugPrint('userGroupsProvider: group_members stream error: $e'),
+        onError: (e, stack) {
+          debugPrint('userGroupsProvider: group_members stream error: $e');
+          if (!controller.isClosed) controller.addError(e, stack);
+        },
       );
 
   final mdSub = Supabase.instance.client
@@ -189,7 +200,10 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
       .eq('profile_id', user.id)
       .listen(
         (_) => triggerUpdate(),
-        onError: (e) => debugPrint('userGroupsProvider: member_directory stream error: $e'),
+        onError: (e, stack) {
+          debugPrint('userGroupsProvider: member_directory stream error: $e');
+          if (!controller.isClosed) controller.addError(e, stack);
+        },
       );
 
   ref.onDispose(() {
