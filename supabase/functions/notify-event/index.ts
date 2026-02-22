@@ -103,8 +103,8 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ skipped: true, reason: "not_published" }));
     }
 
-    // 1. Dedup check: Skip if same group+week+event was notified within last 60 seconds
-    const DEDUP_WINDOW_SECONDS = 60;
+    // 1. Dedup check: Skip if same group+week+event was notified within last 5 seconds (to prevent concurrent batch upsert spam)
+    const DEDUP_WINDOW_SECONDS = 5;
     const { data: recentNotif } = await supabase
       .from("notification_dedup")
       .select("id")
@@ -130,9 +130,10 @@ Deno.serve(async (req: Request) => {
     const { data: group } = await supabase.from("groups").select("name, church_id, department_id").eq("id", record.group_id).single();
     const { data: member } = await supabase.from("member_directory").select("full_name").eq("id", record.member_id).single();
 
-    // Determine if this is a true update of an already published prayer,
-    // or if it's the first time being published from a draft.
-    const isTrueUpdate = type === 'UPDATE' && old_record?.status === 'published';
+    // Determine if this is a true update of an already published/existing prayer.
+    // Even if it transitions from draft to published, if it's an UPDATE type, the record already existed.
+    // This provides better UX "수정되었습니다" instead of replacing original notification silently.
+    const isTrueUpdate = type === 'UPDATE';
 
     title = isTrueUpdate
       ? `✏️ [${group?.name || '조'}] 기도제목 수정`
