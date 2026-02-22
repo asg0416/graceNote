@@ -82,7 +82,7 @@ async function sendPush(accessToken: string, token: string, title: string, body:
 
 Deno.serve(async (req: Request) => {
   const payload = await req.json();
-  const { table, record, type } = payload;
+  const { table, record, old_record, type } = payload;
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   console.log(`[notify-event] Triggered for ${table} on ${type}`);
@@ -130,13 +130,16 @@ Deno.serve(async (req: Request) => {
     const { data: group } = await supabase.from("groups").select("name, church_id, department_id").eq("id", record.group_id).single();
     const { data: member } = await supabase.from("member_directory").select("full_name").eq("id", record.member_id).single();
 
-    const isUpdate = type === 'UPDATE';
-    title = isUpdate
-      ? `\u270f\ufe0f [${group?.name || '조'}] \uae30\ub3c4\uc81c\ubaa9 \uc218\uc815`
-      : `\ud83d\ude4f [${group?.name || '조'}] \uae30\ub3c4\uc81c\ubaa9 \uc5c5\ub370\uc774\ud2b8`;
-    body = isUpdate
-      ? `${member?.full_name || '성도'}\ub2d8\uc758 \uae30\ub3c4\uc81c\ubaa9\uc774 \uc218\uc815\ub418\uc5c8\uc2b5\ub2c8\ub2e4.`
-      : `${member?.full_name || '성도'}\ub2d8\uc758 \uae30\ub3c4\uc81c\ubaa9\uc774 \ub4f1\ub85d\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \ud568\uaed8 \uae30\ub3c4\ud574\uc8fc\uc138\uc694!`;
+    // Determine if this is a true update of an already published prayer,
+    // or if it's the first time being published from a draft.
+    const isTrueUpdate = type === 'UPDATE' && old_record?.status === 'published';
+
+    title = isTrueUpdate
+      ? `✏️ [${group?.name || '조'}] 기도제목 수정`
+      : `🙏 [${group?.name || '조'}] 기도제목 업데이트`;
+    body = isTrueUpdate
+      ? `${member?.full_name || '성도'}님의 기도제목이 수정되었습니다.`
+      : `${member?.full_name || '성도'}님의 기도제목이 등록되었습니다. 함께 기도해주세요!`;
     link = `/attendance/share?groupId=${record.group_id}`;
     preferenceField = "push_prayer_enabled";
 
