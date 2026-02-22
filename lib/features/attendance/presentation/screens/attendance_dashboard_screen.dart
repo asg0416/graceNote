@@ -73,6 +73,13 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                 : RefreshIndicator(
                     onRefresh: () async {
                       ref.invalidate(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth'));
+                      final groupsAsync = ref.read(userGroupsProvider);
+                      final churchId = groupsAsync.value?.first['church_id'] ?? '';
+                      if (_selectedWeekId != null) {
+                        ref.invalidate(weeklyDataProvider('${widget.groupId}:$churchId:$_selectedWeekId'));
+                      } else if (history.isNotEmpty) {
+                        ref.invalidate(weeklyDataProvider('${widget.groupId}:$churchId:${history.first['week_id']}'));
+                      }
                       await ref.read(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth').future);
                     },
                     color: AppTheme.primaryViolet,

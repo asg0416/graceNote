@@ -82,6 +82,11 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                 : RefreshIndicator(
                     onRefresh: () async {
                       ref.invalidate(departmentAttendanceHistoryProvider('${widget.departmentId}:$_viewYear:$_viewMonth'));
+                      if (_selectedWeekId != null) {
+                        ref.invalidate(departmentWeeklyAttendanceProvider('${widget.departmentId}:$_selectedWeekId'));
+                      } else if (history.isNotEmpty) {
+                        ref.invalidate(departmentWeeklyAttendanceProvider('${widget.departmentId}:${history.first['week_id']}'));
+                      }
                       await ref.read(departmentAttendanceHistoryProvider('${widget.departmentId}:$_viewYear:$_viewMonth').future);
                     },
                     color: AppTheme.primaryViolet,
