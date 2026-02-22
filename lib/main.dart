@@ -2,23 +2,17 @@ import 'dart:ui' as ui;
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart'; // [FIX] import 추가
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/constants/app_constants.dart';
-import 'package:grace_note/core/providers/data_providers.dart';
-import 'package:grace_note/features/auth/presentation/screens/login_screen.dart';
-import 'package:grace_note/features/auth/presentation/screens/phone_verification_screen.dart';
+import 'package:grace_note/core/router/app_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:grace_note/core/services/ai_service.dart';
-import 'package:grace_note/features/home/presentation/screens/home_screen.dart';
-import 'package:grace_note/features/auth/presentation/screens/admin_pending_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
-import 'package:grace_note/core/widgets/shadcn_spinner.dart';
-import 'package:intl/intl.dart';
-import 'package:grace_note/features/auth/presentation/screens/password_reset_screen.dart';
 
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -100,20 +94,47 @@ Future<void> main() async {
 // Global update notifier for PWA version detection
 final UpdateNotifier _updateNotifier = kIsWeb ? UpdateNotifier() : UpdateNotifier();
 
-final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
-
-class GraceNoteApp extends StatelessWidget {
+class GraceNoteApp extends StatefulWidget {
   const GraceNoteApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Navigator key를 PushNotificationService에 연결
-    PushNotificationService.navigatorKey = _navigatorKey;
+  State<GraceNoteApp> createState() => _GraceNoteAppState();
+}
 
+class _GraceNoteAppState extends State<GraceNoteApp> {
+  late final AuthChangeNotifier _authNotifier;
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _authNotifier = AuthChangeNotifier();
+    _router = createAppRouter(_authNotifier);
+
+    // Listen for password recovery events → navigate to password reset
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        _router.push('/password-reset');
+      }
+    });
+
+    // Set navigator key for push notification deep links
+    PushNotificationService.navigatorKey = _router.routerDelegate.navigatorKey;
+  }
+
+  @override
+  void dispose() {
+    _authNotifier.dispose();
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return ShadApp.custom(
       theme: AppTheme.graceNoteTheme,
-      appBuilder: (context) => MaterialApp(
-        navigatorKey: _navigatorKey,
+      appBuilder: (context) => MaterialApp.router(
+        routerConfig: _router,
         title: AppConstants.appName,
         theme: AppTheme.light,
         debugShowCheckedModeBanner: false,
@@ -140,17 +161,12 @@ class GraceNoteApp extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       decoration: const BoxDecoration(
-                        color: Color(0xCCEF4444), // Red-500 with 80% opacity
+                        color: Color(0xCCEF4444),
                         borderRadius: BorderRadius.only(bottomLeft: Radius.circular(8)),
                       ),
                       child: const Text(
                         'DEV MODE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          decoration: TextDecoration.none,
-                        ),
+                        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, decoration: TextDecoration.none),
                       ),
                     ),
                   ),
@@ -171,50 +187,25 @@ class GraceNoteApp extends StatelessWidget {
                           margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF7C3AED), Color(0xFF6D28D9)],
-                            ),
+                            gradient: const LinearGradient(colors: [Color(0xFF7C3AED), Color(0xFF6D28D9)]),
                             borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF7C3AED).withOpacity(0.3),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
+                            boxShadow: [BoxShadow(color: const Color(0xFF7C3AED).withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4))],
                           ),
                           child: Row(
                             children: [
                               const Icon(Icons.system_update_rounded, color: Colors.white, size: 22),
                               const SizedBox(width: 12),
                               const Expanded(
-                                child: Text(
-                                  '새로운 버전이 있습니다',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    decoration: TextDecoration.none,
-                                  ),
-                                ),
+                                child: Text('새로운 버전이 있습니다',
+                                  style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700, decoration: TextDecoration.none)),
                               ),
                               GestureDetector(
                                 onTap: () => _updateNotifier.applyUpdate(),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Text(
-                                    '업데이트',
-                                    style: TextStyle(
-                                      color: Color(0xFF7C3AED),
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w800,
-                                      decoration: TextDecoration.none,
-                                    ),
-                                  ),
+                                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                                  child: const Text('업데이트',
+                                    style: TextStyle(color: Color(0xFF7C3AED), fontSize: 13, fontWeight: FontWeight.w800, decoration: TextDecoration.none)),
                                 ),
                               ),
                             ],
@@ -224,349 +215,6 @@ class GraceNoteApp extends StatelessWidget {
                     },
                   ),
                 ),
-            ],
-          ),
-        ),
-        home: const AuthGate(),
-      ),
-    );
-  }
-}
-
-class AuthGate extends ConsumerStatefulWidget {
-  const AuthGate({super.key});
-
-  @override
-  ConsumerState<AuthGate> createState() => _AuthGateState();
-}
-
-class _AuthGateState extends ConsumerState<AuthGate> with WidgetsBindingObserver {
-  late final StreamSubscription<AuthState> _authSubscription;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    
-    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
-      if (data.event == AuthChangeEvent.passwordRecovery) {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (context) => const PasswordResetScreen()),
-        );
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _authSubscription.cancel();
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      debugPrint('App resumed: Silently refreshing session and data');
-      // [FIX] Seamless Recovery: 앱 복합 시 강점 새로고침이 아닌 '무소음' 갱신 시도
-      _refreshAllDataSilently();
-    }
-  }
-
-  Future<void> _refreshAllDataSilently() async {
-    try {
-      // [FIX] 앱 복구 직후 네트워크 스택이 안정화될 시간을 줌 (Web/Mobile 공통)
-      await Future.delayed(const Duration(milliseconds: 300));
-      
-      // 1. 세션 유효성 확인 (비동기로 조용히 확인만 시도)
-      final session = Supabase.instance.client.auth.currentSession;
-      if (session == null || session.isExpired) {
-        // 세션이 만료되었을 가능성이 있다면 다시 시도 (에러 발생 시 무시)
-        try { await Supabase.instance.client.auth.getUser(); } catch (_) {}
-      }
-      
-      // 2. 주요 프로바이더들만 뒤에서 조용히 무효화 (에러 화면으로 튕기지 않음)
-      ref.invalidate(userProfileProvider);
-      ref.invalidate(userGroupsProvider);
-      // userProfileFutureProvider는 FutureProvider라 invalidate 시 로딩 상태가 될 수 있으므로 주의
-    } catch (e) {
-      debugPrint('Silent refresh failed: $e');
-    }
-  }
-
-  void _refreshAllData() {
-    ref.invalidate(authStateProvider);
-    ref.invalidate(userProfileProvider);
-    ref.invalidate(userProfileFutureProvider);
-    ref.invalidate(userGroupsProvider);
-    ref.invalidate(weekIdProvider);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final authStateAsync = ref.watch(authStateProvider);
-
-    // 1. Auth State Handling with Resilience
-    // 이미 데이터가 있는 경우(hasValue) 에러나 로딩 중이라도 기존 화면을 최대한 유지합니다.
-    if (authStateAsync.isLoading && !authStateAsync.hasValue) {
-      return _buildLoadingScreen('인증 상태 확인 중...');
-    }
-
-    if (authStateAsync.hasError && !authStateAsync.hasValue) {
-      return _AutoRetryErrorScreen(
-        error: authStateAsync.error!,
-        onRetry: _refreshAllData,
-        onLogout: () async {
-          await Supabase.instance.client.auth.signOut();
-          ref.invalidate(userProfileProvider);
-          ref.invalidate(userGroupsProvider);
-        },
-      );
-    }
-
-    final authState = authStateAsync.valueOrNull;
-    final session = authState?.session;
-
-    // Not logged in
-    if (session == null) {
-      return const LoginScreen();
-    }
-
-    // 2. Profile Handling with Resilience
-    final profileAsync = ref.watch(userProfileProvider);
-
-    // [FIX] Resilience: 이미 데이터가 있는 경우(hasValue), 로딩이나 에러 중이라도 기존 화면을 유지하여 깜빡임을 방지합니다.
-    if (profileAsync.hasValue) {
-      final profile = profileAsync.value;
-      
-      // [FIX] 프로필 생성/로딩 지연 시 깜빡임 방지: 프로필이 null이면 로딩 중으로 간주
-      if (profile == null) {
-        return _buildLoadingScreen('프로필 정보를 확인하고 있습니다...'); 
-      }
-
-      if (!profile.isOnboardingComplete) {
-        return const PhoneVerificationScreen();
-      }
-      final bool isPendingAdmin = profile.adminStatus == 'pending' || 
-                                  (profile.role == 'admin' && profile.adminStatus != 'approved');
-      if (isPendingAdmin && !profile.isMaster) {
-        return const AdminPendingScreen();
-      }
-      // 로그인 완료 후 푸시 알림 권한 요청 + 토큰 저장
-      _requestPushPermission();
-      return const HomeScreen();
-    }
-
-    if (profileAsync.isLoading) {
-      return _buildLoadingScreen('사용자 프로필 불러오는 중...');
-    }
-
-    // [FIX] RealtimeSubscribeException 이나 Web 기동 시 'Failed to fetch' 등 일시적 에러 시 에러 화면으로 튕기지 않도록 방어
-    final errorStr = profileAsync.error.toString();
-    final isTransientError = errorStr.contains('Realtime') || 
-                            errorStr.contains('1006') || 
-                            errorStr.contains('Failed to fetch');
-    
-    if (isTransientError) {
-      return _buildLoadingScreen('연결을 복구하고 있습니다...');
-    }
-
-    // 데이터가 전혀 없고 심각한 에러인 경우에만 에러 화면 노출
-    return _AutoRetryErrorScreen(
-      error: profileAsync.error ?? 'Unknown error',
-      onRetry: _refreshAllData,
-      onLogout: () async {
-        await Supabase.instance.client.auth.signOut();
-        ref.invalidate(userProfileProvider);
-        ref.invalidate(userGroupsProvider);
-      },
-    );
-  }
-
-  /// 로그인 후 푸시 알림 권한 요청 (1회) + 딥링크 확인
-  bool _pushRequested = false;
-  void _requestPushPermission() {
-    if (_pushRequested) return;
-    _pushRequested = true;
-    // 약간의 딜레이를 줘서 앱 로딩이 완료된 후에 권한 팝업 표시
-    Future.delayed(const Duration(seconds: 2), () {
-      PushNotificationService().requestPermissionAndSaveToken();
-    });
-    // 알림 클릭으로 앱이 새로 열린 경우 딥링크 처리
-    if (kIsWeb) {
-      Future.delayed(const Duration(seconds: 1), () {
-        PushNotificationService().checkInitialDeepLink();
-      });
-    }
-  }
-
-  Widget _buildLoadingScreen(String message) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 24),
-            Text(
-              message,
-              style: const TextStyle(
-                color: AppTheme.textSub,
-                fontSize: 14,
-                fontFamily: 'Pretendard',
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSlowLoadingScreen(WidgetRef ref) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 24),
-            const Text(
-              '데이터를 불러오는데 시간이 조금 걸리네요',
-              style: TextStyle(
-                color: AppTheme.textMain, 
-                fontWeight: FontWeight.w800, 
-                fontSize: 16
-              ),
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () {
-                // [RETRY LOGIC] 모든 주요 데이터 초기화
-                ref.invalidate(authStateProvider);
-                ref.invalidate(userProfileProvider);
-                ref.invalidate(userProfileFutureProvider);
-                ref.invalidate(userGroupsProvider);
-                ref.invalidate(weekIdProvider);
-              },
-              child: const Text('다시 시도'),
-            ),
-            TextButton(
-              onPressed: () => Supabase.instance.client.auth.signOut(),
-              child: const Text('로그아웃'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AutoRetryErrorScreen extends StatefulWidget {
-  final Object error;
-  final VoidCallback onRetry;
-  final VoidCallback onLogout;
-
-  const _AutoRetryErrorScreen({
-    required this.error,
-    required this.onRetry,
-    required this.onLogout,
-  });
-
-  @override
-  State<_AutoRetryErrorScreen> createState() => _AutoRetryErrorScreenState();
-}
-
-class _AutoRetryErrorScreenState extends State<_AutoRetryErrorScreen> {
-  DateTime? _lastRetryTime;
-
-  @override
-  void initState() {
-    super.initState();
-    _startAutoRetry();
-  }
-
-  void _startAutoRetry() async {
-    while (mounted) {
-      await Future.delayed(const Duration(seconds: 5));
-      if (mounted) {
-        debugPrint('Auto-retrying connection...');
-        _lastRetryTime = DateTime.now();
-        widget.onRetry();
-        setState(() {}); // Update last retry time display if needed
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final errorMessage = widget.error.toString();
-    final isRealtimeError = errorMessage.contains('Realtime');
-    final displayMessage = '서버와의 연결이 원활하지 않습니다.\n잠시 후 다시 시도해 주세요.';
-
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.wifi_off_rounded, 
-                size: 64, 
-                color: Color(0xFFEF4444), // AppTheme.error
-              ),
-              const SizedBox(height: 16),
-              Text(
-                displayMessage,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppTheme.textMain, 
-                  fontSize: 16, 
-                  fontWeight: FontWeight.w600,
-                  height: 1.5,
-                ),
-              ),
-              if (_lastRetryTime != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    '마지막 재시도: ${DateFormat('HH:mm:ss').format(_lastRetryTime!)}',
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textSub),
-                  ),
-                ),
-              if (!isRealtimeError)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    errorMessage,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textSub),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: widget.onRetry,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryViolet,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    elevation: 0,
-                  ),
-                  child: const Text('다시 시도', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: widget.onLogout,
-                child: const Text('로그아웃 및 계정 전환', style: TextStyle(color: AppTheme.textSub)),
-              ),
             ],
           ),
         ),

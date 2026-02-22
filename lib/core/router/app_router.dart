@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // Screens — Tabs
 import 'package:grace_note/features/attendance/presentation/screens/attendance_prayer_screen.dart';
@@ -33,11 +36,40 @@ import 'package:grace_note/features/search/presentation/screens/search_screen.da
 import 'package:grace_note/features/attendance/presentation/screens/attendance_check_screen.dart';
 import 'package:grace_note/features/attendance/presentation/screens/prayer_share_screen.dart';
 
+// Screens — Auth
+import 'package:grace_note/features/auth/presentation/screens/login_screen.dart';
+import 'package:grace_note/features/auth/presentation/screens/password_reset_screen.dart';
+import 'package:grace_note/features/auth/presentation/screens/phone_verification_screen.dart';
+import 'package:grace_note/features/auth/presentation/screens/admin_pending_screen.dart';
+
 // Core
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
+import 'package:grace_note/core/services/push_notification_service.dart';
+import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
+import 'package:intl/intl.dart';
+
+
+/// ChangeNotifier that listens to Supabase auth state changes.
+/// Used as GoRouter's refreshListenable to trigger redirect on auth changes.
+class AuthChangeNotifier extends ChangeNotifier {
+  late final StreamSubscription<AuthState> _subscription;
+
+  AuthChangeNotifier() {
+    _subscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}
+
 
 /// Navigator keys for each tab branch
 final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
@@ -46,165 +78,204 @@ final _prayerTabKey = GlobalKey<NavigatorState>(debugLabel: 'prayer');
 final _attendanceTabKey = GlobalKey<NavigatorState>(debugLabel: 'attendance');
 final _moreTabKey = GlobalKey<NavigatorState>(debugLabel: 'more');
 
-/// Creates the GoRouter instance for the authenticated home screen.
-/// This router is used INSIDE HomeScreen (post-auth), not globally.
-GoRouter createAppRouter() {
+/// Creates the ROOT GoRouter instance.
+/// This is now the SINGLE router for the entire app (no nesting).
+GoRouter createAppRouter(AuthChangeNotifier authNotifier) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/record',
+    debugLogDiagnostics: true,
+    refreshListenable: authNotifier,
+    redirect: (context, state) {
+      final session = Supabase.instance.client.auth.currentSession;
+      final isLoggedIn = session != null;
+      final location = state.matchedLocation;
+
+      // Auth routes that don't require login
+      final isAuthRoute = location == '/login' || 
+                          location == '/password-reset';
+
+      // Not logged in → redirect to login (unless already there)
+      if (!isLoggedIn && !isAuthRoute) {
+        return '/login';
+      }
+
+      // Logged in but on login page → redirect to home
+      if (isLoggedIn && location == '/login') {
+        return '/record';
+      }
+
+      return null; // No redirect
+    },
     routes: [
-      StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) {
-          return ScaffoldWithNavBar(navigationShell: navigationShell);
-        },
-        branches: [
-          // Tab 0: 기록 / 구성원 / 나의 기도
-          StatefulShellBranch(
-            navigatorKey: _recordTabKey,
-            routes: [
-              GoRoute(
-                path: '/record',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: _RecordTabPlaceholder(),
-                ),
-                routes: [
-                  GoRoute(
-                    path: 'member-detail',
-                    builder: (context, state) {
-                      final extra = state.extra as Map<String, dynamic>;
-                      return AdminMemberDetailScreen(
-                        directoryMemberId: extra['directoryMemberId'] as String,
-                        fullName: extra['fullName'] as String,
-                        groupName: extra['groupName'] as String,
-                        groupId: extra['groupId'] as String,
-                        departmentId: extra['departmentId'] as String,
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
+      // ── Auth Routes (outside shell) ──
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/password-reset',
+        builder: (context, state) => const PasswordResetScreen(),
+      ),
 
-          // Tab 1: 기도소식
-          StatefulShellBranch(
-            navigatorKey: _prayerTabKey,
-            routes: [
-              GoRoute(
-                path: '/prayer',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: PrayerListScreen(),
-                ),
+      // ── Authenticated Routes (with auth shell + tab shell) ──
+      ShellRoute(
+        builder: (context, state, child) => AuthenticatedShell(child: child),
+        routes: [
+          StatefulShellRoute.indexedStack(
+            builder: (context, state, navigationShell) {
+              return ScaffoldWithNavBar(navigationShell: navigationShell);
+            },
+            branches: [
+              // Tab 0: 기록 / 구성원 / 나의 기도
+              StatefulShellBranch(
+                navigatorKey: _recordTabKey,
                 routes: [
                   GoRoute(
-                    path: 'search',
-                    builder: (context, state) => const SearchScreen(),
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          // Tab 2: 출석 (leader/admin only — hidden for member)
-          StatefulShellBranch(
-            navigatorKey: _attendanceTabKey,
-            routes: [
-              GoRoute(
-                path: '/attendance',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: _AttendanceTabPlaceholder(),
-                ),
-                routes: [
-                  GoRoute(
-                    path: 'check',
-                    builder: (context, state) {
-                      final extra = state.extra as Map<String, dynamic>;
-                      return AttendanceCheckScreen(
-                        initialMembers: extra['initialMembers'] as List<Map<String, dynamic>>,
-                        isPastWeek: extra['isPastWeek'] as bool? ?? false,
-                        groupId: extra['groupId'] as String?,
-                        isNewFamilyGroup: extra['isNewFamilyGroup'] as bool? ?? false,
-                      );
-                    },
-                  ),
-                  GoRoute(
-                    path: 'share',
-                    builder: (context, state) {
-                      final extra = state.extra as Map<String, dynamic>;
-                      return PrayerShareScreen(
-                        shareText: extra['shareText'] as String,
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          // Tab 3 (or 2 for member): 더보기
-          StatefulShellBranch(
-            navigatorKey: _moreTabKey,
-            routes: [
-              GoRoute(
-                path: '/more',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: MoreScreen(),
-                ),
-                routes: [
-                  GoRoute(
-                    path: 'saved-prayers',
-                    builder: (context, state) => const SavedPrayersScreen(),
-                  ),
-                  GoRoute(
-                    path: 'group-admin',
-                    builder: (context, state) {
-                      final extra = state.extra as Map<String, dynamic>;
-                      return GroupLeaderAdminScreen(
-                        groupId: extra['groupId'] as String,
-                        groupName: extra['groupName'] as String,
-                      );
-                    },
+                    path: '/record',
+                    pageBuilder: (context, state) => const NoTransitionPage(
+                      child: _RecordTabPlaceholder(),
+                    ),
                     routes: [
                       GoRoute(
-                        path: 'member-edit',
+                        path: 'member-detail',
                         builder: (context, state) {
                           final extra = state.extra as Map<String, dynamic>;
-                          return MemberEditScreen(
-                            groupId: extra['groupId'] as String,
+                          return AdminMemberDetailScreen(
+                            directoryMemberId: extra['directoryMemberId'] as String,
+                            fullName: extra['fullName'] as String,
                             groupName: extra['groupName'] as String,
-                            member: extra['member'],
+                            groupId: extra['groupId'] as String,
+                            departmentId: extra['departmentId'] as String,
                           );
                         },
                       ),
                     ],
                   ),
+                ],
+              ),
+
+              // Tab 1: 기도소식
+              StatefulShellBranch(
+                navigatorKey: _prayerTabKey,
+                routes: [
                   GoRoute(
-                    path: 'ai-settings',
-                    builder: (context, state) => const AISettingsScreen(),
+                    path: '/prayer',
+                    pageBuilder: (context, state) => const NoTransitionPage(
+                      child: PrayerListScreen(),
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: 'search',
+                        builder: (context, state) => const SearchScreen(),
+                      ),
+                    ],
                   ),
+                ],
+              ),
+
+              // Tab 2: 출석 (leader/admin only — hidden for member)
+              StatefulShellBranch(
+                navigatorKey: _attendanceTabKey,
+                routes: [
                   GoRoute(
-                    path: 'profile',
-                    builder: (context, state) => const ProfileScreen(),
+                    path: '/attendance',
+                    pageBuilder: (context, state) => const NoTransitionPage(
+                      child: _AttendanceTabPlaceholder(),
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: 'check',
+                        builder: (context, state) {
+                          final extra = state.extra as Map<String, dynamic>;
+                          return AttendanceCheckScreen(
+                            initialMembers: extra['initialMembers'] as List<Map<String, dynamic>>,
+                            isPastWeek: extra['isPastWeek'] as bool? ?? false,
+                            groupId: extra['groupId'] as String?,
+                            isNewFamilyGroup: extra['isNewFamilyGroup'] as bool? ?? false,
+                          );
+                        },
+                      ),
+                      GoRoute(
+                        path: 'share',
+                        builder: (context, state) {
+                          final extra = state.extra as Map<String, dynamic>;
+                          return PrayerShareScreen(
+                            shareText: extra['shareText'] as String,
+                          );
+                        },
+                      ),
+                    ],
                   ),
+                ],
+              ),
+
+              // Tab 3 (or 2 for member): 더보기
+              StatefulShellBranch(
+                navigatorKey: _moreTabKey,
+                routes: [
                   GoRoute(
-                    path: 'notifications',
-                    builder: (context, state) => const NotificationSettingsScreen(),
-                  ),
-                  GoRoute(
-                    path: 'notices',
-                    builder: (context, state) => const NoticeListScreen(),
-                  ),
-                  GoRoute(
-                    path: 'inquiry',
-                    builder: (context, state) => const InquiryScreen(),
-                  ),
-                  GoRoute(
-                    path: 'guide',
-                    builder: (context, state) => const ServiceGuideScreen(),
-                  ),
-                  GoRoute(
-                    path: 'password',
-                    builder: (context, state) => const ChangePasswordScreen(),
+                    path: '/more',
+                    pageBuilder: (context, state) => const NoTransitionPage(
+                      child: MoreScreen(),
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: 'saved-prayers',
+                        builder: (context, state) => const SavedPrayersScreen(),
+                      ),
+                      GoRoute(
+                        path: 'group-admin',
+                        builder: (context, state) {
+                          final extra = state.extra as Map<String, dynamic>;
+                          return GroupLeaderAdminScreen(
+                            groupId: extra['groupId'] as String,
+                            groupName: extra['groupName'] as String,
+                          );
+                        },
+                        routes: [
+                          GoRoute(
+                            path: 'member-edit',
+                            builder: (context, state) {
+                              final extra = state.extra as Map<String, dynamic>;
+                              return MemberEditScreen(
+                                groupId: extra['groupId'] as String,
+                                groupName: extra['groupName'] as String,
+                                member: extra['member'],
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                      GoRoute(
+                        path: 'ai-settings',
+                        builder: (context, state) => const AISettingsScreen(),
+                      ),
+                      GoRoute(
+                        path: 'profile',
+                        builder: (context, state) => const ProfileScreen(),
+                      ),
+                      GoRoute(
+                        path: 'notifications',
+                        builder: (context, state) => const NotificationSettingsScreen(),
+                      ),
+                      GoRoute(
+                        path: 'notices',
+                        builder: (context, state) => const NoticeListScreen(),
+                      ),
+                      GoRoute(
+                        path: 'inquiry',
+                        builder: (context, state) => const InquiryScreen(),
+                      ),
+                      GoRoute(
+                        path: 'guide',
+                        builder: (context, state) => const ServiceGuideScreen(),
+                      ),
+                      GoRoute(
+                        path: 'password',
+                        builder: (context, state) => const ChangePasswordScreen(),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -217,7 +288,155 @@ GoRouter createAppRouter() {
 }
 
 
-/// Scaffold wrapper that provides the BottomNavigationBar
+// ═══════════════════════════════════════════════════════════════════
+// AuthenticatedShell — replaces AuthGate's post-auth logic
+// Handles: profile loading, onboarding check, admin pending,
+//          lifecycle data refresh, push notification init
+// ═══════════════════════════════════════════════════════════════════
+
+class AuthenticatedShell extends ConsumerStatefulWidget {
+  final Widget child;
+  const AuthenticatedShell({super.key, required this.child});
+
+  @override
+  ConsumerState<AuthenticatedShell> createState() => _AuthenticatedShellState();
+}
+
+class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with WidgetsBindingObserver {
+  bool _pushRequested = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('App resumed: Silently refreshing session and data');
+      _refreshAllDataSilently();
+    }
+  }
+
+  Future<void> _refreshAllDataSilently() async {
+    try {
+      await Future.delayed(const Duration(milliseconds: 300));
+      final session = Supabase.instance.client.auth.currentSession;
+      if (session == null || session.isExpired) {
+        try { await Supabase.instance.client.auth.getUser(); } catch (_) {}
+      }
+      ref.invalidate(userProfileProvider);
+      ref.invalidate(userGroupsProvider);
+    } catch (e) {
+      debugPrint('Silent refresh failed: $e');
+    }
+  }
+
+  void _refreshAllData() {
+    ref.invalidate(authStateProvider);
+    ref.invalidate(userProfileProvider);
+    ref.invalidate(userProfileFutureProvider);
+    ref.invalidate(userGroupsProvider);
+    ref.invalidate(weekIdProvider);
+  }
+
+  void _requestPushPermission() {
+    if (_pushRequested) return;
+    _pushRequested = true;
+    Future.delayed(const Duration(seconds: 2), () {
+      PushNotificationService().requestPermissionAndSaveToken();
+    });
+    if (kIsWeb) {
+      Future.delayed(const Duration(seconds: 1), () {
+        PushNotificationService().checkInitialDeepLink();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profileAsync = ref.watch(userProfileProvider);
+
+    // Resilience: if we already have profile data, keep showing the app
+    if (profileAsync.hasValue) {
+      final profile = profileAsync.value;
+
+      if (profile == null) {
+        return _buildLoadingScreen('프로필 정보를 확인하고 있습니다...');
+      }
+
+      if (!profile.isOnboardingComplete) {
+        return const PhoneVerificationScreen();
+      }
+
+      final bool isPendingAdmin = profile.adminStatus == 'pending' || 
+                                  (profile.role == 'admin' && profile.adminStatus != 'approved');
+      if (isPendingAdmin && !profile.isMaster) {
+        return const AdminPendingScreen();
+      }
+
+      _requestPushPermission();
+      return widget.child; // Show the actual tab content
+    }
+
+    if (profileAsync.isLoading) {
+      return _buildLoadingScreen('사용자 프로필 불러오는 중...');
+    }
+
+    // Transient error handling
+    final errorStr = profileAsync.error.toString();
+    final isTransientError = errorStr.contains('Realtime') || 
+                            errorStr.contains('1006') || 
+                            errorStr.contains('Failed to fetch');
+    
+    if (isTransientError) {
+      return _buildLoadingScreen('연결을 복구하고 있습니다...');
+    }
+
+    return _buildErrorScreen(profileAsync.error ?? 'Unknown error');
+  }
+
+  Widget _buildLoadingScreen(String message) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 24),
+            Text(message, style: const TextStyle(color: AppTheme.textSub, fontSize: 14, fontFamily: 'Pretendard')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorScreen(Object error) {
+    return _AutoRetryErrorScreen(
+      error: error,
+      onRetry: _refreshAllData,
+      onLogout: () async {
+        await Supabase.instance.client.auth.signOut();
+        ref.invalidate(userProfileProvider);
+        ref.invalidate(userGroupsProvider);
+      },
+    );
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ScaffoldWithNavBar — Bottom navigation bar management
+// ═══════════════════════════════════════════════════════════════════
+
 class ScaffoldWithNavBar extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
 
@@ -226,19 +445,64 @@ class ScaffoldWithNavBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeRole = ref.watch(activeRoleProvider);
+    final groupsAsync = ref.watch(userGroupsProvider);
     final unreadInquiries = ref.watch(unreadInquiryCountProvider).value ?? 0;
     final hasNewNotices = ref.watch(hasNewNoticesProvider).value ?? false;
     final hasBadge = unreadInquiries > 0 || hasNewNotices;
 
+    // Role loading: if activeRole is null and groups are still loading, show loading
+    if (activeRole == null) {
+      if (groupsAsync.isLoading && !groupsAsync.hasValue) {
+        return Scaffold(
+          backgroundColor: Colors.white,
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ShadcnSpinner(size: 32),
+                const SizedBox(height: 24),
+                const Text('그레이스노트를 준비하고 있습니다',
+                  style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: -0.5, fontFamily: 'Pretendard')),
+              ],
+            ),
+          ),
+        );
+      }
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(lucide.LucideIcons.alertCircle, size: 48, color: AppTheme.textSub),
+              const SizedBox(height: 16),
+              const Text('소속 정보를 불러올 수 없습니다', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+              const SizedBox(height: 8),
+              const Text('관리자가 아직 조를 배정하지 않았거나\n데이터 동기화 중일 수 있습니다.',
+                textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSub, fontSize: 13)),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  ref.invalidate(userGroupsProvider);
+                  ref.invalidate(userProfileProvider);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryViolet, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: const Text('다시 시도', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     // Determine which branches are visible based on role
-    // admin/leader: 4 tabs (record, prayer, attendance, more)
-    // member: 3 tabs (record, prayer, more) — attendance hidden
     final isMember = activeRole == AppRole.member;
 
-    // Map visual tab index to branch index
     int currentVisualIndex;
     if (isMember) {
-      // member: branch 0=기록, 1=기도소식, 3=더보기
       switch (navigationShell.currentIndex) {
         case 0: currentVisualIndex = 0; break;
         case 1: currentVisualIndex = 1; break;
@@ -255,9 +519,7 @@ class ScaffoldWithNavBar extends ConsumerWidget {
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          border: Border(
-            top: BorderSide(color: Color(0xFFF1F5F9), width: 1),
-          ),
+          border: Border(top: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
         ),
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
         child: SizedBox(
@@ -272,11 +534,10 @@ class ScaffoldWithNavBar extends ConsumerWidget {
               onTap: (visualIndex) {
                 int branchIndex;
                 if (isMember) {
-                  // Map visual index back to branch index
                   switch (visualIndex) {
-                    case 0: branchIndex = 0; break; // 나의 기도
-                    case 1: branchIndex = 1; break; // 기도소식
-                    case 2: branchIndex = 3; break; // 더보기
+                    case 0: branchIndex = 0; break;
+                    case 1: branchIndex = 1; break;
+                    case 2: branchIndex = 3; break;
                     default: branchIndex = 0;
                   }
                 } else {
@@ -303,64 +564,32 @@ class ScaffoldWithNavBar extends ConsumerWidget {
   }) {
     if (activeRole == AppRole.admin || activeRole == AppRole.leader) {
       return [
-        _buildNavItem(
-          index: 0, currentIndex: currentIndex,
+        _buildNavItem(index: 0, currentIndex: currentIndex,
           lucideIcon: lucide.LucideIcons.userCircle,
-          label: activeRole == AppRole.admin ? '구성원' : '기록',
-          onTap: onTap,
-        ),
-        _buildNavItem(
-          index: 1, currentIndex: currentIndex,
-          lucideIcon: lucide.LucideIcons.scrollText,
-          label: '기도소식',
-          onTap: onTap,
-        ),
-        _buildNavItem(
-          index: 2, currentIndex: currentIndex,
-          lucideIcon: lucide.LucideIcons.barChart3,
-          label: '출석',
-          onTap: onTap,
-        ),
-        _buildNavItem(
-          index: 3, currentIndex: currentIndex,
-          lucideIcon: lucide.LucideIcons.moreHorizontal,
-          label: '더보기',
-          hasBadge: hasBadge,
-          onTap: onTap,
-        ),
+          label: activeRole == AppRole.admin ? '구성원' : '기록', onTap: onTap),
+        _buildNavItem(index: 1, currentIndex: currentIndex,
+          lucideIcon: lucide.LucideIcons.scrollText, label: '기도소식', onTap: onTap),
+        _buildNavItem(index: 2, currentIndex: currentIndex,
+          lucideIcon: lucide.LucideIcons.barChart3, label: '출석', onTap: onTap),
+        _buildNavItem(index: 3, currentIndex: currentIndex,
+          lucideIcon: lucide.LucideIcons.moreHorizontal, label: '더보기', hasBadge: hasBadge, onTap: onTap),
       ];
     } else {
       return [
-        _buildNavItem(
-          index: 0, currentIndex: currentIndex,
-          lucideIcon: lucide.LucideIcons.userCircle,
-          label: '나의 기도',
-          onTap: onTap,
-        ),
-        _buildNavItem(
-          index: 1, currentIndex: currentIndex,
-          lucideIcon: lucide.LucideIcons.scrollText,
-          label: '기도소식',
-          onTap: onTap,
-        ),
-        _buildNavItem(
-          index: 2, currentIndex: currentIndex,
-          lucideIcon: lucide.LucideIcons.moreHorizontal,
-          label: '더보기',
-          hasBadge: hasBadge,
-          onTap: onTap,
-        ),
+        _buildNavItem(index: 0, currentIndex: currentIndex,
+          lucideIcon: lucide.LucideIcons.userCircle, label: '나의 기도', onTap: onTap),
+        _buildNavItem(index: 1, currentIndex: currentIndex,
+          lucideIcon: lucide.LucideIcons.scrollText, label: '기도소식', onTap: onTap),
+        _buildNavItem(index: 2, currentIndex: currentIndex,
+          lucideIcon: lucide.LucideIcons.moreHorizontal, label: '더보기', hasBadge: hasBadge, onTap: onTap),
       ];
     }
   }
 
   Widget _buildNavItem({
-    required int index,
-    required int currentIndex,
-    required IconData lucideIcon,
-    required String label,
-    required void Function(int) onTap,
-    bool hasBadge = false,
+    required int index, required int currentIndex,
+    required IconData lucideIcon, required String label,
+    required void Function(int) onTap, bool hasBadge = false,
   }) {
     final isSelected = currentIndex == index;
     final color = isSelected ? AppTheme.primaryViolet : const Color(0xFF94A3B8);
@@ -377,29 +606,14 @@ class ScaffoldWithNavBar extends ConsumerWidget {
               children: [
                 Icon(lucideIcon, size: 20, color: color),
                 if (hasBadge)
-                  Positioned(
-                    right: -2, top: -2,
-                    child: Container(
-                      width: 5, height: 5,
-                      decoration: const BoxDecoration(
-                        color: AppTheme.error,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
+                  Positioned(right: -2, top: -2,
+                    child: Container(width: 5, height: 5,
+                      decoration: const BoxDecoration(color: AppTheme.error, shape: BoxShape.circle))),
               ],
             ),
             const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: color,
-                fontFamily: 'Pretendard',
-                letterSpacing: -0.3,
-              ),
-            ),
+            Text(label, style: TextStyle(fontSize: 11, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+              color: color, fontFamily: 'Pretendard', letterSpacing: -0.3)),
           ],
         ),
       ),
@@ -408,7 +622,10 @@ class ScaffoldWithNavBar extends ConsumerWidget {
 }
 
 
-/// Placeholder widget for the record tab — renders different screens based on role
+// ═══════════════════════════════════════════════════════════════════
+// Tab Placeholder Widgets
+// ═══════════════════════════════════════════════════════════════════
+
 class _RecordTabPlaceholder extends ConsumerWidget {
   const _RecordTabPlaceholder();
 
@@ -444,7 +661,6 @@ class _RecordTabPlaceholder extends ConsumerWidget {
 }
 
 
-/// Placeholder widget for the attendance tab — renders different screens based on role
 class _AttendanceTabPlaceholder extends ConsumerWidget {
   const _AttendanceTabPlaceholder();
 
@@ -480,6 +696,90 @@ class _AttendanceTabPlaceholder extends ConsumerWidget {
       },
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(body: Center(child: Text('오류: $e'))),
+    );
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Auto-Retry Error Screen (moved from main.dart)
+// ═══════════════════════════════════════════════════════════════════
+
+class _AutoRetryErrorScreen extends StatefulWidget {
+  final Object error;
+  final VoidCallback onRetry;
+  final VoidCallback onLogout;
+
+  const _AutoRetryErrorScreen({
+    required this.error,
+    required this.onRetry,
+    required this.onLogout,
+  });
+
+  @override
+  State<_AutoRetryErrorScreen> createState() => _AutoRetryErrorScreenState();
+}
+
+class _AutoRetryErrorScreenState extends State<_AutoRetryErrorScreen> {
+  DateTime? _lastRetryTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _startAutoRetry();
+  }
+
+  void _startAutoRetry() async {
+    while (mounted) {
+      await Future.delayed(const Duration(seconds: 5));
+      if (mounted) {
+        debugPrint('Auto-retrying connection...');
+        _lastRetryTime = DateTime.now();
+        widget.onRetry();
+        setState(() {});
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final errorMessage = widget.error.toString();
+    final isRealtimeError = errorMessage.contains('Realtime');
+    final displayMessage = '서버와의 연결이 원활하지 않습니다.\n잠시 후 다시 시도해 주세요.';
+
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.wifi_off_rounded, size: 64, color: Color(0xFFEF4444)),
+              const SizedBox(height: 16),
+              Text(displayMessage, textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.textMain, fontSize: 16, fontWeight: FontWeight.w600, height: 1.5)),
+              if (_lastRetryTime != null)
+                Padding(padding: const EdgeInsets.only(top: 8),
+                  child: Text('마지막 재시도: ${DateFormat('HH:mm:ss').format(_lastRetryTime!)}',
+                    style: const TextStyle(fontSize: 11, color: AppTheme.textSub))),
+              if (!isRealtimeError)
+                Padding(padding: const EdgeInsets.only(top: 8),
+                  child: Text(errorMessage, style: const TextStyle(fontSize: 12, color: AppTheme.textSub),
+                    textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis)),
+              const SizedBox(height: 32),
+              SizedBox(width: double.infinity,
+                child: ElevatedButton(onPressed: widget.onRetry,
+                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryViolet, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), elevation: 0),
+                  child: const Text('다시 시도', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)))),
+              const SizedBox(height: 12),
+              TextButton(onPressed: widget.onLogout,
+                child: const Text('로그아웃 및 계정 전환', style: TextStyle(color: AppTheme.textSub))),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

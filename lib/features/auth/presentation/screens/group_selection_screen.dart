@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
-import 'package:grace_note/features/home/presentation/screens/home_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
@@ -62,17 +61,9 @@ class _GroupSelectionScreenState extends ConsumerState<GroupSelectionScreen> {
         matchedData: widget.matchedData,
       );
 
-      // Refresh providers
+      // Refresh providers — AuthenticatedShell will reactively show the home content
       ref.invalidate(userProfileProvider);
       ref.invalidate(userGroupsProvider);
-
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-          (route) => false,
-        );
-      }
     } catch (e) {
       if (mounted) {
         SnackBarUtil.showSnackBar(
