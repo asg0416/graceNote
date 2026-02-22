@@ -1,25 +1,17 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/constants/app_constants.dart';
 import 'package:grace_note/features/auth/presentation/screens/login_screen.dart';
-import 'package:grace_note/features/home/presentation/screens/ai_settings_screen.dart';
-import 'package:grace_note/features/home/presentation/screens/saved_prayers_screen.dart';
-import 'package:grace_note/features/group_management/presentation/screens/group_leader_admin_screen.dart';
-import 'package:grace_note/features/home/presentation/screens/profile_screen.dart';
-import 'package:grace_note/features/home/presentation/screens/notice_list_screen.dart';
-import 'package:grace_note/features/home/presentation/screens/inquiry_screen.dart';
 import 'package:grace_note/core/providers/user_role_provider.dart';
-import 'package:grace_note/features/settings/presentation/screens/change_password_screen.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
-import 'package:grace_note/features/home/presentation/screens/service_guide_screen.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:grace_note/core/utils/snack_bar_util.dart';
-import 'package:grace_note/features/settings/presentation/screens/notification_settings_screen.dart';
 import 'package:grace_note/core/services/push_notification_service.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
@@ -74,12 +66,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 _MenuItem(
                   icon: lucide.LucideIcons.bookmark, 
                   label: '저장된 기도제목', 
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const SavedPrayersScreen()),
-                    );
-                  }
+                  onTap: () => context.push('/more/saved-prayers')
                 ),
               ],
             ),
@@ -116,15 +103,10 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                                 return;
                               }
                               
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => GroupLeaderAdminScreen(
-                                    groupId: group['group_id'],
-                                    groupName: group['group_name'],
-                                  ),
-                                ),
-                              );
+                              context.push('/more/group-admin', extra: {
+                                'groupId': group['group_id'],
+                                'groupName': group['group_name'],
+                              });
                             }
                           ),
                         ],
@@ -140,30 +122,21 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             icon: lucide.LucideIcons.sparkles, 
                             label: 'AI 스타일 설정', 
                             onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => const AISettingsScreen()),
-                              );
+                              context.push('/more/ai-settings');
                             }
                           ),
                         _MenuItem(
                           icon: lucide.LucideIcons.user, 
                           label: '프로필 및 계정 관리', 
                           onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const ProfileScreen()),
-                            );
+                            context.push('/more/profile');
                           }
                         ),
                         _MenuItem(
                           icon: lucide.LucideIcons.bell, 
                           label: '알림 설정', 
                           onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const NotificationSettingsScreen()),
-                            );
+                            context.push('/more/notifications');
                           }
                         ),
                       ],
@@ -184,10 +157,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   label: '공지사항', 
                   showBadge: ref.watch(hasNewNoticesProvider).value ?? false,
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const NoticeListScreen()),
-                    );
+                    context.push('/more/notices');
                   }
                 ),
                 _MenuItem(
@@ -195,20 +165,14 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   label: '1:1 문의하기', 
                   showBadge: (ref.watch(unreadInquiryCountProvider).value ?? 0) > 0,
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const InquiryScreen()),
-                    );
+                    context.push('/more/inquiry');
                   }
                 ),
                 _MenuItem(
                   icon: lucide.LucideIcons.bookOpen, 
                   label: '서비스 가이드 및 FAQ', 
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const ServiceGuideScreen()),
-                    );
+                    context.push('/more/guide');
                   }
                 ),
               ],

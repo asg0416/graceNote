@@ -4,7 +4,6 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
-import 'package:grace_note/features/attendance/presentation/screens/attendance_prayer_screen.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
@@ -107,15 +106,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
           const SizedBox(height: 16),
           const Text('아직 출석 기록이 없습니다.', style: TextStyle(color: AppTheme.textSub, fontSize: 16)),
           const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AttendancePrayerScreen()),
-              );
-            },
-            child: const Text('첫 출석 기록하기'),
-          ),
+          const Text('기록 탭에서 출석을 기록해주세요.', style: TextStyle(color: AppTheme.textSub, fontSize: 14)),
         ],
       ),
     );

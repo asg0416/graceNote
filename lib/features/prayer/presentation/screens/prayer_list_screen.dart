@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
-import 'package:grace_note/features/search/presentation/screens/search_screen.dart';
 import 'package:grace_note/features/prayer/presentation/widgets/prayer_card.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
@@ -315,7 +315,7 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         elevation: 0,
         actions: [
           IconButton(
-            onPressed: () => Navigator.push(context, SharedAxisPageRoute(page: const SearchScreen())),
+            onPressed: () => context.push('/prayer/search'),
             icon: Icon(lucide.LucideIcons.search, color: AppTheme.primaryViolet, size: 20),
           ),
           const SizedBox(width: 8),

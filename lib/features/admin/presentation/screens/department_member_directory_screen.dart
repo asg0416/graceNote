@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
-import 'package:grace_note/features/admin/presentation/screens/admin_member_detail_screen.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -207,18 +207,13 @@ class _GroupMemberAccordionState extends ConsumerState<_GroupMemberAccordion> {
 
     return ListTile(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => AdminMemberDetailScreen(
-              directoryMemberId: directoryMemberId,
-              fullName: fullName,
-              groupName: widget.groupName,
-              groupId: widget.groupId,
-              departmentId: ref.read(userProfileProvider).value!.departmentId!,
-            ),
-          ),
-        );
+        context.push('/record/member-detail', extra: {
+          'directoryMemberId': directoryMemberId,
+          'fullName': fullName,
+          'groupName': widget.groupName,
+          'groupId': widget.groupId,
+          'departmentId': ref.read(userProfileProvider).value!.departmentId!,
+        });
       },
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
       leading: CircleAvatar(

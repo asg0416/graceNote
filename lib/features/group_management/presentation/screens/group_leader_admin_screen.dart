@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
-import 'package:grace_note/features/group_management/presentation/screens/member_edit_screen.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
@@ -41,7 +41,7 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
         shape: const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: AppTheme.textMain, size: 20),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => context.pop(),
         ),
       ),
       body: membersAsync.when(
@@ -56,7 +56,10 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
                    const Text('등록된 조원이 없습니다.', style: TextStyle(color: AppTheme.textSub)),
                    const SizedBox(height: 24),
                    ElevatedButton.icon(
-                     onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => MemberEditScreen(groupId: widget.groupId, groupName: widget.groupName))),
+                     onPressed: () => context.push('/more/group-admin/member-edit', extra: {
+                       'groupId': widget.groupId,
+                       'groupName': widget.groupName,
+                     }),
                      icon: const Icon(Icons.add_rounded),
                      label: const Text('첫 조원 추가하기'),
                    ),
@@ -100,7 +103,10 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
         error: (e, s) => Center(child: Text('데이터 로딩 실패: $e')),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => MemberEditScreen(groupId: widget.groupId, groupName: widget.groupName))),
+        onPressed: () => context.push('/more/group-admin/member-edit', extra: {
+          'groupId': widget.groupId,
+          'groupName': widget.groupName,
+        }),
         backgroundColor: AppTheme.primaryViolet,
         icon: const Icon(Icons.add_rounded, color: Colors.white),
         label: const Text('조원 추가', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -298,7 +304,11 @@ class _GroupLeaderAdminScreenState extends ConsumerState<GroupLeaderAdminScreen>
         ),
         trailing: IconButton(
           icon: const Icon(Icons.edit_outlined, size: 20, color: AppTheme.textSub),
-          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => MemberEditScreen(groupId: widget.groupId, groupName: widget.groupName, member: member))),
+          onPressed: () => context.push('/more/group-admin/member-edit', extra: {
+            'groupId': widget.groupId,
+            'groupName': widget.groupName,
+            'member': member,
+          }),
         ),
         onLongPress: () => _confirmDelete(context, ref, member),
       ),
