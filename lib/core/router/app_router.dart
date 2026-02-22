@@ -362,6 +362,17 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
 
   @override
   Widget build(BuildContext context) {
+    // IMPORTANT: Watch authStateProvider to keep the auth stream active.
+    // userProfileProvider and userGroupsProvider depend on it internally.
+    // Without this, the first auth event may not fire on page load,
+    // leaving all downstream providers stuck in loading state.
+    final authStateAsync = ref.watch(authStateProvider);
+    
+    // If auth state itself is still loading, show loading screen
+    if (authStateAsync.isLoading && !authStateAsync.hasValue) {
+      return _buildLoadingScreen('인증 상태 확인 중...');
+    }
+
     final profileAsync = ref.watch(userProfileProvider);
 
     // Resilience: if we already have profile data, keep showing the app
