@@ -97,6 +97,12 @@ Deno.serve(async (req: Request) => {
   let preferenceField: string = "";
 
   if (table === 'prayer_entries') {
+    // Only send notifications for published prayers (not drafts)
+    if (record.status !== 'published') {
+      console.log(`[notify-event] Skipping prayer notification: status is '${record.status}', not 'published'`);
+      return new Response(JSON.stringify({ skipped: true, reason: "not_published" }));
+    }
+
     // 1. Dedup check: Skip if same group+week+event was notified within last 60 seconds
     const DEDUP_WINDOW_SECONDS = 60;
     const { data: recentNotif } = await supabase
