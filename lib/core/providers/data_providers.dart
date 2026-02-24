@@ -190,7 +190,7 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
         (_) => triggerUpdate(),
         onError: (e, stack) {
           debugPrint('userGroupsProvider: group_members stream error: $e');
-          if (!controller.isClosed) controller.addError(e, stack);
+          // [FIX] 실시간 업데이트 실패가 전체 앱 구동을 막지 않도록 에러를 스트림 컨트롤러에 전달하지 않음
         },
       );
 
@@ -202,7 +202,7 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
         (_) => triggerUpdate(),
         onError: (e, stack) {
           debugPrint('userGroupsProvider: member_directory stream error: $e');
-          if (!controller.isClosed) controller.addError(e, stack);
+          // [FIX] 실시간 업데이트 실패가 전체 앱 구동을 막지 않도록 에러를 스트림 컨트롤러에 전달하지 않음
         },
       );
 
@@ -331,6 +331,10 @@ final memberClimbingProgressProvider = StreamProvider.family<int, String>((ref, 
   return Supabase.instance.client
       .from('attendance')
       .stream(primaryKey: ['id'])
+      .handleError((e) {
+        debugPrint('memberClimbingProgressProvider stream error: $e');
+        // Swallow error to prevent UI crash
+      })
       .map((data) {
         return data.where((a) => 
           a['directory_member_id'] == directoryMemberId && 
@@ -426,6 +430,10 @@ final unreadInquiryCountProvider = StreamProvider<int>((ref) {
   return Supabase.instance.client
       .from('inquiries')
       .stream(primaryKey: ['id'])
+      .handleError((e) {
+        debugPrint('unreadInquiryCountProvider stream error: $e');
+        // Swallow error
+      })
       .map((data) {
         // Filter by user_id and unread status in memory
         return data.where((inq) => 
@@ -522,6 +530,10 @@ final hasNewNoticesProvider = StreamProvider<bool>((ref) {
       return Supabase.instance.client
           .from('notices')
           .stream(primaryKey: ['id'])
+          .handleError((e) {
+            debugPrint('hasNewNoticesProvider stream error: $e');
+            // Swallow error
+          })
           .map((data) {
             if (data.isEmpty) return false;
             // Any notice that isn't in the read set?

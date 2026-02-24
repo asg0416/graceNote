@@ -43,7 +43,8 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
           .from('inquiries')
           .stream(primaryKey: ['id'])
           .eq('user_id', user.id)
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .handleError((e) => debugPrint('inquiriesStream error: $e'));
     }
   }
 
@@ -525,7 +526,8 @@ class _InquiryScreenState extends ConsumerState<InquiryScreen> with SingleTicker
         .from('inquiries')
         .stream(primaryKey: ['id'])
         .eq('user_id', userId)
-        .order('created_at', ascending: false);
+        .order('created_at', ascending: false)
+        .handleError((e) => debugPrint('_getFilteredInquiriesStream error: $e'));
   }
 
   Widget _buildFilterChip(String label, String value) {
@@ -753,7 +755,8 @@ class _InquiryDetailScreenState extends State<_InquiryDetailScreen> {
         .from('inquiry_responses')
         .stream(primaryKey: ['id'])
         .eq('inquiry_id', widget.inquiry['id'])
-        .order('created_at', ascending: true);
+        .order('created_at', ascending: true)
+        .handleError((e) => debugPrint('responsesStream error: $e'));
     
     // Listen to status changes of the inquiry
     _inquirySubscription = Supabase.instance.client
@@ -764,7 +767,7 @@ class _InquiryDetailScreenState extends State<_InquiryDetailScreen> {
           if (data.isNotEmpty && mounted) {
             setState(() => _currentInquiry = data.first);
           }
-        });
+        }, onError: (e) => debugPrint('inquirySubscription error: $e'));
 
     // Listen to responses for auto-scrolling
     _responsesSubscription = _responsesStream.listen((data) {
