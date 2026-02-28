@@ -567,6 +567,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         ],
       ),
       body: groupsAsync.when(
+        skipLoadingOnRefresh: true,
         data: (groups) {
           if (groups.isEmpty) return const Center(child: Text('배정된 조가 없습니다.'));
           

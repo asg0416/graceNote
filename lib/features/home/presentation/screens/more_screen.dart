@@ -368,6 +368,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
           ),
           const SizedBox(height: 20),
           profileAsync.when(
+            skipLoadingOnRefresh: true,
             data: (profile) => Text(
               '${profile?.fullName ?? "성도"}님', 
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain, fontFamily: 'Pretendard')
@@ -378,6 +379,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
           const SizedBox(height: 8),
           const SizedBox(height: 8),
           groupsAsync.when(
+            skipLoadingOnRefresh: true,
             data: (groups) {
               final profile = profileAsync.value;
               final isGlobalAdmin = profile != null && (profile.role == 'admin' || profile.isMaster);

@@ -9,31 +9,39 @@ import 'dart:async';
 final repositoryProvider = Provider((ref) => GraceNoteRepository());
 
 // Current User Profile Provider (Auth linked & Real-time Reactive)
-final userProfileProvider = StreamProvider<ProfileModel?>((ref) {
+final userProfileProvider = StreamProvider<ProfileModel?>((ref) async* {
   // Rebuild on auth changes (logout/login)
   ref.watch(authStateProvider);
 
   final user = Supabase.instance.client.auth.currentUser;
-  if (user == null) return Stream.value(null);
+  if (user == null) {
+    yield null;
+    return;
+  }
 
-  // [ENHANCEMENT] Use a controller to combine initial fetch and subsequent stream
-  // This ensures that even if the profile is created slightly after the session (by trigger),
-  // we catch it without a manual refresh.
-  return Supabase.instance.client
-      .from('profiles')
-      .stream(primaryKey: ['id'])
-      .eq('id', user.id) // [OPTIMIZED] Only stream current user's profile
-      .handleError((error) {
-        debugPrint('userProfileProvider: Stream error (likely Realtime): $error');
-        // 일시적 에러(1006 등) 시 스트림을 유지하기 위해 에러를 삼키거나 
-        // 필요한 경우 나중에 _refreshAllDataSilently에서 다시 시도하게 함
-      })
-      .map((data) {
-        if (data.isEmpty) return null;
-        return ProfileModel.fromJson(data.first);
-      })
-      .distinct(); // Prevent unnecessary rebuilds
-}) ;
+  // [FIX] 웹소켓 끊김/초기 네트워크 에러 시 무한 재시도로 강력하게 복구
+  while (true) {
+    try {
+      final stream = Supabase.instance.client
+          .from('profiles')
+          .stream(primaryKey: ['id'])
+          .eq('id', user.id)
+          .map((data) {
+            if (data.isEmpty) return null;
+            return ProfileModel.fromJson(data.first);
+          })
+          .distinct();
+          
+      yield* stream;
+      
+      // 스트림이 예기치 않게 종료된 경우 2초 대기 후 다시 열기 시도
+      await Future.delayed(const Duration(seconds: 2));
+    } catch (e) {
+      debugPrint('userProfileProvider: Stream error (likely Realtime), retrying in 2s: $e');
+      await Future.delayed(const Duration(seconds: 2));
+    }
+  }
+});
 
 // [NEW] Helper provider for a definitive profile fetch (used to speed up redirection)
 final userProfileFutureProvider = FutureProvider<ProfileModel?>((ref) async {
@@ -159,22 +167,21 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
     await Future.delayed(const Duration(milliseconds: 200));
     if (controller.isClosed) return;
     
-    // [FIX] Add retry logic for initial load when auth might not be fully hydrated
-    for (int i = 0; i < 5; i++) {
+    // [FIX] Add infinite retry logic: 네트워크 회복 시 즉각 복구되도록 멈추지 않음
+    bool success = false;
+    int attempt = 0;
+    while (!success && !controller.isClosed) {
       try {
         final data = await _fetchUserGroups(user.id);
         if (!controller.isClosed) {
           controller.add(data);
+          success = true;
           return; // Success, exit
         }
-      } catch (e, stack) {
-        debugPrint('Error refreshing user groups (attempt ${i + 1}): $e');
-        if (i == 4) { // Last attempt
-          // [FIX] 에러를 던지지 않고 무음 처리하여 이전 상태 또는 로딩 상태를 유지 (화면에 에러 노출 방지)
-          debugPrint('userGroupsProvider: All retry failed, swallowing error to keep UI state');
-        } else {
-          await Future.delayed(const Duration(milliseconds: 500)); // Wait before retrying
-        }
+      } catch (e) {
+        attempt++;
+        debugPrint('userGroupsProvider: Error refreshing user groups (attempt $attempt): $e');
+        await Future.delayed(const Duration(seconds: 2)); // Wait before retrying
       }
     }
   }
