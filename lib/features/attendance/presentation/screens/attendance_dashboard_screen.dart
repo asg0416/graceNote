@@ -46,7 +46,15 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
 
     final history = _cachedHistory ?? [];
     final isLoading = historyAsync.isLoading;
-    final hasError = historyAsync.hasError;
+
+    // [FIX] 에러 발생 시 사용자에게 노출하지 않고 3초 후 자동 재시도
+    if (historyAsync.hasError && !historyAsync.isLoading) {
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          ref.invalidate(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth'));
+        }
+      });
+    }
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -69,25 +77,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
               ),
             ),
           Expanded(
-            child: hasError
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(lucide.LucideIcons.wifiOff, size: 48, color: AppTheme.divider),
-                        const SizedBox(height: 16),
-                        const Text('통신이 불안정하여 데이터를 불러오지 못했습니다.\n네트워크 확인 후 아래 버튼을 눌러주세요.', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSub)),
-                        const SizedBox(height: 24),
-                        OutlinedButton(
-                          onPressed: () {
-                            ref.invalidate(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth'));
-                          },
-                          child: const Text('다시 시도'),
-                        ),
-                      ],
-                    ),
-                  )
-                : (history.isEmpty && isLoading)
+            child: (history.isEmpty && (isLoading || historyAsync.hasError))
                 ? Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
                 : (history.isEmpty && !isLoading)
                 ? _buildEmptyState(context)
