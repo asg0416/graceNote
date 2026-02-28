@@ -86,43 +86,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return Router.withConfig(config: _router);
     }
 
-    if (groupsAsync.isLoading) {
-      return Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ShadcnSpinner(size: 32),
-              const SizedBox(height: 24),
-              const Text(
-                '그레이스노트를 준비하고 있습니다',
-                style: TextStyle(
-                  color: AppTheme.textMain,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  letterSpacing: -0.5,
-                  fontFamily: 'Pretendard',
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
+    // [FIX] 초기 데이터 로딩 중이거나 네트워크 에러 시 오류 메시지를 띄우지 않고 로딩 화면(스피너) 표시 유지
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(lucide.LucideIcons.alertCircle, size: 48, color: AppTheme.textSub),
-            const SizedBox(height: 16),
-            Text('데이터 로드 오류: ${groupsAsync.error}'),
+            ShadcnSpinner(size: 32),
             const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () => ref.invalidate(userGroupsProvider),
-              child: const Text('다시 시도'),
+            const Text(
+              '그레이스노트를 준비하고 있습니다',
+              style: TextStyle(
+                color: AppTheme.textMain,
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+                letterSpacing: -0.5,
+                fontFamily: 'Pretendard',
+              ),
             ),
           ],
         ),

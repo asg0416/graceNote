@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grace_note/core/widgets/app_skeleton.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:grace_note/core/services/ai_service.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
@@ -662,11 +663,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           return const Center(child: CircularProgressIndicator());
         },
         error: (e, s) {
-          final errorStr = e.toString();
-          if (errorStr.contains('Realtime') || errorStr.contains('1006')) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return Center(child: Text('에러: $e'));
+          // [FIX] 오류 내용 직접 노출 방지 및 스켈레톤 뷰 제공
+          return const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: MemberListSkeleton(count: 6),
+          );
         },
       ),
       bottomNavigationBar: _buildBottomActions(),

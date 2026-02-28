@@ -170,7 +170,8 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
       } catch (e, stack) {
         debugPrint('Error refreshing user groups (attempt ${i + 1}): $e');
         if (i == 4) { // Last attempt
-          if (!controller.isClosed) controller.addError(e, stack);
+          // [FIX] 에러를 던지지 않고 무음 처리하여 이전 상태 또는 로딩 상태를 유지 (화면에 에러 노출 방지)
+          debugPrint('userGroupsProvider: All retry failed, swallowing error to keep UI state');
         } else {
           await Future.delayed(const Duration(milliseconds: 500)); // Wait before retrying
         }

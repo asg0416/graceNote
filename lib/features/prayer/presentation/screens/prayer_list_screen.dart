@@ -762,15 +762,8 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
       },
       loading: () => _buildSkeletonList(),
       error: (e, s) {
-        final errorStr = e.toString();
-        final isTransient = errorStr.contains('Realtime') || 
-                           errorStr.contains('1006') || 
-                           errorStr.contains('Failed to fetch');
-        
-        if (isTransient) {
-          return _buildSkeletonList();
-        }
-        return Center(child: Text('데이터를 불러올 수 없습니다.\n잠시 후 다시 시도해주세요.'));
+        // [FIX] Transient 여부와 상관없이 모든 에러 상황에 스켈레톤 표시 (사용자 경험 개선)
+        return _buildSkeletonList();
       },
     );
   }
@@ -839,15 +832,8 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
       },
       loading: () => _buildSkeletonList(),
       error: (e, s) {
-        final errorStr = e.toString();
-        final isTransient = errorStr.contains('Realtime') || 
-                           errorStr.contains('1006') || 
-                           errorStr.contains('Failed to fetch');
-        
-        if (isTransient) {
-          return _buildSkeletonList();
-        }
-        return Center(child: Text('기도제목을 불러올 수 없습니다.\n잠시 후 다시 시도해주세요.'));
+        // [FIX] 모든 에러 텍스트 표시 대신 스켈레톤
+        return _buildSkeletonList();
       },
     );
   }
@@ -889,15 +875,8 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
       },
       loading: () => const PrayerCardSkeleton(),
       error: (e, s) {
-        final errorStr = e.toString();
-        final isTransient = errorStr.contains('Realtime') || 
-                           errorStr.contains('1006') || 
-                           errorStr.contains('Failed to fetch');
-        
-        if (isTransient) {
-          return const PrayerCardSkeleton();
-        }
-        return const SizedBox.shrink();
+        // [FIX] 에러 발생 시 카드 스켈레톤 유지
+        return const PrayerCardSkeleton();
       },
     );
   }

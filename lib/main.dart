@@ -13,6 +13,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:grace_note/core/services/ai_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
+import 'package:grace_note/core/providers/data_providers.dart';
 
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -94,20 +95,21 @@ Future<void> main() async {
 // Global update notifier for PWA version detection
 final UpdateNotifier _updateNotifier = kIsWeb ? UpdateNotifier() : UpdateNotifier();
 
-class GraceNoteApp extends StatefulWidget {
+class GraceNoteApp extends ConsumerStatefulWidget {
   const GraceNoteApp({super.key});
 
   @override
-  State<GraceNoteApp> createState() => _GraceNoteAppState();
+  ConsumerState<GraceNoteApp> createState() => _GraceNoteAppState();
 }
 
-class _GraceNoteAppState extends State<GraceNoteApp> {
+class _GraceNoteAppState extends ConsumerState<GraceNoteApp> with WidgetsBindingObserver {
   late final AuthChangeNotifier _authNotifier;
   late final GoRouter _router;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _authNotifier = AuthChangeNotifier();
     _router = createAppRouter(_authNotifier);
 
@@ -124,9 +126,25 @@ class _GraceNoteAppState extends State<GraceNoteApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _authNotifier.dispose();
     _router.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('App resumed from background. Forcing data refresh to recover from WebSocket drops...');
+      
+      // Supabase 세션 강제 갱신
+      Supabase.instance.client.auth.refreshSession();
+
+      // UI에 필요한 핵심 Provider들을 무효화하여 새로 가져오기 (오프라인 타임아웃/에러 시 즉각 복구)
+      ref.invalidate(userProfileProvider);
+      ref.invalidate(userGroupsProvider);
+      ref.invalidate(allNoticesProvider);
+    }
   }
 
   @override

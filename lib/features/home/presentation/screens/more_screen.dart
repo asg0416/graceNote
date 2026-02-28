@@ -10,6 +10,7 @@ import 'package:grace_note/core/constants/app_constants.dart';
 import 'package:grace_note/features/auth/presentation/screens/login_screen.dart';
 import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:grace_note/core/widgets/app_skeleton.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/services/push_notification_service.dart';
@@ -371,8 +372,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               '${profile?.fullName ?? "성도"}님', 
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain, fontFamily: 'Pretendard')
             ),
-            loading: () => SizedBox(height: 24, width: 24, child: ShadcnSpinner()),
-            error: (_, __) => const Text('이름 정보 없음'),
+            loading: () => const AppSkeleton(width: 80, height: 28),
+            error: (_, __) => const AppSkeleton(width: 80, height: 28),
           ),
           const SizedBox(height: 8),
           const SizedBox(height: 8),
@@ -449,8 +450,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 ),
               );
             },
-            loading: () => const Text('로딩 중...', style: TextStyle(color: AppTheme.textSub, fontSize: 14)),
-            error: (_, __) => const Text('소속 정보 오류', style: TextStyle(color: AppTheme.textSub, fontSize: 14)),
+            loading: () => const AppSkeleton(width: 120, height: 20, borderRadius: BorderRadius.all(Radius.circular(10))),
+            error: (_, __) => const AppSkeleton(width: 120, height: 20, borderRadius: BorderRadius.all(Radius.circular(10))),
           ),
         ],
       ),
