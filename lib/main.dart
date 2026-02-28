@@ -144,6 +144,12 @@ class _GraceNoteAppState extends ConsumerState<GraceNoteApp> with WidgetsBinding
       ref.invalidate(userProfileProvider);
       ref.invalidate(userGroupsProvider);
       ref.invalidate(allNoticesProvider);
+      
+      // 출석 탭 빈 화면 버그 방지를 위해 출석 데이터 전체 캐시 무효화
+      ref.invalidate(attendanceHistoryProvider);
+      ref.invalidate(weeklyDataProvider);
+      ref.invalidate(departmentAttendanceHistoryProvider);
+      ref.invalidate(departmentWeeklyAttendanceProvider);
     }
   }
 

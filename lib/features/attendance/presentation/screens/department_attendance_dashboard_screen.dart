@@ -63,6 +63,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
     final historyAsync = ref.watch(departmentAttendanceHistoryProvider('${widget.departmentId}:$_viewYear:$_viewMonth'));
     final history = historyAsync.value ?? [];
     final isLoading = historyAsync.isLoading;
+    final hasError = historyAsync.hasError;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -77,7 +78,25 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
           if (isLoading)
             const SizedBox(height: 2, child: LinearProgressIndicator(backgroundColor: Colors.transparent, valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet))),
           Expanded(
-            child: (history.isEmpty && isLoading)
+            child: hasError
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(lucide.LucideIcons.wifiOff, size: 48, color: AppTheme.divider),
+                        const SizedBox(height: 16),
+                        const Text('통신이 불안정하여 데이터를 불러오지 못했습니다.\n네트워크 확인 후 아래 버튼을 눌러주세요.', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSub)),
+                        const SizedBox(height: 24),
+                        OutlinedButton(
+                          onPressed: () {
+                            ref.invalidate(departmentAttendanceHistoryProvider('${widget.departmentId}:$_viewYear:$_viewMonth'));
+                          },
+                          child: const Text('다시 시도'),
+                        ),
+                      ],
+                    ),
+                  )
+                : (history.isEmpty && isLoading)
                 ? Center(child: ShadcnSpinner())
                 : RefreshIndicator(
                     onRefresh: () async {
