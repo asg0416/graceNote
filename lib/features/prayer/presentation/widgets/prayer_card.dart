@@ -221,8 +221,11 @@ class _PrayerCardState extends ConsumerState<PrayerCard> {
     final int displayCount = _isToggling ? _optimisticCount : widget.togetherCount;
 
     final String content = widget.content;
-    final bool isLong = content.length > 80;
     final bool isOwner = profile?.id == widget.profileId;
+
+    // [FIX] 더보기 버튼 표시를 글자 수가 아닌 실제 렌더링 오버플로우 여부로 판단
+    const contentStyle = TextStyle(fontSize: 14.5, height: 1.6, color: AppTheme.textMain, fontFamily: 'Pretendard');
+    const int maxLines = 3;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -314,27 +317,39 @@ class _PrayerCardState extends ConsumerState<PrayerCard> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  content,
-                  maxLines: _isExpanded ? null : 3,
-                  overflow: _isExpanded ? null : TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14.5, height: 1.6, color: AppTheme.textMain, fontFamily: 'Pretendard'),
-                ),
-                if (isLong)
-                  GestureDetector(
-                    onTap: () => setState(() => _isExpanded = !_isExpanded),
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        _isExpanded ? '접기' : '...더보기',
-                        style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Pretendard'),
-                      ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final textPainter = TextPainter(
+                  text: TextSpan(text: content, style: contentStyle),
+                  maxLines: maxLines,
+                  textDirection: TextDirection.ltr,
+                )..layout(maxWidth: constraints.maxWidth);
+
+                final bool isOverflowing = textPainter.didExceedMaxLines;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      content,
+                      maxLines: _isExpanded ? null : maxLines,
+                      overflow: _isExpanded ? null : TextOverflow.ellipsis,
+                      style: contentStyle,
                     ),
-                  ),
-              ],
+                    if (isOverflowing)
+                      GestureDetector(
+                        onTap: () => setState(() => _isExpanded = !_isExpanded),
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            _isExpanded ? '접기' : '더보기',
+                            style: const TextStyle(color: AppTheme.primaryViolet, fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Pretendard'),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
           const Divider(height: 1, color: Color(0xFFF1F5F9)),
