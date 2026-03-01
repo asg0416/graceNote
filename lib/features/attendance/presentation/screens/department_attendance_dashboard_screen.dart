@@ -86,7 +86,8 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
           if (isLoading)
             const SizedBox(height: 2, child: LinearProgressIndicator(backgroundColor: Colors.transparent, valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet))),
           Expanded(
-            child: (history.isEmpty && (isLoading || historyAsync.hasError))
+            // [FIX] 최초 로딩 시에만 스피너, 그 외에는 항상 전체 UI 표시하여 이전 달 접근 가능
+            child: (history.isEmpty && historyAsync.isLoading && !historyAsync.hasValue)
                 ? Center(child: ShadcnSpinner())
                 : RefreshIndicator(
                     onRefresh: () async {
@@ -100,7 +101,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                     },
                     color: AppTheme.primaryViolet,
                     child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
+                    physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                     child: Column(
                       children: [
                         if (history.isNotEmpty) _buildSummaryHeader(_selectedWeekId != null ? history.firstWhere((h) => h['week_id'] == _selectedWeekId, orElse: () => history.first) : history.first),

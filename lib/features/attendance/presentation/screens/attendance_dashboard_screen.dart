@@ -77,10 +77,9 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
               ),
             ),
           Expanded(
-            child: (history.isEmpty && (isLoading || historyAsync.hasError))
+            // [FIX] 초기 로딩(캐시 없음) 중일 때만 스피너, 그 외에는 항상 전체 UI를 표시
+            child: (_cachedHistory == null && (isLoading || historyAsync.hasError))
                 ? Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
-                : (history.isEmpty && !isLoading)
-                ? _buildEmptyState(context)
                 : RefreshIndicator(
                     onRefresh: () async {
                       ref.invalidate(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth'));
@@ -95,12 +94,12 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                     },
                     color: AppTheme.primaryViolet,
                     child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
+                    physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildSummaryHeader(history, isLoading: isLoading),
-                        _buildHistoryList(history, isLoading: isLoading), // [MOVE] 상단(요약 아래)으로 이동
+                        _buildHistoryList(history, isLoading: isLoading),
                         _buildGraphSection(history, isLoading: isLoading),
                         if (_selectedWeekId != null || (history.isNotEmpty))
                           _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], isLoading: isLoading),
