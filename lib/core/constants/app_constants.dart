@@ -15,7 +15,7 @@ class AppConstants {
   
   static String get geminiApiKey => _getEnv('GEMINI_API_KEY', _envGeminiApiKey);
 
-  static const String appVersion = '1.5.1';
+  static const String appVersion = '1.5.2';
 
   static String _getEnv(String key, String defaultValue) {
     try {
@@ -27,4 +27,3 @@ class AppConstants {
     return defaultValue;
   }
 }
-// Trigger dev deployment
