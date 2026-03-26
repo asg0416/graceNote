@@ -26,7 +26,9 @@ class AttendancePrayerScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<AttendancePrayerScreen> createState() => _AttendancePrayerScreenState();
 }
-class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen> {
+class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   bool _isRefining = false;
   bool _isLoading = false;
   bool _isFetching = false;
@@ -109,6 +111,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   Future<void> _refreshData() async {
+    // [FIX] 주차 변경이나 새로고침 시 이전에 타이핑하던 상태(3초 딜레이)를 해제하여 정상적인 팝업 표시 허용
+    try {
+      if (mounted) {
+        ref.read(isUserEditingProvider.notifier).state = false;
+        _editingDebounceTimer?.cancel();
+      }
+    } catch (_) {}
+
     // [FIX] controller를 무조건 clear하지 않음 — 서버 fetch 후 동기화하여 사용자 입력 보호
     
     final groups = await ref.read(userGroupsProvider.future);
@@ -197,13 +207,21 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         _members = combinedMembers.values.toList();
         for (final m in _members) {
           final directoryId = m['directoryMemberId'];
-          final note = m['prayerNote'] ?? '';
+          final serverNote = m['prayerNote'] ?? '';
           if (!_controllers.containsKey(directoryId)) {
-            final ctrl = TextEditingController(text: note);
+            final ctrl = TextEditingController(text: serverNote);
             _attachEditingGuard(ctrl);
             _controllers[directoryId] = ctrl;
           } else {
-            _controllers[directoryId]!.text = note;
+            // [FIX] 서버 데이터와 다르더라도 현재 입력 중인 내용이 서버 데이터 원본과 다르면(수정 중이면) 덮어쓰지 않음
+            // 단, 서버 데이터가 변경되었고 사용자 입력창이 비어있거나 수정 이력이 명확하지 않은 경우는 동기화 고려
+            // 가장 안전한 방법은: 사용자가 입력 중(isEditing)이거나 포커스가 있는 동안은 절대 덮어쓰지 않음.
+            // 여기서는 사용자가 임의로 수정한 텍스트가 있을 수 있으므로 무조건 텍스트를 보존.
+            final currentText = _controllers[directoryId]!.text;
+            // 서버에 저장된 내용과 다르고, 빈 칸도 아니라면 현재 텍스트(작성중인 내용)를 유지
+            if (currentText.isEmpty || currentText == m['prayerNote']) {
+              _controllers[directoryId]!.text = serverNote;
+            }
           }
         }
         _sortMembers();
@@ -530,6 +548,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // [FIX] AutomaticKeepAliveClientMixin 요구사항
     final groupsAsync = ref.watch(userGroupsProvider);
     final activeMembership = ref.watch(activeMembershipProvider);
 
