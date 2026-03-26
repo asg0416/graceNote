@@ -32,6 +32,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   bool _isFetching = false;
   bool _isInitialized = false;
   bool _isCheckScreenShowing = false;
+  bool _hasShownInitialPopup = false;
   final List<List<Map<String, dynamic>>> _undoStack = [];
 
   List<Map<String, dynamic>> _members = [];
@@ -85,11 +86,15 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   void _checkAndShowAttendancePopup() {
-    if (_members.isEmpty || _isCheckScreenShowing || _isLoading || _isFetching) return;
+    // 초기 진입 시에만 출석체크 팝업 표시 (백그라운드 복귀 refresh에서는 표시하지 않음)
+    if (_members.isEmpty || _isCheckScreenShowing || _isLoading || _isFetching || _hasShownInitialPopup) return;
     final hasAnyPresence = _members.any((m) => m['isPresent'] == true);
     if (!hasAnyPresence) {
       _isCheckScreenShowing = true;
+      _hasShownInitialPopup = true;
       Future.microtask(() => _launchAttendanceCheck());
+    } else {
+      _hasShownInitialPopup = true; // 이미 출석이 있으면 팝업 불필요
     }
   }
 
