@@ -32,6 +32,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   bool _isFetching = false;
   bool _isInitialized = false;
   bool _isCheckScreenShowing = false;
+  DateTime? _lastCheckedWeek; // [FIX] 주차별 팝업 트리거 방지 (동일 주차 재진입/resume 시 팝업 억제)
   final List<List<Map<String, dynamic>>> _undoStack = [];
 
   List<Map<String, dynamic>> _members = [];
@@ -85,11 +86,25 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   void _checkAndShowAttendancePopup() {
+    if (!mounted) return;
+    
+    // [FIX] 사용자가 기도제목을 입력 중이면 출석체크 팝업 표시(포커스 뺏김) 방지
+    final isEditing = ref.read(isUserEditingProvider);
+    if (isEditing) return;
+
     if (_members.isEmpty || _isCheckScreenShowing || _isLoading || _isFetching) return;
+    
+    // [FIX] 이미 팝업 처리를 한 주차이면 다시 띄우지 않음 (백그라운드 복귀나 부모 위젯 재빌드 시 무한 팝업 방지)
+    final currentWeek = ref.read(attendanceSelectedWeekProvider);
+    if (_lastCheckedWeek == currentWeek) return;
+
     final hasAnyPresence = _members.any((m) => m['isPresent'] == true);
     if (!hasAnyPresence) {
       _isCheckScreenShowing = true;
+      _lastCheckedWeek = currentWeek; // 이번 주차 팝업 방어막 설정
       Future.microtask(() => _launchAttendanceCheck());
+    } else {
+      _lastCheckedWeek = currentWeek; // 출석이 이미 있으면 팝업 불필요
     }
   }
 
