@@ -73,6 +73,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
             ),
             const SizedBox(height: 20),
             groupsAsync.when(
+              skipLoadingOnReload: true,
               data: (groups) {
                 final activeRole = ref.watch(activeRoleProvider);
                 final isLeaderMode = activeRole == AppRole.leader;
@@ -342,6 +343,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(44),
                   child: profileAsync.when(
+                    skipLoadingOnReload: true,
                     data: (profile) {
                       if (profile?.avatarUrl != null && profile!.avatarUrl!.isNotEmpty) {
                         return Image.network(profile.avatarUrl!, fit: BoxFit.cover);
@@ -370,6 +372,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
           const SizedBox(height: 20),
           profileAsync.when(
             skipLoadingOnRefresh: true,
+            skipLoadingOnReload: true,
             data: (profile) => Text(
               '${profile?.fullName ?? "성도"}님', 
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain, fontFamily: 'Pretendard')
@@ -381,6 +384,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
           const SizedBox(height: 8),
           groupsAsync.when(
             skipLoadingOnRefresh: true,
+            skipLoadingOnReload: true,
             data: (groups) {
               final profile = profileAsync.value;
               final isGlobalAdmin = profile != null && (profile.role == 'admin' || profile.isMaster);

@@ -327,12 +327,14 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           Expanded(
             child: userProfileAsync.maybeWhen(
               skipLoadingOnRefresh: true,
+              skipLoadingOnReload: true,
               data: (profile) {
                 if (profile == null) return const Center(child: Text('로그인이 필요합니다.'));
                 if (activeRole == null) return _buildSkeletonList();
                 
                 return ref.watch(userGroupsProvider).maybeWhen(
                   skipLoadingOnRefresh: true,
+                  skipLoadingOnReload: true,
                   data: (userGroups) {
                     // ... (data handling)
                     final bool isLeaderOrAdmin = activeRole == AppRole.admin || activeRole == AppRole.leader;
@@ -345,6 +347,7 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
 
                       return ref.watch(departmentGroupsProvider(deptId)).maybeWhen(
                         skipLoadingOnRefresh: true,
+                        skipLoadingOnReload: true,
                         data: (deptGroups) {
                           if (deptGroups.isEmpty) return _buildTabLayout(profile, userGroups, activeRole);
                           return _buildTabLayout(profile, deptGroups, activeRole);
