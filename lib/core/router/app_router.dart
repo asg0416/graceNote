@@ -342,11 +342,6 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
 
       ref.invalidate(userProfileProvider);
       ref.invalidate(userGroupsProvider);
-      // main.dart에서 이관된 출석/기도 데이터 갱신 (입력 중이 아닐 때만 실행됨)
-      ref.invalidate(attendanceHistoryProvider);
-      ref.invalidate(weeklyDataProvider);
-      ref.invalidate(departmentAttendanceHistoryProvider);
-      ref.invalidate(departmentWeeklyAttendanceProvider);
     } catch (e) {
       debugPrint('Silent refresh failed: $e');
     }
