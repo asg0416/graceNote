@@ -35,6 +35,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   bool _isInitialized = false;
   bool _isCheckScreenShowing = false;
   DateTime? _lastCheckedWeek; // [FIX] 주차별 팝업 트리거 방지 (동일 주차 재진입/resume 시 팝업 억제)
+  DateTime? _currentDataWeek; // [FIX] 데이터 페치 시 주차가 진짜 바뀌었는지 추적하여 텍스트 덮어쓰기 여부 결정
   final List<List<Map<String, dynamic>>> _undoStack = [];
 
   List<Map<String, dynamic>> _members = [];
@@ -149,6 +150,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       final repo = ref.read(repositoryProvider);
       final selectedDate = ref.read(attendanceSelectedWeekProvider);
       final weekIdResult = await repo.getOrCreateWeek(churchId, selectedDate, createIfMissing: true);
+      
+      final bool isWeekChanged = _currentDataWeek != selectedDate;
+      _currentDataWeek = selectedDate;
       final weekId = weekIdResult;
       
       // [FIX] weekId가 없더라도 멤버 목록은 항상 가져옴 (빈 화면 방지)
@@ -213,14 +217,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             _attachEditingGuard(ctrl);
             _controllers[directoryId] = ctrl;
           } else {
-            // [FIX] 서버 데이터와 다르더라도 현재 입력 중인 내용이 서버 데이터 원본과 다르면(수정 중이면) 덮어쓰지 않음
-            // 단, 서버 데이터가 변경되었고 사용자 입력창이 비어있거나 수정 이력이 명확하지 않은 경우는 동기화 고려
-            // 가장 안전한 방법은: 사용자가 입력 중(isEditing)이거나 포커스가 있는 동안은 절대 덮어쓰지 않음.
-            // 여기서는 사용자가 임의로 수정한 텍스트가 있을 수 있으므로 무조건 텍스트를 보존.
-            final currentText = _controllers[directoryId]!.text;
-            // 서버에 저장된 내용과 다르고, 빈 칸도 아니라면 현재 텍스트(작성중인 내용)를 유지
-            if (currentText.isEmpty || currentText == m['prayerNote']) {
-              _controllers[directoryId]!.text = serverNote;
+            // [FIX] 주차가 실제로 변경된 경우 무조건 덮어쓰기 (새 주차 데이터를 표시)
+            if (isWeekChanged) {
+               _controllers[directoryId]!.text = serverNote;
+            } else {
+              // 주차가 동일한데 새로고침/백그라운드 복귀된 경우:
+              // 현재 사용자가 수정 중인 상태라면 덮어쓰지 않고 보호
+              final currentText = _controllers[directoryId]!.text;
+              if (currentText.isEmpty || currentText == m['prayerNote']) {
+                _controllers[directoryId]!.text = serverNote;
+              }
             }
           }
         }

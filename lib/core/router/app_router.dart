@@ -654,6 +654,7 @@ class _RecordTabPlaceholder extends ConsumerWidget {
     final groupsAsync = ref.watch(userGroupsProvider);
 
     return groupsAsync.when(
+      skipLoadingOnReload: true,
       data: (groups) {
         switch (activeRole) {
           case AppRole.admin:
@@ -690,6 +691,7 @@ class _AttendanceTabPlaceholder extends ConsumerWidget {
     final activeMembership = ref.watch(activeMembershipProvider);
 
     return groupsAsync.when(
+      skipLoadingOnReload: true,
       data: (groups) {
         if (groups.isEmpty) {
           return const Scaffold(body: Center(child: Text('출석 데이터가 없습니다.')));
