@@ -529,8 +529,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     });
 
     // [FIX] 활성 멤버십(선택된 조) 변경 감지
+    // previous가 null인 경우는 StateNotifier 재생성(background resume)이므로 무시
     ref.listen(activeMembershipProvider, (previous, next) {
-      if (previous?.groupId != next?.groupId) {
+      if (previous != null && next != null && previous.groupId != next.groupId) {
         _refreshData();
       }
     });
