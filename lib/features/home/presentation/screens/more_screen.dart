@@ -263,6 +263,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                           ref.invalidate(departmentWeeklyDataProvider);
                           ref.invalidate(weekIdProvider);
                           ref.invalidate(selectedWeekDateProvider);
+                          ref.invalidate(attendanceSelectedWeekProvider);
                           ref.invalidate(memberPrayerHistoryProvider);
                           ref.read(activeMembershipProvider.notifier).reset();
 

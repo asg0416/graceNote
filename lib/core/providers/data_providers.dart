@@ -273,10 +273,17 @@ Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
   return groups;
 }
 
-// Selected Week Provider (Current context for app)
+// Selected Week Provider (Current context for app — 기도소식 화면용)
 final selectedWeekDateProvider = StateProvider<DateTime>((ref) {
   final now = DateTime.now();
   // Snap to the most recent Sunday (or today if it's Sunday)
+  return DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday % 7));
+});
+
+/// 기록(출석/기도) 화면 전용 주차 선택 상태.
+/// 기도소식 화면의 날짜 변경이 기록 화면에 영향을 주지 않도록 분리.
+final attendanceSelectedWeekProvider = StateProvider<DateTime>((ref) {
+  final now = DateTime.now();
   return DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday % 7));
 });
 

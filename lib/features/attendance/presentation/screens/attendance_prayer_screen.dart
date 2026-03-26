@@ -122,7 +122,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     setState(() => _isLoading = true);
     try {
       final repo = ref.read(repositoryProvider);
-      final weekIdResult = await ref.read(weekIdProvider(churchId).future);
+      final selectedDate = ref.read(attendanceSelectedWeekProvider);
+      final weekIdResult = await repo.getOrCreateWeek(churchId, selectedDate, createIfMissing: true);
       final weekId = weekIdResult;
       
       // [FIX] weekId가 없더라도 멤버 목록은 항상 가져옴 (빈 화면 방지)
@@ -224,7 +225,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   Future<void> _launchAttendanceCheck() async {
-    final selectedDate = ref.read(selectedWeekDateProvider);
+    final selectedDate = ref.read(attendanceSelectedWeekProvider);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     // 선택된 날짜와 오늘 날짜를 비교하여 과거 주차 여부 확인 (일요일 기준이므로 < 오늘)
@@ -364,7 +365,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     setState(() => _isLoading = true);
     try {
       final repo = ref.read(repositoryProvider);
-      final weekIdResult = await ref.read(weekIdProvider(_currentChurchId!).future);
+      final selectedDate = ref.read(attendanceSelectedWeekProvider);
+      final weekIdResult = await repo.getOrCreateWeek(_currentChurchId!, selectedDate, createIfMissing: true);
     if (weekIdResult == null) {
       if (mounted) setState(() => _isLoading = false);
       if (mounted) SnackBarUtil.showSnackBar(context, message: '주차 정보를 확인하지 못했습니다.', isError: true);
@@ -418,7 +420,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
   String _formatPrayersForSharing() {
     final settings = ref.read(aiSettingsProvider);
-    final selectedDate = ref.read(selectedWeekDateProvider);
+    final selectedDate = ref.read(attendanceSelectedWeekProvider);
     final groups = ref.read(userGroupsProvider).value ?? [];
     final groupName = groups.isNotEmpty ? groups.first['group_name'] : '우리 조';
     final StringBuffer buffer = StringBuffer();
@@ -516,7 +518,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     final groupsAsync = ref.watch(userGroupsProvider);
     final activeMembership = ref.watch(activeMembershipProvider);
 
-    ref.listen(selectedWeekDateProvider, (previous, next) { if (previous != next) _refreshData(); });
+    ref.listen(attendanceSelectedWeekProvider, (previous, next) { if (previous != next) _refreshData(); });
     ref.listen(userGroupsProvider, (previous, next) {
        if (next.hasValue) {
          final oldId = previous?.value?.isNotEmpty == true ? previous!.value!.first['group_id'] : null;
@@ -701,7 +703,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   Widget _buildWeekSelector() {
-    final selectedDate = ref.watch(selectedWeekDateProvider);
+    final selectedDate = ref.watch(attendanceSelectedWeekProvider);
     return InkWell(
       onTap: () {
         showDialog(
@@ -735,7 +737,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                       },
                       onChanged: (date) {
                         if (date != null) {
-                          ref.read(selectedWeekDateProvider.notifier).state = date;
+                          ref.read(attendanceSelectedWeekProvider.notifier).state = date;
                           _refreshData();
                           Navigator.pop(context);
                         }
@@ -893,7 +895,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             title: Row(
               children: [
                 Text(member['name'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A), letterSpacing: -0.5, fontFamily: 'Pretendard')),
-                if (member['source'] == 'current' && (ref.read(selectedWeekDateProvider).isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))))
+                if (member['source'] == 'current' && (ref.read(attendanceSelectedWeekProvider).isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))))
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: Container(
