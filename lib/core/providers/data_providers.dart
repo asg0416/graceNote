@@ -284,6 +284,10 @@ final selectedWeekDateProvider = StateProvider<DateTime>((ref) {
 enum AttendanceAction { share, addMember }
 final attendanceActionProvider = StateProvider<AttendanceAction?>((ref) => null);
 
+/// 사용자가 텍스트 입력 중인지 추적하는 전역 가드.
+/// true일 때 백그라운드 resume 시 data provider invalidation을 건너뜁니다.
+final isUserEditingProvider = StateProvider<bool>((ref) => false);
+
 // Week ID Provider (Computed from selected date)
 final weekIdProvider = FutureProvider.family<String?, String>((ref, String churchId) async {
   final date = ref.watch(selectedWeekDateProvider);

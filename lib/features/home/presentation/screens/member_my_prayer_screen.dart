@@ -1,3 +1,4 @@
+import 'dart:async' show Timer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/models/models.dart';
@@ -24,11 +25,28 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
   bool _isPresent = false;
   String _prayerNote = '';
   final _noteController = TextEditingController();
+  Timer? _editingDebounceTimer;
+  bool _guardAttached = false;
 
   @override
   void dispose() {
+    _editingDebounceTimer?.cancel();
+    _noteController.removeListener(_onTextChanged);
     _noteController.dispose();
+    // 화면을 떠날 때 editing guard 해제
+    try {
+      ref.read(isUserEditingProvider.notifier).state = false;
+    } catch (_) {}
     super.dispose();
+  }
+
+  /// 텍스트 입력 시 editing guard 활성화 (3초간 입력 없으면 자동 해제)
+  void _onTextChanged() {
+    ref.read(isUserEditingProvider.notifier).state = true;
+    _editingDebounceTimer?.cancel();
+    _editingDebounceTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) ref.read(isUserEditingProvider.notifier).state = false;
+    });
   }
 
   Future<void> _refreshData() async {
@@ -184,6 +202,12 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 한 번만 editing guard 리스너 등록
+    if (!_guardAttached) {
+      _guardAttached = true;
+      _noteController.addListener(_onTextChanged);
+    }
+
     // [CRITICAL] Watch profile ID to trigger refresh on account switch
     final profileId = ref.watch(userProfileProvider.select((p) => p.value?.id));
     
@@ -191,7 +215,8 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
     ref.listen(userProfileProvider, (previous, next) {
       final oldId = previous?.value?.id;
       final newId = next.value?.id;
-      if (newId != null && oldId != newId) {
+      // 실제 사용자 변경 시에만 refresh (invalidate 후 재로딩 null→같은값 무시)
+      if (newId != null && oldId != null && oldId != newId) {
         debugPrint('MemberMyPrayerScreen: Detected user change ($oldId -> $newId). Resetting state and refreshing...');
         setState(() {
           _directoryMemberId = null;

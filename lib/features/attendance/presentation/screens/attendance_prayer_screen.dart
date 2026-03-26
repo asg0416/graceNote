@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:async' show Timer;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,15 +38,37 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   final Map<String, TextEditingController> _controllers = {};
   final ShadPopoverController _popoverController = ShadPopoverController();
   String? _currentGroupId;
+  Timer? _editingDebounceTimer;
   String? _currentChurchId;
 
   @override
   void dispose() {
+    _editingDebounceTimer?.cancel();
     for (final controller in _controllers.values) {
+      controller.removeListener(_onTextChanged);
       controller.dispose();
     }
     _popoverController.dispose();
+    // 화면을 떠날 때 editing guard 해제
+    // (WidgetRef는 dispose 후 접근 불가하므로 try-catch)
+    try {
+      ref.read(isUserEditingProvider.notifier).state = false;
+    } catch (_) {}
     super.dispose();
+  }
+
+  /// 텍스트 입력 시 editing guard 활성화 (3초간 입력 없으면 자동 해제)
+  void _onTextChanged() {
+    ref.read(isUserEditingProvider.notifier).state = true;
+    _editingDebounceTimer?.cancel();
+    _editingDebounceTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) ref.read(isUserEditingProvider.notifier).state = false;
+    });
+  }
+
+  /// 새로 생성된 controller에 editing guard 리스너를 등록
+  void _attachEditingGuard(TextEditingController controller) {
+    controller.addListener(_onTextChanged);
   }
 
   @override
@@ -71,10 +94,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   Future<void> _refreshData() async {
-    // [FIX] 페이지 이동이나 데이터 갱신 시 기존 컨트롤러 텍스트 초기화
-    for (final controller in _controllers.values) {
-      controller.clear();
-    }
+    // [FIX] controller를 무조건 clear하지 않음 — 서버 fetch 후 동기화하여 사용자 입력 보호
     
     final groups = await ref.read(userGroupsProvider.future);
     final activeMembership = ref.read(activeMembershipProvider);
@@ -163,7 +183,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           final directoryId = m['directoryMemberId'];
           final note = m['prayerNote'] ?? '';
           if (!_controllers.containsKey(directoryId)) {
-            _controllers[directoryId] = TextEditingController(text: note);
+            final ctrl = TextEditingController(text: note);
+            _attachEditingGuard(ctrl);
+            _controllers[directoryId] = ctrl;
           } else {
             _controllers[directoryId]!.text = note;
           }
@@ -249,7 +271,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           if (_controllers.containsKey(dirId)) {
             _controllers[dirId]!.text = m['prayerNote'] ?? '';
           } else {
-            _controllers[dirId] = TextEditingController(text: m['prayerNote'] ?? '');
+            final ctrl = TextEditingController(text: m['prayerNote'] ?? '');
+            _attachEditingGuard(ctrl);
+            _controllers[dirId] = ctrl;
           }
         }
         _sortMembers();
@@ -497,7 +521,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
        if (next.hasValue) {
          final oldId = previous?.value?.isNotEmpty == true ? previous!.value!.first['group_id'] : null;
          final newId = next.value?.isNotEmpty == true ? next.value!.first['group_id'] : null;
-         if (oldId != newId) _refreshData();
+         // 실제 그룹 변경 시에만 리프레시 (invalidate 후 재로딩은 무시)
+         if (oldId != null && newId != null && oldId != newId) _refreshData();
        }
     });
 

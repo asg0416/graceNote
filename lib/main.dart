@@ -135,21 +135,9 @@ class _GraceNoteAppState extends ConsumerState<GraceNoteApp> with WidgetsBinding
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('App resumed from background. Forcing data refresh to recover from WebSocket drops...');
-      
-      // Supabase 세션 강제 갱신
+      debugPrint('App resumed from background. Refreshing session only (data refresh delegated to AuthenticatedShell).');
+      // Supabase 세션 강제 갱신 (데이터 갱신은 AuthenticatedShell._refreshAllDataSilently()에서 editing guard와 함께 처리)
       Supabase.instance.client.auth.refreshSession();
-
-      // UI에 필요한 핵심 Provider들을 무효화하여 새로 가져오기 (오프라인 타임아웃/에러 시 즉각 복구)
-      ref.invalidate(userProfileProvider);
-      ref.invalidate(userGroupsProvider);
-      ref.invalidate(allNoticesProvider);
-      
-      // 출석 탭 빈 화면 버그 방지를 위해 출석 데이터 전체 캐시 무효화
-      ref.invalidate(attendanceHistoryProvider);
-      ref.invalidate(weeklyDataProvider);
-      ref.invalidate(departmentAttendanceHistoryProvider);
-      ref.invalidate(departmentWeeklyAttendanceProvider);
     }
   }
 

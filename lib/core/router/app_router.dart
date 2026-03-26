@@ -332,8 +332,21 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
       if (session == null || session.isExpired) {
         try { await Supabase.instance.client.auth.getUser(); } catch (_) {}
       }
+
+      // 사용자가 텍스트 입력 중이면 data invalidation 건너뜀 (입력 유실 방지)
+      final isEditing = ref.read(isUserEditingProvider);
+      if (isEditing) {
+        debugPrint('Silent refresh: User is editing, skipping data invalidation');
+        return;
+      }
+
       ref.invalidate(userProfileProvider);
       ref.invalidate(userGroupsProvider);
+      // main.dart에서 이관된 출석/기도 데이터 갱신 (입력 중이 아닐 때만 실행됨)
+      ref.invalidate(attendanceHistoryProvider);
+      ref.invalidate(weeklyDataProvider);
+      ref.invalidate(departmentAttendanceHistoryProvider);
+      ref.invalidate(departmentWeeklyAttendanceProvider);
     } catch (e) {
       debugPrint('Silent refresh failed: $e');
     }
