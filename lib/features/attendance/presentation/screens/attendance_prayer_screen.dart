@@ -594,112 +594,88 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           const SizedBox(width: 8),
         ],
       ),
-      body: groupsAsync.when(
-        skipLoadingOnRefresh: true,
-        data: (groups) {
-          if (groups.isEmpty) return const Center(child: Text('배정된 조가 없습니다.'));
-          
-          return Stack(
-            children: [
-              Column(
-                children: [
-                  _buildAIHeader(),
-                  if (_isRefining) const LinearProgressIndicator(backgroundColor: Colors.transparent, valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet), minHeight: 2),
-                  Expanded(
-                    child: RefreshIndicator(
-                      onRefresh: _refreshData,
-                      color: AppTheme.primaryViolet,
-                      child: ReorderableListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
-                      proxyDecorator: (child, index, animation) {
-                        return AnimatedBuilder(
-                          animation: animation,
-                          builder: (context, child) {
-                            return Material(
-                              color: Colors.transparent,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(lerpDouble(0, 0.1, animation.value) ?? 0),
-                                      blurRadius: 15,
-                                      offset: const Offset(0, 5),
-                                    )
-                                  ],
-                                ),
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: child,
-                        );
-                      },
-                      buildDefaultDragHandles: false,
-                      itemCount: _members.length,
-                      onReorder: (oldIndex, newIndex) { setState(() { if (newIndex > oldIndex) newIndex -= 1; final item = _members.removeAt(oldIndex); _members.insert(newIndex, item); }); },
-                      itemBuilder: (context, index) {
-                        return Container(
-                          key: ValueKey(_members[index]['directoryMemberId']),
-                          margin: const EdgeInsets.only(bottom: 16),
-                          child: _buildMemberCard(_members[index], index),
-                        );
-                      },
-                    ),
-                    ),
-                  ),
-                ],
-              ),
-              if (_isLoading || _isFetching) 
-                Container(
-                  color: Colors.white.withOpacity(0.7), 
-                  child: const Center(child: CircularProgressIndicator())
-                ),
-              if (_isRefining) 
-                Container(
-                  color: Colors.white.withOpacity(0.3), 
-                  child: const Center(child: AIProcessingLoader(size: 100, message: '기도제목을 정돈하고 있습니다'))
-                ),
-            ],
-          );
-        },
-        loading: () {
-          if (_members.isNotEmpty) {
-            return Stack(
-              children: [
-                Column(
-                  children: [
-                    _buildAIHeader(),
-                    Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
-                        itemCount: _members.length,
-                        itemBuilder: (context, index) => Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          child: _buildMemberCard(_members[index], index),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Container(
-                  color: Colors.white.withOpacity(0.7), 
-                  child: const Center(child: CircularProgressIndicator())
-                ),
-              ],
-            );
-          }
-          return const Center(child: CircularProgressIndicator());
-        },
-        error: (e, s) {
-          // [FIX] 오류 내용 직접 노출 방지 및 스켈레톤 뷰 제공
-          return const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: MemberListSkeleton(count: 6),
-          );
-        },
-      ),
+      // [FIX] 로컬 상태 기반 렌더링 — provider AsyncLoading 전환 시 위젯 트리 교체 방지
+      body: _buildBody(),
       bottomNavigationBar: _buildBottomActions(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (!_isInitialized || (_members.isEmpty && (_isLoading || _isFetching))) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: MemberListSkeleton(count: 6),
+        ),
+      );
+    }
+
+    if (_members.isEmpty && !_isLoading) {
+      return const Center(child: Text('배정된 조가 없습니다.'));
+    }
+
+    return Stack(
+      children: [
+        Column(
+          children: [
+            _buildAIHeader(),
+            if (_isRefining) const LinearProgressIndicator(backgroundColor: Colors.transparent, valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet), minHeight: 2),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refreshData,
+                color: AppTheme.primaryViolet,
+                child: ReorderableListView.builder(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
+                proxyDecorator: (child, index, animation) {
+                  return AnimatedBuilder(
+                    animation: animation,
+                    builder: (context, child) {
+                      return Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(lerpDouble(0, 0.1, animation.value) ?? 0),
+                                blurRadius: 15,
+                                offset: const Offset(0, 5),
+                              )
+                            ],
+                          ),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: child,
+                  );
+                },
+                buildDefaultDragHandles: false,
+                itemCount: _members.length,
+                onReorder: (oldIndex, newIndex) { setState(() { if (newIndex > oldIndex) newIndex -= 1; final item = _members.removeAt(oldIndex); _members.insert(newIndex, item); }); },
+                itemBuilder: (context, index) {
+                  return Container(
+                    key: ValueKey(_members[index]['directoryMemberId']),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    child: _buildMemberCard(_members[index], index),
+                  );
+                },
+              ),
+              ),
+            ),
+          ],
+        ),
+        if (_isLoading || _isFetching) 
+          Container(
+            color: Colors.white.withOpacity(0.7), 
+            child: const Center(child: CircularProgressIndicator())
+          ),
+        if (_isRefining) 
+          Container(
+            color: Colors.white.withOpacity(0.3), 
+            child: const Center(child: AIProcessingLoader(size: 100, message: '기도제목을 정돈하고 있습니다'))
+          ),
+      ],
     );
   }
 
