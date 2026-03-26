@@ -529,6 +529,9 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
             child: Text('상세 현황 (누가 오고 안왔는지)', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
           ),
           ref.watch(weeklyDataProvider('${widget.groupId}:$churchId:$weekId')).maybeWhen(
+            skipLoadingOnRefresh: true,
+            skipLoadingOnReload: true,
+            skipError: true,
             data: (data) {
               final attendanceList = List<Map<String, dynamic>>.from(data['attendance']);
               if (attendanceList.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(40), child: Text('데이터가 없습니다.')));

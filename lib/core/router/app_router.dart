@@ -655,6 +655,7 @@ class _RecordTabPlaceholder extends ConsumerWidget {
 
     return groupsAsync.when(
       skipLoadingOnReload: true,
+      skipError: true, // [FIX] 일시적 네트워크 에러 시 전체 화면 파괴(에러 스크린 전환) 방지
       data: (groups) {
         switch (activeRole) {
           case AppRole.admin:
@@ -692,6 +693,7 @@ class _AttendanceTabPlaceholder extends ConsumerWidget {
 
     return groupsAsync.when(
       skipLoadingOnReload: true,
+      skipError: true, // [FIX] 일시적 네트워크 에러 시 전체 화면 파괴 방지
       data: (groups) {
         if (groups.isEmpty) {
           return const Scaffold(body: Center(child: Text('출석 데이터가 없습니다.')));

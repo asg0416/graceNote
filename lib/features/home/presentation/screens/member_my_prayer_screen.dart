@@ -326,6 +326,9 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
     final historyAsync = ref.watch(memberPrayerHistoryProvider(_directoryMemberId!));
 
     return historyAsync.when(
+      skipLoadingOnRefresh: true,
+      skipLoadingOnReload: true,
+      skipError: true,
       data: (history) {
         if (history.isEmpty) {
           return const Center(

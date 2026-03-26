@@ -356,6 +356,9 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
           child: Text('조별 상세 현황', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
         ),
         ref.watch(departmentWeeklyAttendanceProvider('${widget.departmentId}:$weekId')).maybeWhen(
+          skipLoadingOnRefresh: true,
+          skipLoadingOnReload: true,
+          skipError: true,
           data: (data) {
             final groups = List<Map<String, dynamic>>.from(data['groups']);
             return ListView.builder(
