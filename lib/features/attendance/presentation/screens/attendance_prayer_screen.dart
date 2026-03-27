@@ -645,7 +645,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       return const Center(
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          child: MemberListSkeleton(count: 6),
+          child: _RecordSkeleton(),
         ),
       );
     }
@@ -1086,5 +1086,53 @@ class _DashedBorderPainter extends CustomPainter {
   @override
   bool shouldRepaint(_DashedBorderPainter oldDelegate) {
     return color != oldDelegate.color || strokeWidth != oldDelegate.strokeWidth || gap != oldDelegate.gap;
+  }
+}
+
+// [FIX] 출석/기록 메뉴 전용 커스텀 스켈레톤 (기도소식과 모양 차별화)
+class _RecordSkeleton extends StatelessWidget {
+  const _RecordSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 5,
+      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemBuilder: (context, index) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44, height: 44,
+                    decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 16),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(width: 60, height: 16, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4))),
+                      const SizedBox(height: 6),
+                      Container(width: 40, height: 12, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4))),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(width: double.infinity, height: 80, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12))),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

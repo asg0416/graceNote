@@ -340,8 +340,10 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
         return;
       }
 
-      ref.invalidate(userProfileProvider);
-      ref.invalidate(userGroupsProvider);
+      // [FIX] 백그라운드 복귀 시 전면적인 데이터 재생성 금지 (화면 파괴 방어)
+      // StreamProvider가 자동으로 최신 상태를 유지하므로 invalidate 불필요
+      // ref.invalidate(userProfileProvider);
+      // ref.invalidate(userGroupsProvider);
     } catch (e) {
       debugPrint('Silent refresh failed: $e');
     }
