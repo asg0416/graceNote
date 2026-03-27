@@ -103,7 +103,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                         _buildHistoryList(history, isLoading: isLoading),
                         _buildGraphSection(history, isLoading: isLoading),
                         if (_selectedWeekId != null || (history.isNotEmpty))
-                          _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], isLoading: isLoading),
+                          _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], history, isLoading: isLoading),
                         const SizedBox(height: 40),
                       ],
                     ),
@@ -516,9 +516,13 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     );
   }
 
-  Widget _buildDetailedAttendanceSection(String weekId, {bool isLoading = false}) {
+  Widget _buildDetailedAttendanceSection(String weekId, List<Map<String, dynamic>> history, {bool isLoading = false}) {
     final groupsAsync = ref.watch(userGroupsProvider);
     final churchId = groupsAsync.value?.first['church_id'] ?? '';
+    final weekDateStr = history.firstWhere(
+      (h) => h['week_id'] == weekId, 
+      orElse: () => history.isNotEmpty ? history.first : <String, dynamic>{}
+    )['week_date'] as String?;
     
     return Opacity(
       opacity: isLoading ? 0.5 : 1.0,
@@ -542,8 +546,10 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        ref.read(attendanceSelectedWeekProvider.notifier).state = DateTime.parse(weekId);
-                        context.go('/record');
+                        if (weekDateStr != null) {
+                          ref.read(attendanceSelectedWeekProvider.notifier).state = DateTime.parse(weekDateStr);
+                          context.go('/record');
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primaryViolet,
@@ -633,8 +639,10 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: () {
-                          ref.read(attendanceSelectedWeekProvider.notifier).state = DateTime.parse(weekId);
-                          context.go('/record');
+                          if (weekDateStr != null) {
+                            ref.read(attendanceSelectedWeekProvider.notifier).state = DateTime.parse(weekDateStr);
+                            context.go('/record');
+                          }
                         },
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.primaryViolet,

@@ -134,17 +134,8 @@ class GraceNoteRepository {
     // 4. 데이터 병합 (Attendance)
     final List<Map<String, dynamic>> attendanceWithInfo = [];
     
-    if (attendanceList.isEmpty) {
-      for (final m in members) {
-        attendanceWithInfo.add({
-          'week_id': weekId,
-          'group_id': groupId,
-          'directory_member_id': m['id'],
-          'status': 'absent',
-          'member_directory': m,
-        });
-      }
-    } else {
+    // [FIX] 조장 화면에서도 미제출 시 빈 배열을 반환해야 "출석 등록하기" 버튼 노출 로직이 동작함
+    if (attendanceList.isNotEmpty) {
       for (final att in attendanceList) {
         final dirId = att['directory_member_id'];
         
