@@ -126,8 +126,10 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
       skipLoadingOnRefresh: true,
       data: (data) {
         final groups = List<Map<String, dynamic>>.from(data['groups']);
-        final totalGroups = groups.length;
-        final submittedGroups = groups.where((g) => g['is_submitted'] == true).toList();
+        // [FIX] 멤버가 0명인 조는 출석 제출 자체가 불가능하므로 집계 모수에서 제외
+        final validGroups = groups.where((g) => (g['total_count'] as num) > 0).toList();
+        final totalGroups = validGroups.length;
+        final submittedGroups = validGroups.where((g) => g['is_submitted'] == true).toList();
         final isAllSubmitted = totalGroups > 0 && submittedGroups.length == totalGroups;
         
         int totalPresent = 0;
