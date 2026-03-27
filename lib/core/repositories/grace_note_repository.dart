@@ -684,7 +684,7 @@ class GraceNoteRepository {
     // 3. 해당 주차의 출석 데이터 조회
     final attendanceResponse = await _supabase
         .from('attendance')
-        .select('directory_member_id, status')
+        .select('directory_member_id, status, group_id')
         .eq('week_id', weekId);
     final attendanceData = List<Map<String, dynamic>>.from(attendanceResponse);
 
@@ -716,39 +716,39 @@ class GraceNoteRepository {
       final groupName = group['name'];
       final groupId = group['id'];
       
-      // 1) 기록(Snapshot) 기반 멤버 구성 - 현재 조에 있는 성도들과 상관없이 실제 기록된 데이터
-      final snapshotMembersInGroup = attendanceData
-          .map((a) {
-             final dirId = a['directory_member_id'];
-             final memberInfo = allMembers.firstWhere(
-                (m) => m['id'] == dirId, 
-                orElse: () => missingMembersMap[dirId] ?? {},
-             );
-             
-             // 정보가 없거나, 해당 조가 아니면 제외
-             if (memberInfo.isEmpty || memberInfo['group_name'] != groupName) return null;
-             
-             return {
-               ...memberInfo,
-               'status': a['status'],
-               'source': 'snapshot',
-             };
-          })
-          .whereType<Map<String, dynamic>>()
-          .toList();
+      final groupAttendanceData = attendanceData.where((a) => a['group_id'] == groupId).toList();
 
-      // 2) 현재 명단(Current) 기반 멤버 추가 - 기록에는 없지만 현재 이 조에 있는 성도들 (미제출 인원)
-      final checkedMemberIds = snapshotMembersInGroup.map((m) => m['id']).toSet();
-      final currentMembersInGroup = allMembers
-          .where((m) => m['group_name'] == groupName && !checkedMemberIds.contains(m['id']))
-          .map((m) => {
-                ...m,
-                'status': 'absent',
-                'source': 'current',
-              })
-          .toList();
+      final List<Map<String, dynamic>> membersWithStatus = [];
 
-      final membersWithStatus = [...snapshotMembersInGroup, ...currentMembersInGroup];
+      if (groupAttendanceData.isEmpty) {
+        // [수정] 출석 제출 기록이 아예 없는 조: 현재 해당 조에 소속된 인원을 모두 미제출(absent)로 노출 (정상적인 결석 처리가 아님, 입력 대기 상태)
+        membersWithStatus.addAll(allMembers
+            .where((m) => m['group_name'] == groupName)
+            .map((m) => {
+                  ...m,
+                  'status': 'absent',
+                  'source': 'current',
+                }));
+      } else {
+        // [수정] 출석 제출 기록이 있는 조: 과거 제출된 기록(Snapshot) 기반으로만 명단을 구성.
+        // 이렇게 해야, 나중에 다른 조에서 편입된 새가족이 과거 주차 출석부에 소급되어 나타나는 버그를 막을 수 있음.
+        membersWithStatus.addAll(groupAttendanceData
+            .map((a) {
+               final dirId = a['directory_member_id'];
+               final memberInfo = allMembers.firstWhere(
+                  (m) => m['id'] == dirId, 
+                  orElse: () => missingMembersMap[dirId] ?? {},
+               );
+               
+               // 정보가 삭제된 성도여도 고유 식별 명단을 위해 남겨둠
+               return {
+                 if (memberInfo.isNotEmpty) ...memberInfo else 'id': dirId,
+                 'status': a['status'],
+                 'source': 'snapshot',
+               };
+            }));
+      }
+
       final presentCount = membersWithStatus.where((m) => m['status'] == 'present' || m['status'] == 'late').length;
 
       return {
