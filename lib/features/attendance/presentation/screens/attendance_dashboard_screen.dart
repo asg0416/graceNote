@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
@@ -534,7 +535,29 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
             skipError: true,
             data: (data) {
               final attendanceList = List<Map<String, dynamic>>.from(data['attendance']);
-              if (attendanceList.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(40), child: Text('데이터가 없습니다.')));
+              if (attendanceList.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        ref.read(attendanceSelectedWeekProvider.notifier).state = DateTime.parse(weekId);
+                        context.go('/record');
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryViolet,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
+                      ),
+                      icon: const Icon(lucide.LucideIcons.edit3, size: 20),
+                      label: const Text('출석 등록하기', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
+                    ),
+                  ),
+                );
+              }
 
               // [SORT] 명단 정렬 (부부별)
               attendanceList.sort((a, b) {
@@ -552,54 +575,79 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                 return n1.compareTo(n2);
               });
 
-              return Container(
-                width: double.infinity,
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: AppTheme.border, width: 1.0), // [STYLE] 테두리 복원
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return Wrap(
-                        spacing: 6, // [STYLE] 간격 좁힘
-                        runSpacing: 8,
-                        children: attendanceList.map((att) {
-                          final member = att['member_directory'];
-                          if (member == null) return const SizedBox.shrink();
-                          
-                          final status = att['status'];
-                          final isPresent = status == 'present' || status == 'late';
-                          
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), // [STYLE] 패딩 축소
-                            decoration: BoxDecoration(
-                              color: isPresent ? AppTheme.accentViolet : const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(12), // [STYLE] 조금 더 샤프한 어드민 스타일 뱃지
-                              border: Border.all(
-                                color: isPresent ? AppTheme.primaryViolet.withOpacity(0.4) : AppTheme.border.withOpacity(0.6),
-                                width: 1.0,
-                              ),
-                            ),
-                            child: Text(
-                              member['full_name'], 
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: isPresent ? FontWeight.w800 : FontWeight.w600,
-                                color: isPresent ? AppTheme.primaryViolet : AppTheme.textSub,
-                                fontFamily: 'Pretendard',
-                                letterSpacing: -0.3,
-                              ),
-                            ),
+              return Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: AppTheme.border, width: 1.0), // [STYLE] 테두리 복원
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Wrap(
+                            spacing: 6, // [STYLE] 간격 좁힘
+                            runSpacing: 8,
+                            children: attendanceList.map((att) {
+                              final member = att['member_directory'];
+                              if (member == null) return const SizedBox.shrink();
+                              
+                              final status = att['status'];
+                              final isPresent = status == 'present' || status == 'late';
+                              
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), // [STYLE] 패딩 축소
+                                decoration: BoxDecoration(
+                                  color: isPresent ? AppTheme.accentViolet : const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(12), // [STYLE] 조금 더 샤프한 어드민 스타일 뱃지
+                                  border: Border.all(
+                                    color: isPresent ? AppTheme.primaryViolet.withOpacity(0.4) : AppTheme.border.withOpacity(0.6),
+                                    width: 1.0,
+                                  ),
+                                ),
+                                child: Text(
+                                  member['full_name'], 
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: isPresent ? FontWeight.w800 : FontWeight.w600,
+                                    color: isPresent ? AppTheme.primaryViolet : AppTheme.textSub,
+                                    fontFamily: 'Pretendard',
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
                           );
-                        }).toList(),
-                      );
-                    }
+                        }
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          ref.read(attendanceSelectedWeekProvider.notifier).state = DateTime.parse(weekId);
+                          context.go('/record');
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.primaryViolet,
+                          side: const BorderSide(color: AppTheme.primaryViolet),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        icon: const Icon(lucide.LucideIcons.edit2, size: 18),
+                        label: const Text('출석 현황 수정하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
+                      ),
+                    ),
+                  ),
+                ],
               );
             },
             orElse: () => const Center(child: Padding(padding: EdgeInsets.all(40), child: ShadcnSpinner())),
