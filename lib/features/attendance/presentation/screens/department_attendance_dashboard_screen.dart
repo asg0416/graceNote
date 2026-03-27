@@ -104,7 +104,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                     physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                     child: Column(
                       children: [
-                        if (history.isNotEmpty) _buildSummaryHeader(_selectedWeekId != null ? history.firstWhere((h) => h['week_id'] == _selectedWeekId, orElse: () => history.first) : history.first),
+                        if (history.isNotEmpty) _buildSummaryHeader(_selectedWeekId ?? history.first['week_id']),
                         _buildHistoryList(history, isLoading: isLoading),
                         _buildGraphSection(history, isLoading: isLoading),
                         if (history.isNotEmpty) _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], isLoading: isLoading),
@@ -119,64 +119,108 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
     );
   }
 
-  Widget _buildSummaryHeader(Map<String, dynamic> weekData) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppTheme.border.withOpacity(0.5), width: 1.0),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -20,
-              top: -20,
-              child: Container(width: 100, height: 100, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1))),
+  Widget _buildSummaryHeader(String weekId) {
+    final weeklyDataAsync = ref.watch(departmentWeeklyAttendanceProvider('${widget.departmentId}:$weekId'));
+
+    return weeklyDataAsync.maybeWhen(
+      skipLoadingOnRefresh: true,
+      data: (data) {
+        final groups = List<Map<String, dynamic>>.from(data['groups']);
+        final totalGroups = groups.length;
+        final submittedGroups = groups.where((g) => g['is_submitted'] == true).toList();
+        final isAllSubmitted = totalGroups > 0 && submittedGroups.length == totalGroups;
+        
+        int totalPresent = 0;
+        int totalCount = 0;
+        
+        for (final g in submittedGroups) {
+          totalPresent += (g['present_count'] as num).toInt();
+          totalCount += (g['total_count'] as num).toInt();
+        }
+        final rate = totalCount > 0 ? (totalPresent / totalCount * 100).toInt() : 0;
+
+        return Container(
+          margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
             ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppTheme.border.withOpacity(0.5), width: 1.0),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Stack(
+              children: [
+                Positioned(
+                  right: -20,
+                  top: -20,
+                  child: Container(width: 100, height: 100, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1))),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(lucide.LucideIcons.barChart3, color: Colors.white, size: 20),
+                      Row(
+                        children: [
+                          const Icon(lucide.LucideIcons.barChart3, color: Colors.white, size: 20),
                       const SizedBox(width: 8),
                       Text('${widget.departmentName} 출석 요약', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Pretendard', letterSpacing: -0.5)),
                     ],
                   ),
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _buildSummaryItem('출석 인원', '${weekData['present_count']}명', lucide.LucideIcons.calendarCheck2),
-                        Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
-                        _buildSummaryItem('전체 구성원', '${weekData['total_count']}명', lucide.LucideIcons.users),
-                        Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
-                        _buildSummaryItem('출석률', '${(weekData['attendance_rate'] * 100).toInt()}%', lucide.LucideIcons.trendingUp),
-                      ],
-                    ),
+                      const SizedBox(height: 24),
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                        ),
+                        child: isAllSubmitted
+                            ? Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                children: [
+                                  _buildSummaryItem('출석 인원', '${totalPresent}명', lucide.LucideIcons.calendarCheck2),
+                                  Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                                  _buildSummaryItem('전체 구성원', '${totalCount}명', lucide.LucideIcons.users),
+                                  Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                                  _buildSummaryItem('출석률', '$rate%', lucide.LucideIcons.trendingUp),
+                                ],
+                              )
+                            : Column(
+                                children: [
+                                  const Text('아직 모든 조의 출석이 입력되지 않았습니다.', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text('출석 입력 현황:', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13)),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text('${submittedGroups.length} / $totalGroups 조 완료', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
     );
   }
 
@@ -395,6 +439,7 @@ class _GroupAttendanceAccordionState extends State<_GroupAttendanceAccordion> {
   @override
   Widget build(BuildContext context) {
     final group = widget.group;
+    final bool isSubmitted = group['is_submitted'] ?? true;
     final members = List<Map<String, dynamic>>.from(group['members']);
     final presentCount = group['present_count'];
     final totalCount = group['total_count'];
@@ -412,15 +457,24 @@ class _GroupAttendanceAccordionState extends State<_GroupAttendanceAccordion> {
           ListTile(
             onTap: () => setState(() => _isExpanded = !_isExpanded),
             title: Text(group['name'], style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-            subtitle: Text('출석 $presentCount명 / 총 $totalCount명', style: const TextStyle(fontSize: 12, color: AppTheme.textSub)),
+            subtitle: isSubmitted
+                ? Text('출석 $presentCount명 / 총 $totalCount명', style: const TextStyle(fontSize: 12, color: AppTheme.textSub))
+                : const Text('이번 주 출석 미입력', style: TextStyle(fontSize: 12, color: AppTheme.textSub)),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: _getRateColor(rate).withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                  child: Text('$rate%', style: TextStyle(color: _getRateColor(rate), fontWeight: FontWeight.w900, fontSize: 12)),
-                ),
+                if (isSubmitted)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: _getRateColor(rate).withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    child: Text('$rate%', style: TextStyle(color: _getRateColor(rate), fontWeight: FontWeight.w900, fontSize: 12)),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+                    child: const Text('미제출', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w900, fontSize: 12)),
+                  ),
                 const SizedBox(width: 8),
                 Icon(_isExpanded ? lucide.LucideIcons.chevronUp : lucide.LucideIcons.chevronDown, size: 18),
               ],
@@ -433,18 +487,25 @@ class _GroupAttendanceAccordionState extends State<_GroupAttendanceAccordion> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(16), border: Border.all(color: AppTheme.border)),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 8,
-                  children: members.map((m) {
-                    final isPresent = m['status'] == 'present' || m['status'] == 'late';
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                      decoration: BoxDecoration(color: isPresent ? AppTheme.accentViolet : Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: isPresent ? AppTheme.primaryViolet.withOpacity(0.3) : AppTheme.border)),
-                      child: Text(m['full_name'], style: TextStyle(fontSize: 12, fontWeight: isPresent ? FontWeight.w800 : FontWeight.w600, color: isPresent ? AppTheme.primaryViolet : AppTheme.textSub)),
-                    );
-                  }).toList(),
-                ),
+                child: isSubmitted
+                    ? Wrap(
+                        spacing: 6,
+                        runSpacing: 8,
+                        children: members.map((m) {
+                          final isPresent = m['status'] == 'present' || m['status'] == 'late';
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                            decoration: BoxDecoration(color: isPresent ? AppTheme.accentViolet : Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: isPresent ? AppTheme.primaryViolet.withOpacity(0.3) : AppTheme.border)),
+                            child: Text(m['full_name'], style: TextStyle(fontSize: 12, fontWeight: isPresent ? FontWeight.w800 : FontWeight.w600, color: isPresent ? AppTheme.primaryViolet : AppTheme.textSub)),
+                          );
+                        }).toList(),
+                      )
+                    : const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 20),
+                          child: Text('조장님이 아직 이번 주 출석을 입력하지 않았습니다.', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w600, fontSize: 13)),
+                        ),
+                      ),
               ),
             ),
         ],

@@ -720,40 +720,45 @@ class GraceNoteRepository {
 
       final List<Map<String, dynamic>> membersWithStatus = [];
 
+      // [기능 변경] 출석을 제출하지 않은 조: 가짜 현재 명단을 채워넣어 전부 '결석'처럼 보이게 하는 대신
+      // 아예 미제출(is_submitted: false) 상태로 반환. 
+      // 단, 부서 전체 상단 통계(참석률 분모) 유지를 위해 total_count는 현재 조 인원으로 전달.
       if (groupAttendanceData.isEmpty) {
-        // [수정] 출석 제출 기록이 아예 없는 조: 현재 해당 조에 소속된 인원을 모두 미제출(absent)로 노출 (정상적인 결석 처리가 아님, 입력 대기 상태)
-        membersWithStatus.addAll(allMembers
-            .where((m) => m['group_name'] == groupName)
-            .map((m) => {
-                  ...m,
-                  'status': 'absent',
-                  'source': 'current',
-                }));
-      } else {
-        // [수정] 출석 제출 기록이 있는 조: 과거 제출된 기록(Snapshot) 기반으로만 명단을 구성.
-        // 이렇게 해야, 나중에 다른 조에서 편입된 새가족이 과거 주차 출석부에 소급되어 나타나는 버그를 막을 수 있음.
-        membersWithStatus.addAll(groupAttendanceData
-            .map((a) {
-               final dirId = a['directory_member_id'];
-               final memberInfo = allMembers.firstWhere(
-                  (m) => m['id'] == dirId, 
-                  orElse: () => missingMembersMap[dirId] ?? {},
-               );
-               
-               // 정보가 삭제된 성도여도 고유 식별 명단을 위해 남겨둠
-               return {
-                 if (memberInfo.isNotEmpty) ...memberInfo else 'id': dirId,
-                 'status': a['status'],
-                 'source': 'snapshot',
-               };
-            }));
-      }
+        final groupMemberCount = allMembers.where((m) => m['group_name'] == groupName).length;
+        
+        return {
+          'id': groupId,
+          'name': groupName,
+          'is_submitted': false,
+          'present_count': 0,
+          'total_count': groupMemberCount,
+          'members': <Map<String, dynamic>>[],
+        };
+      } 
+      
+      // 출석 제출 기록이 있는 조: 과거 제출된 기록(Snapshot) 기반으로만 명단을 구성.
+      membersWithStatus.addAll(groupAttendanceData
+          .map((a) {
+             final dirId = a['directory_member_id'];
+             final memberInfo = allMembers.firstWhere(
+                (m) => m['id'] == dirId, 
+                orElse: () => missingMembersMap[dirId] ?? {},
+             );
+             
+             // 정보가 삭제된 성도여도 고유 식별 명단을 위해 남겨둠
+             return {
+               if (memberInfo.isNotEmpty) ...memberInfo else 'id': dirId,
+               'status': a['status'],
+               'source': 'snapshot',
+             };
+          }));
 
       final presentCount = membersWithStatus.where((m) => m['status'] == 'present' || m['status'] == 'late').length;
 
       return {
         'id': groupId,
         'name': groupName,
+        'is_submitted': true,
         'present_count': presentCount,
         'total_count': membersWithStatus.length,
         'members': membersWithStatus,
