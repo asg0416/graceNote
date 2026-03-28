@@ -926,7 +926,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             title: Row(
               children: [
                 Text(member['name'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A), letterSpacing: -0.5, fontFamily: 'Pretendard')),
-                if (member['source'] == 'current' && (ref.read(attendanceSelectedWeekProvider).isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))))
+                if (member['source'] == 'current' && _hasExistingData && (ref.read(attendanceSelectedWeekProvider).isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))))
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: Container(

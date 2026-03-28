@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
+import 'package:grace_note/core/models/models.dart';
+import 'package:grace_note/core/utils/route_util.dart';
+import 'package:grace_note/features/attendance/presentation/screens/attendance_check_screen.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
@@ -286,6 +288,98 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     });
   }
 
+  /// 대시보드에서 직접 출석체크 모달을 띄우는 메서드.
+  /// 탭 전환(context.go('/record')) 없이 현재 화면 위에 AttendanceCheckScreen을 모달로 열고,
+  /// 완료 시 출석 데이터를 저장한 뒤 대시보드를 갱신합니다.
+  Future<void> _openAttendanceCheckModal(String weekId, String weekDateStr) async {
+    final repo = ref.read(repositoryProvider);
+    final groupsAsync = ref.read(userGroupsProvider);
+    final churchId = groupsAsync.value?.first['church_id'] ?? '';
+    if (churchId.isEmpty) return;
+
+    // 1. 멤버 목록 및 기존 출석 데이터 가져오기
+    final membersData = await repo.getGroupMembers(widget.groupId);
+    final weeklyData = await repo.getWeeklyData(widget.groupId, weekId);
+    final existingAttendance = List<Map<String, dynamic>>.from(weeklyData['attendance']);
+
+    // 2. 멤버 리스트 구성 (AttendancePrayerScreen._fetchInitialData 로직과 동일)
+    final Map<String, Map<String, dynamic>> combinedMembers = {};
+    for (final m in membersData) {
+      final directoryId = m['id'];
+      combinedMembers[directoryId] = {
+        'id': m['profiles']?['id'],
+        'directoryMemberId': directoryId,
+        'name': m['full_name'],
+        'isPresent': false,
+        'prayerNote': '',
+        'source': 'current',
+        'role_in_group': m['role_in_group'],
+      };
+    }
+    for (final att in existingAttendance) {
+      final directoryId = att['directory_member_id'];
+      if (directoryId == null || !combinedMembers.containsKey(directoryId)) continue;
+      combinedMembers[directoryId]!['isPresent'] = att['status'] == 'present' || att['status'] == 'late';
+      combinedMembers[directoryId]!['source'] = 'snapshot';
+    }
+    final members = combinedMembers.values.toList();
+    final hasExistingData = existingAttendance.isNotEmpty;
+
+    // 3. 과거 주차 여부 판단
+    final weekDate = DateTime.parse(weekDateStr);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isPastWeek = weekDate.isBefore(today);
+
+    // 4. 새가족 그룹 여부 확인
+    bool isNewFamilyGroup = false;
+    final groups = groupsAsync.value ?? [];
+    if (groups.isNotEmpty) {
+      final currentGroup = groups.firstWhere(
+        (g) => g['group_id'] == widget.groupId,
+        orElse: () => {},
+      );
+      isNewFamilyGroup = currentGroup['is_new_member_group'] ?? false;
+    }
+
+    if (!mounted) return;
+
+    // 5. 모달로 출석체크 화면 띄우기
+    final result = await Navigator.of(context).push(
+      SharedAxisPageRoute(
+        page: AttendanceCheckScreen(
+          initialMembers: members,
+          isPastWeek: isPastWeek,
+          groupId: widget.groupId,
+          isNewFamilyGroup: isNewFamilyGroup,
+          hasExistingData: hasExistingData,
+        ),
+      ),
+    );
+
+    if (result != null && result is List<Map<String, dynamic>>) {
+      // 6. 출석 데이터 저장
+      final weekIdResult = await repo.getOrCreateWeek(churchId, weekDate, createIfMissing: true);
+      if (weekIdResult == null) return;
+
+      final List<AttendanceModel> attendance = [];
+      for (final m in result) {
+        attendance.add(AttendanceModel(
+          weekId: weekIdResult,
+          groupId: widget.groupId,
+          groupMemberId: m['groupMemberId'],
+          directoryMemberId: m['directoryMemberId'],
+          status: m['isPresent'] == true ? 'present' : 'absent',
+        ));
+      }
+      await repo.saveAttendanceAndPrayers(attendanceList: attendance, prayerList: []);
+
+      // 7. 대시보드 데이터 갱신
+      ref.invalidate(weeklyDataProvider);
+      ref.invalidate(attendanceHistoryProvider);
+    }
+  }
+
   Widget _buildGraphSection(List<Map<String, dynamic>> history, {bool isLoading = false}) {
     // Reverse to show chronological order in graph
     // Reverse to show chronological order in graph
@@ -547,9 +641,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                     child: ElevatedButton.icon(
                       onPressed: () {
                         if (weekDateStr != null) {
-                          ref.read(attendanceSelectedWeekProvider.notifier).state = DateTime.parse(weekDateStr);
-                          ref.read(shouldAutoOpenAttendanceCheckProvider.notifier).state = true;
-                          context.go('/record');
+                          _openAttendanceCheckModal(weekId, weekDateStr);
                         }
                       },
                       style: ElevatedButton.styleFrom(
@@ -641,9 +733,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                       child: OutlinedButton.icon(
                         onPressed: () {
                           if (weekDateStr != null) {
-                            ref.read(attendanceSelectedWeekProvider.notifier).state = DateTime.parse(weekDateStr);
-                            ref.read(shouldAutoOpenAttendanceCheckProvider.notifier).state = true;
-                            context.go('/record');
+                            _openAttendanceCheckModal(weekId, weekDateStr);
                           }
                         },
                         style: OutlinedButton.styleFrom(
