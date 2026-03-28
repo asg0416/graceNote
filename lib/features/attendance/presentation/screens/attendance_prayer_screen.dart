@@ -32,6 +32,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   bool _isRefining = false;
   bool _isLoading = false;
   bool _isFetching = false;
+  bool _hasExistingData = false;
   bool _isInitialized = false;
   bool _isCheckScreenShowing = false;
   DateTime? _lastCheckedWeek; // [FIX] 주차별 팝업 트리거 방지 (동일 주차 재진입/resume 시 팝업 억제)
@@ -209,6 +210,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         }
         
         _members = combinedMembers.values.toList();
+        _hasExistingData = existingAttendance.isNotEmpty;
+
         for (final m in _members) {
           final directoryId = m['directoryMemberId'];
           final serverNote = m['prayerNote'] ?? '';
@@ -234,6 +237,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         _isLoading = false;
         _isFetching = false;
         if (widget.isActive) _checkAndShowAttendancePopup();
+        
+        // [NEW] 대시보드에서 넘어온 경우 자동 출석체크 열기
+        if (ref.read(shouldAutoOpenAttendanceCheckProvider)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && ref.read(shouldAutoOpenAttendanceCheckProvider)) {
+              ref.read(shouldAutoOpenAttendanceCheckProvider.notifier).state = false;
+              _launchAttendanceCheck();
+            }
+          });
+        }
       });
     } catch (e) {
       debugPrint('AttendancePrayerScreen: Error fetching data: $e');
@@ -293,6 +306,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           isPastWeek: isPastWeek,
           groupId: _currentGroupId,
           isNewFamilyGroup: isNewFamilyGroup,
+          hasExistingData: _hasExistingData,
         ),
       ),
     );

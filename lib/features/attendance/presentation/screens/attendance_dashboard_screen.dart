@@ -548,6 +548,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                       onPressed: () {
                         if (weekDateStr != null) {
                           ref.read(attendanceSelectedWeekProvider.notifier).state = DateTime.parse(weekDateStr);
+                          ref.read(shouldAutoOpenAttendanceCheckProvider.notifier).state = true;
                           context.go('/record');
                         }
                       },
@@ -641,6 +642,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                         onPressed: () {
                           if (weekDateStr != null) {
                             ref.read(attendanceSelectedWeekProvider.notifier).state = DateTime.parse(weekDateStr);
+                            ref.read(shouldAutoOpenAttendanceCheckProvider.notifier).state = true;
                             context.go('/record');
                           }
                         },

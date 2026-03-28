@@ -9,6 +9,7 @@ class AttendanceCheckScreen extends ConsumerStatefulWidget {
   final bool isPastWeek;
   final String? groupId;
   final bool isNewFamilyGroup;
+  final bool hasExistingData;
 
   const AttendanceCheckScreen({
     super.key, 
@@ -16,6 +17,7 @@ class AttendanceCheckScreen extends ConsumerStatefulWidget {
     this.isPastWeek = false,
     this.groupId,
     this.isNewFamilyGroup = false,
+    this.hasExistingData = false,
   });
 
   @override
@@ -202,7 +204,8 @@ class _AttendanceCheckScreenState extends ConsumerState<AttendanceCheckScreen> {
                     final member = _tempMembers[index];
                     final bool isSelected = member['isPresent'] ?? false;
                     final String source = member['source'] ?? 'snapshot';
-                    final bool isNewInHistory = widget.isPastWeek && source == 'current';
+                    // [FIX] 과거 주차이면서 현재 명단에만 있는 경우라도, 해당 주차에 데이터가 하나도 없으면(미제출) 신규로 표시하지 않음
+                    final bool isNewInHistory = widget.isPastWeek && source == 'current' && widget.hasExistingData;
 
                     return GestureDetector(
                       onTap: () => setState(() => member['isPresent'] = !isSelected),
