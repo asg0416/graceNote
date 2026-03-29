@@ -310,6 +310,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
         'id': m['profiles']?['id'],
         'directoryMemberId': directoryId,
         'name': m['full_name'],
+        'spouse_name': m['spouse_name'],
         'isPresent': false,
         'prayerNote': '',
         'source': 'current',
@@ -323,6 +324,30 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
       combinedMembers[directoryId]!['source'] = 'snapshot';
     }
     final members = combinedMembers.values.toList();
+
+    // [SORT] 부부형이면 marriage key로 부부 묶음 정렬, 아니면 이름순
+    final groups = groupsAsync.value ?? [];
+    final currentGroup = groups.isNotEmpty
+        ? groups.firstWhere((g) => g['group_id'] == widget.groupId, orElse: () => groups.first)
+        : <String, dynamic>{};
+    final isCoupleMode = currentGroup['profile_mode'] == 'couple';
+    members.sort((a, b) {
+      final n1 = (a['name'] as String?)?.trim() ?? '';
+      final n2 = (b['name'] as String?)?.trim() ?? '';
+      if (!isCoupleMode) return n1.compareTo(n2);
+      String getMarriageKey(Map<String, dynamic> m) {
+        final name = (m['name'] as String?)?.trim() ?? '';
+        final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+        if (spouse.isEmpty) return name;
+        final list = [name, spouse];
+        list.sort();
+        return list.join('_');
+      }
+      final k1 = getMarriageKey(a);
+      final k2 = getMarriageKey(b);
+      if (k1 != k2) return k1.compareTo(k2);
+      return n1.compareTo(n2);
+    });
     final hasExistingData = existingAttendance.isNotEmpty;
 
     // 3. 과거 주차 여부 판단
@@ -332,15 +357,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     final isPastWeek = weekDate.isBefore(today);
 
     // 4. 새가족 그룹 여부 확인
-    bool isNewFamilyGroup = false;
-    final groups = groupsAsync.value ?? [];
-    if (groups.isNotEmpty) {
-      final currentGroup = groups.firstWhere(
-        (g) => g['group_id'] == widget.groupId,
-        orElse: () => {},
-      );
-      isNewFamilyGroup = currentGroup['is_new_member_group'] ?? false;
-    }
+    final isNewFamilyGroup = currentGroup['is_new_member_group'] ?? false;
 
     if (!mounted) return;
 
