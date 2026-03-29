@@ -228,7 +228,7 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
   final response = await Supabase.instance.client
       .from('group_members')
-      .select('group_id, role_in_group, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, departments(name))')
+      .select('group_id, role_in_group, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, departments(name, profile_mode))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
       .order('joined_at', ascending: false);
@@ -241,6 +241,7 @@ Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
       'department_id': e['groups']?['department_id']?.toString(), // [NEW] Added department_id
       'color_hex': e['groups']?['color_hex']?.toString() ?? '', // [NEW] 조 색상 추가
       'department_name': e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
+      'profile_mode': e['groups']?['departments']?['profile_mode']?.toString() ?? 'individual',
       'role_in_group': (e['role_in_group'] ?? 'member').toString(),
       'is_new_member_group': e['groups']?['is_new_member_group'] ?? false,
       'climbing_threshold': e['groups']?['climbing_threshold'],

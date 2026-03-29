@@ -489,33 +489,30 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           );
         }
 
-        // [SORT] 전체 기도 목록 정렬 로직 (Marriage Key Sort)
+        // [SORT] 부부형이면 marriage key(부부묶음+가나다), 아니면 이름순
+        final userGroups = ref.read(userGroupsProvider).value ?? [];
+        final isCoupleMode = userGroups.isNotEmpty && userGroups.first['profile_mode'] == 'couple';
+
         allPrayers.sort((a, b) {
           final m1 = a['member_directory'] ?? {};
           final m2 = b['member_directory'] ?? {};
-          
+          final n1 = (m1['full_name'] as String?)?.trim() ?? '';
+          final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+
+          if (!isCoupleMode) return n1.compareTo(n2);
+
           String getMarriageKey(Map<String, dynamic> m) {
             final name = (m['full_name'] as String?)?.trim() ?? '';
             final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
-            
             if (spouse.isEmpty) return name;
-            
-            // 이름과 배우자 이름을 가나다순으로 정렬하여 키 생성
-            // 예: "김철수", 배우자 "이영희" -> "김철수_이영희"
-            // 예: "이영희", 배우자 "김철수" -> "김철수_이영희" (동일 키 발생 -> 묶임)
             final list = [name, spouse];
-            list.sort(); 
+            list.sort();
             return list.join('_');
           }
-          
+
           final k1 = getMarriageKey(m1);
           final k2 = getMarriageKey(m2);
-          
           if (k1 != k2) return k1.compareTo(k2);
-          
-          // 키가 같으면(부부) 이름순 정렬 (보통 가나다순, 남편/아내 구분 필드가 없으므로 이름순)
-          final n1 = (m1['full_name'] as String?)?.trim() ?? '';
-          final n2 = (m2['full_name'] as String?)?.trim() ?? '';
           return n1.compareTo(n2);
         });
 

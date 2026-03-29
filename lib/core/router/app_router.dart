@@ -662,9 +662,11 @@ class _RecordTabPlaceholder extends ConsumerWidget {
         switch (activeRole) {
           case AppRole.admin:
             final profile = ref.watch(userProfileProvider).value;
+            final adminGroup = groups.isNotEmpty ? groups.first : <String, dynamic>{};
             return DepartmentMemberDirectoryScreen(
               departmentId: profile?.departmentId ?? '',
               departmentName: '',
+              profileMode: adminGroup['profile_mode'] ?? 'individual',
             );
           case AppRole.leader:
             if (groups.isEmpty) {
@@ -703,9 +705,11 @@ class _AttendanceTabPlaceholder extends ConsumerWidget {
 
         if (activeRole == AppRole.admin) {
           final profile = ref.watch(userProfileProvider).value;
+          final adminGroup = groups.isNotEmpty ? groups.first : <String, dynamic>{};
           return DepartmentAttendanceDashboardScreen(
             departmentId: profile?.departmentId ?? '',
             departmentName: '',
+            isCoupleMode: adminGroup['profile_mode'] == 'couple',
           );
         }
 

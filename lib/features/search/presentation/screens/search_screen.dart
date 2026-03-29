@@ -61,19 +61,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
 
       final List<Map<String, dynamic>> sortedResults = List<Map<String, dynamic>>.from(results);
-      // [SORT] 클라이언트 사이드 부부 정렬 보강
+      // [SORT] 부부형이면 marriage key(부부묶음+가나다), 아니면 이름순
+      final isCoupleMode = userGroups.isNotEmpty && userGroups.first['profile_mode'] == 'couple';
+
       sortedResults.sort((a, b) {
         final m1 = a['member_directory'] ?? {};
         final m2 = b['member_directory'] ?? {};
-        final f1 = (m1['family_name'] as String?)?.trim() ?? '';
-        final f2 = (m2['family_name'] as String?)?.trim() ?? '';
-        
-        if (f1.isNotEmpty && f2.isEmpty) return -1;
-        if (f1.isEmpty && f2.isNotEmpty) return 1;
-        if (f1.isNotEmpty && f2.isNotEmpty && f1 != f2) return f1.compareTo(f2);
-        
         final n1 = (m1['full_name'] as String?)?.trim() ?? '';
         final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+
+        if (!isCoupleMode) return n1.compareTo(n2);
+
+        String getMarriageKey(Map<String, dynamic> m) {
+          final name = (m['full_name'] as String?)?.trim() ?? '';
+          final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+          if (spouse.isEmpty) return name;
+          final list = [name, spouse];
+          list.sort();
+          return list.join('_');
+        }
+
+        final k1 = getMarriageKey(m1);
+        final k2 = getMarriageKey(m2);
+        if (k1 != k2) return k1.compareTo(k2);
         return n1.compareTo(n2);
       });
 

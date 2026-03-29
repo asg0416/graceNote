@@ -45,6 +45,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   String? _currentGroupId;
   Timer? _editingDebounceTimer;
   String? _currentChurchId;
+  bool _isCoupleMode = false;
 
   @override
   void dispose() {
@@ -129,11 +130,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     if (activeMembership != null) {
       // 선택된 그룹이 있으면 그 그룹 사용
       _currentGroupId = activeMembership.groupId;
-      _currentChurchId = activeMembership.churchId ?? groups.firstWhere((g) => g['group_id'] == activeMembership.groupId, orElse: () => {})['church_id'];
+      final matchedGroup = groups.firstWhere((g) => g['group_id'] == activeMembership.groupId, orElse: () => <String, dynamic>{});
+      _currentChurchId = activeMembership.churchId ?? matchedGroup['church_id'];
+      _isCoupleMode = matchedGroup['profile_mode'] == 'couple';
     } else if (groups.isNotEmpty) {
       // 선택된 그룹이 없으면 첫 번째 그룹 사용
       _currentGroupId = groups.first['group_id'];
       _currentChurchId = groups.first['church_id'];
+      _isCoupleMode = groups.first['profile_mode'] == 'couple';
     }
 
     if (_currentGroupId != null && _currentChurchId != null) {
@@ -259,8 +263,12 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   void _sortMembers() {
     setState(() {
       _members.sort((a, b) {
+        // 출석자 우선
         if (a['isPresent'] != b['isPresent']) return a['isPresent'] ? -1 : 1;
-        if (a['familyId'] != b['familyId']) return (a['familyId'] ?? '').compareTo(b['familyId'] ?? '');
+        // 부부형이면 familyId(spouse_name 기반 couple key)로 부부 묶음, 아니면 이름순
+        if (_isCoupleMode) {
+          if (a['familyId'] != b['familyId']) return (a['familyId'] ?? '').compareTo(b['familyId'] ?? '');
+        }
         return (a['name'] as String).compareTo(b['name'] as String);
       });
     });

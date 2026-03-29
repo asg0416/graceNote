@@ -613,6 +613,11 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
   Widget _buildDetailedAttendanceSection(String weekId, List<Map<String, dynamic>> history, {bool isLoading = false}) {
     final groupsAsync = ref.watch(userGroupsProvider);
     final churchId = groupsAsync.value?.first['church_id'] ?? '';
+    final groups = groupsAsync.value ?? [];
+    final currentGroup = groups.isNotEmpty
+        ? groups.firstWhere((g) => g['group_id'] == widget.groupId, orElse: () => groups.first)
+        : <String, dynamic>{};
+    final isCoupleMode = currentGroup['profile_mode'] == 'couple';
     final weekDateStr = history.firstWhere(
       (h) => h['week_id'] == weekId, 
       orElse: () => history.isNotEmpty ? history.first : <String, dynamic>{}
@@ -625,7 +630,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(24, 32, 24, 16),
-            child: Text('상세 현황 (누가 오고 안왔는지)', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
+            child: Text('상세 현황', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
           ),
           ref.watch(weeklyDataProvider('${widget.groupId}:$churchId:$weekId')).maybeWhen(
             skipLoadingOnRefresh: true,
@@ -658,19 +663,27 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                 );
               }
 
-              // [SORT] 명단 정렬 (부부별)
+              // [SORT] 명단 정렬: 부부형이면 marriage key(부부묶음+가나다), 아니면 이름순
               attendanceList.sort((a, b) {
                 final m1 = a['member_directory'] ?? {};
                 final m2 = b['member_directory'] ?? {};
-                final f1 = (m1['family_name'] as String?)?.trim() ?? '';
-                final f2 = (m2['family_name'] as String?)?.trim() ?? '';
-                
-                if (f1.isNotEmpty && f2.isEmpty) return -1;
-                if (f1.isEmpty && f2.isNotEmpty) return 1;
-                if (f1.isNotEmpty && f2.isNotEmpty && f1 != f2) return f1.compareTo(f2);
-                
                 final n1 = (m1['full_name'] as String?)?.trim() ?? '';
                 final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+
+                if (!isCoupleMode) return n1.compareTo(n2);
+
+                // 부부형: marriage key로 정렬 (부부가 항상 묶여서 나옴)
+                String getMarriageKey(Map<String, dynamic> m) {
+                  final name = (m['full_name'] as String?)?.trim() ?? '';
+                  final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+                  if (spouse.isEmpty) return name;
+                  final list = [name, spouse];
+                  list.sort();
+                  return list.join('_');
+                }
+                final k1 = getMarriageKey(m1);
+                final k2 = getMarriageKey(m2);
+                if (k1 != k2) return k1.compareTo(k2);
                 return n1.compareTo(n2);
               });
 

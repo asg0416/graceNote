@@ -10,11 +10,13 @@ import 'package:lucide_icons/lucide_icons.dart' as lucide;
 class DepartmentAttendanceDashboardScreen extends ConsumerStatefulWidget {
   final String departmentId;
   final String departmentName;
+  final bool isCoupleMode;
 
   const DepartmentAttendanceDashboardScreen({
     super.key,
     required this.departmentId,
     required this.departmentName,
+    this.isCoupleMode = false,
   });
 
   @override
@@ -412,7 +414,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
               physics: const NeverScrollableScrollPhysics(),
               padding: const EdgeInsets.symmetric(horizontal: 20),
               itemCount: groups.length,
-              itemBuilder: (context, index) => _GroupAttendanceAccordion(group: groups[index]),
+              itemBuilder: (context, index) => _GroupAttendanceAccordion(group: groups[index], isCoupleMode: widget.isCoupleMode),
             );
           },
           orElse: () => Center(child: ShadcnSpinner()),
@@ -424,7 +426,8 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
 
 class _GroupAttendanceAccordion extends StatefulWidget {
   final Map<String, dynamic> group;
-  const _GroupAttendanceAccordion({required this.group});
+  final bool isCoupleMode;
+  const _GroupAttendanceAccordion({required this.group, this.isCoupleMode = false});
   @override
   State<_GroupAttendanceAccordion> createState() => _GroupAttendanceAccordionState();
 }
@@ -443,6 +446,24 @@ class _GroupAttendanceAccordionState extends State<_GroupAttendanceAccordion> {
     final group = widget.group;
     final bool isSubmitted = group['is_submitted'] ?? true;
     final members = List<Map<String, dynamic>>.from(group['members']);
+    // [SORT] 부부형이면 marriage key(부부묶음+가나다), 아니면 이름순
+    members.sort((a, b) {
+      final n1 = (a['full_name'] as String?)?.trim() ?? '';
+      final n2 = (b['full_name'] as String?)?.trim() ?? '';
+      if (!widget.isCoupleMode) return n1.compareTo(n2);
+      String getMarriageKey(Map<String, dynamic> m) {
+        final name = (m['full_name'] as String?)?.trim() ?? '';
+        final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+        if (spouse.isEmpty) return name;
+        final list = [name, spouse];
+        list.sort();
+        return list.join('_');
+      }
+      final k1 = getMarriageKey(a);
+      final k2 = getMarriageKey(b);
+      if (k1 != k2) return k1.compareTo(k2);
+      return n1.compareTo(n2);
+    });
     final presentCount = group['present_count'];
     final totalCount = group['total_count'];
     final rate = totalCount > 0 ? (presentCount / totalCount * 100).toInt() : 0;
