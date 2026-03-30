@@ -73,3 +73,6 @@ supabase/*.sql
 # AI Planning & Context
 ai-plan/
 *.md
+
+# Oh My Claude Code (plugin state/sessions)
+.omc/
