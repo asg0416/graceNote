@@ -471,9 +471,14 @@ class ScaffoldWithNavBar extends ConsumerWidget {
     final hasNewNotices = ref.watch(hasNewNoticesProvider).value ?? false;
     final hasBadge = unreadInquiries > 0 || hasNewNotices;
 
-    // Role loading: if activeRole is null and groups are still loading, show loading
+    // Role loading: if activeRole is null, check if data is still loading
+    final profileAsync = ref.watch(userProfileProvider);
     if (activeRole == null) {
-      if (groupsAsync.isLoading && !groupsAsync.hasValue) {
+      // profile 또는 groups가 아직 로딩 중이면 로딩 화면 표시
+      final isStillLoading = (groupsAsync.isLoading && !groupsAsync.hasValue) ||
+                             (profileAsync.isLoading && !profileAsync.hasValue) ||
+                             (!profileAsync.hasValue);
+      if (isStillLoading) {
         return Scaffold(
           backgroundColor: Colors.white,
           body: Center(
