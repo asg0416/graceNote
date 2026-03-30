@@ -24,16 +24,27 @@ CREATE TRIGGER trg_set_first_published_at
   FOR EACH ROW
   EXECUTE FUNCTION public.set_first_published_at();
 
+-- App config table for environment-specific settings (e.g. Edge Function URL).
+-- Each environment stores its own base URL, so this migration works for both dev and prod.
+CREATE TABLE IF NOT EXISTS public.app_config (
+  key text PRIMARY KEY,
+  value text NOT NULL
+);
+
 -- Fix notify_on_event() to include old_record for UPDATE detection.
--- NOTE: The Edge Function URL is environment-specific (hardcoded per project).
---       Dev:  https://eftdfxmdiefdduksdpwg.supabase.co/functions/v1/notify-event
---       Prod: https://eejqiddsdovrabcsxznu.supabase.co/functions/v1/notify-event
--- This migration uses the dev URL. Production is applied separately via API.
+-- Reads Edge Function URL from app_config instead of hardcoding.
 CREATE OR REPLACE FUNCTION public.notify_on_event()
 RETURNS TRIGGER AS $$
 DECLARE
   _payload jsonb;
+  _url text;
 BEGIN
+  SELECT value INTO _url FROM public.app_config WHERE key = 'edge_function_base_url';
+  IF _url IS NULL THEN
+    RAISE WARNING 'edge_function_base_url not configured in app_config';
+    RETURN NEW;
+  END IF;
+
   _payload := jsonb_build_object(
     'type', TG_OP,
     'table', TG_TABLE_NAME,
@@ -43,7 +54,7 @@ BEGIN
   );
 
   PERFORM net.http_post(
-    url := 'https://eftdfxmdiefdduksdpwg.supabase.co/functions/v1/notify-event',
+    url := _url || '/notify-event',
     body := _payload
   );
 
