@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
+import 'package:grace_note/core/models/models.dart';
+import 'package:grace_note/core/utils/route_util.dart';
+import 'package:grace_note/features/attendance/presentation/screens/attendance_check_screen.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
@@ -102,7 +105,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                         _buildHistoryList(history, isLoading: isLoading),
                         _buildGraphSection(history, isLoading: isLoading),
                         if (_selectedWeekId != null || (history.isNotEmpty))
-                          _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], isLoading: isLoading),
+                          _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], history, isLoading: isLoading),
                         const SizedBox(height: 40),
                       ],
                     ),
@@ -283,6 +286,115 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
         _viewMonth++;
       }
     });
+  }
+
+  /// 대시보드에서 직접 출석체크 모달을 띄우는 메서드.
+  /// 탭 전환(context.go('/record')) 없이 현재 화면 위에 AttendanceCheckScreen을 모달로 열고,
+  /// 완료 시 출석 데이터를 저장한 뒤 대시보드를 갱신합니다.
+  Future<void> _openAttendanceCheckModal(String weekId, String weekDateStr) async {
+    final repo = ref.read(repositoryProvider);
+    final groupsAsync = ref.read(userGroupsProvider);
+    final churchId = groupsAsync.value?.first['church_id'] ?? '';
+    if (churchId.isEmpty) return;
+
+    // 1. 멤버 목록 및 기존 출석 데이터 가져오기
+    final membersData = await repo.getGroupMembers(widget.groupId);
+    final weeklyData = await repo.getWeeklyData(widget.groupId, weekId);
+    final existingAttendance = List<Map<String, dynamic>>.from(weeklyData['attendance']);
+
+    // 2. 멤버 리스트 구성 (AttendancePrayerScreen._fetchInitialData 로직과 동일)
+    final Map<String, Map<String, dynamic>> combinedMembers = {};
+    for (final m in membersData) {
+      final directoryId = m['id'];
+      combinedMembers[directoryId] = {
+        'id': m['profiles']?['id'],
+        'directoryMemberId': directoryId,
+        'name': m['full_name'],
+        'spouse_name': m['spouse_name'],
+        'isPresent': false,
+        'prayerNote': '',
+        'source': 'current',
+        'role_in_group': m['role_in_group'],
+      };
+    }
+    for (final att in existingAttendance) {
+      final directoryId = att['directory_member_id'];
+      if (directoryId == null || !combinedMembers.containsKey(directoryId)) continue;
+      combinedMembers[directoryId]!['isPresent'] = att['status'] == 'present' || att['status'] == 'late';
+      combinedMembers[directoryId]!['source'] = 'snapshot';
+    }
+    final members = combinedMembers.values.toList();
+
+    // [SORT] 부부형이면 marriage key로 부부 묶음 정렬, 아니면 이름순
+    final groups = groupsAsync.value ?? [];
+    final currentGroup = groups.isNotEmpty
+        ? groups.firstWhere((g) => g['group_id'] == widget.groupId, orElse: () => groups.first)
+        : <String, dynamic>{};
+    final isCoupleMode = currentGroup['profile_mode'] == 'couple';
+    members.sort((a, b) {
+      final n1 = (a['name'] as String?)?.trim() ?? '';
+      final n2 = (b['name'] as String?)?.trim() ?? '';
+      if (!isCoupleMode) return n1.compareTo(n2);
+      String getMarriageKey(Map<String, dynamic> m) {
+        final name = (m['name'] as String?)?.trim() ?? '';
+        final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+        if (spouse.isEmpty) return name;
+        final list = [name, spouse];
+        list.sort();
+        return list.join('_');
+      }
+      final k1 = getMarriageKey(a);
+      final k2 = getMarriageKey(b);
+      if (k1 != k2) return k1.compareTo(k2);
+      return n1.compareTo(n2);
+    });
+    final hasExistingData = existingAttendance.isNotEmpty;
+
+    // 3. 과거 주차 여부 판단
+    final weekDate = DateTime.parse(weekDateStr);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isPastWeek = weekDate.isBefore(today);
+
+    // 4. 새가족 그룹 여부 확인
+    final isNewFamilyGroup = currentGroup['is_new_member_group'] ?? false;
+
+    if (!mounted) return;
+
+    // 5. 모달로 출석체크 화면 띄우기
+    final result = await Navigator.of(context).push(
+      SharedAxisPageRoute(
+        page: AttendanceCheckScreen(
+          initialMembers: members,
+          isPastWeek: isPastWeek,
+          groupId: widget.groupId,
+          isNewFamilyGroup: isNewFamilyGroup,
+          hasExistingData: hasExistingData,
+        ),
+      ),
+    );
+
+    if (result != null && result is List<Map<String, dynamic>>) {
+      // 6. 출석 데이터 저장
+      final weekIdResult = await repo.getOrCreateWeek(churchId, weekDate, createIfMissing: true);
+      if (weekIdResult == null) return;
+
+      final List<AttendanceModel> attendance = [];
+      for (final m in result) {
+        attendance.add(AttendanceModel(
+          weekId: weekIdResult,
+          groupId: widget.groupId,
+          groupMemberId: m['groupMemberId'],
+          directoryMemberId: m['directoryMemberId'],
+          status: m['isPresent'] == true ? 'present' : 'absent',
+        ));
+      }
+      await repo.saveAttendanceAndPrayers(attendanceList: attendance, prayerList: []);
+
+      // 7. 대시보드 데이터 갱신
+      ref.invalidate(weeklyDataProvider);
+      ref.invalidate(attendanceHistoryProvider);
+    }
   }
 
   Widget _buildGraphSection(List<Map<String, dynamic>> history, {bool isLoading = false}) {
@@ -515,9 +627,18 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     );
   }
 
-  Widget _buildDetailedAttendanceSection(String weekId, {bool isLoading = false}) {
+  Widget _buildDetailedAttendanceSection(String weekId, List<Map<String, dynamic>> history, {bool isLoading = false}) {
     final groupsAsync = ref.watch(userGroupsProvider);
     final churchId = groupsAsync.value?.first['church_id'] ?? '';
+    final groups = groupsAsync.value ?? [];
+    final currentGroup = groups.isNotEmpty
+        ? groups.firstWhere((g) => g['group_id'] == widget.groupId, orElse: () => groups.first)
+        : <String, dynamic>{};
+    final isCoupleMode = currentGroup['profile_mode'] == 'couple';
+    final weekDateStr = history.firstWhere(
+      (h) => h['week_id'] == weekId, 
+      orElse: () => history.isNotEmpty ? history.first : <String, dynamic>{}
+    )['week_date'] as String?;
     
     return Opacity(
       opacity: isLoading ? 0.5 : 1.0,
@@ -526,77 +647,137 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(24, 32, 24, 16),
-            child: Text('상세 현황 (누가 오고 안왔는지)', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
+            child: Text('상세 현황', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
           ),
           ref.watch(weeklyDataProvider('${widget.groupId}:$churchId:$weekId')).maybeWhen(
+            skipLoadingOnRefresh: true,
+            skipLoadingOnReload: true,
+            skipError: true,
             data: (data) {
               final attendanceList = List<Map<String, dynamic>>.from(data['attendance']);
-              if (attendanceList.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(40), child: Text('데이터가 없습니다.')));
+              if (attendanceList.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        if (weekDateStr != null) {
+                          _openAttendanceCheckModal(weekId, weekDateStr);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryViolet,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
+                      ),
+                      icon: const Icon(lucide.LucideIcons.edit3, size: 20),
+                      label: const Text('출석 등록하기', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
+                    ),
+                  ),
+                );
+              }
 
-              // [SORT] 명단 정렬 (부부별)
+              // [SORT] 명단 정렬: 부부형이면 marriage key(부부묶음+가나다), 아니면 이름순
               attendanceList.sort((a, b) {
                 final m1 = a['member_directory'] ?? {};
                 final m2 = b['member_directory'] ?? {};
-                final f1 = (m1['family_name'] as String?)?.trim() ?? '';
-                final f2 = (m2['family_name'] as String?)?.trim() ?? '';
-                
-                if (f1.isNotEmpty && f2.isEmpty) return -1;
-                if (f1.isEmpty && f2.isNotEmpty) return 1;
-                if (f1.isNotEmpty && f2.isNotEmpty && f1 != f2) return f1.compareTo(f2);
-                
                 final n1 = (m1['full_name'] as String?)?.trim() ?? '';
                 final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+
+                if (!isCoupleMode) return n1.compareTo(n2);
+
+                // 부부형: marriage key로 정렬 (부부가 항상 묶여서 나옴)
+                String getMarriageKey(Map<String, dynamic> m) {
+                  final name = (m['full_name'] as String?)?.trim() ?? '';
+                  final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+                  if (spouse.isEmpty) return name;
+                  final list = [name, spouse];
+                  list.sort();
+                  return list.join('_');
+                }
+                final k1 = getMarriageKey(m1);
+                final k2 = getMarriageKey(m2);
+                if (k1 != k2) return k1.compareTo(k2);
                 return n1.compareTo(n2);
               });
 
-              return Container(
-                width: double.infinity,
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: AppTheme.border, width: 1.0), // [STYLE] 테두리 복원
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return Wrap(
-                        spacing: 6, // [STYLE] 간격 좁힘
-                        runSpacing: 8,
-                        children: attendanceList.map((att) {
-                          final member = att['member_directory'];
-                          if (member == null) return const SizedBox.shrink();
-                          
-                          final status = att['status'];
-                          final isPresent = status == 'present' || status == 'late';
-                          
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), // [STYLE] 패딩 축소
-                            decoration: BoxDecoration(
-                              color: isPresent ? AppTheme.accentViolet : const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(12), // [STYLE] 조금 더 샤프한 어드민 스타일 뱃지
-                              border: Border.all(
-                                color: isPresent ? AppTheme.primaryViolet.withOpacity(0.4) : AppTheme.border.withOpacity(0.6),
-                                width: 1.0,
-                              ),
-                            ),
-                            child: Text(
-                              member['full_name'], 
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: isPresent ? FontWeight.w800 : FontWeight.w600,
-                                color: isPresent ? AppTheme.primaryViolet : AppTheme.textSub,
-                                fontFamily: 'Pretendard',
-                                letterSpacing: -0.3,
-                              ),
-                            ),
+              return Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: AppTheme.border, width: 1.0), // [STYLE] 테두리 복원
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return Wrap(
+                            spacing: 6, // [STYLE] 간격 좁힘
+                            runSpacing: 8,
+                            children: attendanceList.map((att) {
+                              final member = att['member_directory'];
+                              if (member == null) return const SizedBox.shrink();
+                              
+                              final status = att['status'];
+                              final isPresent = status == 'present' || status == 'late';
+                              
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), // [STYLE] 패딩 축소
+                                decoration: BoxDecoration(
+                                  color: isPresent ? AppTheme.accentViolet : const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(12), // [STYLE] 조금 더 샤프한 어드민 스타일 뱃지
+                                  border: Border.all(
+                                    color: isPresent ? AppTheme.primaryViolet.withOpacity(0.4) : AppTheme.border.withOpacity(0.6),
+                                    width: 1.0,
+                                  ),
+                                ),
+                                child: Text(
+                                  member['full_name'], 
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: isPresent ? FontWeight.w800 : FontWeight.w600,
+                                    color: isPresent ? AppTheme.primaryViolet : AppTheme.textSub,
+                                    fontFamily: 'Pretendard',
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
                           );
-                        }).toList(),
-                      );
-                    }
+                        }
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          if (weekDateStr != null) {
+                            _openAttendanceCheckModal(weekId, weekDateStr);
+                          }
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.primaryViolet,
+                          side: const BorderSide(color: AppTheme.primaryViolet),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        icon: const Icon(lucide.LucideIcons.edit2, size: 18),
+                        label: const Text('출석 현황 수정하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
+                      ),
+                    ),
+                  ),
+                ],
               );
             },
             orElse: () => const Center(child: Padding(padding: EdgeInsets.all(40), child: ShadcnSpinner())),

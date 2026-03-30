@@ -134,17 +134,8 @@ class GraceNoteRepository {
     // 4. 데이터 병합 (Attendance)
     final List<Map<String, dynamic>> attendanceWithInfo = [];
     
-    if (attendanceList.isEmpty) {
-      for (final m in members) {
-        attendanceWithInfo.add({
-          'week_id': weekId,
-          'group_id': groupId,
-          'directory_member_id': m['id'],
-          'status': 'absent',
-          'member_directory': m,
-        });
-      }
-    } else {
+    // [FIX] 조장 화면에서도 미제출 시 빈 배열을 반환해야 "출석 등록하기" 버튼 노출 로직이 동작함
+    if (attendanceList.isNotEmpty) {
       for (final att in attendanceList) {
         final dirId = att['directory_member_id'];
         
@@ -676,7 +667,7 @@ class GraceNoteRepository {
     // 2. 부서 내 모든 멤버 조회 (매칭용)
     final directoryResponse = await _supabase
         .from('member_directory')
-        .select('id, full_name, group_name, profile_id')
+        .select('id, full_name, group_name, profile_id, spouse_name')
         .eq('department_id', departmentId)
         .eq('is_active', true);
     final allMembers = List<Map<String, dynamic>>.from(directoryResponse);
@@ -684,7 +675,7 @@ class GraceNoteRepository {
     // 3. 해당 주차의 출석 데이터 조회
     final attendanceResponse = await _supabase
         .from('attendance')
-        .select('directory_member_id, status')
+        .select('directory_member_id, status, group_id')
         .eq('week_id', weekId);
     final attendanceData = List<Map<String, dynamic>>.from(attendanceResponse);
 
@@ -716,8 +707,28 @@ class GraceNoteRepository {
       final groupName = group['name'];
       final groupId = group['id'];
       
-      // 1) 기록(Snapshot) 기반 멤버 구성 - 현재 조에 있는 성도들과 상관없이 실제 기록된 데이터
-      final snapshotMembersInGroup = attendanceData
+      final groupAttendanceData = attendanceData.where((a) => a['group_id'] == groupId).toList();
+
+      final List<Map<String, dynamic>> membersWithStatus = [];
+
+      // [기능 변경] 출석을 제출하지 않은 조: 가짜 현재 명단을 채워넣어 전부 '결석'처럼 보이게 하는 대신
+      // 아예 미제출(is_submitted: false) 상태로 반환. 
+      // 단, 부서 전체 상단 통계(참석률 분모) 유지를 위해 total_count는 현재 조 인원으로 전달.
+      if (groupAttendanceData.isEmpty) {
+        final groupMemberCount = allMembers.where((m) => m['group_name'] == groupName).length;
+        
+        return {
+          'id': groupId,
+          'name': groupName,
+          'is_submitted': false,
+          'present_count': 0,
+          'total_count': groupMemberCount,
+          'members': <Map<String, dynamic>>[],
+        };
+      } 
+      
+      // 출석 제출 기록이 있는 조: 과거 제출된 기록(Snapshot) 기반으로만 명단을 구성.
+      membersWithStatus.addAll(groupAttendanceData
           .map((a) {
              final dirId = a['directory_member_id'];
              final memberInfo = allMembers.firstWhere(
@@ -725,35 +736,20 @@ class GraceNoteRepository {
                 orElse: () => missingMembersMap[dirId] ?? {},
              );
              
-             // 정보가 없거나, 해당 조가 아니면 제외
-             if (memberInfo.isEmpty || memberInfo['group_name'] != groupName) return null;
-             
+             // 정보가 삭제된 성도여도 고유 식별 명단을 위해 남겨둠
              return {
-               ...memberInfo,
+               if (memberInfo.isNotEmpty) ...memberInfo else 'id': dirId,
                'status': a['status'],
                'source': 'snapshot',
              };
-          })
-          .whereType<Map<String, dynamic>>()
-          .toList();
+          }));
 
-      // 2) 현재 명단(Current) 기반 멤버 추가 - 기록에는 없지만 현재 이 조에 있는 성도들 (미제출 인원)
-      final checkedMemberIds = snapshotMembersInGroup.map((m) => m['id']).toSet();
-      final currentMembersInGroup = allMembers
-          .where((m) => m['group_name'] == groupName && !checkedMemberIds.contains(m['id']))
-          .map((m) => {
-                ...m,
-                'status': 'absent',
-                'source': 'current',
-              })
-          .toList();
-
-      final membersWithStatus = [...snapshotMembersInGroup, ...currentMembersInGroup];
       final presentCount = membersWithStatus.where((m) => m['status'] == 'present' || m['status'] == 'late').length;
 
       return {
         'id': groupId,
         'name': groupName,
+        'is_submitted': true,
         'present_count': presentCount,
         'total_count': membersWithStatus.length,
         'members': membersWithStatus,

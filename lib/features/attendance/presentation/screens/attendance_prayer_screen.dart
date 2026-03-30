@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:async' show Timer;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,27 +26,55 @@ class AttendancePrayerScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<AttendancePrayerScreen> createState() => _AttendancePrayerScreenState();
 }
-class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen> {
+class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   bool _isRefining = false;
   bool _isLoading = false;
   bool _isFetching = false;
+  bool _hasExistingData = false;
   bool _isInitialized = false;
   bool _isCheckScreenShowing = false;
+  DateTime? _lastCheckedWeek; // [FIX] 주차별 팝업 트리거 방지 (동일 주차 재진입/resume 시 팝업 억제)
+  DateTime? _currentDataWeek; // [FIX] 데이터 페치 시 주차가 진짜 바뀌었는지 추적하여 텍스트 덮어쓰기 여부 결정
   final List<List<Map<String, dynamic>>> _undoStack = [];
 
   List<Map<String, dynamic>> _members = [];
   final Map<String, TextEditingController> _controllers = {};
   final ShadPopoverController _popoverController = ShadPopoverController();
   String? _currentGroupId;
+  Timer? _editingDebounceTimer;
   String? _currentChurchId;
+  bool _isCoupleMode = false;
 
   @override
   void dispose() {
+    _editingDebounceTimer?.cancel();
     for (final controller in _controllers.values) {
+      controller.removeListener(_onTextChanged);
       controller.dispose();
     }
     _popoverController.dispose();
+    // 화면을 떠날 때 editing guard 해제
+    // (WidgetRef는 dispose 후 접근 불가하므로 try-catch)
+    try {
+      ref.read(isUserEditingProvider.notifier).state = false;
+    } catch (_) {}
     super.dispose();
+  }
+
+  /// 텍스트 입력 시 editing guard 활성화 (3초간 입력 없으면 자동 해제)
+  void _onTextChanged() {
+    ref.read(isUserEditingProvider.notifier).state = true;
+    _editingDebounceTimer?.cancel();
+    _editingDebounceTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) ref.read(isUserEditingProvider.notifier).state = false;
+    });
+  }
+
+  /// 새로 생성된 controller에 editing guard 리스너를 등록
+  void _attachEditingGuard(TextEditingController controller) {
+    controller.addListener(_onTextChanged);
   }
 
   @override
@@ -62,19 +91,38 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   void _checkAndShowAttendancePopup() {
+    if (!mounted) return;
+    
+    // [FIX] 사용자가 기도제목을 입력 중이면 출석체크 팝업 표시(포커스 뺏김) 방지
+    final isEditing = ref.read(isUserEditingProvider);
+    if (isEditing) return;
+
     if (_members.isEmpty || _isCheckScreenShowing || _isLoading || _isFetching) return;
+    
+    // [FIX] 이미 팝업 처리를 한 주차이면 다시 띄우지 않음 (백그라운드 복귀나 부모 위젯 재빌드 시 무한 팝업 방지)
+    final currentWeek = ref.read(attendanceSelectedWeekProvider);
+    if (_lastCheckedWeek == currentWeek) return;
+
     final hasAnyPresence = _members.any((m) => m['isPresent'] == true);
     if (!hasAnyPresence) {
       _isCheckScreenShowing = true;
+      _lastCheckedWeek = currentWeek; // 이번 주차 팝업 방어막 설정
       Future.microtask(() => _launchAttendanceCheck());
+    } else {
+      _lastCheckedWeek = currentWeek; // 출석이 이미 있으면 팝업 불필요
     }
   }
 
   Future<void> _refreshData() async {
-    // [FIX] 페이지 이동이나 데이터 갱신 시 기존 컨트롤러 텍스트 초기화
-    for (final controller in _controllers.values) {
-      controller.clear();
-    }
+    // [FIX] 주차 변경이나 새로고침 시 이전에 타이핑하던 상태(3초 딜레이)를 해제하여 정상적인 팝업 표시 허용
+    try {
+      if (mounted) {
+        ref.read(isUserEditingProvider.notifier).state = false;
+        _editingDebounceTimer?.cancel();
+      }
+    } catch (_) {}
+
+    // [FIX] controller를 무조건 clear하지 않음 — 서버 fetch 후 동기화하여 사용자 입력 보호
     
     final groups = await ref.read(userGroupsProvider.future);
     final activeMembership = ref.read(activeMembershipProvider);
@@ -82,11 +130,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     if (activeMembership != null) {
       // 선택된 그룹이 있으면 그 그룹 사용
       _currentGroupId = activeMembership.groupId;
-      _currentChurchId = activeMembership.churchId ?? groups.firstWhere((g) => g['group_id'] == activeMembership.groupId, orElse: () => {})['church_id'];
+      final matchedGroup = groups.firstWhere((g) => g['group_id'] == activeMembership.groupId, orElse: () => <String, dynamic>{});
+      _currentChurchId = activeMembership.churchId ?? matchedGroup['church_id'];
+      _isCoupleMode = matchedGroup['profile_mode'] == 'couple';
     } else if (groups.isNotEmpty) {
       // 선택된 그룹이 없으면 첫 번째 그룹 사용
       _currentGroupId = groups.first['group_id'];
       _currentChurchId = groups.first['church_id'];
+      _isCoupleMode = groups.first['profile_mode'] == 'couple';
     }
 
     if (_currentGroupId != null && _currentChurchId != null) {
@@ -102,7 +153,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     setState(() => _isLoading = true);
     try {
       final repo = ref.read(repositoryProvider);
-      final weekIdResult = await ref.read(weekIdProvider(churchId).future);
+      final selectedDate = ref.read(attendanceSelectedWeekProvider);
+      final weekIdResult = await repo.getOrCreateWeek(churchId, selectedDate, createIfMissing: true);
+      
+      final bool isWeekChanged = _currentDataWeek != selectedDate;
+      _currentDataWeek = selectedDate;
       final weekId = weekIdResult;
       
       // [FIX] weekId가 없더라도 멤버 목록은 항상 가져옴 (빈 화면 방지)
@@ -159,19 +214,43 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         }
         
         _members = combinedMembers.values.toList();
+        _hasExistingData = existingAttendance.isNotEmpty;
+
         for (final m in _members) {
           final directoryId = m['directoryMemberId'];
-          final note = m['prayerNote'] ?? '';
+          final serverNote = m['prayerNote'] ?? '';
           if (!_controllers.containsKey(directoryId)) {
-            _controllers[directoryId] = TextEditingController(text: note);
+            final ctrl = TextEditingController(text: serverNote);
+            _attachEditingGuard(ctrl);
+            _controllers[directoryId] = ctrl;
           } else {
-            _controllers[directoryId]!.text = note;
+            // [FIX] 주차가 실제로 변경된 경우 무조건 덮어쓰기 (새 주차 데이터를 표시)
+            if (isWeekChanged) {
+               _controllers[directoryId]!.text = serverNote;
+            } else {
+              // 주차가 동일한데 새로고침/백그라운드 복귀된 경우:
+              // 현재 사용자가 수정 중인 상태라면 덮어쓰지 않고 보호
+              final currentText = _controllers[directoryId]!.text;
+              if (currentText.isEmpty || currentText == m['prayerNote']) {
+                _controllers[directoryId]!.text = serverNote;
+              }
+            }
           }
         }
         _sortMembers();
         _isLoading = false;
         _isFetching = false;
         if (widget.isActive) _checkAndShowAttendancePopup();
+        
+        // [NEW] 대시보드에서 넘어온 경우 자동 출석체크 열기
+        if (ref.read(shouldAutoOpenAttendanceCheckProvider)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && ref.read(shouldAutoOpenAttendanceCheckProvider)) {
+              ref.read(shouldAutoOpenAttendanceCheckProvider.notifier).state = false;
+              _launchAttendanceCheck();
+            }
+          });
+        }
       });
     } catch (e) {
       debugPrint('AttendancePrayerScreen: Error fetching data: $e');
@@ -184,8 +263,12 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   void _sortMembers() {
     setState(() {
       _members.sort((a, b) {
+        // 출석자 우선
         if (a['isPresent'] != b['isPresent']) return a['isPresent'] ? -1 : 1;
-        if (a['familyId'] != b['familyId']) return (a['familyId'] ?? '').compareTo(b['familyId'] ?? '');
+        // 부부형이면 familyId(spouse_name 기반 couple key)로 부부 묶음, 아니면 이름순
+        if (_isCoupleMode) {
+          if (a['familyId'] != b['familyId']) return (a['familyId'] ?? '').compareTo(b['familyId'] ?? '');
+        }
         return (a['name'] as String).compareTo(b['name'] as String);
       });
     });
@@ -202,7 +285,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   Future<void> _launchAttendanceCheck() async {
-    final selectedDate = ref.read(selectedWeekDateProvider);
+    final selectedDate = ref.read(attendanceSelectedWeekProvider);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     // 선택된 날짜와 오늘 날짜를 비교하여 과거 주차 여부 확인 (일요일 기준이므로 < 오늘)
@@ -231,6 +314,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           isPastWeek: isPastWeek,
           groupId: _currentGroupId,
           isNewFamilyGroup: isNewFamilyGroup,
+          hasExistingData: _hasExistingData,
         ),
       ),
     );
@@ -249,7 +333,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           if (_controllers.containsKey(dirId)) {
             _controllers[dirId]!.text = m['prayerNote'] ?? '';
           } else {
-            _controllers[dirId] = TextEditingController(text: m['prayerNote'] ?? '');
+            final ctrl = TextEditingController(text: m['prayerNote'] ?? '');
+            _attachEditingGuard(ctrl);
+            _controllers[dirId] = ctrl;
           }
         }
         _sortMembers();
@@ -340,7 +426,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     setState(() => _isLoading = true);
     try {
       final repo = ref.read(repositoryProvider);
-      final weekIdResult = await ref.read(weekIdProvider(_currentChurchId!).future);
+      final selectedDate = ref.read(attendanceSelectedWeekProvider);
+      final weekIdResult = await repo.getOrCreateWeek(_currentChurchId!, selectedDate, createIfMissing: true);
     if (weekIdResult == null) {
       if (mounted) setState(() => _isLoading = false);
       if (mounted) SnackBarUtil.showSnackBar(context, message: '주차 정보를 확인하지 못했습니다.', isError: true);
@@ -394,7 +481,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
   String _formatPrayersForSharing() {
     final settings = ref.read(aiSettingsProvider);
-    final selectedDate = ref.read(selectedWeekDateProvider);
+    final selectedDate = ref.read(attendanceSelectedWeekProvider);
     final groups = ref.read(userGroupsProvider).value ?? [];
     final groupName = groups.isNotEmpty ? groups.first['group_name'] : '우리 조';
     final StringBuffer buffer = StringBuffer();
@@ -489,21 +576,24 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // [FIX] AutomaticKeepAliveClientMixin 요구사항
     final groupsAsync = ref.watch(userGroupsProvider);
     final activeMembership = ref.watch(activeMembershipProvider);
 
-    ref.listen(selectedWeekDateProvider, (previous, next) { if (previous != next) _refreshData(); });
+    ref.listen(attendanceSelectedWeekProvider, (previous, next) { if (previous != next) _refreshData(); });
     ref.listen(userGroupsProvider, (previous, next) {
        if (next.hasValue) {
          final oldId = previous?.value?.isNotEmpty == true ? previous!.value!.first['group_id'] : null;
          final newId = next.value?.isNotEmpty == true ? next.value!.first['group_id'] : null;
-         if (oldId != newId) _refreshData();
+         // 실제 그룹 변경 시에만 리프레시 (invalidate 후 재로딩은 무시)
+         if (oldId != null && newId != null && oldId != newId) _refreshData();
        }
     });
 
     // [FIX] 활성 멤버십(선택된 조) 변경 감지
+    // previous가 null인 경우는 StateNotifier 재생성(background resume)이므로 무시
     ref.listen(activeMembershipProvider, (previous, next) {
-      if (previous?.groupId != next?.groupId) {
+      if (previous != null && next != null && previous.groupId != next.groupId) {
         _refreshData();
       }
     });
@@ -566,117 +656,93 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           const SizedBox(width: 8),
         ],
       ),
-      body: groupsAsync.when(
-        skipLoadingOnRefresh: true,
-        data: (groups) {
-          if (groups.isEmpty) return const Center(child: Text('배정된 조가 없습니다.'));
-          
-          return Stack(
-            children: [
-              Column(
-                children: [
-                  _buildAIHeader(),
-                  if (_isRefining) const LinearProgressIndicator(backgroundColor: Colors.transparent, valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet), minHeight: 2),
-                  Expanded(
-                    child: RefreshIndicator(
-                      onRefresh: _refreshData,
-                      color: AppTheme.primaryViolet,
-                      child: ReorderableListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
-                      proxyDecorator: (child, index, animation) {
-                        return AnimatedBuilder(
-                          animation: animation,
-                          builder: (context, child) {
-                            return Material(
-                              color: Colors.transparent,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(lerpDouble(0, 0.1, animation.value) ?? 0),
-                                      blurRadius: 15,
-                                      offset: const Offset(0, 5),
-                                    )
-                                  ],
-                                ),
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: child,
-                        );
-                      },
-                      buildDefaultDragHandles: false,
-                      itemCount: _members.length,
-                      onReorder: (oldIndex, newIndex) { setState(() { if (newIndex > oldIndex) newIndex -= 1; final item = _members.removeAt(oldIndex); _members.insert(newIndex, item); }); },
-                      itemBuilder: (context, index) {
-                        return Container(
-                          key: ValueKey(_members[index]['directoryMemberId']),
-                          margin: const EdgeInsets.only(bottom: 16),
-                          child: _buildMemberCard(_members[index], index),
-                        );
-                      },
-                    ),
-                    ),
-                  ),
-                ],
-              ),
-              if (_isLoading || _isFetching) 
-                Container(
-                  color: Colors.white.withOpacity(0.7), 
-                  child: const Center(child: CircularProgressIndicator())
-                ),
-              if (_isRefining) 
-                Container(
-                  color: Colors.white.withOpacity(0.3), 
-                  child: const Center(child: AIProcessingLoader(size: 100, message: '기도제목을 정돈하고 있습니다'))
-                ),
-            ],
-          );
-        },
-        loading: () {
-          if (_members.isNotEmpty) {
-            return Stack(
-              children: [
-                Column(
-                  children: [
-                    _buildAIHeader(),
-                    Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
-                        itemCount: _members.length,
-                        itemBuilder: (context, index) => Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          child: _buildMemberCard(_members[index], index),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Container(
-                  color: Colors.white.withOpacity(0.7), 
-                  child: const Center(child: CircularProgressIndicator())
-                ),
-              ],
-            );
-          }
-          return const Center(child: CircularProgressIndicator());
-        },
-        error: (e, s) {
-          // [FIX] 오류 내용 직접 노출 방지 및 스켈레톤 뷰 제공
-          return const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: MemberListSkeleton(count: 6),
-          );
-        },
-      ),
+      // [FIX] 로컬 상태 기반 렌더링 — provider AsyncLoading 전환 시 위젯 트리 교체 방지
+      body: _buildBody(),
       bottomNavigationBar: _buildBottomActions(),
     );
   }
 
+  Widget _buildBody() {
+    if (!_isInitialized || (_members.isEmpty && (_isLoading || _isFetching))) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: _RecordSkeleton(),
+        ),
+      );
+    }
+
+    if (_members.isEmpty && !_isLoading) {
+      return const Center(child: Text('배정된 조가 없습니다.'));
+    }
+
+    return Stack(
+      children: [
+        Column(
+          children: [
+            _buildAIHeader(),
+            if (_isRefining) const LinearProgressIndicator(backgroundColor: Colors.transparent, valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet), minHeight: 2),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refreshData,
+                color: AppTheme.primaryViolet,
+                child: ReorderableListView.builder(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
+                proxyDecorator: (child, index, animation) {
+                  return AnimatedBuilder(
+                    animation: animation,
+                    builder: (context, child) {
+                      return Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(lerpDouble(0, 0.1, animation.value) ?? 0),
+                                blurRadius: 15,
+                                offset: const Offset(0, 5),
+                              )
+                            ],
+                          ),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: child,
+                  );
+                },
+                buildDefaultDragHandles: false,
+                itemCount: _members.length,
+                onReorder: (oldIndex, newIndex) { setState(() { if (newIndex > oldIndex) newIndex -= 1; final item = _members.removeAt(oldIndex); _members.insert(newIndex, item); }); },
+                itemBuilder: (context, index) {
+                  return Container(
+                    key: ValueKey(_members[index]['directoryMemberId']),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    child: _buildMemberCard(_members[index], index),
+                  );
+                },
+              ),
+              ),
+            ),
+          ],
+        ),
+        if (_isLoading || _isFetching) 
+          Container(
+            color: Colors.white.withOpacity(0.7), 
+            child: const Center(child: CircularProgressIndicator())
+          ),
+        if (_isRefining) 
+          Container(
+            color: Colors.white.withOpacity(0.3), 
+            child: const Center(child: AIProcessingLoader(size: 100, message: '기도제목을 정돈하고 있습니다'))
+          ),
+      ],
+    );
+  }
+
   Widget _buildWeekSelector() {
-    final selectedDate = ref.watch(selectedWeekDateProvider);
+    final selectedDate = ref.watch(attendanceSelectedWeekProvider);
     return InkWell(
       onTap: () {
         showDialog(
@@ -710,7 +776,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                       },
                       onChanged: (date) {
                         if (date != null) {
-                          ref.read(selectedWeekDateProvider.notifier).state = date;
+                          ref.read(attendanceSelectedWeekProvider.notifier).state = date;
                           _refreshData();
                           Navigator.pop(context);
                         }
@@ -868,7 +934,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             title: Row(
               children: [
                 Text(member['name'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A), letterSpacing: -0.5, fontFamily: 'Pretendard')),
-                if (member['source'] == 'current' && (ref.read(selectedWeekDateProvider).isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))))
+                if (member['source'] == 'current' && _hasExistingData && (ref.read(attendanceSelectedWeekProvider).isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))))
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: Container(
@@ -1042,5 +1108,53 @@ class _DashedBorderPainter extends CustomPainter {
   @override
   bool shouldRepaint(_DashedBorderPainter oldDelegate) {
     return color != oldDelegate.color || strokeWidth != oldDelegate.strokeWidth || gap != oldDelegate.gap;
+  }
+}
+
+// [FIX] 출석/기록 메뉴 전용 커스텀 스켈레톤 (기도소식과 모양 차별화)
+class _RecordSkeleton extends StatelessWidget {
+  const _RecordSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 5,
+      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemBuilder: (context, index) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44, height: 44,
+                    decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 16),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(width: 60, height: 16, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4))),
+                      const SizedBox(height: 6),
+                      Container(width: 40, height: 12, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4))),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(width: double.infinity, height: 80, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12))),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

@@ -228,7 +228,7 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
   final response = await Supabase.instance.client
       .from('group_members')
-      .select('group_id, role_in_group, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, departments(name))')
+      .select('group_id, role_in_group, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, departments(name, profile_mode))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
       .order('joined_at', ascending: false);
@@ -241,6 +241,7 @@ Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
       'department_id': e['groups']?['department_id']?.toString(), // [NEW] Added department_id
       'color_hex': e['groups']?['color_hex']?.toString() ?? '', // [NEW] 조 색상 추가
       'department_name': e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
+      'profile_mode': e['groups']?['departments']?['profile_mode']?.toString() ?? 'individual',
       'role_in_group': (e['role_in_group'] ?? 'member').toString(),
       'is_new_member_group': e['groups']?['is_new_member_group'] ?? false,
       'climbing_threshold': e['groups']?['climbing_threshold'],
@@ -273,16 +274,30 @@ Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
   return groups;
 }
 
-// Selected Week Provider (Current context for app)
+// Selected Week Provider (Current context for app — 기도소식 화면용)
 final selectedWeekDateProvider = StateProvider<DateTime>((ref) {
   final now = DateTime.now();
   // Snap to the most recent Sunday (or today if it's Sunday)
   return DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday % 7));
 });
 
+/// 기록(출석/기도) 화면 전용 주차 선택 상태.
+/// 기도소식 화면의 날짜 변경이 기록 화면에 영향을 주지 않도록 분리.
+final attendanceSelectedWeekProvider = StateProvider<DateTime>((ref) {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday % 7));
+});
+
 // [NEW] Attendance Screen Action Trigger Provider
 enum AttendanceAction { share, addMember }
 final attendanceActionProvider = StateProvider<AttendanceAction?>((ref) => null);
+
+/// 대시보드에서 등록/수정 버튼을 통해 진입했을 때 출석체크 팝업을 즉시 띄우기 위한 트리거.
+final shouldAutoOpenAttendanceCheckProvider = StateProvider<bool>((ref) => false);
+
+/// 사용자가 텍스트 입력 중인지 추적하는 전역 가드.
+/// true일 때 백그라운드 resume 시 data provider invalidation을 건너뜁니다.
+final isUserEditingProvider = StateProvider<bool>((ref) => false);
 
 // Week ID Provider (Computed from selected date)
 final weekIdProvider = FutureProvider.family<String?, String>((ref, String churchId) async {

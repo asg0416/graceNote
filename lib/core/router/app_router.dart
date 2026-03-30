@@ -332,8 +332,18 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
       if (session == null || session.isExpired) {
         try { await Supabase.instance.client.auth.getUser(); } catch (_) {}
       }
-      ref.invalidate(userProfileProvider);
-      ref.invalidate(userGroupsProvider);
+
+      // 사용자가 텍스트 입력 중이면 data invalidation 건너뜀 (입력 유실 방지)
+      final isEditing = ref.read(isUserEditingProvider);
+      if (isEditing) {
+        debugPrint('Silent refresh: User is editing, skipping data invalidation');
+        return;
+      }
+
+      // [FIX] 백그라운드 복귀 시 전면적인 데이터 재생성 금지 (화면 파괴 방어)
+      // StreamProvider가 자동으로 최신 상태를 유지하므로 invalidate 불필요
+      // ref.invalidate(userProfileProvider);
+      // ref.invalidate(userGroupsProvider);
     } catch (e) {
       debugPrint('Silent refresh failed: $e');
     }
@@ -646,13 +656,17 @@ class _RecordTabPlaceholder extends ConsumerWidget {
     final groupsAsync = ref.watch(userGroupsProvider);
 
     return groupsAsync.when(
+      skipLoadingOnReload: true,
+      skipError: true, // [FIX] 일시적 네트워크 에러 시 전체 화면 파괴(에러 스크린 전환) 방지
       data: (groups) {
         switch (activeRole) {
           case AppRole.admin:
             final profile = ref.watch(userProfileProvider).value;
+            final adminGroup = groups.isNotEmpty ? groups.first : <String, dynamic>{};
             return DepartmentMemberDirectoryScreen(
               departmentId: profile?.departmentId ?? '',
               departmentName: '',
+              profileMode: adminGroup['profile_mode'] ?? 'individual',
             );
           case AppRole.leader:
             if (groups.isEmpty) {
@@ -682,6 +696,8 @@ class _AttendanceTabPlaceholder extends ConsumerWidget {
     final activeMembership = ref.watch(activeMembershipProvider);
 
     return groupsAsync.when(
+      skipLoadingOnReload: true,
+      skipError: true, // [FIX] 일시적 네트워크 에러 시 전체 화면 파괴 방지
       data: (groups) {
         if (groups.isEmpty) {
           return const Scaffold(body: Center(child: Text('출석 데이터가 없습니다.')));
@@ -689,9 +705,11 @@ class _AttendanceTabPlaceholder extends ConsumerWidget {
 
         if (activeRole == AppRole.admin) {
           final profile = ref.watch(userProfileProvider).value;
+          final adminGroup = groups.isNotEmpty ? groups.first : <String, dynamic>{};
           return DepartmentAttendanceDashboardScreen(
             departmentId: profile?.departmentId ?? '',
             departmentName: '',
+            isCoupleMode: adminGroup['profile_mode'] == 'couple',
           );
         }
 

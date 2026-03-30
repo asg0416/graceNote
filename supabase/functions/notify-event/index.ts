@@ -130,10 +130,11 @@ Deno.serve(async (req: Request) => {
     const { data: group } = await supabase.from("groups").select("name, church_id, department_id").eq("id", record.group_id).single();
     const { data: member } = await supabase.from("member_directory").select("full_name").eq("id", record.member_id).single();
 
-    // Determine if this is a true update of an already published/existing prayer.
-    // Even if it transitions from draft to published, if it's an UPDATE type, the record already existed.
-    // This provides better UX "수정되었습니다" instead of replacing original notification silently.
-    const isTrueUpdate = type === 'UPDATE';
+    // Determine first publish vs re-publish using first_published_at column.
+    // - first_published_at is set by DB trigger on first publish (draft→published or direct INSERT with published).
+    // - If old_record already had first_published_at set, this is an edit (re-publish), not a first registration.
+    // - For INSERT type, it's always a first publish.
+    const isTrueUpdate = type === 'UPDATE' && old_record?.first_published_at != null;
 
     title = isTrueUpdate
       ? `✏️ [${group?.name || '조'}] 기도제목 수정`
@@ -260,7 +261,13 @@ Deno.serve(async (req: Request) => {
   });
 
   const uniqueTokens = Array.from(userToToken.values());
-  const results = await Promise.allSettled(uniqueTokens.map(token => sendPush(accessToken, token, title, body, { link, tag: table })));
+  // Use distinct tags per notification type to prevent overwriting:
+  // - prayer: per-group tag so different groups don't overwrite each other
+  // - notices: unique per notice id
+  const tag = table === 'prayer_entries'
+    ? `prayer-${record.group_id}`
+    : `notice-${record.id}`;
+  const results = await Promise.allSettled(uniqueTokens.map(token => sendPush(accessToken, token, title, body, { link, tag })));
 
   // Cleanup: delete dedup records older than 5 minutes (fire and forget)
   supabase.from("notification_dedup")
