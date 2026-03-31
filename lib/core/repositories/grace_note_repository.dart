@@ -88,10 +88,11 @@ class GraceNoteRepository {
     // 하지만 UI에서 이름을 보여줘야 하므로, 여기서는 나중에 수동 매핑을 시도할 것임.
     final prayersTask = _supabase
         .from('prayer_entries')
-        .select() 
+        .select()
         .eq('week_id', weekId)
         .eq('group_id', groupId)
-        .order('created_at', ascending: true); // 정렬 기준도 안전하게 변경
+        .eq('status', 'published')
+        .order('created_at', ascending: true);
 
     final results = await Future.wait([attendanceTask, prayersTask]);
     final attendanceList = List<Map<String, dynamic>>.from(results[0]);
@@ -866,8 +867,7 @@ class GraceNoteRepository {
     final List<String> allIds = List<String>.from(relatedMembers.map((m) => m['id'] as String));
     debugPrint('GraceNoteRepository: Related directory IDs for person: $allIds');
 
-    // 3. Fetch all prayers for those IDs
-    // 3. Fetch all prayers for those IDs
+    // 3. Fetch published prayers for those IDs (exclude drafts)
     var query = _supabase
         .from('prayer_entries')
         .select('''
@@ -876,7 +876,8 @@ class GraceNoteRepository {
           member:member_directory!directory_member_id(group_name)
         ''')
         .inFilter('directory_member_id', allIds)
-        .order('week_date', referencedTable: 'weeks', ascending: false);
+        .eq('status', 'published')
+        .order('first_published_at', ascending: false);
 
     if (page != null && pageSize != null) {
       final start = page * pageSize;
