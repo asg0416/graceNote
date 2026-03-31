@@ -157,7 +157,8 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                         .from('prayer_entries')
                         .select('*, weeks(week_date)')
                         .eq(isDirectory ? 'directory_member_id' : 'member_id', targetId)
-                        .order('week_date', { foreignTable: 'weeks', ascending: false })
+                        .eq('status', 'published')
+                        .order('first_published_at', { ascending: false })
                         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
                     if (error) {
@@ -166,7 +167,8 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                             .from('prayer_entries')
                             .select('*')
                             .eq(isDirectory ? 'directory_member_id' : 'member_id', targetId)
-                            .order('updated_at', { ascending: false })
+                            .eq('status', 'published')
+                            .order('first_published_at', { ascending: false })
                             .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
                     }
                     return { data, error };
@@ -187,12 +189,11 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                     const combined = [...prev, ...newPrayers];
                     const unique = Array.from(new Map(combined.map(p => [p.id, p])).values());
 
-                    // Sort by week_date (from weeks join) primarily, then by updated_at
+                    // Sort by first_published_at (most accurate for timeline)
                     unique.sort((a, b) => {
-                        const dateA = a.weeks?.week_date || a.updated_at || '0';
-                        const dateB = b.weeks?.week_date || b.updated_at || '0';
-                        if (dateA !== dateB) return dateB.localeCompare(dateA);
-                        return (b.updated_at || '0').localeCompare(a.updated_at || '0');
+                        const dateA = a.first_published_at || a.weeks?.week_date || a.updated_at || '0';
+                        const dateB = b.first_published_at || b.weeks?.week_date || b.updated_at || '0';
+                        return dateB.localeCompare(dateA);
                     });
                     return unique;
                 });
