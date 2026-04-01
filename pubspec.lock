@@ -1165,14 +1165,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.28.0"
+  serial_csv:
+    dependency: transitive
+    description:
+      name: serial_csv
+      sha256: "2d62bb70cb3ce7251383fc86ea9aae1298ab1e57af6ef4e93b6a9751c5c268dd"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.5.2"
   shadcn_ui:
     dependency: "direct main"
     description:
       name: shadcn_ui
-      sha256: "46b1311e5759879762184e0ed34e82c6c77b04140350d5dafed651af0af091fc"
+      sha256: "342da1212a10d662a8a1e7c99a09b2c806303be24f06a7a4921159a130b6d06d"
       url: "https://pub.dev"
     source: hosted
-    version: "0.45.1"
+    version: "0.53.3"
   share_plus:
     dependency: "direct main"
     description:
@@ -1266,6 +1274,22 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  slang:
+    dependency: transitive
+    description:
+      name: slang
+      sha256: ea6702ed6b1c82065fb2de906fe34ac9298117342e3c2ea2567132efdc81bd17
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.14.0"
+  slang_flutter:
+    dependency: transitive
+    description:
+      name: slang_flutter
+      sha256: dcc4e77527c91b12348fc8bdd43d3eb92d8cea37c12a23a1f9719cdc12c804c6
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.14.0"
   source_gen:
     dependency: transitive
     description:

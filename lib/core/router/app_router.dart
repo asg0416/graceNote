@@ -704,10 +704,7 @@ class _AttendanceTabPlaceholder extends ConsumerWidget {
       skipLoadingOnReload: true,
       skipError: true, // [FIX] 일시적 네트워크 에러 시 전체 화면 파괴 방지
       data: (groups) {
-        if (groups.isEmpty) {
-          return const Scaffold(body: Center(child: Text('출석 데이터가 없습니다.')));
-        }
-
+        // [FIX] admin은 group_members에 없을 수 있으므로 groups 체크보다 먼저 분기
         if (activeRole == AppRole.admin) {
           final profile = ref.watch(userProfileProvider).value;
           final adminGroup = groups.isNotEmpty ? groups.first : <String, dynamic>{};
@@ -716,6 +713,10 @@ class _AttendanceTabPlaceholder extends ConsumerWidget {
             departmentName: '',
             isCoupleMode: adminGroup['profile_mode'] == 'couple',
           );
+        }
+
+        if (groups.isEmpty) {
+          return const Scaffold(body: Center(child: Text('출석 데이터가 없습니다.')));
         }
 
         // leader

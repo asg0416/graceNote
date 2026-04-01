@@ -103,28 +103,22 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ skipped: true, reason: "not_published" }));
     }
 
-    // 1. Dedup check: Skip if same group+week+event was notified within last 5 seconds (to prevent concurrent batch upsert spam)
-    const DEDUP_WINDOW_SECONDS = 5;
-    const { data: recentNotif } = await supabase
+    // 1. Atomic dedup: INSERT with UNIQUE constraint (group_id, week_id, event_type).
+    // Only the first concurrent request succeeds; others get a conflict error and skip.
+    const { data: inserted, error: dedupError } = await supabase
       .from("notification_dedup")
+      .insert({
+        group_id: record.group_id,
+        week_id: record.week_id,
+        event_type: type,
+      })
       .select("id")
-      .eq("group_id", record.group_id)
-      .eq("week_id", record.week_id)
-      .eq("event_type", type)
-      .gte("created_at", new Date(Date.now() - DEDUP_WINDOW_SECONDS * 1000).toISOString())
-      .limit(1);
+      .single();
 
-    if (recentNotif && recentNotif.length > 0) {
-      console.log(`[notify-event] Skipping duplicate ${type} notification (within ${DEDUP_WINDOW_SECONDS}s window)`);
+    if (dedupError || !inserted) {
+      console.log(`[notify-event] Skipping duplicate ${type} notification (dedup conflict)`);
       return new Response(JSON.stringify({ skipped: true, reason: "dedup" }));
     }
-
-    // Record this notification for dedup
-    await supabase.from("notification_dedup").insert({
-      group_id: record.group_id,
-      week_id: record.week_id,
-      event_type: type,
-    });
 
     // 2. Data fetching
     const { data: group } = await supabase.from("groups").select("name, church_id, department_id").eq("id", record.group_id).single();

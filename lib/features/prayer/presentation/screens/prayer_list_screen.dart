@@ -206,7 +206,9 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                           ),
                           const Divider(height: 24),
                           shad.ShadCalendar(
+                            key: ValueKey(date),
                             selected: date,
+                            initialMonth: DateTime(date.year, date.month, 1),
                             weekStartsOn: 7,
                             selectableDayPredicate: (d) {
                               return weeks.any((w) => 

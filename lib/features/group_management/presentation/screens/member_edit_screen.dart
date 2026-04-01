@@ -113,7 +113,10 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
                 ),
                 const SizedBox(height: 20),
                 shad.ShadCalendar(
-                  selected: initialDate,
+                  key: ValueKey(controller.text),
+                  selected: DateTime.tryParse(controller.text),
+                  initialMonth: DateTime.tryParse(controller.text) ?? 
+                               (controller == _birthController ? DateTime(1995, 1, 1) : DateTime.now()),
                   hideNavigation: false,
                   showOutsideDays: true, 
                   weekStartsOn: 7, // [NEW] 일요일부터 시작
