@@ -106,7 +106,9 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                     physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                     child: Column(
                       children: [
-                        if (history.isNotEmpty) _buildSummaryHeader(_selectedWeekId ?? history.first['week_id']),
+                        history.isNotEmpty
+                            ? _buildSummaryHeader(_selectedWeekId ?? history.first['week_id'])
+                            : _buildEmptySummaryHeader(),
                         _buildHistoryList(history, isLoading: isLoading),
                         _buildGraphSection(history, isLoading: isLoading),
                         if (history.isNotEmpty) _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], isLoading: isLoading),
@@ -225,6 +227,67 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
         );
       },
       orElse: () => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildEmptySummaryHeader() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppTheme.border.withOpacity(0.5), width: 1.0),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -20,
+              top: -20,
+              child: Container(width: 100, height: 100, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1))),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(lucide.LucideIcons.barChart3, color: Colors.white, size: 20),
+                      const SizedBox(width: 8),
+                      Text('${widget.departmentName} 출석 요약', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildSummaryItem('출석 인원', '-', lucide.LucideIcons.calendarCheck2),
+                        Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                        _buildSummaryItem('전체 구성원', '-', lucide.LucideIcons.users),
+                        Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                        _buildSummaryItem('출석률', '-', lucide.LucideIcons.trendingUp),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

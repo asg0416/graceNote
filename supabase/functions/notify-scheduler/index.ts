@@ -120,25 +120,26 @@ Deno.serve(async (req: Request) => {
         const { data: allGroups } = await supabase.from("groups").select("id, name, department_id, church_id").in("department_id", reminderDeptIds);
         // FIX: attendance table (not attendance_records)
         const { data: attendedGroups } = await supabase.from("attendance").select("group_id, week_id").in("week_id", weeks.map(w => w.id));
-        const { data: prayedGroups } = await supabase.from("prayer_entries").select("group_id, week_id").in("week_id", weeks.map(w => w.id));
+        const { data: prayedGroups } = await supabase.from("prayer_entries").select("group_id, week_id, status").in("week_id", weeks.map(w => w.id));
 
-        // A group is "complete" only when it has BOTH attendance AND prayer entries
+        // A group is "complete" only when it has BOTH attendance AND published prayer entries
         const attendedKeys = new Set((attendedGroups || []).map(g => `${g.group_id}:${g.week_id}`));
-        const prayedKeys = new Set((prayedGroups || []).map(g => `${g.group_id}:${g.week_id}`));
+        const publishedPrayerKeys = new Set((prayedGroups || []).filter(g => g.status === 'published').map(g => `${g.group_id}:${g.week_id}`));
+        const draftOnlyKeys = new Set((prayedGroups || []).filter(g => g.status === 'draft').map(g => `${g.group_id}:${g.week_id}`).filter(k => !publishedPrayerKeys.has(k)));
 
         const incompleteGroups = (allGroups || []).filter(g => {
           const weekId = weeks.find(w => w.church_id === g.church_id)?.id;
           if (!weekId) return false;
           const key = `${g.id}:${weekId}`;
-          return !attendedKeys.has(key) || !prayedKeys.has(key);
+          return !attendedKeys.has(key) || !publishedPrayerKeys.has(key);
         });
 
-        log.push(`[leader_reminder] Total groups: ${allGroups?.length || 0}, Attended: ${attendedKeys.size}, Prayed: ${prayedKeys.size}, Incomplete: ${incompleteGroups.length}`);
+        log.push(`[leader_reminder] Total groups: ${allGroups?.length || 0}, Attended: ${attendedKeys.size}, Prayed: ${publishedPrayerKeys.size}, Incomplete: ${incompleteGroups.length}`);
         log.push(`[leader_reminder] Incomplete groups: ${incompleteGroups.map(g => g.name).join(', ') || 'none'}`);
 
         if (incompleteGroups.length > 0) {
           // Build detail per incomplete group: what's missing
-          const groupMissing = new Map<string, { name: string; noAttendance: boolean; noPrayer: boolean }>();
+          const groupMissing = new Map<string, { name: string; noAttendance: boolean; noPrayer: boolean; hasDraftOnly: boolean }>();
           for (const g of incompleteGroups) {
             const weekId = weeks.find(w => w.church_id === g.church_id)?.id;
             if (!weekId) continue;
@@ -146,7 +147,8 @@ Deno.serve(async (req: Request) => {
             groupMissing.set(g.id, {
               name: g.name,
               noAttendance: !attendedKeys.has(key),
-              noPrayer: !prayedKeys.has(key),
+              noPrayer: !publishedPrayerKeys.has(key),
+              hasDraftOnly: !publishedPrayerKeys.has(key) && draftOnlyKeys.has(key),
             });
           }
 
@@ -158,7 +160,7 @@ Deno.serve(async (req: Request) => {
             .eq("is_active", true);
 
           // Build map: leader profile_id → list of { groupName, missing info }
-          const leaderGroupMap = new Map<string, { name: string; noAttendance: boolean; noPrayer: boolean }[]>();
+          const leaderGroupMap = new Map<string, { name: string; noAttendance: boolean; noPrayer: boolean; hasDraftOnly: boolean }[]>();
           (leaders || [])
             .filter(l => (l.profiles as any)?.push_reminder_enabled === true && l.profile_id)
             .forEach(l => {
@@ -183,16 +185,17 @@ Deno.serve(async (req: Request) => {
               return true;
             });
             log.push(`[leader_reminder] Sending to ${uniqueTokens.length} devices`);
-            const title = "\u23F0 미완료 리마인더";
+            const title = "📝 이번주 기도제목을 업로드해주세요!";
             const results = await Promise.allSettled(uniqueTokens.map(t => {
               const groups = leaderGroupMap.get(t.user_id) || [];
               const details = groups.map(g => {
                 const missing: string[] = [];
-                if (g.noAttendance) missing.push("출석");
-                if (g.noPrayer) missing.push("기도제목");
+                if (g.noAttendance) missing.push("출석 미체크");
+                if (g.noPrayer && g.hasDraftOnly) missing.push("임시저장 확인 필요");
+                else if (g.noPrayer) missing.push("기도제목 미등록");
                 return `${g.name}(${missing.join(", ")})`;
               });
-              const body = `미완료: ${details.join(", ")} 🙏`;
+              const body = `${details.join(", ")} 🙏`;
               return sendPush(accessToken, t.token, title, body, "grace-note-leader-reminder");
             }));
             const sent = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
