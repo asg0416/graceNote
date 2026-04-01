@@ -1,4 +1,3 @@
-// Re-deploy trigger: verify dev environment points to dev Supabase
 import 'dart:ui' as ui;
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;

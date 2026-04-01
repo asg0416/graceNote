@@ -71,7 +71,7 @@ class GraceNoteRepository {
     }
   }
 
-  Future<Map<String, dynamic>> getWeeklyData(String groupId, String weekId) async {
+  Future<Map<String, dynamic>> getWeeklyData(String groupId, String weekId, {bool includeDrafts = false}) async {
     // 1. 조원 명단 정보 먼저 확보
     final members = await getGroupMembers(groupId);
 
@@ -86,13 +86,15 @@ class GraceNoteRepository {
     // Prayers: No Join (Safest)
     // 원래 Main 브랜치에서는 여기서 조인을 안 했음. 앱 내에서 별도로 매핑하거나 필요한 정보가 없었을 수 있음.
     // 하지만 UI에서 이름을 보여줘야 하므로, 여기서는 나중에 수동 매핑을 시도할 것임.
-    final prayersTask = _supabase
+    var prayersQuery = _supabase
         .from('prayer_entries')
         .select()
         .eq('week_id', weekId)
-        .eq('group_id', groupId)
-        .eq('status', 'published')
-        .order('created_at', ascending: true);
+        .eq('group_id', groupId);
+    if (!includeDrafts) {
+      prayersQuery = prayersQuery.eq('status', 'published');
+    }
+    final prayersTask = prayersQuery.order('created_at', ascending: true);
 
     final results = await Future.wait([attendanceTask, prayersTask]);
     final attendanceList = List<Map<String, dynamic>>.from(results[0]);
