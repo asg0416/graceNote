@@ -767,7 +767,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                     ),
                     const Divider(height: 24),
                     ShadCalendar(
+                      key: ValueKey(selectedDate),
                       selected: selectedDate,
+                      initialMonth: DateTime(selectedDate.year, selectedDate.month, 1),
                       weekStartsOn: 7, // [FIX] 일요일이 가장 왼쪽에 오도록 설정
                       selectableDayPredicate: (date) {
                         final now = DateTime.now();

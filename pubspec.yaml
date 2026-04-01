@@ -54,7 +54,7 @@ dependencies:
   flutter_services_binding: ^0.1.0
   flutter_web_plugins:
     sdk: flutter
-  shadcn_ui: ^0.45.1
+  shadcn_ui: ^0.53.3
   lucide_icons: ^0.257.0
   flutter_dotenv: ^5.1.0
   flutter_widget_from_html_core: ^0.15.2

@@ -129,7 +129,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
                 const Divider(height: 24),
                 shad.ShadCalendar(
+                  key: ValueKey(_selectedDate),
                   selected: _selectedDate,
+                  initialMonth: () {
+                    final DateTime d = _selectedDate ?? ref.read(selectedWeekDateProvider);
+                    return DateTime(d.year, d.month, 1);
+                  }(),
                   weekStartsOn: 7,
                   selectableDayPredicate: (date) {
                     final profile = ref.read(userProfileProvider).value;
