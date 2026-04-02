@@ -30,11 +30,11 @@ class AISettings {
 
   AISettings({
     this.indicatorType = AIIndicatorType.number,
-    this.customIndicator = '💖',
+    this.customIndicator = '🌱',
     AIEndingStyle? endingStyle,
     this.showDateInShare = true,
     this.showFamilyInShare = true,
-    this.shareHeaderIcon = '💙',
+    this.shareHeaderIcon = '❤️',
     this.customEndingStyle = '',
     this.alwaysGroupFamily = false,
   }) : endingStyle = endingStyle ?? AIEndingStyle.pray;
@@ -77,12 +77,12 @@ class AISettingsNotifier extends StateNotifier<AISettings> {
 
   void _loadSettings() {
     final typeIndex = _prefs.getInt(_getKey('ai_indicator_type')) ?? 0;
-    final customIndicator = _prefs.getString(_getKey('ai_custom_indicator')) ?? '💖';
+    final customIndicator = _prefs.getString(_getKey('ai_custom_indicator')) ?? '🌱';
     final endingStyleIndex = _prefs.getInt(_getKey('ai_ending_style')) ?? 0;
     final customEndingStyle = _prefs.getString(_getKey('ai_custom_ending_style')) ?? '';
     final showDateInShare = _prefs.getBool(_getKey('share_show_date')) ?? true;
     final showFamilyInShare = _prefs.getBool(_getKey('share_show_family')) ?? true;
-    final shareHeaderIcon = _prefs.getString(_getKey('share_header_icon')) ?? '💙';
+    final shareHeaderIcon = _prefs.getString(_getKey('share_header_icon')) ?? '❤️';
     final alwaysGroupFamily = _prefs.getBool(_getKey('share_always_group_family')) ?? false;
 
     state = AISettings(

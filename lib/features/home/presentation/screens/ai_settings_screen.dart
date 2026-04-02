@@ -171,7 +171,7 @@ class _AISettingsScreenState extends ConsumerState<AISettingsScreen> {
             _buildSectionHeader('이름 양옆 기호 설정', '성도 이름 앞뒤에 붙을 아이콘을 지정하세요.'),
             _buildTextFieldContainer(
               controller: _shareIconController,
-              hint: '아이콘 입력 (예: 💙, ✨)',
+              hint: '아이콘 입력 (예: ❤️, ✨)',
               onApply: () {
                 final val = _shareIconController.text;
                 ref.read(aiSettingsProvider.notifier).setShareHeaderIcon(val);
