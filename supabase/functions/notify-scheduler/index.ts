@@ -1,4 +1,4 @@
-// chore: trigger dev deployment 2026-04-02
+// chore: trigger dev deployment 2026-04-09
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -98,10 +98,10 @@ Deno.serve(async (req: Request) => {
     const reminderDepts = force
       ? activeDepts.filter(c => c.leader_reminder_enabled)
       : activeDepts.filter(c => {
-          if (!c.leader_reminder_enabled || !c.leader_reminder_days?.includes(dayOfWeek)) return false;
-          const [h, m] = (c.leader_reminder_time || '').split(':').map(Number);
-          return h === hourKST && (m || 0) === minuteKST;
-        });
+        if (!c.leader_reminder_enabled || !c.leader_reminder_days?.includes(dayOfWeek)) return false;
+        const [h, m] = (c.leader_reminder_time || '').split(':').map(Number);
+        return h === hourKST && (m || 0) === minuteKST;
+      });
 
     log.push(`[leader_reminder] Matched depts: ${reminderDepts.map(d => d.name).join(', ') || 'none'}`);
 
@@ -212,10 +212,10 @@ Deno.serve(async (req: Request) => {
     const climbingDepts = force
       ? activeDepts.filter(c => c.climbing_alert_enabled)
       : activeDepts.filter(c => {
-          if (!c.climbing_alert_enabled || c.climbing_alert_day !== dayOfWeek) return false;
-          const [h, m] = (c.climbing_alert_time || '').split(':').map(Number);
-          return h === hourKST && (m || 0) === minuteKST;
-        });
+        if (!c.climbing_alert_enabled || c.climbing_alert_day !== dayOfWeek) return false;
+        const [h, m] = (c.climbing_alert_time || '').split(':').map(Number);
+        return h === hourKST && (m || 0) === minuteKST;
+      });
 
     log.push(`[climbing] Matched depts: ${climbingDepts.map(d => d.name).join(', ') || 'none'}`);
 
