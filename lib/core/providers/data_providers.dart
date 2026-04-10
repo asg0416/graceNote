@@ -567,3 +567,17 @@ final hasNewNoticesProvider = StreamProvider<bool>((ref) {
     error: (e, _) => Stream.value(false),
   );
 });
+
+/// 현재 사용자의 FCM 토큰 등록 여부 — 웹 알림 유도 배너 표시 조건
+/// true = 토큰 있음(배너 숨김), false = 토큰 없음(배너 표시)
+final hasFcmTokenProvider = FutureProvider.autoDispose<bool>((ref) async {
+  if (!kIsWeb) return true;
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) return true;
+  final data = await Supabase.instance.client
+      .from('fcm_tokens')
+      .select('token')
+      .eq('user_id', user.id)
+      .limit(1);
+  return (data as List).isNotEmpty;
+});

@@ -53,7 +53,7 @@ async function getAccessToken(): Promise<string> {
 
 // Internal function to send push via Google's fcm v1 api
 // Data-only message: no "notification" field to prevent browser auto-display (which causes duplicates)
-async function sendPush(accessToken: string, token: string, title: string, body: string, payload: any = {}) {
+async function sendPush(accessToken: string, token: string, title: string, body: string, payload: any = {}): Promise<{ success: boolean; unregistered?: boolean }> {
   const res = await fetch(
     `https://fcm.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/messages:send`,
     {
@@ -76,8 +76,13 @@ async function sendPush(accessToken: string, token: string, title: string, body:
     }
   );
   const data = await res.json();
-  if (!res.ok) console.error("[notify-event] Send failed:", data);
-  return res.ok;
+  if (!res.ok) {
+    const errStr = JSON.stringify(data);
+    console.error("[notify-event] Send failed:", errStr);
+    const isUnregistered = errStr.includes("UNREGISTERED") || errStr.includes("registration-token-not-registered");
+    return { success: false, unregistered: isUnregistered };
+  }
+  return { success: true };
 }
 
 Deno.serve(async (req: Request) => {
@@ -165,8 +170,8 @@ Deno.serve(async (req: Request) => {
       .eq("department_id", departmentId)
       .in("role", ["admin", "system_admin"]);
 
-    // Exclude the author
-    const authorId = record.created_by || record.user_id;
+    // Exclude the author (prayer_entries uses author_id, not created_by)
+    const authorId = record.author_id || record.created_by || record.user_id;
     targetUserIds = [...new Set([
       ...(leaders || []).map(l => l.profile_id).filter(Boolean),
       ...(admins || []).map(a => a.id).filter(Boolean)
@@ -254,14 +259,28 @@ Deno.serve(async (req: Request) => {
     }
   });
 
-  const uniqueTokens = Array.from(userToToken.values());
+  const uniqueTokens = Array.from(userToToken.entries()); // [token, userId] pairs for cleanup
   // Use distinct tags per notification type to prevent overwriting:
   // - prayer: per-group tag so different groups don't overwrite each other
   // - notices: unique per notice id
   const tag = table === 'prayer_entries'
     ? `prayer-${record.group_id}`
     : `notice-${record.id}`;
-  const results = await Promise.allSettled(uniqueTokens.map(token => sendPush(accessToken, token, title, body, { link, tag })));
+  const results = await Promise.allSettled(
+    uniqueTokens.map(([userId, token]) => sendPush(accessToken, token, title, body, { link, tag }))
+  );
+
+  // Cleanup: remove expired/unregistered tokens
+  const expiredTokens: string[] = [];
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled' && result.value.unregistered) {
+      expiredTokens.push(uniqueTokens[index][1]);
+    }
+  });
+  if (expiredTokens.length > 0) {
+    await supabase.from("fcm_tokens").delete().in("token", expiredTokens);
+    console.log(`[notify-event] Cleaned up ${expiredTokens.length} expired token(s)`);
+  }
 
   // Cleanup: delete dedup records older than 5 minutes (fire and forget)
   supabase.from("notification_dedup")
@@ -270,8 +289,11 @@ Deno.serve(async (req: Request) => {
     .then(() => console.log("[notify-event] Dedup cleanup done"))
     .catch(() => { });
 
+  const sent = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+  console.log(`[notify-event] Sent: ${sent}/${uniqueTokens.length}, expired cleaned: ${expiredTokens.length}`);
   return new Response(JSON.stringify({
-    sent: results.filter(r => r.status === 'fulfilled').length,
-    total: uniqueTokens.length
+    sent,
+    total: uniqueTokens.length,
+    cleaned: expiredTokens.length,
   }));
 });

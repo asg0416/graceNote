@@ -57,11 +57,13 @@ class PushNotificationService {
   }
 
   /// 알림 권한 요청 + 토큰 저장 (로그인 후 호출)
+  /// - 권한이 이미 허용된 경우에도 최신 토큰을 항상 저장
+  ///   (Service Worker 업데이트 후 토큰이 갱신돼도 DB에 반영되도록)
   Future<bool> requestPermissionAndSaveToken() async {
     if (!kIsWeb || !_initialized) return false;
 
     try {
-      // 1. 알림 권한 요청
+      // 1. 알림 권한 요청 (이미 허용된 경우 팝업 없이 바로 통과)
       final settings = await FirebaseMessaging.instance.requestPermission(
         alert: true,
         badge: true,
@@ -73,18 +75,19 @@ class PushNotificationService {
           settings.authorizationStatus == AuthorizationStatus.provisional) {
         debugPrint('PushNotificationService: Permission granted');
 
-        // 2. FCM 토큰 획득
+        // 2. FCM 토큰 획득 (Service Worker 업데이트 후 새 토큰이 발급됐을 수 있음)
         final token = await FirebaseMessaging.instance.getToken(vapidKey: _vapidKey);
         if (token != null) {
           _currentToken = token;
           debugPrint('PushNotificationService: Token acquired (${token.substring(0, 20)}...)');
 
-          // 3. Supabase에 토큰 저장
+          // 3. Supabase에 토큰 저장 (항상 upsert → 배포 후 토큰 갱신 대응)
           await _saveTokenToSupabase(token);
 
-          // 4. 토큰 갱신 리스너
+          // 4. 토큰 갱신 리스너 (런타임 중 FCM이 토큰을 교체하는 경우 대응)
           FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
             _currentToken = newToken;
+            debugPrint('PushNotificationService: Token refreshed, updating DB...');
             _saveTokenToSupabase(newToken);
           });
 
@@ -124,7 +127,7 @@ class PushNotificationService {
           'user_id': userId,
           'token': token,
           'device_info': deviceInfo,
-          'updated_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         },
         onConflict: 'user_id,token',
       );
