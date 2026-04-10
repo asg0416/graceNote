@@ -48,6 +48,7 @@ import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/core/services/push_notification_service.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:grace_note/core/widgets/push_permission_banner.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:intl/intl.dart';
 
@@ -304,6 +305,7 @@ class AuthenticatedShell extends ConsumerStatefulWidget {
 
 class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with WidgetsBindingObserver {
   bool _pushRequested = false;
+  DateTime? _lastTokenRefresh; // 마지막 토큰 갱신 시각 추적
 
   @override
   void initState() {
@@ -322,6 +324,17 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
     if (state == AppLifecycleState.resumed) {
       debugPrint('App resumed: Silently refreshing session and data');
       _refreshAllDataSilently();
+      // 마지막 토큰 갱신으로부터 24시간 경과 시 재갱신 (Service Worker 업데이트 대응)
+      if (kIsWeb && _pushRequested) {
+        final now = DateTime.now();
+        final shouldRefresh = _lastTokenRefresh == null ||
+            now.difference(_lastTokenRefresh!).inHours >= 24;
+        if (shouldRefresh) {
+          _lastTokenRefresh = now;
+          PushNotificationService().requestPermissionAndSaveToken();
+          debugPrint('App resumed: FCM token refreshed (24h interval)');
+        }
+      }
     }
   }
 
@@ -360,6 +373,7 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
   void _requestPushPermission() {
     if (_pushRequested) return;
     _pushRequested = true;
+    _lastTokenRefresh = DateTime.now();
     Future.delayed(const Duration(seconds: 2), () {
       PushNotificationService().requestPermissionAndSaveToken();
     });
@@ -541,7 +555,12 @@ class ScaffoldWithNavBar extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: navigationShell,
+      body: Column(
+        children: [
+          const PushPermissionBanner(),
+          Expanded(child: navigationShell),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
