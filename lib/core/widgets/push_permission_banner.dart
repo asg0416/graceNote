@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/core/services/push_notification_service.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
+import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 enum _BannerState { visible, requesting, denied, dismissed }
@@ -66,9 +67,15 @@ class _PushPermissionBannerState extends ConsumerState<PushPermissionBanner>
     if (!mounted) return;
 
     if (granted) {
-      // Token saved — invalidate provider so banner disappears permanently
       ref.invalidate(hasFcmTokenProvider);
       await _dismiss();
+      if (mounted) {
+        SnackBarUtil.showSnackBar(
+          context,
+          message: '🔔 알림이 설정되었습니다! 그레이스노트의 다양한 소식을 전해드릴게요.',
+          duration: const Duration(seconds: 4),
+        );
+      }
     } else {
       // Check if browser has explicitly denied (vs. just not asked yet)
       final isDenied = _isBrowserNotificationDenied();
