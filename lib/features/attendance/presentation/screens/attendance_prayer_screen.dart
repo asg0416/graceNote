@@ -407,17 +407,21 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
     // 공통 버튼 스타일
     final cancelStyle = OutlinedButton.styleFrom(
-      padding: const EdgeInsets.symmetric(vertical: 14),
+      minimumSize: const Size(double.infinity, 48),
+      padding: EdgeInsets.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       foregroundColor: AppTheme.textSub,
       side: const BorderSide(color: AppTheme.border),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     );
     final primaryStyle = ElevatedButton.styleFrom(
+      minimumSize: const Size(double.infinity, 48),
+      padding: EdgeInsets.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       backgroundColor: AppTheme.primaryViolet,
       foregroundColor: Colors.white,
       disabledBackgroundColor: AppTheme.secondaryBackground,
       disabledForegroundColor: AppTheme.textSub,
-      padding: const EdgeInsets.symmetric(vertical: 14),
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     );
