@@ -129,4 +129,93 @@ ${jsonEncode(rawPrayers)}
     print('모든 AI 시도 실패. 최종 에러: $lastError');
     return rawPrayers;
   }
+
+  /// 자유형식 메모에서 이름-기도제목 쌍을 추출합니다.
+  /// [memoText]: 조장이 붙여넣은 원본 메모
+  /// [memberNames]: 현재 조원 이름 목록 (매칭 기준)
+  /// 반환값: {"조원 전체 이름": "기도제목"} 형태의 Map, 실패 시 빈 Map
+  Future<Map<String, String>> parsePrayerMemo(
+      String memoText, List<String> memberNames) async {
+    if (memoText.trim().isEmpty || memberNames.isEmpty) return {};
+
+    final prompt = '''
+당신은 소그룹 모임 기도제목 메모를 분석하는 도우미입니다.
+
+조원 명단: ${jsonEncode(memberNames)}
+
+아래 메모에서 각 조원의 이름과 기도제목을 찾아 매칭해 주세요.
+
+규칙:
+1. 이름이 일부만 쓰였거나 (예: "진슬" → "임진슬"), 성 없이 이름만 있어도 명단에서 가장 가까운 이름과 매칭하세요.
+2. 매칭이 불확실하면 빈 문자열("")로 두고 억지로 매칭하지 마세요.
+3. 반드시 아래 JSON 형식으로만 응답하세요. 설명 문장은 절대 추가하지 마세요.
+   형식: {"조원이름_전체": "기도제목 내용", ...}
+4. 반환하는 키(이름)는 반드시 조원 명단에 있는 정확한 이름을 사용하세요.
+5. 기도제목은 원문의 표현을 최대한 그대로 보존하세요. 다듬거나 변경하지 마세요.
+6. 명단에 없는 이름은 결과에 포함하지 마세요.
+
+메모 내용:
+$memoText
+''';
+
+    Object? lastError;
+
+    for (final modelId in _modelIds) {
+      try {
+        final url = 'https://generativelanguage.googleapis.com/v1beta/models/$modelId:generateContent?key=${AppConstants.geminiApiKey}';
+        print('메모 파싱 AI 시도 중: $modelId...');
+
+        final response = await http.post(
+          Uri.parse(url),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'contents': [
+              {
+                'parts': [
+                  {'text': prompt}
+                ]
+              }
+            ],
+            'generationConfig': {
+              'temperature': 0.1,
+              'topK': 40,
+              'topP': 0.95,
+              'maxOutputTokens': 4096,
+              'responseMimeType': 'application/json',
+            }
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          final Map<String, dynamic> body = jsonDecode(response.body);
+          final String? text = body['candidates']?[0]?['content']?['parts']?[0]?['text'];
+
+          if (text != null) {
+            final dynamic decoded = jsonDecode(text);
+            if (decoded is Map) {
+              // 키가 실제 명단에 있는 이름인 것만 필터링
+              final result = <String, String>{};
+              for (final entry in decoded.entries) {
+                final name = entry.key.toString();
+                if (memberNames.contains(name)) {
+                  result[name] = entry.value?.toString() ?? '';
+                }
+              }
+              print('메모 파싱 성공: $modelId (${result.length}명 매칭)');
+              return result;
+            }
+          }
+        }
+
+        lastError = 'Status ${response.statusCode}: ${response.body}';
+        print('메모 파싱 $modelId 실패: $lastError');
+      } catch (e) {
+        print('메모 파싱 $modelId 에러: $e');
+        lastError = e;
+      }
+    }
+
+    print('메모 파싱 모든 시도 실패. 최종 에러: $lastError');
+    return {};
+  }
 }

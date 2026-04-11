@@ -387,6 +387,482 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     }
   }
 
+  // ─── 메모 붙여넣기 기능 ───────────────────────────────────────────
+
+  Future<void> _showMemoPasteDialog() async {
+    final memoController = TextEditingController();
+    // 단계: 'input' → 'loading' → 'preview'
+    String phase = 'input';
+    Map<String, String> parsedResult = {};
+    // 미리보기에서 개별 항목 선택 여부 (기본: 매칭된 것만 true)
+    Map<String, bool> selected = {};
+    String? errorMsg;
+
+    final memberNames = _members.map((m) => m['name'] as String).toList();
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+
+            // ── 입력 단계 ──
+            if (phase == 'input') {
+              return Dialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(
+                              color: AppTheme.accentViolet,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(lucide.LucideIcons.clipboardPaste,
+                                size: 18, color: AppTheme.primaryViolet),
+                          ),
+                          const SizedBox(width: 12),
+                          const Text('메모에서 불러오기',
+                              style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.textMain,
+                                  fontFamily: 'Pretendard',
+                                  letterSpacing: -0.5)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '조원들의 기도제목이 담긴 메모를 붙여넣으세요.\nAI가 이름을 찾아 자동으로 채워드립니다.',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textSub.withOpacity(0.8),
+                            fontFamily: 'Pretendard',
+                            height: 1.5),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: memoController,
+                        maxLines: 8,
+                        minLines: 6,
+                        autofocus: true,
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontFamily: 'Pretendard',
+                            color: AppTheme.textMain,
+                            height: 1.5),
+                        decoration: InputDecoration(
+                          hintText: '예) 김정헌: 직장 면접, 임진슬 어머니 건강...',
+                          hintStyle: TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.textSub.withOpacity(0.5),
+                              fontFamily: 'Pretendard'),
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          contentPadding: const EdgeInsets.all(14),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none),
+                        ),
+                      ),
+                      if (errorMsg != null) ...[
+                        const SizedBox(height: 8),
+                        Text(errorMsg!,
+                            style: const TextStyle(
+                                fontSize: 13, color: AppTheme.error,
+                                fontFamily: 'Pretendard')),
+                      ],
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                                side: BorderSide(color: AppTheme.border.withOpacity(0.5)),
+                              ),
+                              child: const Text('취소',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: AppTheme.textSub,
+                                      fontFamily: 'Pretendard')),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                final memo = memoController.text.trim();
+                                if (memo.isEmpty) {
+                                  setDialogState(() => errorMsg = '메모를 입력해주세요.');
+                                  return;
+                                }
+                                setDialogState(() {
+                                  phase = 'loading';
+                                  errorMsg = null;
+                                });
+                                final result = await AIService()
+                                    .parsePrayerMemo(memo, memberNames);
+                                if (result.isEmpty) {
+                                  setDialogState(() {
+                                    phase = 'input';
+                                    errorMsg = '분석에 실패했습니다. 다시 시도해 주세요.';
+                                  });
+                                  return;
+                                }
+                                // 초기 선택 상태: 기도제목이 있는 항목만 true
+                                final initSelected = <String, bool>{};
+                                for (final m in _members) {
+                                  final name = m['name'] as String;
+                                  final parsed = result[name] ?? '';
+                                  initSelected[name] = parsed.isNotEmpty;
+                                }
+                                setDialogState(() {
+                                  parsedResult = result;
+                                  selected = initSelected;
+                                  phase = 'preview';
+                                });
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.primaryViolet,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text('분석하기',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontFamily: 'Pretendard')),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            // ── 로딩 단계 ──
+            if (phase == 'loading') {
+              return Dialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 48, horizontal: 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                              AppTheme.primaryViolet)),
+                      SizedBox(height: 20),
+                      Text('AI가 기도제목을 분석하고 있습니다...',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textSub,
+                              fontFamily: 'Pretendard')),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            // ── 미리보기 단계 ──
+            final matchedCount = selected.values.where((v) => v).length;
+            return Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 36, height: 36,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFECFDF5),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(lucide.LucideIcons.listChecks,
+                              size: 18, color: Color(0xFF10B981)),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text('기도제목 매칭 결과',
+                              style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.textMain,
+                                  fontFamily: 'Pretendard',
+                                  letterSpacing: -0.5)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '적용할 항목을 선택하세요. 기존 기도제목은 덮어씁니다.',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSub.withOpacity(0.7),
+                          fontFamily: 'Pretendard'),
+                    ),
+                    const SizedBox(height: 14),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 360),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: _members.map((m) {
+                            final name = m['name'] as String;
+                            final parsed = parsedResult[name] ?? '';
+                            final hasMatch = parsed.isNotEmpty;
+                            final isSelected = selected[name] ?? false;
+                            final existingNote = (m['prayerNote'] as String? ?? '').trim();
+                            final willOverwrite = hasMatch && isSelected && existingNote.isNotEmpty;
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: InkWell(
+                                onTap: hasMatch
+                                    ? () => setDialogState(
+                                        () => selected[name] = !isSelected)
+                                    : null,
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: hasMatch
+                                        ? (isSelected
+                                            ? AppTheme.accentViolet
+                                            : const Color(0xFFF8FAFC))
+                                        : const Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: hasMatch && isSelected
+                                          ? AppTheme.primaryViolet.withOpacity(0.3)
+                                          : const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // 체크박스 영역
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 1),
+                                        child: Icon(
+                                          hasMatch
+                                              ? (isSelected
+                                                  ? lucide.LucideIcons.checkCircle2
+                                                  : lucide.LucideIcons.circle)
+                                              : lucide.LucideIcons.minusCircle,
+                                          size: 16,
+                                          color: hasMatch
+                                              ? (isSelected
+                                                  ? AppTheme.primaryViolet
+                                                  : AppTheme.textSub)
+                                              : const Color(0xFFCBD5E1),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Text(name,
+                                                    style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: hasMatch
+                                                            ? AppTheme.textMain
+                                                            : const Color(
+                                                                0xFFCBD5E1),
+                                                        fontFamily:
+                                                            'Pretendard')),
+                                                if (willOverwrite) ...[
+                                                  const SizedBox(width: 6),
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                        horizontal: 5,
+                                                        vertical: 1),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(
+                                                          0xFFFFF7ED),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              4),
+                                                    ),
+                                                    child: const Text('덮어쓰기',
+                                                        style: TextStyle(
+                                                            fontSize: 10,
+                                                            color: Color(
+                                                                0xFFF59E0B),
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                            fontFamily:
+                                                                'Pretendard')),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                            if (hasMatch) ...[
+                                              const SizedBox(height: 4),
+                                              Text(parsed,
+                                                  style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: isSelected
+                                                          ? AppTheme.textSub
+                                                          : const Color(
+                                                              0xFFCBD5E1),
+                                                      fontFamily: 'Pretendard',
+                                                      height: 1.4)),
+                                              if (willOverwrite) ...[
+                                                const SizedBox(height: 3),
+                                                Text('기존: $existingNote',
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                        fontSize: 11,
+                                                        color: Color(0xFFF59E0B),
+                                                        fontFamily: 'Pretendard',
+                                                        decoration:
+                                                            TextDecoration
+                                                                .lineThrough)),
+                                              ],
+                                            ] else
+                                              const Text('매칭 안됨',
+                                                  style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: Color(0xFFCBD5E1),
+                                                      fontFamily: 'Pretendard')),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => setDialogState(() {
+                              phase = 'input';
+                              parsedResult = {};
+                              selected = {};
+                              errorMsg = null;
+                            }),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              side: BorderSide(
+                                  color: AppTheme.border.withOpacity(0.5)),
+                            ),
+                            child: const Text('다시 입력',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textSub,
+                                    fontFamily: 'Pretendard')),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: matchedCount == 0
+                                ? null
+                                : () {
+                                    Navigator.pop(ctx);
+                                    // selected가 true인 항목만 적용
+                                    final toApply = <String, String>{};
+                                    for (final entry in parsedResult.entries) {
+                                      if (selected[entry.key] == true) {
+                                        toApply[entry.key] = entry.value;
+                                      }
+                                    }
+                                    _applyParsedPrayers(toApply);
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryViolet,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: const Color(0xFFE2E8F0),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: Text(
+                              matchedCount > 0 ? '$matchedCount명 적용하기' : '적용 불가',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'Pretendard'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    memoController.dispose();
+  }
+
+  void _applyParsedPrayers(Map<String, String> parsedResult) {
+    _saveToHistory();
+    setState(() {
+      for (final m in _members) {
+        final name = m['name'] as String;
+        final dirId = m['directoryMemberId'] as String;
+        final parsed = parsedResult[name];
+        if (parsed != null && parsed.trim().isNotEmpty) {
+          m['prayerNote'] = parsed;
+          _controllers[dirId]?.text = parsed;
+        }
+      }
+    });
+    final filledCount =
+        parsedResult.values.where((v) => v.trim().isNotEmpty).length;
+    if (mounted) {
+      SnackBarUtil.showSnackBar(context,
+          message: '$filledCount명의 기도제목을 채웠습니다.');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+
   void _saveToHistory() {
     final snapshot = _members.map((m) => {...m}).toList();
     _undoStack.add(snapshot);
@@ -754,9 +1230,15 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         ),
         actions: [
           IconButton(
+            icon: const Icon(lucide.LucideIcons.clipboardPaste,
+                color: AppTheme.primaryViolet, size: 20),
+            onPressed: _showMemoPasteDialog,
+            tooltip: '메모에서 불러오기',
+          ),
+          IconButton(
             icon: const Icon(lucide.LucideIcons.userCheck,
                 color: AppTheme.primaryViolet,
-                size: 22), // v4 사람+체크 아이콘으로 최종 변경
+                size: 22),
             onPressed: _launchAttendanceCheck,
             tooltip: '출석 체크',
           ),
