@@ -394,11 +394,39 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     // 단계: 'input' → 'loading' → 'preview'
     String phase = 'input';
     Map<String, String> parsedResult = {};
-    // 미리보기에서 개별 항목 선택 여부 (기본: 매칭된 것만 true)
     Map<String, bool> selected = {};
     String? errorMsg;
 
     final memberNames = _members.map((m) => m['name'] as String).toList();
+
+    // 공통 다이얼로그 외형
+    const dialogShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(20)),
+    );
+    const dialogPadding = EdgeInsets.symmetric(horizontal: 20, vertical: 48);
+
+    // 공통 버튼 스타일
+    final cancelStyle = OutlinedButton.styleFrom(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      foregroundColor: AppTheme.textSub,
+      side: const BorderSide(color: AppTheme.border),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
+    final primaryStyle = ElevatedButton.styleFrom(
+      backgroundColor: AppTheme.primaryViolet,
+      foregroundColor: Colors.white,
+      disabledBackgroundColor: AppTheme.secondaryBackground,
+      disabledForegroundColor: AppTheme.textSub,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
+    const btnText = TextStyle(
+      fontWeight: FontWeight.w800,
+      fontSize: 14,
+      fontFamily: 'Pretendard',
+      letterSpacing: -0.3,
+    );
 
     await showDialog(
       context: context,
@@ -410,14 +438,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             // ── 입력 단계 ──
             if (phase == 'input') {
               return Dialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                backgroundColor: Colors.white,
+                shape: dialogShape,
+                insetPadding: dialogPadding,
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // 헤더
                       Row(
                         children: [
                           Container(
@@ -439,16 +469,17 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                   letterSpacing: -0.5)),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      Text(
+                      const SizedBox(height: 10),
+                      const Text(
                         '조원들의 기도제목이 담긴 메모를 붙여넣으세요.\nAI가 이름을 찾아 자동으로 채워드립니다.',
                         style: TextStyle(
                             fontSize: 13,
-                            color: AppTheme.textSub.withOpacity(0.8),
+                            color: AppTheme.textSub,
                             fontFamily: 'Pretendard',
                             height: 1.5),
                       ),
                       const SizedBox(height: 16),
+                      // 입력창
                       TextField(
                         controller: memoController,
                         maxLines: 8,
@@ -458,50 +489,61 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                             fontSize: 14,
                             fontFamily: 'Pretendard',
                             color: AppTheme.textMain,
-                            height: 1.5),
-                        decoration: InputDecoration(
-                          hintText: '예) 김정헌: 직장 면접, 임진슬 어머니 건강...',
+                            height: 1.6),
+                        decoration: const InputDecoration(
+                          hintText: '예) 김정헌: 직장 면접\n임진슬 어머니 건강...',
                           hintStyle: TextStyle(
                               fontSize: 13,
-                              color: AppTheme.textSub.withOpacity(0.5),
+                              color: AppTheme.textSub,
                               fontFamily: 'Pretendard'),
                           filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          contentPadding: const EdgeInsets.all(14),
+                          fillColor: AppTheme.secondaryBackground,
+                          contentPadding: EdgeInsets.all(14),
                           border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none),
+                            borderRadius: BorderRadius.all(Radius.circular(12)),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(12)),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(12)),
+                            borderSide: BorderSide(color: AppTheme.primaryViolet, width: 1.5),
+                          ),
                         ),
                       ),
                       if (errorMsg != null) ...[
                         const SizedBox(height: 8),
-                        Text(errorMsg!,
-                            style: const TextStyle(
-                                fontSize: 13, color: AppTheme.error,
-                                fontFamily: 'Pretendard')),
+                        Row(
+                          children: [
+                            const Icon(lucide.LucideIcons.alertCircle,
+                                size: 13, color: AppTheme.error),
+                            const SizedBox(width: 5),
+                            Text(errorMsg!,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.error,
+                                    fontFamily: 'Pretendard',
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
                       ],
                       const SizedBox(height: 20),
+                      // 버튼
                       Row(
                         children: [
                           Expanded(
                             child: OutlinedButton(
                               onPressed: () => Navigator.pop(ctx),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                side: BorderSide(color: AppTheme.border.withOpacity(0.5)),
-                              ),
-                              child: const Text('취소',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: AppTheme.textSub,
-                                      fontFamily: 'Pretendard')),
+                              style: cancelStyle,
+                              child: const Text('취소', style: btnText),
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: ElevatedButton(
+                              style: primaryStyle,
                               onPressed: () async {
                                 final memo = memoController.text.trim();
                                 if (memo.isEmpty) {
@@ -521,12 +563,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                   });
                                   return;
                                 }
-                                // 초기 선택 상태: 기도제목이 있는 항목만 true
                                 final initSelected = <String, bool>{};
                                 for (final m in _members) {
                                   final name = m['name'] as String;
-                                  final parsed = result[name] ?? '';
-                                  initSelected[name] = parsed.isNotEmpty;
+                                  initSelected[name] = (result[name] ?? '').isNotEmpty;
                                 }
                                 setDialogState(() {
                                   parsedResult = result;
@@ -534,18 +574,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                   phase = 'preview';
                                 });
                               },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.primaryViolet,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                              ),
-                              child: const Text('분석하기',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontFamily: 'Pretendard')),
+                              child: const Text('분석하기', style: btnText),
                             ),
                           ),
                         ],
@@ -559,19 +588,21 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             // ── 로딩 단계 ──
             if (phase == 'loading') {
               return Dialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                backgroundColor: Colors.white,
+                shape: dialogShape,
                 child: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 48, horizontal: 32),
+                  padding: EdgeInsets.symmetric(vertical: 52, horizontal: 32),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       CircularProgressIndicator(
+                          strokeWidth: 3,
                           valueColor: AlwaysStoppedAnimation<Color>(
                               AppTheme.primaryViolet)),
                       SizedBox(height: 20),
                       Text('AI가 기도제목을 분석하고 있습니다...',
                           style: TextStyle(
-                              fontSize: 14,
+                              fontSize: 13,
                               fontWeight: FontWeight.w600,
                               color: AppTheme.textSub,
                               fontFamily: 'Pretendard')),
@@ -584,24 +615,26 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             // ── 미리보기 단계 ──
             final matchedCount = selected.values.where((v) => v).length;
             return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+              backgroundColor: Colors.white,
+              shape: dialogShape,
+              insetPadding: dialogPadding,
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 헤더
                     Row(
                       children: [
                         Container(
                           width: 36, height: 36,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFECFDF5),
+                            color: AppTheme.accentViolet,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: const Icon(lucide.LucideIcons.listChecks,
-                              size: 18, color: Color(0xFF10B981)),
+                              size: 18, color: AppTheme.primaryViolet),
                         ),
                         const SizedBox(width: 12),
                         const Expanded(
@@ -615,17 +648,18 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
+                    const SizedBox(height: 6),
+                    const Text(
                       '적용할 항목을 선택하세요. 기존 기도제목은 덮어씁니다.',
                       style: TextStyle(
                           fontSize: 12,
-                          color: AppTheme.textSub.withOpacity(0.7),
+                          color: AppTheme.textSub,
                           fontFamily: 'Pretendard'),
                     ),
                     const SizedBox(height: 14),
+                    // 목록
                     ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 360),
+                      constraints: const BoxConstraints(maxHeight: 340),
                       child: SingleChildScrollView(
                         child: Column(
                           children: _members.map((m) {
@@ -633,37 +667,39 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                             final parsed = parsedResult[name] ?? '';
                             final hasMatch = parsed.isNotEmpty;
                             final isSelected = selected[name] ?? false;
-                            final existingNote = (m['prayerNote'] as String? ?? '').trim();
-                            final willOverwrite = hasMatch && isSelected && existingNote.isNotEmpty;
+                            final existingNote =
+                                (m['prayerNote'] as String? ?? '').trim();
+                            final willOverwrite =
+                                hasMatch && isSelected && existingNote.isNotEmpty;
 
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: InkWell(
+                              child: GestureDetector(
                                 onTap: hasMatch
                                     ? () => setDialogState(
                                         () => selected[name] = !isSelected)
                                     : null,
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 10),
                                   decoration: BoxDecoration(
-                                    color: hasMatch
-                                        ? (isSelected
+                                    color: !hasMatch
+                                        ? AppTheme.secondaryBackground
+                                        : isSelected
                                             ? AppTheme.accentViolet
-                                            : const Color(0xFFF8FAFC))
-                                        : const Color(0xFFF8FAFC),
+                                            : Colors.white,
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
                                       color: hasMatch && isSelected
-                                          ? AppTheme.primaryViolet.withOpacity(0.3)
-                                          : const Color(0xFFE2E8F0),
+                                          ? AppTheme.primaryViolet
+                                          : AppTheme.border,
+                                      width: hasMatch && isSelected ? 1.5 : 1,
                                     ),
                                   ),
                                   child: Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      // 체크박스 영역
                                       Padding(
                                         padding: const EdgeInsets.only(top: 1),
                                         child: Icon(
@@ -676,8 +712,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                           color: hasMatch
                                               ? (isSelected
                                                   ? AppTheme.primaryViolet
-                                                  : AppTheme.textSub)
-                                              : const Color(0xFFCBD5E1),
+                                                  : AppTheme.borderMedium)
+                                              : AppTheme.borderMedium,
                                         ),
                                       ),
                                       const SizedBox(width: 10),
@@ -691,33 +727,27 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                                 Text(name,
                                                     style: TextStyle(
                                                         fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.w700,
+                                                        fontWeight: FontWeight.w700,
                                                         color: hasMatch
                                                             ? AppTheme.textMain
-                                                            : const Color(
-                                                                0xFFCBD5E1),
-                                                        fontFamily:
-                                                            'Pretendard')),
+                                                            : AppTheme.borderMedium,
+                                                        fontFamily: 'Pretendard')),
                                                 if (willOverwrite) ...[
                                                   const SizedBox(width: 6),
                                                   Container(
                                                     padding: const EdgeInsets
                                                         .symmetric(
-                                                        horizontal: 5,
+                                                        horizontal: 6,
                                                         vertical: 1),
                                                     decoration: BoxDecoration(
-                                                      color: const Color(
-                                                          0xFFFFF7ED),
+                                                      color: const Color(0xFFFFF7ED),
                                                       borderRadius:
-                                                          BorderRadius.circular(
-                                                              4),
+                                                          BorderRadius.circular(5),
                                                     ),
                                                     child: const Text('덮어쓰기',
                                                         style: TextStyle(
                                                             fontSize: 10,
-                                                            color: Color(
-                                                                0xFFF59E0B),
+                                                            color: AppTheme.warning,
                                                             fontWeight:
                                                                 FontWeight.w700,
                                                             fontFamily:
@@ -727,14 +757,13 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                               ],
                                             ),
                                             if (hasMatch) ...[
-                                              const SizedBox(height: 4),
+                                              const SizedBox(height: 3),
                                               Text(parsed,
                                                   style: TextStyle(
                                                       fontSize: 12,
                                                       color: isSelected
                                                           ? AppTheme.textSub
-                                                          : const Color(
-                                                              0xFFCBD5E1),
+                                                          : AppTheme.borderMedium,
                                                       fontFamily: 'Pretendard',
                                                       height: 1.4)),
                                               if (willOverwrite) ...[
@@ -744,17 +773,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                                     overflow: TextOverflow.ellipsis,
                                                     style: const TextStyle(
                                                         fontSize: 11,
-                                                        color: Color(0xFFF59E0B),
+                                                        color: AppTheme.warning,
                                                         fontFamily: 'Pretendard',
-                                                        decoration:
-                                                            TextDecoration
-                                                                .lineThrough)),
+                                                        decoration: TextDecoration
+                                                            .lineThrough)),
                                               ],
                                             ] else
                                               const Text('매칭 안됨',
                                                   style: TextStyle(
                                                       fontSize: 12,
-                                                      color: Color(0xFFCBD5E1),
+                                                      color: AppTheme.borderMedium,
                                                       fontFamily: 'Pretendard')),
                                           ],
                                         ),
@@ -769,6 +797,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                       ),
                     ),
                     const SizedBox(height: 16),
+                    // 버튼
                     Row(
                       children: [
                         Expanded(
@@ -779,18 +808,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                               selected = {};
                               errorMsg = null;
                             }),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              side: BorderSide(
-                                  color: AppTheme.border.withOpacity(0.5)),
-                            ),
-                            child: const Text('다시 입력',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: AppTheme.textSub,
-                                    fontFamily: 'Pretendard')),
+                            style: cancelStyle,
+                            child: const Text('다시 입력', style: btnText),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -800,7 +819,6 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                 ? null
                                 : () {
                                     Navigator.pop(ctx);
-                                    // selected가 true인 항목만 적용
                                     final toApply = <String, String>{};
                                     for (final entry in parsedResult.entries) {
                                       if (selected[entry.key] == true) {
@@ -809,20 +827,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                     }
                                     _applyParsedPrayers(toApply);
                                   },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.primaryViolet,
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor: const Color(0xFFE2E8F0),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
+                            style: primaryStyle,
                             child: Text(
                               matchedCount > 0 ? '$matchedCount명 적용하기' : '적용 불가',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontFamily: 'Pretendard'),
+                              style: btnText,
                             ),
                           ),
                         ),
