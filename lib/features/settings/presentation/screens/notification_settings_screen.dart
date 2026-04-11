@@ -119,6 +119,7 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
         ),
       ),
       body: profileAsync.when(
+        skipError: true, // [FIX] 일시적 Realtime 에러 시 에러 화면 전환 방지 (다른 화면과 동일 처리)
         data: (profile) {
           if (profile == null) return const Center(child: Text('프로필을 불러올 수 없습니다.'));
 

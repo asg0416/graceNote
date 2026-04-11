@@ -30,14 +30,19 @@ final userProfileProvider = StreamProvider<ProfileModel?>((ref) async* {
             if (data.isEmpty) return null;
             return ProfileModel.fromJson(data.first);
           })
+          // [FIX] RealtimeSubscribeException(timedOut) 등 Realtime 에러를 stream 레벨에서 흡수
+          // yield* 로 에러가 전파되기 전에 차단하여 provider가 AsyncError로 전환되지 않도록 방지
+          .handleError((e) {
+            debugPrint('userProfileProvider: Realtime stream error (swallowed, will retry): $e');
+          })
           .distinct();
-          
+
       yield* stream;
-      
+
       // 스트림이 예기치 않게 종료된 경우 2초 대기 후 다시 열기 시도
       await Future.delayed(const Duration(seconds: 2));
     } catch (e) {
-      debugPrint('userProfileProvider: Stream error (likely Realtime), retrying in 2s: $e');
+      debugPrint('userProfileProvider: Unexpected error, retrying in 2s: $e');
       await Future.delayed(const Duration(seconds: 2));
     }
   }
