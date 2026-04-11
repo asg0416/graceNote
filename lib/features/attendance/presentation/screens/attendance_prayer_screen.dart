@@ -441,11 +441,15 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
             // ── 입력 단계 ──
             if (phase == 'input') {
+              // 키보드가 올라올 때 viewInsets를 반영해 버튼이 잘리지 않도록
+              final keyboardInset = MediaQuery.of(ctx).viewInsets.bottom;
               return Dialog(
                 backgroundColor: Colors.white,
                 shape: dialogShape,
                 insetPadding: dialogPadding,
-                child: Padding(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.only(bottom: keyboardInset),
+                  child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -497,7 +501,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                       TextField(
                         controller: memoController,
                         maxLines: 8,
-                        minLines: 6,
+                        minLines: 4,
                         autofocus: true,
                         style: const TextStyle(
                             fontSize: 14,
@@ -595,7 +599,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                       ),
                     ],
                   ),
-                ),
+                  ), // Padding
+                ), // SingleChildScrollView
               );
             }
 
