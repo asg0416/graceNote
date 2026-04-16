@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
+import 'package:grace_note/core/models/models.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
@@ -66,6 +67,15 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
     final history = historyAsync.value ?? [];
     final isLoading = historyAsync.isLoading;
 
+    final noMeetingListAsync = widget.departmentId.isNotEmpty
+        ? ref.watch(noMeetingDaysInMonthProvider('${widget.departmentId}:$_viewYear:$_viewMonth'))
+        : const AsyncValue<List<NoMeetingDayModel>>.data([]);
+    final noMeetingList = noMeetingListAsync.value ?? [];
+    final noMeetingDates = <String>{
+      for (final d in noMeetingList)
+        '${d.weekDate.year}-${d.weekDate.month.toString().padLeft(2, '0')}-${d.weekDate.day.toString().padLeft(2, '0')}'
+    };
+
     // [FIX] 에러 발생 시 사용자에게 노출하지 않고 3초 후 자동 재시도
     if (historyAsync.hasError && !historyAsync.isLoading) {
       Future.delayed(const Duration(seconds: 3), () {
@@ -107,11 +117,24 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                     child: Column(
                       children: [
                         history.isNotEmpty
-                            ? _buildSummaryHeader(_selectedWeekId ?? history.first['week_id'])
+                            ? _buildSummaryHeader(_selectedWeekId ?? history.first['week_id'], noMeetingDates: noMeetingDates, noMeetingList: noMeetingList)
                             : _buildEmptySummaryHeader(),
                         _buildHistoryList(history, isLoading: isLoading),
                         _buildGraphSection(history, isLoading: isLoading),
-                        if (history.isNotEmpty) _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], isLoading: isLoading),
+                        if (history.isNotEmpty) ...[
+                          () {
+                            final activeWeekId = _selectedWeekId ?? history.first['week_id'];
+                            final activeWeek = history.firstWhere(
+                              (h) => h['week_id'] == activeWeekId,
+                              orElse: () => history.first,
+                            );
+                            final activeWeekDate = activeWeek['week_date'] as String? ?? '';
+                            if (!noMeetingDates.contains(activeWeekDate)) {
+                              return _buildDetailedAttendanceSection(activeWeekId, isLoading: isLoading);
+                            }
+                            return const SizedBox.shrink();
+                          }(),
+                        ],
                         const SizedBox(height: 40),
                       ],
                     ),
@@ -123,8 +146,90 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
     );
   }
 
-  Widget _buildSummaryHeader(String weekId) {
+  Widget _buildSummaryHeader(String weekId, {Set<String> noMeetingDates = const {}, List<NoMeetingDayModel> noMeetingList = const []}) {
     final weeklyDataAsync = ref.watch(departmentWeeklyAttendanceProvider('${widget.departmentId}:$weekId'));
+
+    // weekId에 해당하는 week_date 찾기 (noMeeting 판단용)
+    // departmentAttendanceHistoryProvider에서 이미 history를 가지고 있으므로
+    // weekId로 week_date를 추출할 수 있도록 history를 직접 읽음
+    final historyAsync = ref.watch(departmentAttendanceHistoryProvider('${widget.departmentId}:$_viewYear:$_viewMonth'));
+    final history = historyAsync.value ?? [];
+    final activeWeek = history.isNotEmpty
+        ? history.firstWhere((h) => h['week_id'] == weekId, orElse: () => history.first)
+        : <String, dynamic>{};
+    final activeWeekDate = activeWeek['week_date'] as String? ?? '';
+    final isNoMeeting = noMeetingDates.contains(activeWeekDate);
+    final noMeetingReason = isNoMeeting
+        ? noMeetingList
+            .firstWhere(
+              (d) => '${d.weekDate.year}-${d.weekDate.month.toString().padLeft(2, '0')}-${d.weekDate.day.toString().padLeft(2, '0')}' == activeWeekDate,
+              orElse: () => noMeetingList.first,
+            )
+            .reason
+        : null;
+
+    if (isNoMeeting) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFF97316), Color(0xFFEA580C)],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: AppTheme.border.withOpacity(0.5), width: 1.0),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            children: [
+              Positioned(
+                right: -20,
+                top: -20,
+                child: Container(width: 100, height: 100, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1))),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(lucide.LucideIcons.barChart3, color: Colors.white, size: 20),
+                        const SizedBox(width: 8),
+                        Text('${widget.departmentName} 출석 요약', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('이번 주는 모임이 없습니다',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+                          if (noMeetingReason != null && noMeetingReason.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(noMeetingReason,
+                                style: const TextStyle(color: Colors.white70, fontSize: 13, fontFamily: 'Pretendard')),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return weeklyDataAsync.maybeWhen(
       skipLoadingOnRefresh: true,
@@ -135,10 +240,10 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
         final totalGroups = validGroups.length;
         final submittedGroups = validGroups.where((g) => g['is_submitted'] == true).toList();
         final isAllSubmitted = totalGroups > 0 && submittedGroups.length == totalGroups;
-        
+
         int totalPresent = 0;
         int totalCount = 0;
-        
+
         for (final g in submittedGroups) {
           totalPresent += (g['present_count'] as num).toInt();
           totalCount += (g['total_count'] as num).toInt();
