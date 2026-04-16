@@ -159,7 +159,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
         : <String, dynamic>{};
     final activeWeekDate = activeWeek['week_date'] as String? ?? '';
     final isNoMeeting = noMeetingDates.contains(activeWeekDate);
-    final noMeetingReason = isNoMeeting
+    final noMeetingReason = isNoMeeting && noMeetingList.isNotEmpty
         ? noMeetingList
             .firstWhere(
               (d) => '${d.weekDate.year}-${d.weekDate.month.toString().padLeft(2, '0')}-${d.weekDate.day.toString().padLeft(2, '0')}' == activeWeekDate,

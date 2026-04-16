@@ -567,7 +567,7 @@ export default function AttendancePage() {
                 });
 
                 const myAtts = (allAtt as any[]).filter((a: any) => a.directory_member_id === m.id);
-                const presentCount = myAtts.filter((a: any) => a.status === 'present').length;
+                const presentCount = myAtts.filter((a: any) => a.status === 'present' || a.status === 'late').length;
                 row['출석률'] = meetingWeeks.length > 0
                     ? `${Math.round((presentCount / meetingWeeks.length) * 100)}%`
                     : '-';
