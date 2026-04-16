@@ -108,6 +108,18 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   void _checkAndShowAttendancePopup() {
     if (!mounted) return;
 
+    // [NEW] 모임없는 날에는 출석체크 팝업 억제
+    final profile = ref.read(userProfileProvider).value;
+    final departmentId = profile?.departmentId ?? '';
+    if (departmentId.isNotEmpty) {
+      final currentWeekForCheck = ref.read(attendanceSelectedWeekProvider);
+      final weekStrForCheck =
+          '${currentWeekForCheck.year}-${currentWeekForCheck.month.toString().padLeft(2, '0')}-${currentWeekForCheck.day.toString().padLeft(2, '0')}';
+      final noMeetingValue =
+          ref.read(noMeetingDayProvider('$departmentId:$weekStrForCheck')).value;
+      if (noMeetingValue != null) return;
+    }
+
     // [FIX] 사용자가 기도제목을 입력 중이면 출석체크 팝업 표시(포커스 뺏김) 방지
     final isEditing = ref.read(isUserEditingProvider);
     if (isEditing) return;
@@ -1227,6 +1239,17 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       Future.microtask(() => _refreshData());
     }
 
+    // [NEW] 모임없는 날 provider watch
+    final profile = ref.watch(userProfileProvider).value;
+    final departmentId = profile?.departmentId ?? '';
+    final selectedWeek = ref.watch(attendanceSelectedWeekProvider);
+    final weekStr =
+        '${selectedWeek.year}-${selectedWeek.month.toString().padLeft(2, '0')}-${selectedWeek.day.toString().padLeft(2, '0')}';
+    final noMeetingAsync = departmentId.isNotEmpty
+        ? ref.watch(noMeetingDayProvider('$departmentId:$weekStr'))
+        : const AsyncValue<NoMeetingDayModel?>.data(null);
+    final noMeeting = noMeetingAsync.value;
+
     // [FIX] 타이틀도 선택된 그룹명으로 표시
     String groupName = '우리 조';
     if (activeMembership != null) {
@@ -1281,12 +1304,12 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         ],
       ),
       // [FIX] 로컬 상태 기반 렌더링 — provider AsyncLoading 전환 시 위젯 트리 교체 방지
-      body: _buildBody(),
+      body: _buildBody(noMeeting),
       bottomNavigationBar: _buildBottomActions(),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(NoMeetingDayModel? noMeeting) {
     if (!_isInitialized || (_members.isEmpty && (_isLoading || _isFetching))) {
       return const Center(
         child: Padding(
@@ -1304,6 +1327,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       children: [
         Column(
           children: [
+            if (noMeeting != null) _buildNoMeetingBanner(noMeeting),
             _buildAIHeader(),
             if (_isRefining)
               const LinearProgressIndicator(
@@ -1355,7 +1379,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                     return Container(
                       key: ValueKey(_members[index]['directoryMemberId']),
                       margin: const EdgeInsets.only(bottom: 16),
-                      child: _buildMemberCard(_members[index], index),
+                      child: _buildMemberCard(_members[index], index, noMeeting),
                     );
                   },
                 ),
@@ -1518,6 +1542,36 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     );
   }
 
+  Widget _buildNoMeetingBanner(NoMeetingDayModel noMeeting) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFB923C).withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.event_busy_rounded, color: Color(0xFFF97316), size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('이번 주는 모임이 없습니다',
+                    style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFEA580C), fontSize: 14, fontFamily: 'Pretendard')),
+                const SizedBox(height: 2),
+                Text(noMeeting.reason,
+                    style: const TextStyle(color: Color(0xFF9A3412), fontSize: 13, fontFamily: 'Pretendard')),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAIHeader() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -1589,7 +1643,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     );
   }
 
-  Widget _buildMemberCard(Map<String, dynamic> member, int index) {
+  Widget _buildMemberCard(Map<String, dynamic> member, int index, NoMeetingDayModel? noMeeting) {
     bool isPresent = member['isPresent'];
     return Container(
       decoration: BoxDecoration(
@@ -1689,12 +1743,13 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                 TextField(
                   controller: _controllers[member['directoryMemberId']],
                   onChanged: (val) => member['prayerNote'] = val,
+                  readOnly: noMeeting != null,
                   maxLines: null,
                   minLines: 2,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 14,
                       height: 1.5,
-                      color: Color(0xFF475569),
+                      color: noMeeting != null ? Colors.grey : const Color(0xFF475569),
                       fontFamily: 'Pretendard',
                       letterSpacing: -0.5),
                   decoration: InputDecoration(
