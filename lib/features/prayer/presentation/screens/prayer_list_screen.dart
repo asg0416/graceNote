@@ -12,6 +12,7 @@ import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/core/utils/route_util.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import 'package:grace_note/core/widgets/app_skeleton.dart';
+import 'package:grace_note/core/utils/snack_bar_util.dart';
 
 class PrayerListScreen extends ConsumerStatefulWidget {
   const PrayerListScreen({super.key});
@@ -326,6 +327,7 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
       body: Column(
         children: [
           _buildWeekNavigator(selectedDate),
+          _buildNoMeetingAdminSection(selectedDate),
           Expanded(
             child: userProfileAsync.maybeWhen(
               skipLoadingOnRefresh: true,
@@ -894,6 +896,169 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
       itemCount: 3,
       itemBuilder: (context, index) => const PrayerCardSkeleton(),
     );
+  }
+
+  Widget _buildNoMeetingAdminSection(DateTime selectedWeek) {
+    final profile = ref.watch(userProfileProvider).value;
+    final activeRole = ref.watch(activeRoleProvider);
+    if (activeRole != AppRole.admin || profile?.departmentId == null) {
+      return const SizedBox.shrink();
+    }
+
+    final deptId = profile!.departmentId!;
+    final churchId = profile.churchId ?? '';
+    final weekStr = '${selectedWeek.year}-${selectedWeek.month.toString().padLeft(2, '0')}-${selectedWeek.day.toString().padLeft(2, '0')}';
+    final noMeetingAsync = ref.watch(noMeetingDayProvider('$deptId:$weekStr'));
+
+    return noMeetingAsync.when(
+      data: (noMeeting) {
+        if (noMeeting != null) {
+          return _buildNoMeetingCard(noMeeting, deptId, selectedWeek);
+        }
+        // 기도제목이 없을 때만 지정 버튼 표시
+        if (deptId.isEmpty || churchId.isEmpty) return const SizedBox.shrink();
+        final weeklyDataAsync = ref.watch(departmentWeeklyDataProvider('$deptId:$churchId'));
+        final prayers = (weeklyDataAsync.value?['prayers'] as List?) ?? [];
+        if (prayers.isNotEmpty) return const SizedBox.shrink();
+        return _buildNoMeetingDesignateButton(deptId, selectedWeek);
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildNoMeetingCard(NoMeetingDayModel noMeeting, String deptId, DateTime selectedWeek) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFB923C).withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.event_busy_rounded, color: Color(0xFFF97316), size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('이번 주는 모임이 없습니다',
+                    style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFEA580C), fontSize: 14, fontFamily: 'Pretendard')),
+                Text(noMeeting.reason,
+                    style: const TextStyle(color: Color(0xFF9A3412), fontSize: 13, fontFamily: 'Pretendard')),
+              ],
+            ),
+          ),
+          shad.ShadButton.ghost(
+            onPressed: () => _cancelNoMeetingDay(deptId, selectedWeek),
+            child: const Text('지정 취소',
+                style: TextStyle(color: Color(0xFFF97316), fontSize: 13, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoMeetingDesignateButton(String deptId, DateTime selectedWeek) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: SizedBox(
+        width: double.infinity,
+        child: shad.ShadButton.outline(
+          onPressed: () => _showNoMeetingDialog(deptId, selectedWeek),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.event_busy_rounded, size: 16, color: Color(0xFFF97316)),
+              SizedBox(width: 8),
+              Text('모임없는 날로 지정하기',
+                  style: TextStyle(color: Color(0xFFF97316), fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showNoMeetingDialog(String deptId, DateTime selectedWeek) {
+    final reasonController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('모임없는 날 지정', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
+        content: TextField(
+          controller: reasonController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '예: 부활절 연합예배, 수련회 등',
+            labelText: '사유',
+            border: OutlineInputBorder(),
+          ),
+          maxLength: 50,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final reason = reasonController.text.trim();
+              if (reason.isEmpty) return;
+              Navigator.pop(ctx);
+              await _designateNoMeetingDay(deptId, selectedWeek, reason);
+            },
+            child: const Text('확인', style: TextStyle(color: Color(0xFFF97316), fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _designateNoMeetingDay(String deptId, DateTime selectedWeek, String reason) async {
+    final profile = ref.read(userProfileProvider).value;
+    if (profile == null) return;
+    try {
+      await ref.read(repositoryProvider).setNoMeetingDay(
+        departmentId: deptId,
+        weekDate: selectedWeek,
+        reason: reason,
+        createdBy: profile.id,
+      );
+      final weekStr = '${selectedWeek.year}-${selectedWeek.month.toString().padLeft(2, '0')}-${selectedWeek.day.toString().padLeft(2, '0')}';
+      ref.invalidate(noMeetingDayProvider('$deptId:$weekStr'));
+      if (mounted) SnackBarUtil.showSnackBar(context, message: '모임없는 날로 지정했습니다.');
+    } catch (e) {
+      if (mounted) SnackBarUtil.showSnackBar(context, message: '지정에 실패했습니다.', isError: true);
+    }
+  }
+
+  Future<void> _cancelNoMeetingDay(String deptId, DateTime selectedWeek) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('지정 취소', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
+        content: const Text('모임없는 날 지정을 취소하시겠습니까?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('아니오')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('취소하기', style: TextStyle(color: Color(0xFFF97316), fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(repositoryProvider).cancelNoMeetingDay(deptId, selectedWeek);
+      final weekStr = '${selectedWeek.year}-${selectedWeek.month.toString().padLeft(2, '0')}-${selectedWeek.day.toString().padLeft(2, '0')}';
+      ref.invalidate(noMeetingDayProvider('$deptId:$weekStr'));
+      if (mounted) SnackBarUtil.showSnackBar(context, message: '지정이 취소되었습니다.');
+    } catch (e) {
+      if (mounted) SnackBarUtil.showSnackBar(context, message: '취소에 실패했습니다.', isError: true);
+    }
   }
 }
 
