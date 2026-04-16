@@ -472,13 +472,21 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
 // ScaffoldWithNavBar — Bottom navigation bar management
 // ═══════════════════════════════════════════════════════════════════
 
-class ScaffoldWithNavBar extends ConsumerWidget {
+class ScaffoldWithNavBar extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
 
   const ScaffoldWithNavBar({super.key, required this.navigationShell});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ScaffoldWithNavBar> createState() => _ScaffoldWithNavBarState();
+}
+
+class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
+  bool _adminInitialNavDone = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final navigationShell = widget.navigationShell;
     final activeRole = ref.watch(activeRoleProvider);
     final groupsAsync = ref.watch(userGroupsProvider);
     final unreadInquiries = ref.watch(unreadInquiryCountProvider).value ?? 0;
@@ -536,6 +544,16 @@ class ScaffoldWithNavBar extends ConsumerWidget {
           ),
         ),
       );
+    }
+
+    // admin 최초 진입 시 기도소식 탭(index 1)으로 이동
+    if (activeRole == AppRole.admin && !_adminInitialNavDone) {
+      _adminInitialNavDone = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && navigationShell.currentIndex != 1) {
+          navigationShell.goBranch(1, initialLocation: true);
+        }
+      });
     }
 
     // Determine which branches are visible based on role
