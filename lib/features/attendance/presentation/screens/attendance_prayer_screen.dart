@@ -949,7 +949,20 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           ],
         ),
       );
-      if (confirm == true) _launchAttendanceCheck();
+      if (confirm == true) {
+        final profile = ref.read(userProfileProvider).value;
+        final deptId = profile?.departmentId ?? '';
+        if (deptId.isNotEmpty) {
+          final currentWeek = ref.read(attendanceSelectedWeekProvider);
+          final weekStr = '${currentWeek.year}-${currentWeek.month.toString().padLeft(2, '0')}-${currentWeek.day.toString().padLeft(2, '0')}';
+          final noMeeting = ref.read(noMeetingDayProvider('$deptId:$weekStr')).value;
+          if (noMeeting != null) {
+            if (mounted) SnackBarUtil.showSnackBar(context, message: '모임없는 날에는 출석체크를 할 수 없습니다.', isError: true);
+            return;
+          }
+        }
+        _launchAttendanceCheck();
+      }
       return;
     }
     setState(() => _isRefining = true);
@@ -1287,16 +1300,28 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         ),
         actions: [
           IconButton(
-            icon: const Icon(lucide.LucideIcons.clipboardPaste,
-                color: AppTheme.primaryViolet, size: 20),
-            onPressed: _showMemoPasteDialog,
+            icon: Icon(lucide.LucideIcons.clipboardPaste,
+                color: noMeeting != null ? AppTheme.border : AppTheme.primaryViolet, size: 20),
+            onPressed: () {
+              if (noMeeting != null) {
+                SnackBarUtil.showSnackBar(context, message: '모임없는 날에는 메모를 입력할 수 없습니다.', isError: true);
+                return;
+              }
+              _showMemoPasteDialog();
+            },
             tooltip: '메모에서 불러오기',
           ),
           IconButton(
-            icon: const Icon(lucide.LucideIcons.userCheck,
-                color: AppTheme.primaryViolet,
+            icon: Icon(lucide.LucideIcons.userCheck,
+                color: noMeeting != null ? AppTheme.border : AppTheme.primaryViolet,
                 size: 22),
-            onPressed: _launchAttendanceCheck,
+            onPressed: () {
+              if (noMeeting != null) {
+                SnackBarUtil.showSnackBar(context, message: '모임없는 날에는 출석체크를 할 수 없습니다.', isError: true);
+                return;
+              }
+              _launchAttendanceCheck();
+            },
             tooltip: '출석 체크',
           ),
           const SizedBox(width: 8),
@@ -1304,7 +1329,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       ),
       // [FIX] 로컬 상태 기반 렌더링 — provider AsyncLoading 전환 시 위젯 트리 교체 방지
       body: _buildBody(noMeeting),
-      bottomNavigationBar: _buildBottomActions(),
+      bottomNavigationBar: _buildBottomActions(noMeeting),
     );
   }
 
@@ -1326,8 +1351,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       children: [
         Column(
           children: [
-            if (noMeeting != null) _buildNoMeetingBanner(noMeeting),
             _buildAIHeader(),
+            if (noMeeting != null) _buildNoMeetingBanner(noMeeting),
             if (_isRefining)
               const LinearProgressIndicator(
                   backgroundColor: Colors.transparent,
@@ -1862,7 +1887,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   // [기존 _buildCopySpouseButton 삭제됨]
-  Widget _buildBottomActions() {
+  Widget _buildBottomActions(NoMeetingDayModel? noMeeting) {
+    final isDisabled = noMeeting != null;
     return Container(
       padding: EdgeInsets.fromLTRB(
           20, 16, 20, 16 + math.max(12, MediaQuery.of(context).padding.bottom)),
@@ -1880,15 +1906,17 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         children: [
           Expanded(
               child: OutlinedButton(
-                  onPressed: () => _saveData(status: 'draft'),
+                  onPressed: isDisabled ? () {
+                    SnackBarUtil.showSnackBar(context, message: '모임없는 날에는 저장할 수 없습니다.', isError: true);
+                  } : () => _saveData(status: 'draft'),
                   style: OutlinedButton.styleFrom(
                       minimumSize: const Size(0, 50),
-                      side: const BorderSide(color: Color(0xFFE2E8F0)),
+                      side: BorderSide(color: isDisabled ? const Color(0xFFE2E8F0) : const Color(0xFFE2E8F0)),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12))),
-                  child: const Text('임시 저장',
+                  child: Text('임시 저장',
                       style: TextStyle(
-                          color: Color(0xFF64748B),
+                          color: isDisabled ? const Color(0xFFCBD5E1) : const Color(0xFF64748B),
                           fontWeight: FontWeight.bold,
                           fontSize: 15,
                           fontFamily: 'Pretendard')))),
@@ -1900,13 +1928,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                   child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: ShadButton(
-                          onPressed: () => _saveData(status: 'published'),
-                          backgroundColor: const Color(0xFF8B5CF6),
+                          onPressed: isDisabled ? () {
+                            SnackBarUtil.showSnackBar(context, message: '모임없는 날에는 등록할 수 없습니다.', isError: true);
+                          } : () => _saveData(status: 'published'),
+                          backgroundColor: isDisabled ? const Color(0xFFE2E8F0) : const Color(0xFF8B5CF6),
                           size: ShadButtonSize.lg,
-                          child: const Text('최종 등록하기',
+                          child: Text('최종 등록하기',
                               style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
+                                  color: isDisabled ? const Color(0xFF94A3B8) : Colors.white,
                                   fontFamily: 'Pretendard')))))),
         ],
       ),

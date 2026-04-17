@@ -203,6 +203,7 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
                     ),
                     const SizedBox(height: 24),
                     Container(
+                      width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.15),
@@ -331,7 +332,81 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
           ),
         );
       },
-      orElse: () => const SizedBox.shrink(),
+      orElse: () => _buildSummaryHeaderSkeleton(),
+    );
+  }
+
+  Widget _buildSummaryHeaderSkeleton() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppTheme.border.withOpacity(0.5), width: 1.0),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -20,
+              top: -20,
+              child: Container(width: 100, height: 100, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1))),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(width: 20, height: 20, decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), borderRadius: BorderRadius.circular(4))),
+                      const SizedBox(width: 8),
+                      Container(width: 140, height: 18, decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), borderRadius: BorderRadius.circular(6))),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildSkeletonSummaryItem(),
+                        Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                        _buildSkeletonSummaryItem(),
+                        Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                        _buildSkeletonSummaryItem(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonSummaryItem() {
+    return Column(
+      children: [
+        Container(width: 24, height: 24, decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), shape: BoxShape.circle)),
+        const SizedBox(height: 8),
+        Container(width: 36, height: 14, decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), borderRadius: BorderRadius.circular(4))),
+        const SizedBox(height: 4),
+        Container(width: 48, height: 18, decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), borderRadius: BorderRadius.circular(4))),
+      ],
     );
   }
 
@@ -585,9 +660,43 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
               itemBuilder: (context, index) => _GroupAttendanceAccordion(group: groups[index], isCoupleMode: widget.isCoupleMode),
             );
           },
-          orElse: () => Center(child: ShadcnSpinner()),
+          orElse: () => _buildAttendanceDetailSkeleton(),
         ),
       ],
+    );
+  }
+
+  Widget _buildAttendanceDetailSkeleton() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: List.generate(4, (index) => Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Row(
+            children: [
+              Container(width: 32, height: 32, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10))),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(width: 80, height: 14, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4))),
+                    const SizedBox(height: 6),
+                    Container(width: 120, height: 12, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(4))),
+                  ],
+                ),
+              ),
+              Container(width: 48, height: 28, decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8))),
+            ],
+          ),
+        )),
+      ),
     );
   }
 }

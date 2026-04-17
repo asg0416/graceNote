@@ -224,30 +224,41 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                       ],
                     ),
                     const SizedBox(height: 24),
-                    if (isNoMeeting && noMeetingReason != null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '이번 주는 모임이 없습니다',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 18,
-                              fontFamily: 'Pretendard',
-                              letterSpacing: -0.5,
+                    if (isNoMeeting)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '이번 주는 모임이 없습니다',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 18,
+                                fontFamily: 'Pretendard',
+                                letterSpacing: -0.5,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            noMeetingReason,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                              fontFamily: 'Pretendard',
-                            ),
-                          ),
-                        ],
+                            if (noMeetingReason != null && noMeetingReason.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                noMeetingReason,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13,
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       )
                     else
                       // [STYLE] 글래스모피즘 카드 레이아웃
@@ -837,7 +848,48 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                 ],
               );
             },
-            orElse: () => const Center(child: Padding(padding: EdgeInsets.all(40), child: ShadcnSpinner())),
+            orElse: () => _buildAttendanceDetailSkeleton(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttendanceDetailSkeleton() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 8,
+              children: [56.0, 48.0, 64.0, 52.0, 60.0, 50.0, 58.0, 44.0].map((w) => Container(
+                width: w,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              )).toList(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            height: 52,
+            margin: const EdgeInsets.symmetric(horizontal: 0),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
         ],
       ),
