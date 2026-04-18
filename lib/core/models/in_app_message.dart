@@ -49,21 +49,21 @@ class InAppMessage {
       type:          IamType.fromString(json['type'] as String? ?? 'announcement'),
       displayType:   IamDisplayType.fromString(json['display_type'] as String? ?? 'slide_up'),
       targetRole:    IamTargetRole.fromString(json['target_role'] as String? ?? 'all'),
-      startsAt:      DateTime.parse(json['starts_at'] as String),
+      startsAt:      DateTime.tryParse(json['starts_at'] as String? ?? '') ?? DateTime.now().toUtc(),
       expiresAt:     json['expires_at'] != null
-                       ? DateTime.parse(json['expires_at'] as String)
+                       ? DateTime.tryParse(json['expires_at'] as String)
                        : null,
       isActive:      json['is_active'] as bool? ?? true,
       isDeleted:     json['is_deleted'] as bool? ?? false,
       priority:      json['priority'] as int? ?? 0,
-      createdAt:     DateTime.parse(json['created_at'] as String),
+      createdAt:     DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now().toUtc(),
     );
   }
 
   /// RLS가 만료 메시지를 필터하지만, 앱 실행 중 만료된 경우
   /// 클라이언트에서도 이중 체크
   bool get isCurrentlyActive {
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
     if (!isActive || isDeleted) return false;
     if (now.isBefore(startsAt)) return false;
     if (expiresAt != null && now.isAfter(expiresAt!)) return false;
