@@ -73,11 +73,23 @@ CREATE INDEX idx_iam_survey_user
 -- 3. updated_at 자동 갱신 트리거
 -- ──────────────────────────────────────────────
 
-CREATE OR REPLACE FUNCTION public.set_updated_at()
-RETURNS trigger LANGUAGE plpgsql AS $$
+DO $$
 BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc
+    WHERE proname = 'set_updated_at'
+      AND pronamespace = 'public'::regnamespace
+  ) THEN
+    EXECUTE $func$
+      CREATE FUNCTION public.set_updated_at()
+      RETURNS trigger LANGUAGE plpgsql AS $inner$
+      BEGIN
+        NEW.updated_at = now();
+        RETURN NEW;
+      END;
+      $inner$
+    $func$;
+  END IF;
 END;
 $$;
 
@@ -92,7 +104,7 @@ CREATE TRIGGER iam_set_updated_at
 ALTER TABLE public.in_app_messages      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.iam_survey_responses ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "iam_select_active"
+CREATE POLICY "IAM select active messages"
   ON public.in_app_messages FOR SELECT TO authenticated
   USING (
     is_active   = true
@@ -106,24 +118,30 @@ CREATE POLICY "iam_select_active"
            SELECT department_id FROM public.profiles
            WHERE id = auth.uid() LIMIT 1
          ))
+    AND (target_role = 'all'
+         OR target_role = (
+           SELECT role FROM public.profiles
+           WHERE id = auth.uid() LIMIT 1
+         ))
   );
 
-CREATE POLICY "iam_master_all"
+CREATE POLICY "IAM master manage all"
   ON public.in_app_messages FOR ALL TO authenticated
   USING      (public.check_is_master())
   WITH CHECK (public.check_is_master());
 
-CREATE POLICY "survey_insert_own"
+CREATE POLICY "Survey responses insert own"
   ON public.iam_survey_responses FOR INSERT TO authenticated
   WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY "survey_select_own"
+CREATE POLICY "Survey responses select own"
   ON public.iam_survey_responses FOR SELECT TO authenticated
   USING (user_id = auth.uid());
 
-CREATE POLICY "survey_master_select"
-  ON public.iam_survey_responses FOR SELECT TO authenticated
-  USING (public.check_is_master());
+CREATE POLICY "survey_master_all"
+  ON public.iam_survey_responses FOR ALL TO authenticated
+  USING      (public.check_is_master())
+  WITH CHECK (public.check_is_master());
 
 -- ──────────────────────────────────────────────
 -- 5. Supabase Realtime 등록
