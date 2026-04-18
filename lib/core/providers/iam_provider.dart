@@ -10,6 +10,9 @@ import 'package:grace_note/core/providers/user_role_provider.dart';
 
 part 'iam_provider.g.dart';
 
+// 날짜 포맷 — 매 호출마다 재생성 방지
+final _dateFmt = DateFormat('yyyy-MM-dd');
+
 // ── 1. 서버에서 활성 메시지 스트림 ──────────────────────────────────
 
 @riverpod
@@ -48,14 +51,14 @@ class IamDismissNotifier extends _$IamDismissNotifier {
     final prefs = await SharedPreferences.getInstance();
     return {
       for (final key in prefs.getKeys().where((k) => k.startsWith(_prefix)))
-        key: prefs.getString(key)!,
+        if (prefs.getString(key) case final v?) key: v,
     };
   }
 
   /// "오늘 그만보기" — 오늘 자정까지만 숨김
   Future<void> snoozeToday(String messageId) async {
     final prefs = await SharedPreferences.getInstance();
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final today = _dateFmt.format(DateTime.now());
     final key = '$_prefix$messageId';
     await prefs.setString(key, today);
     state = AsyncData({...?state.value, key: today});
@@ -94,7 +97,9 @@ List<InAppMessage> visibleIam(VisibleIamRef ref) {
     if (stored == today)       return false;
 
     // 3. 역할 필터 (null-safe)
-    if (userRole != null && m.targetRole != IamTargetRole.all) {
+    // admin은 모든 메시지 열람 가능, userRole null이면 all만 표시
+    if (m.targetRole != IamTargetRole.all) {
+      if (userRole == null || userRole == AppRole.admin) return true;
       if (m.targetRole == IamTargetRole.leader && userRole != AppRole.leader) return false;
       if (m.targetRole == IamTargetRole.member && userRole != AppRole.member) return false;
     }
