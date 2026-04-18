@@ -47,12 +47,14 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
                         : _commentCtrl.text.trim(),
       });
 
+      if (!mounted) return;
       ref.invalidate(iamSurveyAnsweredProvider(widget.messageId));
       setState(() { _submitted = true; });
     } catch (e) {
+      if (!mounted) return;
       setState(() { _errorMsg = '제출에 실패했습니다. 다시 시도해 주세요.'; });
     } finally {
-      setState(() { _isSubmitting = false; });
+      if (mounted) setState(() { _isSubmitting = false; });
     }
   }
 
@@ -89,7 +91,7 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
               child: Padding(
                 padding: const EdgeInsets.only(right: 6),
                 child: Icon(
-                  lucide.LucideIcons.star,
+                  filled ? Icons.star_rounded : Icons.star_outline_rounded,
                   size: 28,
                   color: filled ? AppTheme.warning : AppTheme.border,
                 ),
