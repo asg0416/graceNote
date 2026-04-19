@@ -1,11 +1,34 @@
 // lib/core/models/in_app_message.dart
 
+/// 슬라이드 모드에서 각 페이지 콘텐츠
+class IamSlide {
+  final String title;      // 슬라이드별 제목
+  final String body;       // HTML
+  final String? imageUrl;
+
+  const IamSlide({required this.title, required this.body, this.imageUrl});
+
+  factory IamSlide.fromJson(Map<String, dynamic> json) => IamSlide(
+    title:    json['title']     as String? ?? '',
+    body:     json['body']      as String? ?? '',
+    imageUrl: json['image_url'] as String?,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'title':    title,
+    'body':     body,
+    if (imageUrl != null) 'image_url': imageUrl,
+  };
+}
+
 class InAppMessage {
   final String id;
   final String? churchId;
   final String? departmentId;
   final String title;
-  final String body;           // HTML (DOMPurify 살균 후 저장된 값)
+  final String body;           // HTML (단일 본문 모드)
+  final String? imageUrl;      // 단일 이미지 (슬라이드 미사용 시)
+  final List<IamSlide> slides; // 슬라이드 모드 (비어있으면 단일 모드)
   final String? ctaLabel;
   final String? ctaUrl;        // https:// 만 허용 (DB CHECK constraint)
   final IamType type;
@@ -24,6 +47,8 @@ class InAppMessage {
     this.departmentId,
     required this.title,
     required this.body,
+    this.imageUrl,
+    this.slides = const [],
     this.ctaLabel,
     this.ctaUrl,
     required this.type,
@@ -38,12 +63,22 @@ class InAppMessage {
   });
 
   factory InAppMessage.fromJson(Map<String, dynamic> json) {
+    final rawSlides = json['slides'];
+    final slides = (rawSlides is List)
+        ? rawSlides
+            .whereType<Map<String, dynamic>>()
+            .map(IamSlide.fromJson)
+            .toList()
+        : <IamSlide>[];
+
     return InAppMessage(
       id:            json['id'] as String,
       churchId:      json['church_id'] as String?,
       departmentId:  json['department_id'] as String?,
       title:         json['title'] as String,
       body:          json['body'] as String,
+      imageUrl:      json['image_url'] as String?,
+      slides:        slides,
       ctaLabel:      json['cta_label'] as String?,
       ctaUrl:        json['cta_url'] as String?,
       type:          IamType.fromString(json['type'] as String? ?? 'announcement'),
@@ -59,6 +94,8 @@ class InAppMessage {
       createdAt:     DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now().toUtc(),
     );
   }
+
+  bool get isSlideMode => slides.isNotEmpty;
 
   /// RLS가 만료 메시지를 필터하지만, 앱 실행 중 만료된 경우
   /// 클라이언트에서도 이중 체크

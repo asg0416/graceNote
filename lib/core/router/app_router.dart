@@ -49,6 +49,7 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/core/services/push_notification_service.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:grace_note/core/widgets/push_permission_banner.dart';
+import 'package:grace_note/core/widgets/iam_overlay.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:intl/intl.dart';
 
@@ -418,7 +419,7 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
       }
 
       _requestPushPermission();
-      return widget.child; // Show the actual tab content
+      return IamOverlay(child: widget.child); // Show the actual tab content
     }
 
     if (profileAsync.isLoading) {
