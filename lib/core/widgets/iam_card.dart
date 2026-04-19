@@ -288,7 +288,10 @@ class _IamCardState extends ConsumerState<IamCard> {
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: IamSurveyWidget(messageId: message.id),
+            child: IamSurveyWidget(
+              messageId: message.id,
+              onSubmitted: _dismissPermanently,
+            ),
           ),
         ],
 

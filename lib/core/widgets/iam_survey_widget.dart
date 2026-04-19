@@ -3,15 +3,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 import 'package:grace_note/core/theme/app_theme.dart';
-import 'package:grace_note/core/providers/iam_provider.dart';
+import 'package:grace_note/core/utils/snack_bar_util.dart';
 
 class IamSurveyWidget extends ConsumerStatefulWidget {
   final String messageId;
+  final VoidCallback? onSubmitted;
 
-  const IamSurveyWidget({super.key, required this.messageId});
+  const IamSurveyWidget({
+    super.key,
+    required this.messageId,
+    this.onSubmitted,
+  });
 
   @override
   ConsumerState<IamSurveyWidget> createState() => _IamSurveyWidgetState();
@@ -21,7 +25,6 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
   int _selectedRating  = 0;
   final _commentCtrl   = TextEditingController();
   bool _isSubmitting   = false;
-  bool _submitted      = false;
   String? _errorMsg;
 
   @override
@@ -48,8 +51,11 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
       });
 
       if (!mounted) return;
-      ref.invalidate(iamSurveyAnsweredProvider(widget.messageId));
-      setState(() { _submitted = true; });
+      SnackBarUtil.showSnackBar(
+        context,
+        message: '응답이 제출되었습니다. 소중한 의견 감사합니다!',
+      );
+      widget.onSubmitted?.call();
     } catch (e) {
       if (!mounted) return;
       setState(() { _errorMsg = '제출에 실패했습니다. 다시 시도해 주세요.'; });
@@ -60,13 +66,6 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final answeredAsync = ref.watch(iamSurveyAnsweredProvider(widget.messageId));
-    final alreadyAnswered = answeredAsync.value ?? false;
-
-    if (_submitted || alreadyAnswered) {
-      return _buildThanks();
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -173,26 +172,4 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
     );
   }
 
-  Widget _buildThanks() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: const Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(lucide.LucideIcons.checkCircle,
-              size: 18, color: AppTheme.success),
-          SizedBox(width: 8),
-          Text(
-            '응답해 주셔서 감사합니다!',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.success,
-              fontFamily: 'Pretendard',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
