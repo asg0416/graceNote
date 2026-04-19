@@ -483,7 +483,7 @@ class ScaffoldWithNavBar extends ConsumerStatefulWidget {
 }
 
 class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
-  bool _adminInitialNavDone = false;
+  bool _initialNavDone = false;
 
   @override
   Widget build(BuildContext context) {
@@ -547,12 +547,15 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
       );
     }
 
-    // admin 최초 진입 시 기도소식 탭(index 1)으로 이동
-    if (activeRole == AppRole.admin && !_adminInitialNavDone) {
-      _adminInitialNavDone = true;
+    // 최초 진입 시 역할에 따라 탭 설정: admin → 기도소식(1), leader → 기록(0)
+    if (!_initialNavDone && activeRole != null) {
+      _initialNavDone = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && navigationShell.currentIndex != 1) {
+        if (!mounted) return;
+        if (activeRole == AppRole.admin && navigationShell.currentIndex != 1) {
           navigationShell.goBranch(1, initialLocation: true);
+        } else if (activeRole == AppRole.leader && navigationShell.currentIndex != 0) {
+          navigationShell.goBranch(0, initialLocation: true);
         }
       });
     }
