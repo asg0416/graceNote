@@ -321,44 +321,49 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
 
             {/* 이미지 + 슬라이드 네비게이션 */}
             {form.use_slides ? (
-                <div className="relative">
-                    {hasImage ? (
-                        <img
-                            key={previewSlide}
-                            src={hasImage} alt=""
-                            className="w-full h-[105px] object-cover"
-                        />
-                    ) : (
-                        <div className="w-full h-[105px] bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
-                            <ImageIcon className="text-slate-300" size={18} />
-                        </div>
-                    )}
-                    {/* 좌우 화살표 */}
+                <div>
+                    {/* 이미지 + 화살표 */}
+                    <div className="relative">
+                        {hasImage ? (
+                            <img
+                                key={previewSlide}
+                                src={hasImage} alt=""
+                                className="w-full h-[160px] object-cover"
+                            />
+                        ) : (
+                            <div className="w-full h-[160px] bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
+                                <ImageIcon className="text-slate-300" size={18} />
+                            </div>
+                        )}
+                        {form.slides.length > 1 && (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => setPreviewSlide((previewSlide - 1 + form.slides.length) % form.slides.length)}
+                                    className="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white font-bold transition-all text-xs leading-none"
+                                >‹</button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPreviewSlide((previewSlide + 1) % form.slides.length)}
+                                    className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white font-bold transition-all text-xs leading-none"
+                                >›</button>
+                            </>
+                        )}
+                    </div>
+                    {/* 인디케이터: 이미지 아래 (앱과 동일) */}
                     {form.slides.length > 1 && (
-                        <>
-                            <button
-                                type="button"
-                                onClick={() => setPreviewSlide(Math.max(0, previewSlide - 1))}
-                                disabled={previewSlide === 0}
-                                className="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white font-bold transition-all disabled:opacity-0 text-xs leading-none"
-                            >‹</button>
-                            <button
-                                type="button"
-                                onClick={() => setPreviewSlide(Math.min(form.slides.length - 1, previewSlide + 1))}
-                                disabled={previewSlide === form.slides.length - 1}
-                                className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white font-bold transition-all disabled:opacity-0 text-xs leading-none"
-                            >›</button>
-                        </>
-                    )}
-                    {/* 오버레이 인디케이터 */}
-                    {form.slides.length > 1 && (
-                        <div className="absolute bottom-1.5 left-0 right-0 flex justify-center gap-1">
+                        <div className="flex justify-center gap-1 py-1.5">
                             {form.slides.map((_, i) => (
-                                <button key={i} type="button" onClick={() => setPreviewSlide(i)}
+                                <button
+                                    key={i} type="button"
+                                    onClick={() => setPreviewSlide(i)}
                                     className="rounded-full transition-all"
                                     style={{
-                                        width: i === previewSlide ? 12 : 4, height: 4,
-                                        backgroundColor: i === previewSlide ? 'white' : 'rgba(255,255,255,0.55)',
+                                        width: i === previewSlide ? 12 : 4,
+                                        height: 4,
+                                        backgroundColor: i === previewSlide
+                                            ? '#8B5CF6'
+                                            : 'rgba(139,92,246,0.25)',
                                     }}
                                 />
                             ))}
@@ -372,20 +377,24 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
             )}
 
             <div className="px-3.5 pt-2.5 pb-2">
-                {/* 배지 */}
-                <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-black mb-1.5" style={badgeStyle}>
-                    <typeMeta.Icon size={7} />
-                    {typeMeta.label}
+                {/* 배지 + 메인 제목 (Row) — 앱의 헤더 Row와 동일 */}
+                <div className="flex items-center gap-1.5 mb-1">
+                    <div
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-black flex-shrink-0"
+                        style={badgeStyle}
+                    >
+                        <typeMeta.Icon size={7} />
+                        {typeMeta.label}
+                    </div>
+                    <p className="text-[11px] font-extrabold text-slate-900 leading-snug truncate">
+                        {form.title || '제목을 입력하세요'}
+                    </p>
                 </div>
 
-                {/* 제목: 슬라이드 모드는 슬라이드별 제목, 단일 모드는 메시지 제목 */}
-                {form.use_slides ? (
-                    activeSlide?.title
-                        ? <p className="text-[11px] font-extrabold text-slate-900 leading-snug mb-1.5">{activeSlide.title}</p>
-                        : <p className="text-[11px] text-slate-400 italic mb-1.5">슬라이드 제목을 입력하세요</p>
-                ) : (
-                    <p className="text-[11px] font-extrabold text-slate-900 leading-snug mb-1.5">
-                        {form.title || '제목을 입력하세요'}
+                {/* 슬라이드 소제목 (슬라이드 모드만) */}
+                {form.use_slides && (
+                    <p className="text-[10px] font-bold text-slate-700 leading-snug mb-1">
+                        {form.slides[previewSlide]?.title || ''}
                     </p>
                 )}
 
