@@ -30,6 +30,7 @@ class IamCard extends ConsumerStatefulWidget {
 }
 
 class _IamCardState extends ConsumerState<IamCard> {
+  static const _loopMult = 500;
   late final PageController _pageCtrl;
   int _currentSlide = 0;
   Timer? _autoSlideTimer;
@@ -37,8 +38,12 @@ class _IamCardState extends ConsumerState<IamCard> {
   @override
   void initState() {
     super.initState();
-    _pageCtrl = PageController();
-    if (widget.message.isSlideMode && widget.message.slides.length > 1) {
+    final slides = widget.message.slides;
+    final initialPage = slides.length > 1
+        ? slides.length * (_loopMult ~/ 2)
+        : 0;
+    _pageCtrl = PageController(initialPage: initialPage);
+    if (widget.message.isSlideMode && slides.length > 1) {
       _startAutoSlide();
     }
   }
@@ -53,10 +58,9 @@ class _IamCardState extends ConsumerState<IamCard> {
   void _startAutoSlide() {
     _autoSlideTimer?.cancel();
     _autoSlideTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!mounted) return;
-      final next = (_currentSlide + 1) % widget.message.slides.length;
+      if (!mounted || !_pageCtrl.hasClients) return;
       _pageCtrl.animateToPage(
-        next,
+        _pageCtrl.page!.round() + 1,
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
       );
@@ -115,7 +119,7 @@ class _IamCardState extends ConsumerState<IamCard> {
             Image.network(
               slide.imageUrl!,
               width: double.infinity,
-              height: 160,
+              height: 210,
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             ),
@@ -249,13 +253,15 @@ class _IamCardState extends ConsumerState<IamCard> {
             height: _slideHeight(message.slides),
             child: PageView.builder(
               controller: _pageCtrl,
-              itemCount: message.slides.length,
+              itemCount: message.slides.length > 1
+                  ? message.slides.length * _loopMult
+                  : 1,
               onPageChanged: (i) {
-                setState(() => _currentSlide = i);
-                // 수동 스와이프 시 타이머 리셋
+                setState(() => _currentSlide = i % message.slides.length);
                 if (message.slides.length > 1) _startAutoSlide();
               },
-              itemBuilder: (_, i) => _buildSlide(message.slides[i]),
+              itemBuilder: (_, i) =>
+                  _buildSlide(message.slides[i % message.slides.length]),
             ),
           ),
           _buildDots(message.slides.length),
@@ -346,7 +352,7 @@ class _IamCardState extends ConsumerState<IamCard> {
   /// 슬라이드 높이: 이미지 유무에 따라 결정
   double _slideHeight(List<IamSlide> slides) {
     final hasImage = slides.any((s) => s.imageUrl != null);
-    return hasImage ? 320 : 220;
+    return hasImage ? 380 : 220;
   }
 
   Future<void> _launchCta(String url) async {
