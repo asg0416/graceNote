@@ -134,10 +134,14 @@ export default function InAppMessagesPage() {
 
     const handleDelete = async (id: string) => {
         if (!confirm('메시지를 삭제하시겠습니까? (설문 응답 데이터는 보존됩니다)')) return;
-        await supabase
+        const { error } = await supabase
             .from('in_app_messages')
             .update({ is_deleted: true, is_active: false })
             .eq('id', id);
+        if (error) {
+            alert(`삭제 실패: ${error.message}`);
+            return;
+        }
         if (profile) await fetchMessages(profile);
     };
 
