@@ -392,9 +392,9 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
                 </div>
 
                 {/* 슬라이드 소제목 (슬라이드 모드만) */}
-                {form.use_slides && (
+                {form.use_slides && !!form.slides[previewSlide]?.title && (
                     <p className="text-[10px] font-bold text-slate-700 leading-snug mb-1">
-                        {form.slides[previewSlide]?.title || ''}
+                        {form.slides[previewSlide].title}
                     </p>
                 )}
 
