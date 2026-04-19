@@ -20,7 +20,8 @@ import {
     Moon,
     Megaphone,
     MessageSquare,
-    LayoutGrid
+    LayoutGrid,
+    MonitorSmartphone
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -137,6 +138,7 @@ export default function Sidebar() {
         { label: '조편성 관리', href: '/regrouping', icon: LayoutGrid },
         { label: '부서 관리', href: '/departments', icon: Layers },
         { label: '공지사항 발행', href: '/notices', icon: Megaphone },
+        { label: '인앱 메시지 발행', href: '/in-app-messages', icon: MonitorSmartphone },
     ];
 
     const commonItems: NavItem[] = [
