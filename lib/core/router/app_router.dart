@@ -550,11 +550,12 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
     // 최초 진입 시 역할에 따라 탭 설정: admin → 기도소식(1), leader → 기록(0)
     if (!_initialNavDone && activeRole != null) {
       _initialNavDone = true;
+      final capturedRole = activeRole; // 캡처 시점의 역할 명시적 보존
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (activeRole == AppRole.admin && navigationShell.currentIndex != 1) {
+        if (capturedRole == AppRole.admin && navigationShell.currentIndex != 1) {
           navigationShell.goBranch(1, initialLocation: true);
-        } else if (activeRole == AppRole.leader && navigationShell.currentIndex != 0) {
+        } else if (capturedRole == AppRole.leader && navigationShell.currentIndex != 0) {
           navigationShell.goBranch(0, initialLocation: true);
         }
       });
