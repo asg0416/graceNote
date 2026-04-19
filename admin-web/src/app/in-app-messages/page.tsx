@@ -142,10 +142,14 @@ export default function InAppMessagesPage() {
     };
 
     const handleToggleActive = async (id: string, current: boolean) => {
-        await supabase
+        const { error } = await supabase
             .from('in_app_messages')
             .update({ is_active: !current })
             .eq('id', id);
+        if (error) {
+            alert(`상태 변경 실패: ${error.message}`);
+            return;
+        }
         if (profile) await fetchMessages(profile);
     };
 
