@@ -225,6 +225,13 @@ export default function InAppMessagesPage() {
                                             <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black rounded-lg">
                                                 {ROLE_LABEL[msg.target_role] ?? msg.target_role}
                                             </span>
+                                            <span className="px-2 py-0.5 text-[10px] font-black rounded-full bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-100 dark:border-teal-500/20">
+                                                {!msg.church_id
+                                                    ? '전체 교회'
+                                                    : msg.department_id
+                                                    ? '특정 부서'
+                                                    : '교회 전체'}
+                                            </span>
                                             {isExpired ? (
                                                 <span className="px-2.5 py-1 bg-rose-50 dark:bg-rose-500/10 text-rose-500 text-[10px] font-black rounded-lg border border-rose-200 dark:border-rose-500/20">만료됨</span>
                                             ) : msg.is_active ? (

@@ -45,6 +45,8 @@ interface IamFormData {
     expires_at: string;
     is_active: boolean;
     priority: number;
+    target_scope: 'global' | 'church' | 'department';
+    department_id: string;
 }
 
 const DEFAULT: IamFormData = {
@@ -55,6 +57,8 @@ const DEFAULT: IamFormData = {
     cta_label: '', cta_url: '',
     starts_at: new Date().toISOString().slice(0, 16),
     expires_at: '', is_active: true, priority: 0,
+    target_scope: 'church',
+    department_id: '',
 };
 
 // ── HTML 토글 에디터 ────────────────────────────────────────────────
@@ -537,6 +541,7 @@ export default function IamForm({ messageId }: IamFormProps) {
     const [error, setError] = useState<string | null>(null);
     const [profile, setProfile] = useState<any>(null);
     const [activeSlide, setActiveSlide] = useState(0);
+    const [departments, setDepartments] = useState<Array<{id: string; name: string}>>([]);
 
     const set = <K extends keyof IamFormData>(key: K, value: IamFormData[K]) =>
         setForm(prev => ({ ...prev, [key]: value }));
@@ -555,6 +560,15 @@ export default function IamForm({ messageId }: IamFormProps) {
             const ok = p && (p.is_master || (p.role === 'admin' && p.admin_status === 'approved'));
             if (!ok) { router.push('/login'); return; }
             setProfile(p);
+
+            if (p.church_id) {
+                const { data: depts } = await supabase
+                    .from('departments')
+                    .select('id, name')
+                    .eq('church_id', p.church_id)
+                    .order('name');
+                setDepartments(depts ?? []);
+            }
 
             if (isEdit && messageId) {
                 const { data: msg } = await supabase
@@ -583,6 +597,12 @@ export default function IamForm({ messageId }: IamFormProps) {
                         expires_at:   msg.expires_at ? msg.expires_at.slice(0, 16) : '',
                         is_active:    msg.is_active ?? true,
                         priority:     msg.priority ?? 0,
+                        target_scope: !msg.church_id
+                            ? 'global'
+                            : msg.department_id
+                            ? 'department'
+                            : 'church',
+                        department_id: msg.department_id ?? '',
                     });
                 }
                 setLoading(false);
@@ -603,6 +623,8 @@ export default function IamForm({ messageId }: IamFormProps) {
             return 'CTA URL은 http:// 또는 https:// 로 시작해야 합니다.';
         if (form.cta_url && !form.cta_label) return 'CTA URL을 입력했다면 버튼 텍스트도 입력해주세요.';
         if (form.expires_at && form.expires_at <= form.starts_at) return '만료일은 시작일보다 이후여야 합니다.';
+        if (form.target_scope === 'department' && !form.department_id)
+            return '노출할 특정 부서를 선택해주세요.';
         return null;
     };
 
@@ -639,11 +661,27 @@ export default function IamForm({ messageId }: IamFormProps) {
 
         try {
             if (isEdit && messageId) {
-                const { error: e } = await supabase.from('in_app_messages').update(payload).eq('id', messageId);
+                payload.department_id = form.target_scope === 'department'
+                    ? (form.department_id || null)
+                    : null;
+                const { error: e } = await supabase
+                    .from('in_app_messages')
+                    .update(payload)
+                    .eq('id', messageId);
                 if (e) throw e;
             } else {
-                const { error: e } = await supabase.from('in_app_messages')
-                    .insert({ ...payload, church_id: profile.church_id, created_by: profile.id });
+                const churchId = form.target_scope === 'global' ? null : (profile.church_id ?? null);
+                const deptId = form.target_scope === 'department'
+                    ? (form.department_id || null)
+                    : null;
+                const { error: e } = await supabase
+                    .from('in_app_messages')
+                    .insert({
+                        ...payload,
+                        church_id: churchId,
+                        department_id: deptId,
+                        created_by: profile.id,
+                    });
                 if (e) throw e;
             }
             router.push('/in-app-messages');
@@ -794,6 +832,68 @@ export default function IamForm({ messageId }: IamFormProps) {
                                         </button>
                                     ))}
                                 </div>
+                            </div>
+
+                            {/* 노출 범위 */}
+                            <div>
+                                <p className="text-xs font-bold text-slate-400 mb-2">노출 범위</p>
+                                <div className={cn(
+                                    "grid gap-2",
+                                    profile?.is_master ? "grid-cols-3" : "grid-cols-2"
+                                )}>
+                                    {profile?.is_master && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { set('target_scope', 'global'); set('department_id', ''); }}
+                                            className={cn(
+                                                "py-2.5 rounded-xl border text-xs font-black transition-all",
+                                                form.target_scope === 'global'
+                                                    ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300"
+                                                    : "border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300"
+                                            )}
+                                        >
+                                            전체 교회
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => { set('target_scope', 'church'); set('department_id', ''); }}
+                                        className={cn(
+                                            "py-2.5 rounded-xl border text-xs font-black transition-all",
+                                            form.target_scope === 'church'
+                                                ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300"
+                                                : "border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300"
+                                        )}
+                                    >
+                                        내 교회 전체
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => set('target_scope', 'department')}
+                                        disabled={departments.length === 0}
+                                        className={cn(
+                                            "py-2.5 rounded-xl border text-xs font-black transition-all",
+                                            form.target_scope === 'department'
+                                                ? "border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300"
+                                                : "border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300",
+                                            "disabled:opacity-40"
+                                        )}
+                                    >
+                                        특정 부서
+                                    </button>
+                                </div>
+                                {form.target_scope === 'department' && departments.length > 0 && (
+                                    <select
+                                        value={form.department_id}
+                                        onChange={e => set('department_id', e.target.value)}
+                                        className="mt-2 w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                                    >
+                                        <option value="">부서 선택...</option>
+                                        {departments.map(d => (
+                                            <option key={d.id} value={d.id}>{d.name}</option>
+                                        ))}
+                                    </select>
+                                )}
                             </div>
 
                             {/* 대상 역할 */}
