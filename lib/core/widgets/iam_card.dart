@@ -217,25 +217,26 @@ class _IamCardState extends ConsumerState<IamCard> {
             20,
             0,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               _IamTypeBadge(type: message.type),
-              // 슬라이드 모드: 제목은 각 슬라이드 안에서 표시
-              if (!hasSlides) ...[
-                const SizedBox(height: 10),
-                Text(
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
                   message.title,
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
                     color: AppTheme.textMain,
                     fontFamily: 'Pretendard',
-                    letterSpacing: -0.5,
+                    letterSpacing: -0.4,
                     height: 1.3,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
+              ),
             ],
           ),
         ),
