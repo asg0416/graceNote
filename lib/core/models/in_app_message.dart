@@ -16,9 +16,9 @@ class SurveyQuestion {
   });
 
   factory SurveyQuestion.fromJson(Map<String, dynamic> json) => SurveyQuestion(
-        id: json['id'] as String,
-        type: json['type'] as String,
-        text: json['text'] as String,
+        id: json['id'] as String? ?? '',
+        type: json['type'] as String? ?? 'text',
+        text: json['text'] as String? ?? '',
         required: json['required'] as bool? ?? false,
         options: (json['options'] as List<dynamic>?)?.cast<String>() ?? [],
       );
