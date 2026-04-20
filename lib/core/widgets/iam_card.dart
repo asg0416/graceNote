@@ -289,23 +289,19 @@ class _IamCardState extends ConsumerState<IamCard> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: ref.watch(iamSurveyAnsweredProvider(message.id)).when(
-              data: (answered) => answered
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        '이미 응답하셨습니다. 감사합니다!',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textSub,
-                          fontFamily: 'Pretendard',
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    )
-                  : IamSurveyWidget(
-                      messageId: message.id,
-                      onSubmitted: _dismissPermanently,
-                    ),
+              data: (answered) {
+                if (answered) {
+                  // 이미 응답한 경우 카드 자체를 숨김 (다시 보지 않기와 동일)
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _dismissPermanently();
+                  });
+                  return const SizedBox.shrink();
+                }
+                return IamSurveyWidget(
+                  messageId: message.id,
+                  onSubmitted: _dismissPermanently,
+                );
+              },
               loading: () => const SizedBox(height: 40),
               error: (_, __) => IamSurveyWidget(
                 messageId: message.id,
