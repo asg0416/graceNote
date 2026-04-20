@@ -119,7 +119,7 @@ class _IamCardState extends ConsumerState<IamCard> {
             Image.network(
               slide.imageUrl!,
               width: double.infinity,
-              height: 210,
+              height: 180,
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             ),
@@ -288,9 +288,29 @@ class _IamCardState extends ConsumerState<IamCard> {
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: IamSurveyWidget(
-              messageId: message.id,
-              onSubmitted: _dismissPermanently,
+            child: ref.watch(iamSurveyAnsweredProvider(message.id)).when(
+              data: (answered) => answered
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        '이미 응답하셨습니다. 감사합니다!',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSub,
+                          fontFamily: 'Pretendard',
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    )
+                  : IamSurveyWidget(
+                      messageId: message.id,
+                      onSubmitted: _dismissPermanently,
+                    ),
+              loading: () => const SizedBox(height: 40),
+              error: (_, __) => IamSurveyWidget(
+                messageId: message.id,
+                onSubmitted: _dismissPermanently,
+              ),
             ),
           ),
         ],
@@ -352,10 +372,10 @@ class _IamCardState extends ConsumerState<IamCard> {
     );
   }
 
-  /// 슬라이드 높이: 이미지 유무에 따라 결정
+  /// 슬라이드 높이: 이미지 유무에 따라 결정 (이미지 180 + 콘텐츠)
   double _slideHeight(List<IamSlide> slides) {
     final hasImage = slides.any((s) => s.imageUrl != null);
-    return hasImage ? 380 : 220;
+    return hasImage ? 320 : 160;
   }
 
   Future<void> _launchCta(String url) async {

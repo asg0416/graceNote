@@ -46,6 +46,7 @@ interface IamFormData {
     is_active: boolean;
     priority: number;
     target_scope: 'global' | 'church' | 'department';
+    target_church_id: string;
     department_id: string;
 }
 
@@ -58,6 +59,7 @@ const DEFAULT: IamFormData = {
     starts_at: new Date().toISOString().slice(0, 16),
     expires_at: '', is_active: true, priority: 0,
     target_scope: 'church',
+    target_church_id: '',
     department_id: '',
 };
 
@@ -323,66 +325,14 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
                 </div>
             )}
 
-            {/* 이미지 + 슬라이드 네비게이션 */}
-            {form.use_slides ? (
-                <div>
-                    {/* 이미지 + 화살표 */}
-                    <div className="relative">
-                        {hasImage ? (
-                            <img
-                                key={previewSlide}
-                                src={hasImage} alt=""
-                                className="w-full h-[160px] object-cover"
-                            />
-                        ) : (
-                            <div className="w-full h-[160px] bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
-                                <ImageIcon className="text-slate-300" size={18} />
-                            </div>
-                        )}
-                        {form.slides.length > 1 && (
-                            <>
-                                <button
-                                    type="button"
-                                    onClick={() => setPreviewSlide((previewSlide - 1 + form.slides.length) % form.slides.length)}
-                                    className="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white font-bold transition-all text-xs leading-none"
-                                >‹</button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPreviewSlide((previewSlide + 1) % form.slides.length)}
-                                    className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white font-bold transition-all text-xs leading-none"
-                                >›</button>
-                            </>
-                        )}
-                    </div>
-                    {/* 인디케이터: 이미지 아래 (앱과 동일) */}
-                    {form.slides.length > 1 && (
-                        <div className="flex justify-center gap-1 py-1.5">
-                            {form.slides.map((_, i) => (
-                                <button
-                                    key={i} type="button"
-                                    onClick={() => setPreviewSlide(i)}
-                                    className="rounded-full transition-all"
-                                    style={{
-                                        width: i === previewSlide ? 12 : 4,
-                                        height: 4,
-                                        backgroundColor: i === previewSlide
-                                            ? '#8B5CF6'
-                                            : 'rgba(139,92,246,0.25)',
-                                    }}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </div>
-            ) : (
-                hasImage
-                    ? <img src={hasImage} alt="" className="w-full h-[110px] object-cover" />
-                    : null
+            {/* [단일 모드] 상단 이미지 */}
+            {!form.use_slides && hasImage && (
+                <img src={hasImage} alt="" className="w-full h-[110px] object-cover" />
             )}
 
-            <div className="px-3.5 pt-2.5 pb-2">
-                {/* 배지 + 메인 제목 (Row) — 앱의 헤더 Row와 동일 */}
-                <div className="flex items-center gap-1.5 mb-1">
+            {/* 배지 + 메인 제목 — 실제 앱 순서와 동일하게 이미지보다 앞(슬라이드) / 뒤(단일) */}
+            <div className="px-3.5 pt-2.5 pb-0">
+                <div className="flex items-center gap-1.5">
                     <div
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-black flex-shrink-0"
                         style={badgeStyle}
@@ -394,8 +344,41 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
                         {form.title || '제목을 입력하세요'}
                     </p>
                 </div>
+            </div>
 
-                {/* 슬라이드 소제목 (슬라이드 모드만) */}
+            {/* [슬라이드 모드] 이미지 + 화살표 */}
+            {form.use_slides && (
+                <div className="relative mt-2">
+                    {hasImage ? (
+                        <img
+                            key={previewSlide}
+                            src={hasImage} alt=""
+                            className="w-full h-[150px] object-cover"
+                        />
+                    ) : (
+                        <div className="w-full h-[150px] bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
+                            <ImageIcon className="text-slate-300" size={18} />
+                        </div>
+                    )}
+                    {form.slides.length > 1 && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => setPreviewSlide((previewSlide - 1 + form.slides.length) % form.slides.length)}
+                                className="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white font-bold transition-all text-xs leading-none"
+                            >‹</button>
+                            <button
+                                type="button"
+                                onClick={() => setPreviewSlide((previewSlide + 1) % form.slides.length)}
+                                className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white font-bold transition-all text-xs leading-none"
+                            >›</button>
+                        </>
+                    )}
+                </div>
+            )}
+
+            <div className="px-3.5 pt-2 pb-2">
+                {/* [슬라이드 모드] 슬라이드 소제목 */}
                 {form.use_slides && !!form.slides[previewSlide]?.title && (
                     <p className="text-[10px] font-bold text-slate-700 leading-snug mb-1">
                         {form.slides[previewSlide].title}
@@ -410,6 +393,26 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
                     />
                 ) : (
                     <p className="text-[9.5px] text-slate-400 italic">본문을 입력하세요...</p>
+                )}
+
+                {/* [슬라이드 모드] 인디케이터 — 본문 아래 */}
+                {form.use_slides && form.slides.length > 1 && (
+                    <div className="flex justify-center gap-1 py-1.5">
+                        {form.slides.map((_, i) => (
+                            <button
+                                key={i} type="button"
+                                onClick={() => setPreviewSlide(i)}
+                                className="rounded-full transition-all"
+                                style={{
+                                    width: i === previewSlide ? 12 : 4,
+                                    height: 4,
+                                    backgroundColor: i === previewSlide
+                                        ? '#8B5CF6'
+                                        : 'rgba(139,92,246,0.25)',
+                                }}
+                            />
+                        ))}
+                    </div>
                 )}
 
                 {/* 만족도 조사 UI */}
@@ -541,6 +544,7 @@ export default function IamForm({ messageId }: IamFormProps) {
     const [error, setError] = useState<string | null>(null);
     const [profile, setProfile] = useState<any>(null);
     const [activeSlide, setActiveSlide] = useState(0);
+    const [churches, setChurches] = useState<Array<{id: string; name: string}>>([]);
     const [departments, setDepartments] = useState<Array<{id: string; name: string}>>([]);
 
     const set = <K extends keyof IamFormData>(key: K, value: IamFormData[K]) =>
@@ -561,7 +565,13 @@ export default function IamForm({ messageId }: IamFormProps) {
             if (!ok) { router.push('/login'); return; }
             setProfile(p);
 
-            if (p.church_id) {
+            if (p.is_master) {
+                const { data: churchList } = await supabase
+                    .from('churches')
+                    .select('id, name')
+                    .order('name');
+                setChurches(churchList ?? []);
+            } else if (p.church_id) {
                 const { data: depts } = await supabase
                     .from('departments')
                     .select('id, name')
@@ -602,6 +612,7 @@ export default function IamForm({ messageId }: IamFormProps) {
                             : msg.department_id
                             ? 'department'
                             : 'church',
+                        target_church_id: msg.church_id ?? '',
                         department_id: msg.department_id ?? '',
                     });
                 }
@@ -610,6 +621,18 @@ export default function IamForm({ messageId }: IamFormProps) {
         };
         init();
     }, [messageId, isEdit, router]);
+
+    // 마스터: 선택 교회 변경 시 부서 목록 재조회
+    useEffect(() => {
+        if (!profile?.is_master) return;
+        if (!form.target_church_id) { setDepartments([]); return; }
+        supabase
+            .from('departments')
+            .select('id, name')
+            .eq('church_id', form.target_church_id)
+            .order('name')
+            .then(({ data }) => setDepartments(data ?? []));
+    }, [form.target_church_id, profile?.is_master]);
 
     const validate = (): string | null => {
         if (!form.title.trim()) return '제목을 입력해주세요.';
@@ -623,6 +646,8 @@ export default function IamForm({ messageId }: IamFormProps) {
             return 'CTA URL은 http:// 또는 https:// 로 시작해야 합니다.';
         if (form.cta_url && !form.cta_label) return 'CTA URL을 입력했다면 버튼 텍스트도 입력해주세요.';
         if (form.expires_at && form.expires_at <= form.starts_at) return '만료일은 시작일보다 이후여야 합니다.';
+        if (profile?.is_master && form.target_scope === 'church' && !form.target_church_id)
+            return '노출할 특정 교회를 선택해주세요.';
         if (form.target_scope === 'department' && !form.department_id)
             return '노출할 특정 부서를 선택해주세요.';
         return null;
@@ -661,6 +686,11 @@ export default function IamForm({ messageId }: IamFormProps) {
 
         try {
             if (isEdit && messageId) {
+                if (profile.is_master) {
+                    payload.church_id = form.target_scope === 'global'
+                        ? null
+                        : (form.target_church_id || null);
+                }
                 payload.department_id = form.target_scope === 'department'
                     ? (form.department_id || null)
                     : null;
@@ -670,7 +700,11 @@ export default function IamForm({ messageId }: IamFormProps) {
                     .eq('id', messageId);
                 if (e) throw e;
             } else {
-                const churchId = form.target_scope === 'global' ? null : (profile.church_id ?? null);
+                const churchId = form.target_scope === 'global'
+                    ? null
+                    : profile.is_master
+                        ? (form.target_church_id || null)
+                        : (profile.church_id ?? null);
                 const deptId = form.target_scope === 'department'
                     ? (form.department_id || null)
                     : null;
@@ -865,12 +899,12 @@ export default function IamForm({ messageId }: IamFormProps) {
                                                 : "border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300"
                                         )}
                                     >
-                                        내 교회 전체
+                                        {profile?.is_master ? '특정 교회' : '내 교회 전체'}
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => set('target_scope', 'department')}
-                                        disabled={departments.length === 0}
+                                        disabled={profile?.is_master ? !form.target_church_id : departments.length === 0}
                                         className={cn(
                                             "py-2.5 rounded-xl border text-xs font-black transition-all",
                                             form.target_scope === 'department'
@@ -882,6 +916,19 @@ export default function IamForm({ messageId }: IamFormProps) {
                                         특정 부서
                                     </button>
                                 </div>
+                                {/* 마스터: 교회 선택 드롭다운 */}
+                                {profile?.is_master && (form.target_scope === 'church' || form.target_scope === 'department') && (
+                                    <select
+                                        value={form.target_church_id}
+                                        onChange={e => { set('target_church_id', e.target.value); set('department_id', ''); }}
+                                        className="mt-2 w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                                    >
+                                        <option value="">교회 선택...</option>
+                                        {churches.map(c => (
+                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
+                                    </select>
+                                )}
                                 {form.target_scope === 'department' && departments.length > 0 && (
                                     <select
                                         value={form.department_id}

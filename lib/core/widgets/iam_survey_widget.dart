@@ -58,7 +58,14 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
       widget.onSubmitted?.call();
     } catch (e) {
       if (!mounted) return;
-      setState(() { _errorMsg = '제출에 실패했습니다. 다시 시도해 주세요.'; });
+      debugPrint('IamSurveyWidget submit error: $e');
+      final msg = e.toString();
+      final isDuplicate = msg.contains('23505') || msg.contains('unique') || msg.contains('duplicate');
+      setState(() {
+        _errorMsg = isDuplicate
+            ? '이미 응답하신 설문입니다.'
+            : '제출에 실패했습니다. 다시 시도해 주세요.';
+      });
     } finally {
       if (mounted) setState(() { _isSubmitting = false; });
     }
