@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import RichTextEditor from '@/components/RichTextEditor';
 import DOMPurify from 'dompurify';
+import SurveyBuilder, { type SurveyQuestion } from './SurveyBuilder';
 import {
     Loader2, MonitorSmartphone, ArrowLeft, Bell, RefreshCw, Star,
     Smartphone, AlertCircle, ExternalLink, Code, Image as ImageIcon,
@@ -48,6 +49,7 @@ interface IamFormData {
     target_scope: 'global' | 'church' | 'department';
     target_church_id: string;
     department_id: string;
+    survey_questions: SurveyQuestion[];
 }
 
 const DEFAULT: IamFormData = {
@@ -61,6 +63,7 @@ const DEFAULT: IamFormData = {
     target_scope: 'church',
     target_church_id: '',
     department_id: '',
+    survey_questions: [],
 };
 
 // ── HTML 토글 에디터 ────────────────────────────────────────────────
@@ -415,24 +418,56 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
                     </div>
                 )}
 
-                {/* 만족도 조사 UI */}
-                {form.type === 'survey' && (
-                    <div className="mt-2 pt-2 border-t border-slate-100 space-y-1.5">
-                        <p className="text-[8.5px] font-bold text-slate-700">만족도를 알려주세요</p>
-                        <div className="flex gap-0.5">
-                            {[1, 2, 3, 4, 5].map(i => (
-                                <svg key={i} width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-                                        stroke="#F59E0B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                            ))}
+                {/* 설문 미리보기 */}
+                {form.type === 'survey' && form.survey_questions.length > 0 && (() => {
+                    const q = form.survey_questions[0];
+                    const total = form.survey_questions.length;
+                    return (
+                        <div className="mt-2 pt-2 border-t border-slate-100 space-y-1.5">
+                            {/* 진행바 */}
+                            <div className="flex items-center gap-1.5">
+                                <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-violet-500 rounded-full" style={{ width: `${(1 / total) * 100}%` }} />
+                                </div>
+                                <span className="text-[8px] font-black text-slate-400 shrink-0">1 / {total}</span>
+                            </div>
+                            <p className="text-[9px] font-bold text-slate-700 leading-snug line-clamp-2">
+                                {q.text || '질문 내용'}
+                            </p>
+                            {q.type === 'star_rating' && (
+                                <div className="flex gap-0.5">
+                                    {[1,2,3,4,5].map(i => (
+                                        <svg key={i} width="12" height="12" viewBox="0 0 24 24" fill="#FCD34D">
+                                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                        </svg>
+                                    ))}
+                                </div>
+                            )}
+                            {(q.type === 'radio' || q.type === 'checkbox') && (
+                                <div className="space-y-0.5">
+                                    {(q.options.length > 0 ? q.options.slice(0, 3) : ['옵션 1', '옵션 2']).map((opt, i) => (
+                                        <div key={i} className="flex items-center gap-1 text-[8px] text-slate-500">
+                                            <div className={`w-2 h-2 border border-slate-300 shrink-0 ${q.type === 'radio' ? 'rounded-full' : 'rounded-sm'}`} />
+                                            {opt || `옵션 ${i + 1}`}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {q.type === 'text' && (
+                                <div className="h-6 bg-slate-50 border border-slate-200 rounded-lg" />
+                            )}
+                            <div className="flex gap-1 pt-0.5">
+                                <div className="flex-1 py-1 border border-slate-200 text-[7.5px] font-black text-slate-400 text-center rounded-lg">이전</div>
+                                <div className="flex-1 py-1 bg-violet-600 text-white text-[7.5px] font-black text-center rounded-lg">
+                                    {total === 1 ? '제출하기' : '다음'}
+                                </div>
+                            </div>
                         </div>
-                        <div className="w-full h-7 bg-slate-50 border border-slate-200 rounded-lg flex items-center px-2">
-                            <span className="text-[8px] text-slate-400">의견을 남겨주세요 (선택)</span>
-                        </div>
-                        <div className="w-full bg-violet-600 text-white text-[8.5px] font-black text-center py-1.5 rounded-lg">
-                            제출하기
-                        </div>
+                    );
+                })()}
+                {form.type === 'survey' && form.survey_questions.length === 0 && (
+                    <div className="mt-2 pt-2 border-t border-slate-100">
+                        <p className="text-[8.5px] text-slate-300 italic text-center py-2">질문을 추가하면 미리보기가 표시됩니다.</p>
                     </div>
                 )}
 
@@ -614,6 +649,7 @@ export default function IamForm({ messageId }: IamFormProps) {
                             : 'church',
                         target_church_id: msg.church_id ?? '',
                         department_id: msg.department_id ?? '',
+                        survey_questions: (msg.survey_questions as SurveyQuestion[]) ?? [],
                     });
                 }
                 setLoading(false);
@@ -636,6 +672,14 @@ export default function IamForm({ messageId }: IamFormProps) {
 
     const validate = (): string | null => {
         if (!form.title.trim()) return '제목을 입력해주세요.';
+        if (form.type === 'survey') {
+            if (form.survey_questions.length === 0) return '설문 질문을 최소 1개 이상 추가해주세요.';
+            for (const q of form.survey_questions) {
+                if (!q.text.trim()) return '모든 질문에 내용을 입력해주세요.';
+                if ((q.type === 'radio' || q.type === 'checkbox') && q.options.some(o => !o.trim()))
+                    return '모든 옵션에 내용을 입력해주세요.';
+            }
+        }
         if (form.use_slides) {
             if (!form.slides.some(s => s.body.trim() && s.body !== '<p></p>'))
                 return '최소 한 슬라이드에 본문을 입력해주세요.';
@@ -683,6 +727,18 @@ export default function IamForm({ messageId }: IamFormProps) {
             is_active:    form.is_active,
             priority:     form.priority,
         };
+
+        if (form.type === 'survey') {
+            payload.survey_questions = form.survey_questions.map(q => ({
+                id: q.id,
+                type: q.type,
+                text: DOMPurify.sanitize(q.text, { ALLOWED_TAGS: [] }),
+                required: q.required,
+                options: q.options.map(o => DOMPurify.sanitize(o, { ALLOWED_TAGS: [] })),
+            }));
+        } else {
+            payload.survey_questions = null;
+        }
 
         try {
             if (isEdit && messageId) {
@@ -770,50 +826,65 @@ export default function IamForm({ messageId }: IamFormProps) {
                             />
                         </div>
 
-                        {/* 본문 / 슬라이드 */}
+                        {/* 본문 / 슬라이드 / 설문 */}
                         <div className="bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800/60 rounded-2xl p-6 space-y-4">
                             <div className="flex items-center justify-between">
-                                <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">콘텐츠 *</label>
-                                {/* 슬라이드 모드 토글 */}
-                                <button
-                                    type="button"
-                                    onClick={() => set('use_slides', !form.use_slides)}
-                                    className={cn(
-                                        "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-black transition-all border",
-                                        form.use_slides
-                                            ? "bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/30"
-                                            : "bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-violet-300"
-                                    )}
-                                >
-                                    <div className={cn("w-7 h-4 rounded-full relative transition-colors", form.use_slides ? "bg-violet-600" : "bg-slate-300")}>
-                                        <div className={cn("absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all shadow", form.use_slides ? "left-3.5" : "left-0.5")} />
-                                    </div>
-                                    슬라이드 모드
-                                </button>
+                                <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                                    {form.type === 'survey' ? '설문 질문' : '콘텐츠'} *
+                                </label>
+                                {/* 슬라이드 모드 토글 — survey 타입에서는 숨김 */}
+                                {form.type !== 'survey' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => set('use_slides', !form.use_slides)}
+                                        className={cn(
+                                            "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-black transition-all border",
+                                            form.use_slides
+                                                ? "bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/30"
+                                                : "bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:border-violet-300"
+                                        )}
+                                    >
+                                        <div className={cn("w-7 h-4 rounded-full relative transition-colors", form.use_slides ? "bg-violet-600" : "bg-slate-300")}>
+                                            <div className={cn("absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all shadow", form.use_slides ? "left-3.5" : "left-0.5")} />
+                                        </div>
+                                        슬라이드 모드
+                                    </button>
+                                )}
                             </div>
 
-                            {form.use_slides ? (
-                                <SlideEditor
-                                    slides={form.slides}
-                                    onChange={s => { set('slides', s); setActiveSlide(i => Math.min(i, s.length - 1)); }}
-                                    active={activeSlide}
-                                    onActiveChange={setActiveSlide}
+                            {/* survey 타입: SurveyBuilder */}
+                            {form.type === 'survey' && (
+                                <SurveyBuilder
+                                    questions={form.survey_questions}
+                                    onChange={questions => setForm(f => ({ ...f, survey_questions: questions }))}
                                 />
-                            ) : (
-                                <div className="space-y-3">
-                                    <ImageUploader value={form.image_url} onChange={url => set('image_url', url)} />
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-400 mb-1.5">
-                                            본문 *
-                                            <span className="ml-1 text-[10px] font-normal text-slate-300">HTML 버튼으로 소스 편집 가능</span>
-                                        </p>
-                                        <HtmlToggleEditor
-                                            content={form.body}
-                                            onChange={v => set('body', v)}
-                                            placeholder="메시지 본문을 입력하세요..."
-                                        />
+                            )}
+
+                            {/* 비survey 타입: 기존 슬라이드/단일 에디터 */}
+                            {form.type !== 'survey' && (
+                                form.use_slides ? (
+                                    <SlideEditor
+                                        slides={form.slides}
+                                        onChange={s => { set('slides', s); setActiveSlide(i => Math.min(i, s.length - 1)); }}
+                                        active={activeSlide}
+                                        onActiveChange={setActiveSlide}
+                                    />
+                                ) : (
+                                    <div className="space-y-3">
+                                        <ImageUploader value={form.image_url} onChange={url => set('image_url', url)} />
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-400 mb-1.5">
+                                                본문 *
+                                                <span className="ml-1 text-[10px] font-normal text-slate-300">HTML 버튼으로 소스 편집 가능</span>
+                                            </p>
+                                            <HtmlToggleEditor
+                                                content={form.body}
+                                                onChange={v => set('body', v)}
+                                                placeholder="메시지 본문을 입력하세요..."
+                                            />
+                                        </div>
                                     </div>
-                                </div>
+                                )
                             )}
                         </div>
 
@@ -840,7 +911,7 @@ export default function IamForm({ messageId }: IamFormProps) {
                                 </div>
                                 {form.type === 'survey' && (
                                     <p className="mt-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-500/10 px-3 py-2 rounded-xl border border-amber-200 dark:border-amber-500/20">
-                                        앱에서 별점(1~5) + 의견 입력란 + 제출 버튼이 본문 아래에 자동으로 표시됩니다. 제출된 응답은 iam_survey_responses 테이블에 저장됩니다.
+                                        앱에서 질문별 슬라이드 방식으로 응답합니다. 별점·단일/다중 선택·주관식 질문을 최대 6개 구성할 수 있습니다.
                                     </p>
                                 )}
                             </div>
