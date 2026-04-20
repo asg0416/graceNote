@@ -389,10 +389,11 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
   }
 
   Widget _buildTextField(SurveyQuestion q) {
-    return TextField(
+    return TextFormField(
+      initialValue: _answers[q.id] as String? ?? '',
       maxLines: 4,
       maxLength: 500,
-      onChanged: (v) => setState(() => _answers[q.id] = v),
+      onChanged: (v) => _answers[q.id] = v,
       style: const TextStyle(
         fontSize: 13,
         fontFamily: 'Pretendard',
