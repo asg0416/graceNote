@@ -10,5 +10,15 @@ ALTER TABLE public.iam_survey_responses
   DROP COLUMN IF EXISTS comment,
   ADD COLUMN IF NOT EXISTS answers jsonb NOT NULL DEFAULT '[]'::jsonb;
 
-ALTER TABLE public.iam_survey_responses
-  ADD CONSTRAINT answers_is_array CHECK (jsonb_typeof(answers) = 'array');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'answers_is_array'
+      AND conrelid = 'public.iam_survey_responses'::regclass
+  ) THEN
+    ALTER TABLE public.iam_survey_responses
+      ADD CONSTRAINT answers_is_array CHECK (jsonb_typeof(answers) = 'array');
+  END IF;
+END;
+$$;
