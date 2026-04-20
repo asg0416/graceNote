@@ -269,7 +269,7 @@ class _IamCardState extends ConsumerState<IamCard> {
         ],
 
         // ── 단일 본문 ────────────────────────────────────────────────
-        if (!hasSlides)
+        if (!hasSlides && message.type != IamType.survey)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: HtmlWidget(
@@ -299,12 +299,14 @@ class _IamCardState extends ConsumerState<IamCard> {
                 }
                 return IamSurveyWidget(
                   messageId: message.id,
+                  questions: message.surveyQuestions,
                   onSubmitted: _dismissPermanently,
                 );
               },
               loading: () => const SizedBox(height: 40),
               error: (_, __) => IamSurveyWidget(
                 messageId: message.id,
+                questions: message.surveyQuestions,
                 onSubmitted: _dismissPermanently,
               ),
             ),
