@@ -8,12 +8,12 @@ import { twMerge } from 'tailwind-merge';
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
 function parseSurveyText(raw: string): SurveyQuestion[] {
-  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const blocks: string[][] = [];
   let current: string[] = [];
 
   for (const line of lines) {
-    if (/^Q\d+[.:\s]/.test(line)) {
+    if (/^Q\d+[.:\s]/i.test(line)) {
       if (current.length > 0) blocks.push(current);
       current = [line];
     } else if (current.length > 0) {
@@ -22,10 +22,11 @@ function parseSurveyText(raw: string): SurveyQuestion[] {
   }
   if (current.length > 0) blocks.push(current);
 
-  const optionPattern = /^[-–•*·]\s+|^\d+[.)]\s+|^[①②③④⑤⑥⑦⑧]\s*/;
+  // \s* (not \s+) — 불릿 뒤 공백 없어도 인식
+  const optionPattern = /^[-–—•*·▪▸►◆○●]\s*|^\d+[.)]\s*|^[가나다라마바사아자]\.\s*|^[①②③④⑤⑥⑦⑧⑨⑩]\s*/;
 
   return blocks.slice(0, 6).map(block => {
-    const firstMatch = block[0].match(/^Q\d+[.:\s]+(.*)$/);
+    const firstMatch = block[0].match(/^Q\d+[.:\s]+(.*)$/i);
     const firstText = firstMatch ? firstMatch[1].trim() : '';
 
     const questionTextLines: string[] = [];
@@ -47,7 +48,9 @@ function parseSurveyText(raw: string): SurveyQuestion[] {
     const fullText = block.join(' ');
 
     let type: SurveyQuestion['type'];
-    if (/복수\s*선택|다중\s*선택/i.test(fullText)) {
+    if (/별점|star\s*rating/i.test(fullText)) {
+      type = 'star_rating';
+    } else if (/복수\s*선택|다중\s*선택|여러\s*개/i.test(fullText)) {
       type = 'checkbox';
     } else if (options.length >= 2) {
       type = 'radio';
@@ -162,13 +165,14 @@ export default function SurveyBuilder({ questions, onChange }: Props) {
         </button>
         {pasteOpen && (
           <div className="px-4 py-3 space-y-2 border-t border-slate-200 dark:border-slate-700">
-            <p className="text-[10px] text-slate-400">
-              <span className="font-black">형식:</span> Q1. 질문 내용 → 다음 줄에 옵션을 <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">- 옵션</code> 형태로 입력. 복수 선택은 질문에 "(복수 선택)" 포함.
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              <span className="font-black">형식:</span> <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">Q1. 질문</code> 다음 줄에 <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">- 옵션</code> 나열 → 단일 선택.<br />
+              질문에 <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">(별점)</code> 포함 시 별점, <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">(복수 선택)</code> 포함 시 다중 선택, 옵션 없으면 주관식.
             </p>
             <textarea
               value={pasteText}
               onChange={e => setPasteText(e.target.value)}
-              placeholder={`Q1. 이 서비스에 만족하시나요?\n- 매우 만족\n- 만족\n- 보통\n- 불만족\n\nQ2. 개선이 필요한 부분은? (복수 선택)\n- 속도\n- UI\n- 기능`}
+              placeholder={`Q1. 전반적인 만족도를 평가해주세요 (별점)\n\nQ2. 이 서비스에 만족하시나요?\n- 매우 만족\n- 만족\n- 보통\n- 불만족\n\nQ3. 개선이 필요한 부분은? (복수 선택)\n- 속도\n- UI\n- 기능\n\nQ4. 추가 의견을 남겨주세요 (주관식)`}
               rows={8}
               className="w-full text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/30 text-slate-800 dark:text-slate-100 placeholder-slate-300 font-mono resize-y"
             />
