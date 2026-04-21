@@ -199,9 +199,11 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.textSub,
                     side: const BorderSide(color: AppTheme.border),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child: const Text(
@@ -227,9 +229,11 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
                   foregroundColor: Colors.white,
                   disabledBackgroundColor: AppTheme.border,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
                 child: _isSubmitting
