@@ -93,7 +93,7 @@ class _SlideUpOverlay extends StatelessWidget {
             Positioned(
               left: 0,
               right: 0,
-              bottom: 0,
+              bottom: MediaQuery.of(context).viewInsets.bottom,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
