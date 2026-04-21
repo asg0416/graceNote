@@ -297,17 +297,21 @@ class _IamCardState extends ConsumerState<IamCard> {
                   });
                   return const SizedBox.shrink();
                 }
-                return IamSurveyWidget(
-                  messageId: message.id,
-                  questions: message.surveyQuestions,
-                  onSubmitted: _dismissPermanently,
+                return RepaintBoundary(
+                  child: IamSurveyWidget(
+                    messageId: message.id,
+                    questions: message.surveyQuestions,
+                    onSubmitted: _dismissPermanently,
+                  ),
                 );
               },
               loading: () => const SizedBox(height: 40),
-              error: (_, __) => IamSurveyWidget(
-                messageId: message.id,
-                questions: message.surveyQuestions,
-                onSubmitted: _dismissPermanently,
+              error: (_, __) => RepaintBoundary(
+                child: IamSurveyWidget(
+                  messageId: message.id,
+                  questions: message.surveyQuestions,
+                  onSubmitted: _dismissPermanently,
+                ),
               ),
             ),
           ),
