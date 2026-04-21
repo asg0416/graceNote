@@ -1,9 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { Star, Plus, Trash2, X, ClipboardPaste, ChevronDown } from 'lucide-react';
+import { Star, Plus, Trash2, X, ClipboardPaste, ChevronDown, GripVertical } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor,
+  useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, sortableKeyboardCoordinates,
+  useSortable, verticalListSortingStrategy, arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
@@ -96,9 +105,160 @@ interface Props {
   onChange: (questions: SurveyQuestion[]) => void;
 }
 
+interface CardProps {
+  q: SurveyQuestion;
+  idx: number;
+  update: (idx: number, patch: Partial<SurveyQuestion>) => void;
+  changeType: (idx: number, type: SurveyQuestion['type']) => void;
+  removeQuestion: (idx: number) => void;
+  addOption: (idx: number) => void;
+  updateOption: (qIdx: number, oIdx: number, val: string) => void;
+  removeOption: (qIdx: number, oIdx: number) => void;
+}
+
+function SortableQuestionCard({ q, idx, update, changeType, removeQuestion, addOption, updateOption, removeOption }: CardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: q.id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-white dark:bg-slate-900/50 space-y-3",
+        isDragging && "opacity-50 shadow-lg z-50"
+      )}
+    >
+      {/* 질문 헤더 */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="p-1 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing transition-colors touch-none"
+        >
+          <GripVertical size={14} />
+        </button>
+        <span className="text-xs font-black text-slate-400 w-5 shrink-0">
+          Q{idx + 1}
+        </span>
+        <select
+          value={q.type}
+          onChange={e => changeType(idx, e.target.value as SurveyQuestion['type'])}
+          className="text-xs font-bold bg-slate-100 dark:bg-slate-800 border-0 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-violet-500/30 focus:outline-none"
+        >
+          {(Object.keys(TYPE_LABELS) as SurveyQuestion['type'][]).map(t => (
+            <option key={t} value={t}>{TYPE_LABELS[t]}</option>
+          ))}
+        </select>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => removeQuestion(idx)}
+          className="p-1.5 text-slate-300 hover:text-red-400 transition-colors rounded-lg"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+
+      {/* 질문 텍스트 */}
+      <input
+        type="text"
+        value={q.text}
+        onChange={e => update(idx, { text: e.target.value.slice(0, 200) })}
+        placeholder="질문 내용을 입력하세요"
+        maxLength={200}
+        className="w-full text-sm bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/30 text-slate-800 dark:text-slate-100 placeholder-slate-300"
+      />
+      <div className="text-right text-[10px] text-slate-300 -mt-1">
+        {q.text.length}/200
+      </div>
+
+      {/* 타입별 추가 UI */}
+      {q.type === 'star_rating' && (
+        <div className="flex gap-1 px-1">
+          {[1, 2, 3, 4, 5].map(i => (
+            <Star key={i} size={20} className="text-amber-300 fill-amber-300" />
+          ))}
+          <span className="text-xs text-slate-300 ml-2 self-center">미리보기 (편집 불가)</span>
+        </div>
+      )}
+
+      {(q.type === 'radio' || q.type === 'checkbox') && (
+        <div className="space-y-2">
+          {q.options.map((opt, oIdx) => (
+            <div key={oIdx} className="flex items-center gap-2">
+              <div className={cn(
+                "w-3.5 h-3.5 border-2 border-slate-300 shrink-0",
+                q.type === 'radio' ? 'rounded-full' : 'rounded-sm'
+              )} />
+              <input
+                type="text"
+                value={opt}
+                onChange={e => updateOption(idx, oIdx, e.target.value.slice(0, 50))}
+                placeholder={`옵션 ${oIdx + 1}`}
+                maxLength={50}
+                className="flex-1 text-sm bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-500/30 text-slate-800 dark:text-slate-100 placeholder-slate-300"
+              />
+              {q.options.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => removeOption(idx, oIdx)}
+                  className="p-1 text-slate-300 hover:text-red-400 transition-colors"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          ))}
+          {q.options.length < 8 && (
+            <button
+              type="button"
+              onClick={() => addOption(idx)}
+              className="text-xs text-violet-500 hover:text-violet-700 font-bold flex items-center gap-1 pl-5 mt-1"
+            >
+              <Plus size={12} /> 옵션 추가
+            </button>
+          )}
+        </div>
+      )}
+
+      {q.type === 'text' && (
+        <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 italic">
+          주관식 텍스트 입력란 (미리보기)
+        </div>
+      )}
+
+      {/* 필수 여부 */}
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={q.required}
+          onChange={e => update(idx, { required: e.target.checked })}
+          className="w-3.5 h-3.5 accent-violet-600"
+        />
+        <span className="text-xs text-slate-500 font-bold">필수 질문</span>
+      </label>
+    </div>
+  );
+}
+
 export default function SurveyBuilder({ questions, onChange }: Props) {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = questions.findIndex(q => q.id === active.id);
+    const newIdx = questions.findIndex(q => q.id === over.id);
+    onChange(arrayMove(questions, oldIdx, newIdx));
+  };
 
   const applyPaste = () => {
     const parsed = parseSurveyText(pasteText);
@@ -197,115 +357,23 @@ export default function SurveyBuilder({ questions, onChange }: Props) {
         )}
       </div>
 
-      {questions.map((q, idx) => (
-        <div
-          key={q.id}
-          className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-white dark:bg-slate-900/50 space-y-3"
-        >
-          {/* 질문 헤더 */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-black text-slate-400 w-6 shrink-0">
-              Q{idx + 1}
-            </span>
-            <select
-              value={q.type}
-              onChange={e => changeType(idx, e.target.value as SurveyQuestion['type'])}
-              className="text-xs font-bold bg-slate-100 dark:bg-slate-800 border-0 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-violet-500/30 focus:outline-none"
-            >
-              {(Object.keys(TYPE_LABELS) as SurveyQuestion['type'][]).map(t => (
-                <option key={t} value={t}>{TYPE_LABELS[t]}</option>
-              ))}
-            </select>
-            <div className="flex-1" />
-            <button
-              type="button"
-              onClick={() => removeQuestion(idx)}
-              className="p-1.5 text-slate-300 hover:text-red-400 transition-colors rounded-lg"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-
-          {/* 질문 텍스트 */}
-          <input
-            type="text"
-            value={q.text}
-            onChange={e => update(idx, { text: e.target.value.slice(0, 200) })}
-            placeholder="질문 내용을 입력하세요"
-            maxLength={200}
-            className="w-full text-sm bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/30 text-slate-800 dark:text-slate-100 placeholder-slate-300"
-          />
-          <div className="text-right text-[10px] text-slate-300 -mt-1">
-            {q.text.length}/200
-          </div>
-
-          {/* 타입별 추가 UI */}
-          {q.type === 'star_rating' && (
-            <div className="flex gap-1 px-1">
-              {[1, 2, 3, 4, 5].map(i => (
-                <Star key={i} size={20} className="text-amber-300 fill-amber-300" />
-              ))}
-              <span className="text-xs text-slate-300 ml-2 self-center">미리보기 (편집 불가)</span>
-            </div>
-          )}
-
-          {(q.type === 'radio' || q.type === 'checkbox') && (
-            <div className="space-y-2">
-              {q.options.map((opt, oIdx) => (
-                <div key={oIdx} className="flex items-center gap-2">
-                  <div className={cn(
-                    "w-3.5 h-3.5 border-2 border-slate-300 shrink-0",
-                    q.type === 'radio' ? 'rounded-full' : 'rounded-sm'
-                  )} />
-                  <input
-                    type="text"
-                    value={opt}
-                    onChange={e => updateOption(idx, oIdx, e.target.value.slice(0, 50))}
-                    placeholder={`옵션 ${oIdx + 1}`}
-                    maxLength={50}
-                    className="flex-1 text-sm bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-500/30 text-slate-800 dark:text-slate-100 placeholder-slate-300"
-                  />
-                  {q.options.length > 2 && (
-                    <button
-                      type="button"
-                      onClick={() => removeOption(idx, oIdx)}
-                      className="p-1 text-slate-300 hover:text-red-400 transition-colors"
-                    >
-                      <X size={13} />
-                    </button>
-                  )}
-                </div>
-              ))}
-              {q.options.length < 8 && (
-                <button
-                  type="button"
-                  onClick={() => addOption(idx)}
-                  className="text-xs text-violet-500 hover:text-violet-700 font-bold flex items-center gap-1 pl-5 mt-1"
-                >
-                  <Plus size={12} /> 옵션 추가
-                </button>
-              )}
-            </div>
-          )}
-
-          {q.type === 'text' && (
-            <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 italic">
-              주관식 텍스트 입력란 (미리보기)
-            </div>
-          )}
-
-          {/* 필수 여부 */}
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={q.required}
-              onChange={e => update(idx, { required: e.target.checked })}
-              className="w-3.5 h-3.5 accent-violet-600"
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={questions.map(q => q.id)} strategy={verticalListSortingStrategy}>
+          {questions.map((q, idx) => (
+            <SortableQuestionCard
+              key={q.id}
+              q={q}
+              idx={idx}
+              update={update}
+              changeType={changeType}
+              removeQuestion={removeQuestion}
+              addOption={addOption}
+              updateOption={updateOption}
+              removeOption={removeOption}
             />
-            <span className="text-xs text-slate-500 font-bold">필수 질문</span>
-          </label>
-        </div>
-      ))}
+          ))}
+        </SortableContext>
+      </DndContext>
 
       {/* 질문 추가 버튼 */}
       <button
