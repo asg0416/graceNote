@@ -705,11 +705,13 @@ export default function IamForm({ messageId }: IamFormProps) {
                     return '모든 옵션에 내용을 입력해주세요.';
             }
         }
-        if (form.use_slides) {
-            if (!form.slides.some(s => s.body.trim() && s.body !== '<p></p>'))
-                return '최소 한 슬라이드에 본문을 입력해주세요.';
-        } else {
-            if (!form.body.trim() || form.body === '<p></p>') return '본문을 입력해주세요.';
+        if (form.type !== 'survey') {
+            if (form.use_slides) {
+                if (!form.slides.some(s => s.body.trim() && s.body !== '<p></p>'))
+                    return '최소 한 슬라이드에 본문을 입력해주세요.';
+            } else {
+                if (!form.body.trim() || form.body === '<p></p>') return '본문을 입력해주세요.';
+            }
         }
         if (form.cta_url && !/^https?:\/\//i.test(form.cta_url))
             return 'CTA URL은 http:// 또는 https:// 로 시작해야 합니다.';
@@ -879,10 +881,23 @@ export default function IamForm({ messageId }: IamFormProps) {
 
                             {/* survey 타입: SurveyBuilder */}
                             {form.type === 'survey' && (
-                                <SurveyBuilder
-                                    questions={form.survey_questions}
-                                    onChange={questions => setForm(f => ({ ...f, survey_questions: questions }))}
-                                />
+                                <>
+                                    <SurveyBuilder
+                                        questions={form.survey_questions}
+                                        onChange={questions => setForm(f => ({ ...f, survey_questions: questions }))}
+                                    />
+                                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                                        <p className="text-xs font-bold text-slate-400 mb-1.5">
+                                            본문
+                                            <span className="ml-1 text-[10px] font-normal text-slate-300">선택 사항 · 설문 위에 표시됩니다</span>
+                                        </p>
+                                        <HtmlToggleEditor
+                                            content={form.body}
+                                            onChange={v => set('body', v)}
+                                            placeholder="설문 안내 문구를 입력하세요... (선택)"
+                                        />
+                                    </div>
+                                </>
                             )}
 
                             {/* 비survey 타입: 기존 슬라이드/단일 에디터 */}

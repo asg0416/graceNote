@@ -1,10 +1,67 @@
 'use client';
 
-import { Star, Plus, Trash2, X } from 'lucide-react';
+import { useState } from 'react';
+import { Star, Plus, Trash2, X, ClipboardPaste, ChevronDown } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
+
+function parseSurveyText(raw: string): SurveyQuestion[] {
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const blocks: string[][] = [];
+  let current: string[] = [];
+
+  for (const line of lines) {
+    if (/^Q\d+[.:\s]/.test(line)) {
+      if (current.length > 0) blocks.push(current);
+      current = [line];
+    } else if (current.length > 0) {
+      current.push(line);
+    }
+  }
+  if (current.length > 0) blocks.push(current);
+
+  const optionPattern = /^[-–•*·]\s+|^\d+[.)]\s+|^[①②③④⑤⑥⑦⑧]\s*/;
+
+  return blocks.slice(0, 6).map(block => {
+    const firstMatch = block[0].match(/^Q\d+[.:\s]+(.*)$/);
+    const firstText = firstMatch ? firstMatch[1].trim() : '';
+
+    const questionTextLines: string[] = [];
+    const optionLines: string[] = [];
+    let reachedOptions = false;
+
+    for (let i = 1; i < block.length; i++) {
+      const line = block[i];
+      if (optionPattern.test(line)) {
+        reachedOptions = true;
+        optionLines.push(line.replace(optionPattern, '').trim());
+      } else if (!reachedOptions) {
+        questionTextLines.push(line);
+      }
+    }
+
+    const questionText = [firstText, ...questionTextLines].filter(Boolean).join(' ').slice(0, 200);
+    const options = optionLines.map(o => o.slice(0, 50)).filter(Boolean).slice(0, 8);
+    const fullText = block.join(' ');
+
+    let type: SurveyQuestion['type'];
+    if (/복수\s*선택|다중\s*선택/i.test(fullText)) {
+      type = 'checkbox';
+    } else if (options.length >= 2) {
+      type = 'radio';
+    } else {
+      type = 'text';
+    }
+
+    const finalOptions = (type === 'radio' || type === 'checkbox')
+      ? (options.length >= 2 ? options : ['', ''])
+      : [];
+
+    return { id: crypto.randomUUID(), type, text: questionText, required: false, options: finalOptions };
+  });
+}
 
 export interface SurveyQuestion {
   id: string;
@@ -37,6 +94,17 @@ interface Props {
 }
 
 export default function SurveyBuilder({ questions, onChange }: Props) {
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+
+  const applyPaste = () => {
+    const parsed = parseSurveyText(pasteText);
+    if (parsed.length === 0) return;
+    onChange([...questions, ...parsed].slice(0, 6));
+    setPasteText('');
+    setPasteOpen(false);
+  };
+
   const update = (idx: number, patch: Partial<SurveyQuestion>) => {
     const next = questions.map((q, i) => (i === idx ? { ...q, ...patch } : q));
     onChange(next);
@@ -81,6 +149,50 @@ export default function SurveyBuilder({ questions, onChange }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* 텍스트로 가져오기 */}
+      <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setPasteOpen(o => !o)}
+          className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 hover:text-violet-600 transition-colors"
+        >
+          <ClipboardPaste size={13} />
+          텍스트로 가져오기
+          <ChevronDown size={13} className={cn("ml-auto transition-transform", pasteOpen && "rotate-180")} />
+        </button>
+        {pasteOpen && (
+          <div className="px-4 py-3 space-y-2 border-t border-slate-200 dark:border-slate-700">
+            <p className="text-[10px] text-slate-400">
+              <span className="font-black">형식:</span> Q1. 질문 내용 → 다음 줄에 옵션을 <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded">- 옵션</code> 형태로 입력. 복수 선택은 질문에 "(복수 선택)" 포함.
+            </p>
+            <textarea
+              value={pasteText}
+              onChange={e => setPasteText(e.target.value)}
+              placeholder={`Q1. 이 서비스에 만족하시나요?\n- 매우 만족\n- 만족\n- 보통\n- 불만족\n\nQ2. 개선이 필요한 부분은? (복수 선택)\n- 속도\n- UI\n- 기능`}
+              rows={8}
+              className="w-full text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/30 text-slate-800 dark:text-slate-100 placeholder-slate-300 font-mono resize-y"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setPasteText(''); setPasteOpen(false); }}
+                className="text-xs px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={applyPaste}
+                disabled={!pasteText.trim() || questions.length >= 6}
+                className="text-xs px-3 py-1.5 rounded-lg bg-violet-600 text-white font-bold hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                질문 생성
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {questions.map((q, idx) => (
         <div
           key={q.id}
