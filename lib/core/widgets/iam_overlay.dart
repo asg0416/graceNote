@@ -105,22 +105,30 @@ class _SlideUpOverlay extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.80),
                     ),
                   ),
-                  Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(20)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Color(0x1A000000),
-                          blurRadius: 24,
-                          offset: Offset(0, -4),
-                        ),
-                      ],
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.82 -
+                          MediaQuery.of(context).viewInsets.bottom,
                     ),
-                    child: IamCard(
-                      message: message,
-                      showHandle: true,
+                    child: SingleChildScrollView(
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(20)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0x1A000000),
+                              blurRadius: 24,
+                              offset: Offset(0, -4),
+                            ),
+                          ],
+                        ),
+                        child: IamCard(
+                          message: message,
+                          showHandle: true,
+                        ),
+                      ),
                     ),
                   ),
                 ],
