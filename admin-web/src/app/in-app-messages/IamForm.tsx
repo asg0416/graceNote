@@ -298,6 +298,14 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
     onPreviewSlideChange: (i: number) => void;
 }) {
     const setPreviewSlide = onPreviewSlideChange;
+    const [previewQIdx, setPreviewQIdx] = useState(0);
+
+    // 질문 수 변경 시 인덱스 범위 보정
+    useEffect(() => {
+        const max = form.survey_questions.length - 1;
+        if (previewQIdx > max) setPreviewQIdx(Math.max(0, max));
+    }, [form.survey_questions.length, previewQIdx]);
+
     const typeMeta = TYPE_OPTIONS.find(t => t.value === form.type) ?? TYPE_OPTIONS[0];
     const badgeStyle = {
         backgroundColor: `${typeMeta.color}1A`,
@@ -420,16 +428,21 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
 
                 {/* 설문 미리보기 */}
                 {form.type === 'survey' && form.survey_questions.length > 0 && (() => {
-                    const q = form.survey_questions[0];
                     const total = form.survey_questions.length;
+                    const idx = Math.min(previewQIdx, total - 1);
+                    const q = form.survey_questions[idx];
+                    const isLast = idx === total - 1;
                     return (
                         <div className="mt-2 pt-2 border-t border-slate-100 space-y-1.5">
                             {/* 진행바 */}
                             <div className="flex items-center gap-1.5">
                                 <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                    <div className="h-full bg-violet-500 rounded-full" style={{ width: `${(1 / total) * 100}%` }} />
+                                    <div
+                                        className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                                        style={{ width: `${((idx + 1) / total) * 100}%` }}
+                                    />
                                 </div>
-                                <span className="text-[8px] font-black text-slate-400 shrink-0">1 / {total}</span>
+                                <span className="text-[8px] font-black text-slate-400 shrink-0">{idx + 1} / {total}</span>
                             </div>
                             <p className="text-[9px] font-bold text-slate-700 leading-snug line-clamp-2">
                                 {q.text || '질문 내용'}
@@ -457,10 +470,22 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
                                 <div className="h-6 bg-slate-50 border border-slate-200 rounded-lg" />
                             )}
                             <div className="flex gap-1 pt-0.5">
-                                <div className="flex-1 py-1 border border-slate-200 text-[7.5px] font-black text-slate-400 text-center rounded-lg">이전</div>
-                                <div className="flex-1 py-1 bg-violet-600 text-white text-[7.5px] font-black text-center rounded-lg">
-                                    {total === 1 ? '제출하기' : '다음'}
-                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setPreviewQIdx(i => Math.max(0, i - 1))}
+                                    disabled={idx === 0}
+                                    className="flex-1 py-1 border border-slate-200 text-[7.5px] font-black text-center rounded-lg disabled:opacity-30 transition-opacity"
+                                    style={{ color: '#94a3b8' }}
+                                >
+                                    이전
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => !isLast && setPreviewQIdx(i => Math.min(total - 1, i + 1))}
+                                    className="flex-1 py-1 bg-violet-600 text-white text-[7.5px] font-black text-center rounded-lg transition-opacity"
+                                >
+                                    {isLast ? '제출하기' : '다음'}
+                                </button>
                             </div>
                         </div>
                     );
