@@ -116,16 +116,23 @@ export default function InAppMessagesPage() {
         if (surveyIds.length > 0) {
             const { data: resData } = await supabase
                 .from('iam_survey_responses')
-                .select('message_id, rating')
+                .select('message_id, answers')
                 .in('message_id', surveyIds);
 
             const stats: Record<string, { avg: number; count: number }> = {};
             surveyIds.forEach((id: string) => {
                 const rows = (resData ?? []).filter((r: any) => r.message_id === id);
                 const count = rows.length;
-                const avg = count > 0
-                    ? Math.round((rows.reduce((s: number, r: any) => s + r.rating, 0) / count) * 10) / 10
-                    : 0;
+                // answers 배열에서 star_rating 값(숫자)만 추출해 평균 계산
+                let avg = 0;
+                if (count > 0) {
+                    const starAnswers = rows.flatMap((r: any) =>
+                        (r.answers as any[] ?? []).filter((a: any) => typeof a.value === 'number' && a.value > 0)
+                    );
+                    if (starAnswers.length > 0) {
+                        avg = Math.round((starAnswers.reduce((s: number, a: any) => s + a.value, 0) / starAnswers.length) * 10) / 10;
+                    }
+                }
                 stats[id] = { avg, count };
             });
             setSurveyStats(stats);
@@ -265,7 +272,9 @@ export default function InAppMessagesPage() {
                                                     <Star className="w-3 h-3 text-amber-500 fill-amber-400" />
                                                     <span className="text-xs font-black text-amber-700 dark:text-amber-400">
                                                         {surveyStats[msg.id].count > 0
-                                                            ? `${surveyStats[msg.id].avg}점 · ${surveyStats[msg.id].count}명 응답`
+                                                            ? surveyStats[msg.id].avg > 0
+                                                                ? `${surveyStats[msg.id].avg}점 · ${surveyStats[msg.id].count}명 응답`
+                                                                : `${surveyStats[msg.id].count}명 응답`
                                                             : '응답 없음'}
                                                     </span>
                                                 </div>
