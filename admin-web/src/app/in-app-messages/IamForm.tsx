@@ -705,14 +705,6 @@ export default function IamForm({ messageId }: IamFormProps) {
                     return '모든 옵션에 내용을 입력해주세요.';
             }
         }
-        if (form.type !== 'survey') {
-            if (form.use_slides) {
-                if (!form.slides.some(s => s.body.trim() && s.body !== '<p></p>'))
-                    return '최소 한 슬라이드에 본문을 입력해주세요.';
-            } else {
-                if (!form.body.trim() || form.body === '<p></p>') return '본문을 입력해주세요.';
-            }
-        }
         if (form.cta_url && !/^https?:\/\//i.test(form.cta_url))
             return 'CTA URL은 http:// 또는 https:// 로 시작해야 합니다.';
         if (form.cta_url && !form.cta_label) return 'CTA URL을 입력했다면 버튼 텍스트도 입력해주세요.';
