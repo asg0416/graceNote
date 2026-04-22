@@ -24,15 +24,47 @@ class IamSurveyWidget extends ConsumerStatefulWidget {
   ConsumerState<IamSurveyWidget> createState() => _IamSurveyWidgetState();
 }
 
-class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
+class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget>
+    with WidgetsBindingObserver {
   int _page = 0;
   final Map<String, dynamic> _answers = {};
   bool _isSubmitting = false;
   String? _errorMsg;
   bool _forward = true;
+  final _textFieldKey = GlobalKey();
 
   SurveyQuestion get _current => widget.questions[_page];
   int get _total => widget.questions.length;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final bottom = MediaQuery.of(context).viewInsets.bottom;
+      if (bottom == 0) return;
+      if (_current.type != 'text') return;
+      final ctx = _textFieldKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        alignment: 0.5,
+      );
+    });
+  }
 
   bool get _currentAnswered {
     if (!_current.required) return true;
@@ -394,6 +426,7 @@ class _IamSurveyWidgetState extends ConsumerState<IamSurveyWidget> {
 
   Widget _buildTextField(SurveyQuestion q) {
     return TextFormField(
+      key: _textFieldKey,
       initialValue: _answers[q.id] as String? ?? '',
       maxLines: 4,
       maxLength: 500,
