@@ -163,42 +163,47 @@ class _ModalOverlay extends StatelessWidget {
               ),
             ),
 
-            // X 버튼 + 카드: Column으로 묶어 hit test 범위에 포함
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 2),
-                      child: _CloseButton(
-                        message: message,
-                        color: Colors.white.withValues(alpha: 0.85),
-                      ),
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x1A000000),
-                            blurRadius: 24,
-                            offset: Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: IamCard(
+            // X 버튼 + 카드: 키보드 높이만큼 bottom 축소 후 중앙 배치 + 스크롤 가능
+            Positioned(
+              left: 24,
+              right: 24,
+              top: 0,
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              child: Center(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 2),
+                        child: _CloseButton(
                           message: message,
-                          showHandle: false,
+                          color: Colors.white.withValues(alpha: 0.85),
                         ),
                       ),
-                    ),
-                  ],
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x1A000000),
+                              blurRadius: 24,
+                              offset: Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: IamCard(
+                            message: message,
+                            showHandle: false,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
