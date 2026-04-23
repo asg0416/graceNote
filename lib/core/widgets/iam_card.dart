@@ -83,15 +83,14 @@ class _IamCardState extends ConsumerState<IamCard> {
 
   // ── builders ─────────────────────────────────────────────────────
 
-  /// 단일 모드 상단 이미지 (full-width)
   Widget _buildTopImage(String url) {
     return ClipRRect(
       borderRadius: BorderRadius.zero,
       child: Image.network(
         url,
         width: double.infinity,
-        height: 180,
-        fit: BoxFit.cover,
+        // height 제한을 풀고 비율에 맞게 높이가 자동 조절되도록 설정 (단일 모드)
+        fit: BoxFit.fitWidth,
         errorBuilder: (_, __, ___) => const SizedBox.shrink(),
         loadingBuilder: (_, child, progress) => progress == null
             ? child
@@ -114,12 +113,15 @@ class _IamCardState extends ConsumerState<IamCard> {
   /// 슬라이드 PageView 아이템 — 이미지만 렌더링
   Widget _buildSlide(IamSlide slide) {
     if (slide.imageUrl == null) return const SizedBox.shrink();
-    return Image.network(
-      slide.imageUrl!,
-      width: double.infinity,
-      height: 180,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+    return Container(
+      color: AppTheme.secondaryBackground.withValues(alpha: 0.3), // 빈 공간을 채워줄 부드러운 배경색
+      child: Image.network(
+        slide.imageUrl!,
+        width: double.infinity,
+        height: 180,
+        fit: BoxFit.contain, // cover에서 contain으로 변경하여 이미지가 안 잘리고 다 보이도록 처리
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      ),
     );
   }
 
