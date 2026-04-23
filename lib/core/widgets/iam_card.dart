@@ -147,6 +147,8 @@ class _IamCardState extends ConsumerState<IamCard> {
                   if (slide.body.isNotEmpty)
                     HtmlWidget(
                       slide.body,
+                      customStylesBuilder: (el) =>
+                          el.localName == 'p' ? {'margin': '0', 'padding': '0'} : null,
                       textStyle: const TextStyle(
                         fontSize: 13,
                         color: AppTheme.textSub,
@@ -278,6 +280,8 @@ class _IamCardState extends ConsumerState<IamCard> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: HtmlWidget(
               message.body,
+              customStylesBuilder: (el) =>
+                  el.localName == 'p' ? {'margin': '0', 'padding': '0'} : null,
               textStyle: const TextStyle(
                 fontSize: 13,
                 color: AppTheme.textSub,
