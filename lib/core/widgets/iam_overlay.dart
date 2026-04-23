@@ -164,51 +164,55 @@ class _ModalOverlay extends StatelessWidget {
             ),
 
             // X 버튼 + 카드: 키보드 높이만큼 bottom 축소 후 중앙 배치 + 스크롤 가능
+            // shrinkWrap은 Flutter 3.27+ 에서 제거됨 →
+            // Column(center) + Flexible(ScrollView) 패턴으로 대체
             Positioned(
               left: 24,
               right: 24,
               top: 0,
               bottom: MediaQuery.of(context).viewInsets.bottom,
-              child: Center(
-                child: SingleChildScrollView(
-                  // shrinkWrap: true 로 스크롤뷰가 컨텐츠 크기에 맞춰 줄어들어야
-                  // Center 가 올바르게 수직 중앙 배치 가능
-                  shrinkWrap: true,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(right: 2),
-                        child: _CloseButton(
-                          message: message,
-                          color: Colors.white.withValues(alpha: 0.85),
-                        ),
-                      ),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x1A000000),
-                              blurRadius: 24,
-                              offset: Offset(0, 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(right: 2),
+                            child: _CloseButton(
+                              message: message,
+                              color: Colors.white.withValues(alpha: 0.85),
                             ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: IamCard(
-                            message: message,
-                            showHandle: false,
-                            isModal: true,
                           ),
-                        ),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x1A000000),
+                                  blurRadius: 24,
+                                  offset: Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: IamCard(
+                                message: message,
+                                showHandle: false,
+                                isModal: true,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ],
