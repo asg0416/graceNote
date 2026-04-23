@@ -37,6 +37,7 @@ class _IamCardState extends ConsumerState<IamCard> {
   late final PageController _pageCtrl;
   int _currentSlide = 0;
   Timer? _autoSlideTimer;
+  bool _isUserTouching = false;
 
   @override
   void initState() {
@@ -74,8 +75,10 @@ class _IamCardState extends ConsumerState<IamCard> {
 
   void _startAutoSlide() {
     _autoSlideTimer?.cancel();
-    _autoSlideTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!mounted || !_pageCtrl.hasClients) return;
+    if (_isUserTouching) return; // 사용자가 터치 중이면 타이머 재시작 금지
+
+    _autoSlideTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_pageCtrl.hasClients || _isUserTouching) return;
       _pageCtrl.animateToPage(
         _pageCtrl.page!.round() + 1,
         duration: const Duration(milliseconds: 400),
@@ -90,7 +93,9 @@ class _IamCardState extends ConsumerState<IamCard> {
 
   void _resumeAutoSlide() {
     if (widget.message.isSlideMode && widget.message.slides.length > 1) {
-      _startAutoSlide();
+      if (!_isUserTouching) {
+        _startAutoSlide();
+      }
     }
   }
 
@@ -233,9 +238,19 @@ class _IamCardState extends ConsumerState<IamCard> {
     final bottomPad = widget.isModal ? 0.0 : MediaQuery.of(context).padding.bottom;
 
     return Listener(
-      onPointerDown: (_) => _pauseAutoSlide(),
-      onPointerUp: (_) => _resumeAutoSlide(),
-      onPointerCancel: (_) => _resumeAutoSlide(),
+      behavior: HitTestBehavior.translucent, // 이벤트가 자식 위젯을 통과해서 잡히도록 설정
+      onPointerDown: (_) {
+        _isUserTouching = true;
+        _pauseAutoSlide();
+      },
+      onPointerUp: (_) {
+        _isUserTouching = false;
+        _resumeAutoSlide();
+      },
+      onPointerCancel: (_) {
+        _isUserTouching = false;
+        _resumeAutoSlide();
+      },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,7 +319,11 @@ class _IamCardState extends ConsumerState<IamCard> {
                   : 1,
               onPageChanged: (i) {
                 setState(() => _currentSlide = i % message.slides.length);
-                if (message.slides.length > 1) _startAutoSlide();
+                if (message.slides.length > 1) {
+                  if (!_isUserTouching) {
+                    _startAutoSlide();
+                  }
+                }
               },
               itemBuilder: (_, i) =>
                   _buildSlide(message.slides[i % message.slides.length]),
