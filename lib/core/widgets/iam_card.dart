@@ -111,7 +111,6 @@ class _IamCardState extends ConsumerState<IamCard> {
   }
 
   /// 슬라이드 1페이지
-  /// 슬라이드 PageView 아이템 — 이미지만 렌더링
   Widget _buildSlide(IamSlide slide) {
     if (slide.imageUrl == null) return const SizedBox.shrink();
     return Image.network(
@@ -119,6 +118,21 @@ class _IamCardState extends ConsumerState<IamCard> {
       width: double.infinity,
       fit: BoxFit.fitWidth, // expandable_page_view를 사용하므로 원본 높이 그대로 자동 조절
       errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return Container(
+          width: double.infinity,
+          height: 180, // 로딩 중 모달이 완전히 찌그러지는 것을 방지
+          color: AppTheme.secondaryBackground.withValues(alpha: 0.3),
+          child: const Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        );
+      },
     );
   }
 
