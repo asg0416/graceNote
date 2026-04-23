@@ -139,16 +139,46 @@ export default function InAppMessagesPage() {
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('메시지를 삭제하시겠습니까? (설문 응답 데이터는 보존됩니다)')) return;
+    const handleDelete = async (msg: any) => {
+        if (!confirm('메시지를 삭제하시겠습니까? (첨부된 이미지/영상 파일도 스토리지에서 영구 삭제됩니다)')) return;
+
+        // 삭제할 스토리지 파일 경로 추출
+        const pathsToDelete: string[] = [];
+        const extractPath = (url: string | null | undefined) => {
+            if (!url) return null;
+            const match = url.match(/\/iam-images\/(.+)$/);
+            return match ? match[1] : null;
+        };
+
+        const p = extractPath(msg.image_url);
+        if (p) pathsToDelete.push(p);
+
+        if (Array.isArray(msg.slides)) {
+            msg.slides.forEach((s: any) => {
+                const sp = extractPath(s.image_url);
+                if (sp) pathsToDelete.push(sp);
+            });
+        }
+
+        // DB에서 소프트 딜리트
         const { error } = await supabase
             .from('in_app_messages')
             .update({ is_deleted: true, is_active: false })
-            .eq('id', id);
+            .eq('id', msg.id);
+
         if (error) {
             alert(`삭제 실패: ${error.message}`);
             return;
         }
+
+        // 스토리지 파일 영구 삭제
+        if (pathsToDelete.length > 0) {
+            const { error: storageError } = await supabase.storage.from('iam-images').remove(pathsToDelete);
+            if (storageError) {
+                console.error('스토리지 파일 삭제 실패:', storageError);
+            }
+        }
+
         if (profile) await fetchMessages(profile);
     };
 
@@ -308,7 +338,7 @@ export default function InAppMessagesPage() {
                                             <Edit className="w-5 h-5" />
                                         </button>
                                         <button
-                                            onClick={() => handleDelete(msg.id)}
+                                            onClick={() => handleDelete(msg)}
                                             className="p-3 bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-rose-600 dark:hover:text-white hover:bg-rose-50 dark:hover:bg-rose-600/20 rounded-2xl transition-all border border-transparent hover:border-rose-500/30"
                                         >
                                             <Trash2 className="w-5 h-5" />

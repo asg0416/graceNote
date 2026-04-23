@@ -24,8 +24,8 @@ const TYPE_OPTIONS = [
     { value: 'survey',       label: '만족도 조사', Icon: Star,      color: '#F59E0B' },
 ] as const;
 
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const ALLOWED_MEDIA_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'video/mp4'];
+const MAX_MEDIA_SIZE = 20 * 1024 * 1024; // 20MB
 
 // ── 타입 ────────────────────────────────────────────────────────────
 
@@ -121,12 +121,12 @@ function ImageUploader({ value, onChange, label = '이미지 첨부 (선택)' }:
 
     const upload = async (file: File) => {
         setError(null);
-        if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-            setError('JPG, PNG, WebP, GIF만 업로드 가능합니다.');
+        if (!ALLOWED_MEDIA_TYPES.includes(file.type)) {
+            setError('JPG, PNG, WebP, GIF, MP4만 업로드 가능합니다.');
             return;
         }
-        if (file.size > MAX_IMAGE_SIZE) {
-            setError('파일 크기는 5MB 이하여야 합니다.');
+        if (file.size > MAX_MEDIA_SIZE) {
+            setError('파일 크기는 20MB 이하여야 합니다.');
             return;
         }
         setUploading(true);
@@ -175,14 +175,14 @@ function ImageUploader({ value, onChange, label = '이미지 첨부 (선택)' }:
                     <span className="text-xs font-bold">
                         {uploading ? '업로드 중...' : '클릭하여 이미지 업로드'}
                     </span>
-                    <span className="text-[10px] text-slate-300">JPG, PNG, WebP, GIF · 최대 5MB</span>
+                    <span className="text-[10px] text-slate-300">JPG, PNG, WebP, GIF, MP4 · 최대 20MB</span>
                 </button>
             )}
             {error && <p className="text-xs text-rose-500 font-bold">{error}</p>}
             <input
                 ref={inputRef}
                 type="file"
-                accept={ALLOWED_IMAGE_TYPES.join(',')}
+                accept={ALLOWED_MEDIA_TYPES.join(',')}
                 className="hidden"
                 onChange={e => e.target.files?.[0] && upload(e.target.files[0])}
             />

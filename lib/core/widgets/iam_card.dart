@@ -8,6 +8,7 @@ import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:expandable_page_view/expandable_page_view.dart';
+import 'package:video_player/video_player.dart';
 
 import 'package:grace_note/core/models/in_app_message.dart';
 import 'package:grace_note/core/providers/iam_provider.dart';
@@ -36,8 +37,6 @@ class _IamCardState extends ConsumerState<IamCard> {
   static const _loopMult = 500;
   late final PageController _pageCtrl;
   int _currentSlide = 0;
-  Timer? _autoSlideTimer;
-  bool _isUserTouching = false;
 
   @override
   void initState() {
@@ -47,14 +46,10 @@ class _IamCardState extends ConsumerState<IamCard> {
         ? slides.length * (_loopMult ~/ 2)
         : 0;
     _pageCtrl = PageController(initialPage: initialPage);
-    if (widget.message.isSlideMode && slides.length > 1) {
-      _startAutoSlide();
-    }
   }
 
   @override
   void dispose() {
-    _autoSlideTimer?.cancel();
     _pageCtrl.dispose();
     super.dispose();
   }
@@ -63,38 +58,12 @@ class _IamCardState extends ConsumerState<IamCard> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // 모달이 렌더링될 때 이미지들을 미리 로딩(캐싱)하여 대기/깜빡임 최소화
-    if (widget.message.imageUrl != null) {
+    if (widget.message.imageUrl != null && !widget.message.imageUrl!.toLowerCase().endsWith('.mp4')) {
       precacheImage(NetworkImage(widget.message.imageUrl!), context);
     }
     for (final slide in widget.message.slides) {
-      if (slide.imageUrl != null) {
+      if (slide.imageUrl != null && !slide.imageUrl!.toLowerCase().endsWith('.mp4')) {
         precacheImage(NetworkImage(slide.imageUrl!), context);
-      }
-    }
-  }
-
-  void _startAutoSlide() {
-    _autoSlideTimer?.cancel();
-    if (_isUserTouching) return; // 사용자가 터치 중이면 타이머 재시작 금지
-
-    _autoSlideTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (!mounted || !_pageCtrl.hasClients || _isUserTouching) return;
-      _pageCtrl.animateToPage(
-        _pageCtrl.page!.round() + 1,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-      );
-    });
-  }
-
-  void _pauseAutoSlide() {
-    _autoSlideTimer?.cancel();
-  }
-
-  void _resumeAutoSlide() {
-    if (widget.message.isSlideMode && widget.message.slides.length > 1) {
-      if (!_isUserTouching) {
-        _startAutoSlide();
       }
     }
   }
@@ -116,25 +85,9 @@ class _IamCardState extends ConsumerState<IamCard> {
   Widget _buildTopImage(String url) {
     return ClipRRect(
       borderRadius: BorderRadius.zero,
-      child: Image.network(
-        url,
-        width: double.infinity,
-        // height 제한을 풀고 비율에 맞게 높이가 자동 조절되도록 설정 (단일 모드)
+      child: IamMediaView(
+        url: url,
         fit: BoxFit.fitWidth,
-        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-        loadingBuilder: (_, child, progress) => progress == null
-            ? child
-            : Container(
-                height: 180,
-                color: AppTheme.secondaryBackground,
-                child: const Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              ),
       ),
     );
   }
@@ -142,26 +95,9 @@ class _IamCardState extends ConsumerState<IamCard> {
   /// 슬라이드 1페이지
   Widget _buildSlide(IamSlide slide) {
     if (slide.imageUrl == null) return const SizedBox.shrink();
-    return Image.network(
-      slide.imageUrl!,
-      width: double.infinity,
-      fit: BoxFit.fitWidth, // expandable_page_view를 사용하므로 원본 높이 그대로 자동 조절
-      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-      loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
-        return Container(
-          width: double.infinity,
-          height: 180, // 로딩 중 모달이 완전히 찌그러지는 것을 방지
-          color: AppTheme.secondaryBackground.withValues(alpha: 0.3),
-          child: const Center(
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
-        );
-      },
+    return IamMediaView(
+      url: slide.imageUrl!,
+      fit: BoxFit.fitWidth,
     );
   }
 
@@ -237,21 +173,7 @@ class _IamCardState extends ConsumerState<IamCard> {
     // 모달일 때는 SafeArea bottom을 무시하고 고정 패딩 사용
     final bottomPad = widget.isModal ? 0.0 : MediaQuery.of(context).padding.bottom;
 
-    return Listener(
-      behavior: HitTestBehavior.translucent, // 이벤트가 자식 위젯을 통과해서 잡히도록 설정
-      onPointerDown: (_) {
-        _isUserTouching = true;
-        _pauseAutoSlide();
-      },
-      onPointerUp: (_) {
-        _isUserTouching = false;
-        _resumeAutoSlide();
-      },
-      onPointerCancel: (_) {
-        _isUserTouching = false;
-        _resumeAutoSlide();
-      },
-      child: Column(
+    return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -310,35 +232,27 @@ class _IamCardState extends ConsumerState<IamCard> {
 
         // ── 슬라이드 모드 ────────────────────────────────────────────
         if (hasSlides) ...[
-          // 이미지만 PageView에, 텍스트는 아래서 별도 렌더링 (동적 높이 적용)
-          if (message.slides.any((s) => s.imageUrl != null))
-            ExpandablePageView.builder(
-              controller: _pageCtrl,
-              itemCount: message.slides.length > 1
-                  ? message.slides.length * _loopMult
-                  : 1,
-              onPageChanged: (i) {
-                setState(() => _currentSlide = i % message.slides.length);
-                if (message.slides.length > 1) {
-                  if (!_isUserTouching) {
-                    _startAutoSlide();
-                  }
-                }
-              },
-              itemBuilder: (_, i) =>
-                  _buildSlide(message.slides[i % message.slides.length]),
-            ),
+          ExpandablePageView.builder(
+            controller: _pageCtrl,
+            itemCount: message.slides.length > 1
+                ? message.slides.length * _loopMult
+                : 1,
+            onPageChanged: (i) {
+              setState(() => _currentSlide = i % message.slides.length);
+            },
+            itemBuilder: (_, i) {
+              final slide = message.slides[i % message.slides.length];
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (slide.imageUrl != null) _buildSlide(slide),
+                  if (!message.imageOnly) _buildSlideText(slide),
+                ],
+              );
+            },
+          ),
           _buildDots(message.slides.length),
-          // 현재 슬라이드 텍스트 — 내용 높이에 맞게 자동 조정
-          if (!message.imageOnly)
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: KeyedSubtree(
-                key: ValueKey(_currentSlide),
-                child: _buildSlideText(
-                    message.slides[_currentSlide % message.slides.length]),
-              ),
-            ),
           const SizedBox(height: 4),
         ],
 
@@ -452,7 +366,7 @@ class _IamCardState extends ConsumerState<IamCard> {
           ),
         ),
       ],
-    ));
+    );
   }
 
   Future<void> _launchCta(String url) async {
@@ -545,6 +459,95 @@ class _DismissTextButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── 미디어 (이미지 / 비디오) 뷰 ──────────────────────────────────────────────
+
+class IamMediaView extends StatefulWidget {
+  final String url;
+  final BoxFit fit;
+
+  const IamMediaView({super.key, required this.url, this.fit = BoxFit.fitWidth});
+
+  @override
+  State<IamMediaView> createState() => _IamMediaViewState();
+}
+
+class _IamMediaViewState extends State<IamMediaView> {
+  VideoPlayerController? _videoController;
+  bool _isVideo = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkVideo();
+  }
+
+  void _checkVideo() {
+    final uri = Uri.tryParse(widget.url);
+    if (uri != null && uri.path.toLowerCase().endsWith('.mp4')) {
+      _isVideo = true;
+      _videoController = VideoPlayerController.networkUrl(uri)
+        ..initialize().then((_) {
+          _videoController!.setLooping(true);
+          _videoController!.setVolume(0); // 자동재생을 위해 음소거
+          _videoController!.play();
+          if (mounted) setState(() {});
+        });
+    }
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isVideo) {
+      if (_videoController == null || !_videoController!.value.isInitialized) {
+        return Container(
+          width: double.infinity,
+          height: 180,
+          color: AppTheme.secondaryBackground.withValues(alpha: 0.3),
+          child: const Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        );
+      }
+      return AspectRatio(
+        aspectRatio: _videoController!.value.aspectRatio,
+        child: VideoPlayer(_videoController!),
+      );
+    }
+
+    return Image.network(
+      widget.url,
+      width: double.infinity,
+      fit: widget.fit,
+      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return Container(
+          width: double.infinity,
+          height: 180,
+          color: AppTheme.secondaryBackground.withValues(alpha: 0.3),
+          child: const Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        );
+      },
     );
   }
 }
