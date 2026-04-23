@@ -84,6 +84,16 @@ class _IamCardState extends ConsumerState<IamCard> {
     });
   }
 
+  void _pauseAutoSlide() {
+    _autoSlideTimer?.cancel();
+  }
+
+  void _resumeAutoSlide() {
+    if (widget.message.isSlideMode && widget.message.slides.length > 1) {
+      _startAutoSlide();
+    }
+  }
+
   // ── dismiss helpers ──────────────────────────────────────────────
 
   void _snoozeToday() {
@@ -222,23 +232,27 @@ class _IamCardState extends ConsumerState<IamCard> {
     // 모달일 때는 SafeArea bottom을 무시하고 고정 패딩 사용
     final bottomPad = widget.isModal ? 0.0 : MediaQuery.of(context).padding.bottom;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ── 핸들바 ──────────────────────────────────────────────────
-        if (widget.showHandle)
-          Center(
-            child: Container(
-              width: 32,
-              height: 4,
-              margin: const EdgeInsets.only(top: 8, bottom: 14),
-              decoration: BoxDecoration(
-                color: AppTheme.borderMedium,
-                borderRadius: BorderRadius.circular(2),
+    return Listener(
+      onPointerDown: (_) => _pauseAutoSlide(),
+      onPointerUp: (_) => _resumeAutoSlide(),
+      onPointerCancel: (_) => _resumeAutoSlide(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── 핸들바 ──────────────────────────────────────────────────
+          if (widget.showHandle)
+            Center(
+              child: Container(
+                width: 32,
+                height: 4,
+                margin: const EdgeInsets.only(top: 8, bottom: 14),
+                decoration: BoxDecoration(
+                  color: AppTheme.borderMedium,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
 
         // ── 단일 모드 상단 이미지 ────────────────────────────────────
         if (!hasSlides && message.imageUrl != null)
