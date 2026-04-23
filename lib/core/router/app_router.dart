@@ -49,6 +49,7 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/core/services/push_notification_service.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:grace_note/core/widgets/push_permission_banner.dart';
+import 'package:grace_note/core/widgets/iam_overlay.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:intl/intl.dart';
 
@@ -418,7 +419,7 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
       }
 
       _requestPushPermission();
-      return widget.child; // Show the actual tab content
+      return IamOverlay(child: widget.child); // Show the actual tab content
     }
 
     if (profileAsync.isLoading) {
@@ -472,13 +473,21 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
 // ScaffoldWithNavBar — Bottom navigation bar management
 // ═══════════════════════════════════════════════════════════════════
 
-class ScaffoldWithNavBar extends ConsumerWidget {
+class ScaffoldWithNavBar extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
 
   const ScaffoldWithNavBar({super.key, required this.navigationShell});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ScaffoldWithNavBar> createState() => _ScaffoldWithNavBarState();
+}
+
+class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
+  bool _initialNavDone = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final navigationShell = widget.navigationShell;
     final activeRole = ref.watch(activeRoleProvider);
     final groupsAsync = ref.watch(userGroupsProvider);
     final unreadInquiries = ref.watch(unreadInquiryCountProvider).value ?? 0;
@@ -536,6 +545,20 @@ class ScaffoldWithNavBar extends ConsumerWidget {
           ),
         ),
       );
+    }
+
+    // 최초 진입 시 역할에 따라 탭 설정: admin → 기도소식(1), leader → 기록(0)
+    if (!_initialNavDone && activeRole != null) {
+      _initialNavDone = true;
+      final capturedRole = activeRole; // 캡처 시점의 역할 명시적 보존
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (capturedRole == AppRole.admin && navigationShell.currentIndex != 1) {
+          navigationShell.goBranch(1, initialLocation: true);
+        } else if (capturedRole == AppRole.leader && navigationShell.currentIndex != 0) {
+          navigationShell.goBranch(0, initialLocation: true);
+        }
+      });
     }
 
     // Determine which branches are visible based on role

@@ -322,3 +322,32 @@ class UserMembership {
   @override
   int get hashCode => groupId.hashCode ^ roleInGroup.hashCode;
 }
+
+class NoMeetingDayModel {
+  final String id;
+  final String departmentId;
+  final DateTime weekDate;
+  final String reason;
+  final String? createdBy;
+  final DateTime? createdAt;
+
+  NoMeetingDayModel({
+    required this.id,
+    required this.departmentId,
+    required this.weekDate,
+    required this.reason,
+    this.createdBy,
+    this.createdAt,
+  });
+
+  factory NoMeetingDayModel.fromJson(Map<String, dynamic> json) {
+    return NoMeetingDayModel(
+      id: json['id'],
+      departmentId: json['department_id'],
+      weekDate: DateTime.parse(json['week_date']),
+      reason: json['reason'],
+      createdBy: json['created_by'],
+      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
+    );
+  }
+}

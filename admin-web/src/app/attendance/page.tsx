@@ -522,6 +522,20 @@ export default function AttendancePage() {
 
             if (!members) return;
 
+            // 2.5. 해당 기간의 모임없는 날 조회
+            const { data: noMeetingDays } = await supabase
+                .from('no_meeting_days')
+                .select('week_date, reason')
+                .eq('department_id', selectedDeptId)
+                .gte('week_date', startStr)
+                .lte('week_date', endStr);
+
+            const noMeetingDateSet = new Set<string>(
+                (noMeetingDays || []).map((d: any) => d.week_date as string)
+            );
+            // 출석률 분모에서 모임없는 날 제외
+            const meetingWeeks = rangeWeeks.filter((w: any) => !noMeetingDateSet.has(w.week_date));
+
             // 3. Fetch all attendance for these weeks
             const { data: allAtt } = await supabase
                 .from('attendance')
@@ -538,15 +552,25 @@ export default function AttendancePage() {
                     '역할': m.role_in_group || '성도'
                 };
 
-                rangeWeeks.forEach(w => {
-                    const att = allAtt.find(a => a.directory_member_id === m.id && a.week_id === w.id);
-                    row[w.week_date] = att ? (att.status === 'present' ? 'O' : (att.status === 'absent' ? 'X' :
-                        att.status === 'late' ? 'L' : att.status === 'excused' ? 'E' : '-')) : '-';
+                rangeWeeks.forEach((w: any) => {
+                    if (noMeetingDateSet.has(w.week_date)) {
+                        row[w.week_date] = '모임없음';
+                    } else {
+                        const att = allAtt.find((a: any) => a.directory_member_id === m.id && a.week_id === w.id);
+                        row[w.week_date] = att
+                            ? (att.status === 'present' ? 'O'
+                                : att.status === 'absent' ? 'X'
+                                : att.status === 'late' ? 'L'
+                                : att.status === 'excused' ? 'E' : '-')
+                            : '-';
+                    }
                 });
 
-                const myAtts = allAtt.filter(a => a.directory_member_id === m.id);
-                const presentCount = myAtts.filter(a => a.status === 'present').length;
-                row['출석률'] = `${Math.round((presentCount / rangeWeeks.length) * 100)}%`;
+                const myAtts = (allAtt as any[]).filter((a: any) => a.directory_member_id === m.id);
+                const presentCount = myAtts.filter((a: any) => a.status === 'present' || a.status === 'late').length;
+                row['출석률'] = meetingWeeks.length > 0
+                    ? `${Math.round((presentCount / meetingWeeks.length) * 100)}%`
+                    : '-';
 
                 return row;
             });

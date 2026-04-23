@@ -50,6 +50,16 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     final history = _cachedHistory ?? [];
     final isLoading = historyAsync.isLoading;
 
+    final profileForDept = ref.watch(userProfileProvider).value;
+    final deptId = profileForDept?.departmentId ?? '';
+    final noMeetingListAsync = deptId.isNotEmpty
+        ? ref.watch(noMeetingDaysInMonthProvider('$deptId:$_viewYear:$_viewMonth'))
+        : const AsyncValue<List<NoMeetingDayModel>>.data([]);
+    final noMeetingDates = <String>{
+      for (final d in (noMeetingListAsync.value ?? []))
+        '${d.weekDate.year}-${d.weekDate.month.toString().padLeft(2, '0')}-${d.weekDate.day.toString().padLeft(2, '0')}'
+    };
+
     // [FIX] 에러 발생 시 사용자에게 노출하지 않고 3초 후 자동 재시도
     if (historyAsync.hasError && !historyAsync.isLoading) {
       Future.delayed(const Duration(seconds: 3), () {
@@ -101,11 +111,22 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildSummaryHeader(history, isLoading: isLoading),
+                        _buildSummaryHeader(history, isLoading: isLoading, noMeetingDates: noMeetingDates, noMeetingList: noMeetingListAsync.value ?? []),
                         _buildHistoryList(history, isLoading: isLoading),
                         _buildGraphSection(history, isLoading: isLoading),
-                        if (_selectedWeekId != null || (history.isNotEmpty))
-                          _buildDetailedAttendanceSection(_selectedWeekId ?? history.first['week_id'], history, isLoading: isLoading),
+                        Builder(builder: (_) {
+                          final activeWeekIdForDetail = _selectedWeekId ?? (history.isNotEmpty ? history.first['week_id'] : null);
+                          final activeWeekDateForDetail = history.isNotEmpty
+                              ? history.firstWhere(
+                                  (h) => h['week_id'] == activeWeekIdForDetail,
+                                  orElse: () => history.first,
+                                )['week_date'] as String? ?? ''
+                              : '';
+                          if (activeWeekIdForDetail != null && !noMeetingDates.contains(activeWeekDateForDetail)) {
+                            return _buildDetailedAttendanceSection(activeWeekIdForDetail, history, isLoading: isLoading);
+                          }
+                          return const SizedBox.shrink();
+                        }),
                         const SizedBox(height: 40),
                       ],
                     ),
@@ -132,24 +153,34 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     );
   }
 
-  Widget _buildSummaryHeader(List<Map<String, dynamic>> history, {bool isLoading = false}) {
+  Widget _buildSummaryHeader(List<Map<String, dynamic>> history, {bool isLoading = false, Set<String> noMeetingDates = const {}, List<NoMeetingDayModel> noMeetingList = const []}) {
     final activeWeekId = _selectedWeekId ?? (history.isNotEmpty ? history.first['week_id'] : null);
-    final activeWeek = (history.isNotEmpty) 
+    final activeWeek = (history.isNotEmpty)
         ? history.firstWhere((h) => h['week_id'] == activeWeekId, orElse: () => history.first)
         : {'present_count': 0, 'total_count': 0, 'week_id': null, 'week_date': ''};
+
+    final activeWeekDate = activeWeek['week_date'] as String? ?? '';
+    final isNoMeeting = noMeetingDates.contains(activeWeekDate);
+    final noMeetingReason = isNoMeeting && noMeetingList.isNotEmpty
+        ? noMeetingList
+            .firstWhere(
+              (d) => '${d.weekDate.year}-${d.weekDate.month.toString().padLeft(2, '0')}-${d.weekDate.day.toString().padLeft(2, '0')}' == activeWeekDate,
+              orElse: () => noMeetingList.first,
+            )
+            .reason
+        : null;
 
     return Opacity(
       opacity: isLoading ? 0.6 : 1.0,
       child: Container(
         margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF8B5CF6), // 진한 보라
-              Color(0xFF6366F1), // 인디고 계열
-            ],
+            colors: isNoMeeting
+                ? [const Color(0xFFF97316), const Color(0xFFEA580C)]
+                : [const Color(0xFF8B5CF6), const Color(0xFF6366F1)],
           ),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: AppTheme.border.withOpacity(0.5), width: 1.0),
@@ -193,37 +224,74 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                       ],
                     ),
                     const SizedBox(height: 24),
-                    // [STYLE] 글래스모피즘 카드 레이아웃
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                    if (isNoMeeting)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '이번 주는 모임이 없습니다',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 18,
+                                fontFamily: 'Pretendard',
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            if (noMeetingReason != null && noMeetingReason.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                noMeetingReason,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13,
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      )
+                    else
+                      // [STYLE] 글래스모피즘 카드 레이아웃
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildSummaryItem(
+                              '선택 주차',
+                              activeWeek['week_id'] != null ? '${activeWeek['present_count']}명' : '-',
+                              lucide.LucideIcons.calendarCheck2,
+                            ),
+                            Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                            _buildSummaryItem(
+                              '평균 출석',
+                              history.isNotEmpty ? '${(history.map((e) => e['present_count'] as int).reduce((a, b) => a + b) / history.length).toStringAsFixed(1)}명' : '-',
+                              lucide.LucideIcons.users,
+                            ),
+                            Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                            _buildSummaryItem(
+                              '기록 주차',
+                              '${history.length}회',
+                              lucide.LucideIcons.history,
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildSummaryItem(
-                            '선택 주차', 
-                            activeWeek['week_id'] != null ? '${activeWeek['present_count']}명' : '-', 
-                            lucide.LucideIcons.calendarCheck2,
-                          ),
-                          Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
-                          _buildSummaryItem(
-                            '평균 출석', 
-                            history.isNotEmpty ? '${(history.map((e) => e['present_count'] as int).reduce((a, b) => a + b) / history.length).toStringAsFixed(1)}명' : '-', 
-                            lucide.LucideIcons.users,
-                          ),
-                          Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
-                          _buildSummaryItem(
-                            '기록 주차', 
-                            '${history.length}회', 
-                            lucide.LucideIcons.history,
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -780,7 +848,48 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                 ],
               );
             },
-            orElse: () => const Center(child: Padding(padding: EdgeInsets.all(40), child: ShadcnSpinner())),
+            orElse: () => _buildAttendanceDetailSkeleton(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttendanceDetailSkeleton() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 8,
+              children: [56.0, 48.0, 64.0, 52.0, 60.0, 50.0, 58.0, 44.0].map((w) => Container(
+                width: w,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              )).toList(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            height: 52,
+            margin: const EdgeInsets.symmetric(horizontal: 0),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
         ],
       ),

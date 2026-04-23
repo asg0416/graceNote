@@ -586,3 +586,24 @@ final hasFcmTokenProvider = FutureProvider.autoDispose<bool>((ref) async {
       .limit(1);
   return (data as List).isNotEmpty;
 });
+
+// 특정 주차의 모임없는 날 조회
+// key 형식: "$departmentId:YYYY-MM-DD" (YYYY-MM-DD는 해당 주 일요일)
+final noMeetingDayProvider = FutureProvider.family<NoMeetingDayModel?, String>((ref, key) async {
+  final colonIdx = key.indexOf(':');
+  if (colonIdx <= 0) return null;
+  final departmentId = key.substring(0, colonIdx);
+  final weekDate = DateTime.parse(key.substring(colonIdx + 1));
+  return ref.read(repositoryProvider).getNoMeetingDay(departmentId, weekDate);
+});
+
+// 특정 월의 모임없는 날 목록 조회 (대시보드용)
+// key 형식: "$departmentId:$year:$month"
+final noMeetingDaysInMonthProvider = FutureProvider.family<List<NoMeetingDayModel>, String>((ref, key) async {
+  final parts = key.split(':');
+  if (parts.length < 3 || parts[0].isEmpty) return [];
+  final departmentId = parts[0];
+  final year = int.parse(parts[1]);
+  final month = int.parse(parts[2]);
+  return ref.read(repositoryProvider).getNoMeetingDaysInMonth(departmentId, year, month);
+});

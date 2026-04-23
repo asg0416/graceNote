@@ -5,13 +5,12 @@ import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/prayer/presentation/widgets/prayer_card.dart';
 import 'package:grace_note/core/models/models.dart';
-import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 import 'package:grace_note/core/providers/user_role_provider.dart';
-import 'package:grace_note/core/utils/route_util.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import 'package:grace_note/core/widgets/app_skeleton.dart';
+import 'package:grace_note/core/utils/snack_bar_util.dart';
 
 class PrayerListScreen extends ConsumerStatefulWidget {
   const PrayerListScreen({super.key});
@@ -471,21 +470,33 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     if (departmentId.isEmpty || churchId.isEmpty) {
       return const Center(child: Text('소속 정보가 누락되었습니다.'));
     }
+    final activeRole = ref.watch(activeRoleProvider);
+    final selectedDate = ref.watch(selectedWeekDateProvider);
+    final weekStr = '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+    final noMeeting = departmentId.isNotEmpty
+        ? ref.watch(noMeetingDayProvider('$departmentId:$weekStr')).value
+        : null;
+
     return ref.watch(departmentWeeklyDataProvider('$departmentId:$churchId')).when(
       skipLoadingOnRefresh: true,
       data: (data) {
         final groups = List<Map<String, dynamic>>.from(data['groups']);
         final allPrayers = List<Map<String, dynamic>>.from(data['prayers']);
-        
+
         if (allPrayers.isEmpty) {
           return RefreshIndicator(
             onRefresh: _refreshData,
             color: AppTheme.primaryViolet,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              children: const [
-                 SizedBox(height: 100),
-                 Center(child: Text('등록된 기도제목이 없습니다.')),
+              children: [
+                const SizedBox(height: 24),
+                if (noMeeting != null)
+                  _buildNoMeetingCardInFeed(noMeeting, departmentId, selectedDate, showCancelButton: activeRole == AppRole.admin)
+                else if (activeRole == AppRole.admin && departmentId.isNotEmpty)
+                  _buildEmptyWithDesignateButton(departmentId, selectedDate)
+                else
+                  const Center(child: Text('등록된 기도제목이 없습니다.')),
               ],
             ),
           );
@@ -776,21 +787,33 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
   }
 
   Widget _buildSingleGroupView(String groupId, String churchId) {
+    final activeRole = ref.watch(activeRoleProvider);
+    final profile = ref.watch(userProfileProvider).value;
+    final deptId = profile?.departmentId ?? '';
+    final selectedDate = ref.watch(selectedWeekDateProvider);
+    final weekStr = '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+    final noMeeting = deptId.isNotEmpty
+        ? ref.watch(noMeetingDayProvider('$deptId:$weekStr')).value
+        : null;
+
     return ref.watch(weeklyDataProvider('$groupId:$churchId')).when(
       skipLoadingOnRefresh: true,
       data: (weeklyData) {
         final prayers = List<Map<String, dynamic>>.from(weeklyData['prayers']);
         final publishedPrayers = prayers.where((p) => p['status'] == 'published').toList();
-        
+
         if (publishedPrayers.isEmpty) {
           return RefreshIndicator(
             onRefresh: _refreshData,
             color: AppTheme.primaryViolet,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              children: const [
-                SizedBox(height: 100),
-                Center(child: Text('아직 등록된 기도제목이 없습니다.')),
+              children: [
+                const SizedBox(height: 24),
+                if (noMeeting != null)
+                  _buildNoMeetingCardInFeed(noMeeting, deptId, selectedDate, showCancelButton: activeRole == AppRole.admin)
+                else
+                  const Center(child: Text('아직 등록된 기도제목이 없습니다.')),
               ],
             ),
           );
@@ -894,6 +917,404 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
       itemCount: 3,
       itemBuilder: (context, index) => const PrayerCardSkeleton(),
     );
+  }
+
+  // 빈 피드 상태 + 모임없는 날 지정 버튼 (전체 탭, 관리자 전용)
+  Widget _buildEmptyWithDesignateButton(String deptId, DateTime selectedWeek) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Icon(lucide.LucideIcons.bookOpen, size: 24, color: AppTheme.textSub),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            '등록된 기도제목이 없습니다.',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textSub,
+              fontFamily: 'Pretendard',
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '이번 주 모임이 없나요?',
+            style: TextStyle(fontSize: 13, color: AppTheme.textSub, fontFamily: 'Pretendard'),
+          ),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: () => _showNoMeetingDialog(deptId, selectedWeek),
+            icon: const Icon(Icons.event_busy_rounded, size: 16, color: Color(0xFFF97316)),
+            label: const Text(
+              '모임없는 날로 지정하기',
+              style: TextStyle(color: Color(0xFFF97316), fontWeight: FontWeight.w600, fontFamily: 'Pretendard'),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFFFB923C)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 빈 피드 안에 표시하는 모임없는 날 안내 카드 (이미 지정된 경우)
+  Widget _buildNoMeetingCardInFeed(NoMeetingDayModel noMeeting, String deptId, DateTime selectedWeek, {bool showCancelButton = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppTheme.border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7ED),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.event_busy_rounded, color: Color(0xFFF97316), size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '이번 주는 모임이 없습니다',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textMain,
+                      fontSize: 15,
+                      fontFamily: 'Pretendard',
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  if (noMeeting.reason.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      noMeeting.reason,
+                      style: const TextStyle(
+                        color: AppTheme.textSub,
+                        fontSize: 13,
+                        fontFamily: 'Pretendard',
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (showCancelButton) ...[
+              const SizedBox(width: 8),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _cancelNoMeetingDay(deptId, selectedWeek),
+                  borderRadius: BorderRadius.circular(8),
+                  splashColor: const Color(0xFFF97316).withOpacity(0.12),
+                  highlightColor: const Color(0xFFFFF7ED),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.close_rounded, color: Color(0xFFF97316), size: 14),
+                        SizedBox(width: 4),
+                        Text(
+                          '취소',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFF97316),
+                            fontFamily: 'Pretendard',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showNoMeetingDialog(String deptId, DateTime selectedWeek) {
+    final reasonController = TextEditingController();
+    String? errorMsg;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final keyboardInset = MediaQuery.of(ctx).viewInsets.bottom;
+            return Dialog(
+              backgroundColor: Colors.white,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(20)),
+              ),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 48),
+              child: SingleChildScrollView(
+                padding: EdgeInsets.only(bottom: keyboardInset),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF7ED),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.event_busy_rounded, size: 18, color: Color(0xFFF97316)),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              '모임없는 날 지정',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                                color: AppTheme.textMain,
+                                fontFamily: 'Pretendard',
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            icon: const Icon(lucide.LucideIcons.x, size: 18, color: AppTheme.textSub),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        '이번 주 모임이 없는 사유를 입력해주세요.',
+                        style: TextStyle(fontSize: 13, color: AppTheme.textSub, fontFamily: 'Pretendard', height: 1.5),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: reasonController,
+                        autofocus: true,
+                        maxLength: 50,
+                        style: const TextStyle(fontSize: 14, fontFamily: 'Pretendard', color: AppTheme.textMain),
+                        decoration: const InputDecoration(
+                          hintText: '예: 부활절 연합예배, 수련회 등',
+                          hintStyle: TextStyle(fontSize: 13, color: AppTheme.textSub, fontFamily: 'Pretendard'),
+                          filled: true,
+                          fillColor: AppTheme.secondaryBackground,
+                          contentPadding: EdgeInsets.all(14),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(12)),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(12)),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(12)),
+                            borderSide: BorderSide(color: Color(0xFFF97316), width: 1.5),
+                          ),
+                        ),
+                      ),
+                      if (errorMsg != null) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(lucide.LucideIcons.alertCircle, size: 13, color: AppTheme.error),
+                            const SizedBox(width: 5),
+                            Text(errorMsg!, style: const TextStyle(fontSize: 12, color: AppTheme.error, fontFamily: 'Pretendard', fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(double.infinity, 48),
+                                foregroundColor: AppTheme.textSub,
+                                side: const BorderSide(color: AppTheme.border),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text('취소', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'Pretendard')),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                final reason = reasonController.text.trim();
+                                if (reason.isEmpty) {
+                                  setDialogState(() => errorMsg = '사유를 입력해주세요.');
+                                  return;
+                                }
+                                Navigator.pop(ctx);
+                                await _designateNoMeetingDay(deptId, selectedWeek, reason);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                minimumSize: const Size(double.infinity, 48),
+                                backgroundColor: const Color(0xFFF97316),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text('지정하기', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'Pretendard')),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _designateNoMeetingDay(String deptId, DateTime selectedWeek, String reason) async {
+    final profile = ref.read(userProfileProvider).value;
+    if (profile == null) return;
+    try {
+      await ref.read(repositoryProvider).setNoMeetingDay(
+        departmentId: deptId,
+        weekDate: selectedWeek,
+        reason: reason,
+        createdBy: profile.id,
+      );
+      ref.invalidate(noMeetingDayProvider);
+      ref.invalidate(noMeetingDaysInMonthProvider);
+      if (mounted) SnackBarUtil.showSnackBar(context, message: '모임없는 날로 지정했습니다.');
+    } catch (e) {
+      if (mounted) SnackBarUtil.showSnackBar(context, message: '지정에 실패했습니다.', isError: true);
+    }
+  }
+
+  Future<void> _cancelNoMeetingDay(String deptId, DateTime selectedWeek) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(20))),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 48),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3CD),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(lucide.LucideIcons.alertTriangle, size: 18, color: Color(0xFFF59E0B)),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      '지정 취소',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain, fontFamily: 'Pretendard', letterSpacing: -0.5),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '모임없는 날 지정을 취소하시겠습니까?\n취소 후에는 다시 지정할 수 있습니다.',
+                style: TextStyle(fontSize: 14, color: AppTheme.textSub, fontFamily: 'Pretendard', height: 1.6),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 48),
+                        foregroundColor: AppTheme.textSub,
+                        side: const BorderSide(color: AppTheme.border),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('아니오', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'Pretendard')),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 48),
+                        backgroundColor: const Color(0xFFF97316),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('취소하기', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'Pretendard')),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(repositoryProvider).cancelNoMeetingDay(deptId, selectedWeek);
+      ref.invalidate(noMeetingDayProvider);
+      ref.invalidate(noMeetingDaysInMonthProvider);
+      if (mounted) SnackBarUtil.showSnackBar(context, message: '지정이 취소되었습니다.');
+    } catch (e) {
+      if (mounted) SnackBarUtil.showSnackBar(context, message: '취소에 실패했습니다.', isError: true);
+    }
   }
 }
 

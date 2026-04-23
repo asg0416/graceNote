@@ -1063,4 +1063,62 @@ class GraceNoteRepository {
   Future<void> updateGroup(String groupId, Map<String, dynamic> data) async {
     await _supabase.from('groups').update(data).eq('id', groupId);
   }
+
+  // 일요일로 스냅 (weeks 테이블과 동일 규칙)
+  String _snapToSundayStr(DateTime date) {
+    final sunday = date.subtract(Duration(days: date.weekday % 7));
+    return '${sunday.year}-${sunday.month.toString().padLeft(2, '0')}-${sunday.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<NoMeetingDayModel?> getNoMeetingDay(String departmentId, DateTime weekDate) async {
+    if (departmentId.isEmpty) return null;
+    final dateStr = _snapToSundayStr(weekDate);
+    final response = await _supabase
+        .from('no_meeting_days')
+        .select()
+        .eq('department_id', departmentId)
+        .eq('week_date', dateStr)
+        .maybeSingle();
+    if (response == null) return null;
+    return NoMeetingDayModel.fromJson(response);
+  }
+
+  Future<void> setNoMeetingDay({
+    required String departmentId,
+    required DateTime weekDate,
+    required String reason,
+    required String createdBy,
+  }) async {
+    final dateStr = _snapToSundayStr(weekDate);
+    await _supabase.from('no_meeting_days').upsert({
+      'department_id': departmentId,
+      'week_date': dateStr,
+      'reason': reason,
+      'created_by': createdBy,
+    });
+  }
+
+  Future<void> cancelNoMeetingDay(String departmentId, DateTime weekDate) async {
+    final dateStr = _snapToSundayStr(weekDate);
+    await _supabase
+        .from('no_meeting_days')
+        .delete()
+        .eq('department_id', departmentId)
+        .eq('week_date', dateStr);
+  }
+
+  Future<List<NoMeetingDayModel>> getNoMeetingDaysInMonth(
+      String departmentId, int year, int month) async {
+    if (departmentId.isEmpty) return [];
+    final startStr = '$year-${month.toString().padLeft(2, '0')}-01';
+    final lastDay = DateTime(year, month + 1, 0).day;
+    final endStr = '$year-${month.toString().padLeft(2, '0')}-${lastDay.toString().padLeft(2, '0')}';
+    final response = await _supabase
+        .from('no_meeting_days')
+        .select()
+        .eq('department_id', departmentId)
+        .gte('week_date', startStr)
+        .lte('week_date', endStr);
+    return (response as List).map((e) => NoMeetingDayModel.fromJson(e)).toList();
+  }
 }
