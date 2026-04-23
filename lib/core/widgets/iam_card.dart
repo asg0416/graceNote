@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:expandable_page_view/expandable_page_view.dart';
 
 import 'package:grace_note/core/models/in_app_message.dart';
 import 'package:grace_note/core/providers/iam_provider.dart';
@@ -113,15 +114,11 @@ class _IamCardState extends ConsumerState<IamCard> {
   /// 슬라이드 PageView 아이템 — 이미지만 렌더링
   Widget _buildSlide(IamSlide slide) {
     if (slide.imageUrl == null) return const SizedBox.shrink();
-    return Container(
-      color: AppTheme.secondaryBackground.withValues(alpha: 0.3), // 빈 공간을 채워줄 부드러운 배경색
-      child: Image.network(
-        slide.imageUrl!,
-        width: double.infinity,
-        height: 180,
-        fit: BoxFit.contain, // cover에서 contain으로 변경하여 이미지가 안 잘리고 다 보이도록 처리
-        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-      ),
+    return Image.network(
+      slide.imageUrl!,
+      width: double.infinity,
+      fit: BoxFit.fitWidth, // expandable_page_view를 사용하므로 원본 높이 그대로 자동 조절
+      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
     );
   }
 
@@ -256,22 +253,19 @@ class _IamCardState extends ConsumerState<IamCard> {
 
         // ── 슬라이드 모드 ────────────────────────────────────────────
         if (hasSlides) ...[
-          // 이미지만 PageView에 고정 높이로, 텍스트는 아래서 별도 렌더링
+          // 이미지만 PageView에, 텍스트는 아래서 별도 렌더링 (동적 높이 적용)
           if (message.slides.any((s) => s.imageUrl != null))
-            SizedBox(
-              height: 180,
-              child: PageView.builder(
-                controller: _pageCtrl,
-                itemCount: message.slides.length > 1
-                    ? message.slides.length * _loopMult
-                    : 1,
-                onPageChanged: (i) {
-                  setState(() => _currentSlide = i % message.slides.length);
-                  if (message.slides.length > 1) _startAutoSlide();
-                },
-                itemBuilder: (_, i) =>
-                    _buildSlide(message.slides[i % message.slides.length]),
-              ),
+            ExpandablePageView.builder(
+              controller: _pageCtrl,
+              itemCount: message.slides.length > 1
+                  ? message.slides.length * _loopMult
+                  : 1,
+              onPageChanged: (i) {
+                setState(() => _currentSlide = i % message.slides.length);
+                if (message.slides.length > 1) _startAutoSlide();
+              },
+              itemBuilder: (_, i) =>
+                  _buildSlide(message.slides[i % message.slides.length]),
             ),
           _buildDots(message.slides.length),
           // 현재 슬라이드 텍스트 — 내용 높이에 맞게 자동 조정
