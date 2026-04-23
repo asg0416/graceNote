@@ -58,6 +58,20 @@ class _IamCardState extends ConsumerState<IamCard> {
     super.dispose();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 모달이 렌더링될 때 이미지들을 미리 로딩(캐싱)하여 대기/깜빡임 최소화
+    if (widget.message.imageUrl != null) {
+      precacheImage(NetworkImage(widget.message.imageUrl!), context);
+    }
+    for (final slide in widget.message.slides) {
+      if (slide.imageUrl != null) {
+        precacheImage(NetworkImage(slide.imageUrl!), context);
+      }
+    }
+  }
+
   void _startAutoSlide() {
     _autoSlideTimer?.cancel();
     _autoSlideTimer = Timer.periodic(const Duration(seconds: 5), (_) {
