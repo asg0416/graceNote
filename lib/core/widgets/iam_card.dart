@@ -110,6 +110,7 @@ class _IamCardState extends ConsumerState<IamCard> {
 
   /// 슬라이드 1페이지
   Widget _buildSlide(IamSlide slide) {
+    final imageOnly = widget.message.imageOnly;
     return SingleChildScrollView(
       physics: const NeverScrollableScrollPhysics(),
       child: Column(
@@ -123,38 +124,39 @@ class _IamCardState extends ConsumerState<IamCard> {
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (slide.title.isNotEmpty) ...[
-                  Text(
-                    slide.title,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.textMain,
-                      fontFamily: 'Pretendard',
-                      letterSpacing: -0.4,
-                      height: 1.3,
+          if (!imageOnly && (slide.title.isNotEmpty || slide.body.isNotEmpty))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (slide.title.isNotEmpty) ...[
+                    Text(
+                      slide.title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textMain,
+                        fontFamily: 'Pretendard',
+                        letterSpacing: -0.4,
+                        height: 1.3,
+                      ),
                     ),
-                  ),
-                  if (slide.body.isNotEmpty) const SizedBox(height: 6),
+                    if (slide.body.isNotEmpty) const SizedBox(height: 6),
+                  ],
+                  if (slide.body.isNotEmpty)
+                    HtmlWidget(
+                      slide.body,
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSub,
+                        fontFamily: 'Pretendard',
+                        height: 1.55,
+                      ),
+                    ),
                 ],
-                if (slide.body.isNotEmpty)
-                  HtmlWidget(
-                    slide.body,
-                    textStyle: const TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.textSub,
-                      fontFamily: 'Pretendard',
-                      height: 1.55,
-                    ),
-                  ),
-              ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -213,39 +215,40 @@ class _IamCardState extends ConsumerState<IamCard> {
         if (!hasSlides && message.imageUrl != null)
           _buildTopImage(message.imageUrl!),
 
-        // ── 헤더 영역 (배지 + 제목) ──────────────────────────────────
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            (!hasSlides && message.imageUrl != null) ? 14 : (widget.showHandle ? 0 : 20),
-            20,
-            0,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _IamTypeBadge(type: message.type),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  message.title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.textMain,
-                    fontFamily: 'Pretendard',
-                    letterSpacing: -0.4,
-                    height: 1.3,
+        // ── 헤더 영역 (배지 + 제목) — imageOnly일 때 숨김 ──────────────
+        if (!message.imageOnly) ...[
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              (!hasSlides && message.imageUrl != null) ? 14 : (widget.showHandle ? 0 : 20),
+              20,
+              0,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _IamTypeBadge(type: message.type),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    message.title,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.textMain,
+                      fontFamily: 'Pretendard',
+                      letterSpacing: -0.4,
+                      height: 1.3,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-
-        const SizedBox(height: 10),
+          const SizedBox(height: 10),
+        ],
 
         // ── 슬라이드 모드 ────────────────────────────────────────────
         if (hasSlides) ...[
@@ -268,8 +271,9 @@ class _IamCardState extends ConsumerState<IamCard> {
           const SizedBox(height: 4),
         ],
 
-        // ── 단일 본문 ────────────────────────────────────────────────
-        if (!hasSlides && message.type != IamType.survey)
+        // ── 단일 본문 — 비어있거나 imageOnly면 숨김 ─────────────────────
+        if (!hasSlides && message.type != IamType.survey &&
+            message.body.isNotEmpty && !message.imageOnly)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: HtmlWidget(

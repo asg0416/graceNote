@@ -50,6 +50,7 @@ interface IamFormData {
     target_church_id: string;
     department_id: string;
     survey_questions: SurveyQuestion[];
+    image_only: boolean;
 }
 
 const DEFAULT: IamFormData = {
@@ -64,6 +65,7 @@ const DEFAULT: IamFormData = {
     target_church_id: '',
     department_id: '',
     survey_questions: [],
+    image_only: false,
 };
 
 // ── HTML 토글 에디터 ────────────────────────────────────────────────
@@ -341,21 +343,23 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
                 <img src={hasImage} alt="" className="w-full h-[110px] object-cover" />
             )}
 
-            {/* 배지 + 메인 제목 — 실제 앱 순서와 동일하게 이미지보다 앞(슬라이드) / 뒤(단일) */}
-            <div className="px-3.5 pt-2.5 pb-0">
-                <div className="flex items-center gap-1.5">
-                    <div
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-black flex-shrink-0"
-                        style={badgeStyle}
-                    >
-                        <typeMeta.Icon size={7} />
-                        {typeMeta.label}
+            {/* 배지 + 메인 제목 — imageOnly일 때 숨김 */}
+            {!form.image_only && (
+                <div className="px-3.5 pt-2.5 pb-0">
+                    <div className="flex items-center gap-1.5">
+                        <div
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[8px] font-black flex-shrink-0"
+                            style={badgeStyle}
+                        >
+                            <typeMeta.Icon size={7} />
+                            {typeMeta.label}
+                        </div>
+                        <p className="text-[11px] font-extrabold text-slate-900 leading-snug truncate">
+                            {form.title || '제목을 입력하세요'}
+                        </p>
                     </div>
-                    <p className="text-[11px] font-extrabold text-slate-900 leading-snug truncate">
-                        {form.title || '제목을 입력하세요'}
-                    </p>
                 </div>
-            </div>
+            )}
 
             {/* [슬라이드 모드] 이미지 + 화살표 */}
             {form.use_slides && (
@@ -389,21 +393,19 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
             )}
 
             <div className="px-3.5 pt-2 pb-2">
-                {/* [슬라이드 모드] 슬라이드 소제목 */}
-                {form.use_slides && !!form.slides[previewSlide]?.title && (
+                {/* [슬라이드 모드] 슬라이드 소제목 — imageOnly면 숨김 */}
+                {form.use_slides && !form.image_only && !!form.slides[previewSlide]?.title && (
                     <p className="text-[10px] font-bold text-slate-700 leading-snug mb-1">
                         {form.slides[previewSlide].title}
                     </p>
                 )}
 
-                {/* 본문 */}
-                {bodyHtml ? (
+                {/* 본문 — 비어있거나 imageOnly면 숨김 */}
+                {bodyHtml && !form.image_only && (
                     <div
                         className="text-[9.5px] text-slate-500 leading-relaxed line-clamp-3 prose prose-xs max-w-none"
                         dangerouslySetInnerHTML={{ __html: bodyHtml }}
                     />
-                ) : (
-                    <p className="text-[9.5px] text-slate-400 italic">본문을 입력하세요...</p>
                 )}
 
                 {/* [슬라이드 모드] 인디케이터 — 본문 아래 */}
@@ -675,6 +677,7 @@ export default function IamForm({ messageId }: IamFormProps) {
                         target_church_id: msg.church_id ?? '',
                         department_id: msg.department_id ?? '',
                         survey_questions: (msg.survey_questions as SurveyQuestion[]) ?? [],
+                        image_only: msg.image_only ?? false,
                     });
                 }
                 setLoading(false);
@@ -745,6 +748,7 @@ export default function IamForm({ messageId }: IamFormProps) {
             expires_at:   form.expires_at ? new Date(form.expires_at).toISOString() : null,
             is_active:    form.is_active,
             priority:     form.priority,
+            image_only:   form.image_only,
         };
 
         if (form.type === 'survey') {
@@ -904,9 +908,24 @@ export default function IamForm({ messageId }: IamFormProps) {
                                 ) : (
                                     <div className="space-y-3">
                                         <ImageUploader value={form.image_url} onChange={url => set('image_url', url)} />
+                                        {/* 이미지 전용 모드 토글 */}
+                                        {form.image_url && (
+                                            <label className="flex items-center gap-3 cursor-pointer select-none">
+                                                <div
+                                                    className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${form.image_only ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-700'}`}
+                                                    onClick={() => set('image_only', !form.image_only)}
+                                                >
+                                                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.image_only ? 'translate-x-4' : ''}`} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">이미지 전용 모드</p>
+                                                    <p className="text-[10px] text-slate-400">앱에서 제목·본문을 숨기고 이미지와 버튼만 표시합니다</p>
+                                                </div>
+                                            </label>
+                                        )}
                                         <div>
                                             <p className="text-xs font-bold text-slate-400 mb-1.5">
-                                                본문 *
+                                                본문
                                                 <span className="ml-1 text-[10px] font-normal text-slate-300">HTML 버튼으로 소스 편집 가능</span>
                                             </p>
                                             <HtmlToggleEditor

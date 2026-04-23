@@ -62,6 +62,7 @@ class InAppMessage {
   final DateTime? expiresAt;
   final bool isActive;
   final bool isDeleted;
+  final bool imageOnly;
   final int priority;
   final DateTime createdAt;
 
@@ -83,6 +84,7 @@ class InAppMessage {
     this.expiresAt,
     required this.isActive,
     required this.isDeleted,
+    this.imageOnly = false,
     required this.priority,
     required this.createdAt,
   });
@@ -127,6 +129,7 @@ class InAppMessage {
           : null,
       isActive: json['is_active'] as bool? ?? true,
       isDeleted: json['is_deleted'] as bool? ?? false,
+      imageOnly: json['image_only'] as bool? ?? false,
       priority: json['priority'] as int? ?? 0,
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.now().toUtc(),
