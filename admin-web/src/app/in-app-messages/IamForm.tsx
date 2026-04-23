@@ -392,7 +392,11 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
                 </div>
             )}
 
-            <div className="px-3.5 pt-2 pb-2">
+            {/* 헤더 후 간격 — 앱의 SizedBox(10) 대응, imageOnly면 생략 */}
+            {!form.image_only && <div className="h-2.5" />}
+
+            {/* 슬라이드 소제목 + 본문 + 인디케이터 + CTA + dismiss */}
+            <div className="px-3.5 pb-3">
                 {/* [슬라이드 모드] 슬라이드 소제목 — imageOnly면 숨김 */}
                 {form.use_slides && !form.image_only && !!form.slides[previewSlide]?.title && (
                     <p className="text-[10px] font-bold text-slate-700 leading-snug mb-1">
@@ -408,7 +412,7 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
                     />
                 )}
 
-                {/* [슬라이드 모드] 인디케이터 — 본문 아래 */}
+                {/* [슬라이드 모드] 인디케이터 */}
                 {form.use_slides && form.slides.length > 1 && (
                     <div className="flex justify-center gap-1 py-1.5">
                         {form.slides.map((_, i) => (
@@ -899,12 +903,29 @@ export default function IamForm({ messageId }: IamFormProps) {
                             {/* 비survey 타입: 기존 슬라이드/단일 에디터 */}
                             {form.type !== 'survey' && (
                                 form.use_slides ? (
-                                    <SlideEditor
-                                        slides={form.slides}
-                                        onChange={s => { set('slides', s); setActiveSlide(i => Math.min(i, s.length - 1)); }}
-                                        active={activeSlide}
-                                        onActiveChange={setActiveSlide}
-                                    />
+                                    <div className="space-y-3">
+                                        <SlideEditor
+                                            slides={form.slides}
+                                            onChange={s => { set('slides', s); setActiveSlide(i => Math.min(i, s.length - 1)); }}
+                                            active={activeSlide}
+                                            onActiveChange={setActiveSlide}
+                                        />
+                                        {/* 이미지 전용 모드 토글 (슬라이드 모드) */}
+                                        {form.slides.some(s => s.image_url) && (
+                                            <label className="flex items-center gap-3 cursor-pointer select-none">
+                                                <div
+                                                    className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${form.image_only ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-700'}`}
+                                                    onClick={() => set('image_only', !form.image_only)}
+                                                >
+                                                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.image_only ? 'translate-x-4' : ''}`} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">이미지 전용 모드</p>
+                                                    <p className="text-[10px] text-slate-400">앱에서 제목·본문을 숨기고 이미지와 버튼만 표시합니다</p>
+                                                </div>
+                                            </label>
+                                        )}
+                                    </div>
                                 ) : (
                                     <div className="space-y-3">
                                         <ImageUploader value={form.image_url} onChange={url => set('image_url', url)} />
