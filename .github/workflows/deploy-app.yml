@@ -126,4 +126,5 @@ jobs:
           # --prod 없이 배포하면 Vercel이 브랜치별 고유 Preview URL을 생성.
           # main 배포 후에도 dev는 항상 dev Supabase 환경으로 격리됨.
           vercel-args: '--target preview'
+          alias-domains: grace-note-app-pwa-asg0416-asg0416s-projects.vercel.app
           working-directory: build/web
