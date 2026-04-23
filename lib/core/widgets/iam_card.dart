@@ -37,8 +37,6 @@ class _IamCardState extends ConsumerState<IamCard> {
   static const _loopMult = 500;
   late final PageController _pageCtrl;
   int _currentSlide = 0;
-  Timer? _autoSlideTimer;
-  bool _isUserTouching = false;
 
   @override
   void initState() {
@@ -48,14 +46,10 @@ class _IamCardState extends ConsumerState<IamCard> {
         ? slides.length * (_loopMult ~/ 2)
         : 0;
     _pageCtrl = PageController(initialPage: initialPage);
-    if (widget.message.isSlideMode && slides.length > 1) {
-      _startAutoSlide();
-    }
   }
 
   @override
   void dispose() {
-    _autoSlideTimer?.cancel();
     _pageCtrl.dispose();
     super.dispose();
   }
@@ -70,32 +64,6 @@ class _IamCardState extends ConsumerState<IamCard> {
     for (final slide in widget.message.slides) {
       if (slide.imageUrl != null && !slide.imageUrl!.toLowerCase().endsWith('.mp4')) {
         precacheImage(NetworkImage(slide.imageUrl!), context);
-      }
-    }
-  }
-
-  void _startAutoSlide() {
-    _autoSlideTimer?.cancel();
-    if (_isUserTouching) return; // 사용자가 터치 중이면 타이머 재시작 금지
-
-    _autoSlideTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (!mounted || !_pageCtrl.hasClients || _isUserTouching) return;
-      _pageCtrl.animateToPage(
-        _pageCtrl.page!.round() + 1,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-      );
-    });
-  }
-
-  void _pauseAutoSlide() {
-    _autoSlideTimer?.cancel();
-  }
-
-  void _resumeAutoSlide() {
-    if (widget.message.isSlideMode && widget.message.slides.length > 1) {
-      if (!_isUserTouching) {
-        _startAutoSlide();
       }
     }
   }
@@ -205,21 +173,7 @@ class _IamCardState extends ConsumerState<IamCard> {
     // 모달일 때는 SafeArea bottom을 무시하고 고정 패딩 사용
     final bottomPad = widget.isModal ? 0.0 : MediaQuery.of(context).padding.bottom;
 
-    return Listener(
-      behavior: HitTestBehavior.translucent, // 이벤트가 자식 위젯을 통과해서 잡히도록 설정
-      onPointerDown: (_) {
-        _isUserTouching = true;
-        _pauseAutoSlide();
-      },
-      onPointerUp: (_) {
-        _isUserTouching = false;
-        _resumeAutoSlide();
-      },
-      onPointerCancel: (_) {
-        _isUserTouching = false;
-        _resumeAutoSlide();
-      },
-      child: Column(
+    return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -287,11 +241,6 @@ class _IamCardState extends ConsumerState<IamCard> {
                   : 1,
               onPageChanged: (i) {
                 setState(() => _currentSlide = i % message.slides.length);
-                if (message.slides.length > 1) {
-                  if (!_isUserTouching) {
-                    _startAutoSlide();
-                  }
-                }
               },
               itemBuilder: (_, i) =>
                   _buildSlide(message.slides[i % message.slides.length]),
@@ -420,7 +369,7 @@ class _IamCardState extends ConsumerState<IamCard> {
           ),
         ),
       ],
-    ));
+    );
   }
 
   Future<void> _launchCta(String url) async {
