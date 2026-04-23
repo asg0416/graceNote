@@ -193,7 +193,7 @@ class _IamCardState extends ConsumerState<IamCard> {
   Widget build(BuildContext context) {
     final message = widget.message;
     final hasSlides = message.isSlideMode;
-    final bottomPad = MediaQuery.of(context).padding.bottom + 16;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -357,7 +357,7 @@ class _IamCardState extends ConsumerState<IamCard> {
 
         // ── 하단 dismiss 영역 ────────────────────────────────────────
         Padding(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, bottomPad),
+          padding: EdgeInsets.fromLTRB(20, 12, 20, bottomPad),
           child: Column(
             children: [
               const Divider(height: 1, color: AppTheme.border),

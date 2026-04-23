@@ -396,7 +396,7 @@ function AppPreview({ form, previewSlide, onPreviewSlideChange }: {
             {!form.image_only && <div className="h-2.5" />}
 
             {/* 슬라이드 소제목 + 본문 + 인디케이터 + CTA + dismiss */}
-            <div className="px-3.5 pb-8">
+            <div className="px-3.5 pb-3">
                 {/* [슬라이드 모드] 슬라이드 소제목 — imageOnly면 숨김 */}
                 {form.use_slides && !form.image_only && !!form.slides[previewSlide]?.title && (
                     <p className="text-[10px] font-bold text-slate-700 leading-snug mb-1">
