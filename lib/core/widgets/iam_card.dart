@@ -109,54 +109,51 @@ class _IamCardState extends ConsumerState<IamCard> {
   }
 
   /// 슬라이드 1페이지
+  /// 슬라이드 PageView 아이템 — 이미지만 렌더링
   Widget _buildSlide(IamSlide slide) {
-    final imageOnly = widget.message.imageOnly;
-    return SingleChildScrollView(
-      physics: const NeverScrollableScrollPhysics(),
+    if (slide.imageUrl == null) return const SizedBox.shrink();
+    return Image.network(
+      slide.imageUrl!,
+      width: double.infinity,
+      height: 180,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+    );
+  }
+
+  /// 현재 슬라이드 텍스트 (PageView 밖에서 렌더링 → 내용에 맞게 높이 자동)
+  Widget _buildSlideText(IamSlide slide) {
+    if (slide.title.isEmpty && slide.body.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (slide.imageUrl != null)
-            Image.network(
-              slide.imageUrl!,
-              width: double.infinity,
-              height: 180,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          if (slide.title.isNotEmpty) ...[
+            Text(
+              slide.title,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textMain,
+                fontFamily: 'Pretendard',
+                letterSpacing: -0.4,
+                height: 1.3,
+              ),
             ),
-          if (!imageOnly && (slide.title.isNotEmpty || slide.body.isNotEmpty))
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (slide.title.isNotEmpty) ...[
-                    Text(
-                      slide.title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: AppTheme.textMain,
-                        fontFamily: 'Pretendard',
-                        letterSpacing: -0.4,
-                        height: 1.3,
-                      ),
-                    ),
-                    if (slide.body.isNotEmpty) const SizedBox(height: 6),
-                  ],
-                  if (slide.body.isNotEmpty)
-                    HtmlWidget(
-                      slide.body,
-                      customStylesBuilder: (el) =>
-                          el.localName == 'p' ? {'margin': '0', 'padding': '0'} : null,
-                      textStyle: const TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.textSub,
-                        fontFamily: 'Pretendard',
-                        height: 1.55,
-                      ),
-                    ),
-                ],
+            if (slide.body.isNotEmpty) const SizedBox(height: 6),
+          ],
+          if (slide.body.isNotEmpty)
+            HtmlWidget(
+              slide.body,
+              customStylesBuilder: (el) =>
+                  el.localName == 'p' ? {'margin': '0', 'padding': '0'} : null,
+              textStyle: const TextStyle(
+                fontSize: 13,
+                color: AppTheme.textSub,
+                fontFamily: 'Pretendard',
+                height: 1.55,
               ),
             ),
         ],
@@ -254,22 +251,34 @@ class _IamCardState extends ConsumerState<IamCard> {
 
         // ── 슬라이드 모드 ────────────────────────────────────────────
         if (hasSlides) ...[
-          SizedBox(
-            height: _slideHeight(message.slides),
-            child: PageView.builder(
-              controller: _pageCtrl,
-              itemCount: message.slides.length > 1
-                  ? message.slides.length * _loopMult
-                  : 1,
-              onPageChanged: (i) {
-                setState(() => _currentSlide = i % message.slides.length);
-                if (message.slides.length > 1) _startAutoSlide();
-              },
-              itemBuilder: (_, i) =>
-                  _buildSlide(message.slides[i % message.slides.length]),
+          // 이미지만 PageView에 고정 높이로, 텍스트는 아래서 별도 렌더링
+          if (message.slides.any((s) => s.imageUrl != null))
+            SizedBox(
+              height: 180,
+              child: PageView.builder(
+                controller: _pageCtrl,
+                itemCount: message.slides.length > 1
+                    ? message.slides.length * _loopMult
+                    : 1,
+                onPageChanged: (i) {
+                  setState(() => _currentSlide = i % message.slides.length);
+                  if (message.slides.length > 1) _startAutoSlide();
+                },
+                itemBuilder: (_, i) =>
+                    _buildSlide(message.slides[i % message.slides.length]),
+              ),
             ),
-          ),
           _buildDots(message.slides.length),
+          // 현재 슬라이드 텍스트 — 내용 높이에 맞게 자동 조정
+          if (!message.imageOnly)
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: KeyedSubtree(
+                key: ValueKey(_currentSlide),
+                child: _buildSlideText(
+                    message.slides[_currentSlide % message.slides.length]),
+              ),
+            ),
           const SizedBox(height: 4),
         ],
 
@@ -357,36 +366,33 @@ class _IamCardState extends ConsumerState<IamCard> {
 
         // ── 하단 dismiss 영역 ────────────────────────────────────────
         Padding(
-          padding: EdgeInsets.fromLTRB(20, 12, 20, bottomPad),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Divider(height: 1, color: AppTheme.border),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  _DismissTextButton(
-                    label: '다시 보지 않기',
-                    onTap: _dismissPermanently,
-                  ),
-                  const Spacer(),
-                  _DismissTextButton(
-                    label: '오늘 그만보기',
-                    onTap: _snoozeToday,
-                  ),
-                ],
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: bottomPad > 10 ? bottomPad / 2 : 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _DismissTextButton(
+                      label: '다시 보지 않기',
+                      onTap: _dismissPermanently,
+                    ),
+                    const Spacer(),
+                    _DismissTextButton(
+                      label: '오늘 그만보기',
+                      onTap: _snoozeToday,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
       ],
     );
-  }
-
-  /// 슬라이드 높이: imageOnly면 이미지만(180), 아니면 이미지+콘텐츠(320) or 텍스트만(160)
-  double _slideHeight(List<IamSlide> slides) {
-    final hasImage = slides.any((s) => s.imageUrl != null);
-    if (widget.message.imageOnly) return hasImage ? 180 : 0;
-    return hasImage ? 320 : 160;
   }
 
   Future<void> _launchCta(String url) async {
