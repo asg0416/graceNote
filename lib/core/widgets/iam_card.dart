@@ -16,12 +16,14 @@ import 'package:grace_note/core/widgets/iam_survey_widget.dart';
 class IamCard extends ConsumerStatefulWidget {
   final InAppMessage message;
   final bool showHandle;    // slide_up: true, modal: false
+  final bool isModal;       // modal: true → SafeArea bottom 무시
   final VoidCallback? onDismiss;
 
   const IamCard({
     super.key,
     required this.message,
     this.showHandle = false,
+    this.isModal = false,
     this.onDismiss,
   });
 
@@ -190,7 +192,8 @@ class _IamCardState extends ConsumerState<IamCard> {
   Widget build(BuildContext context) {
     final message = widget.message;
     final hasSlides = message.isSlideMode;
-    final bottomPad = MediaQuery.of(context).padding.bottom;
+    // 모달일 때는 SafeArea bottom을 무시하고 고정 패딩 사용
+    final bottomPad = widget.isModal ? 0.0 : MediaQuery.of(context).padding.bottom;
 
     return Column(
       mainAxisSize: MainAxisSize.min,

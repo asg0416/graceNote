@@ -171,6 +171,9 @@ class _ModalOverlay extends StatelessWidget {
               bottom: MediaQuery.of(context).viewInsets.bottom,
               child: Center(
                 child: SingleChildScrollView(
+                  // shrinkWrap: true 로 스크롤뷰가 컨텐츠 크기에 맞춰 줄어들어야
+                  // Center 가 올바르게 수직 중앙 배치 가능
+                  shrinkWrap: true,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -199,6 +202,7 @@ class _ModalOverlay extends StatelessWidget {
                           child: IamCard(
                             message: message,
                             showHandle: false,
+                            isModal: true,
                           ),
                         ),
                       ),
