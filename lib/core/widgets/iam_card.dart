@@ -382,9 +382,10 @@ class _IamCardState extends ConsumerState<IamCard> {
     );
   }
 
-  /// 슬라이드 높이: 이미지 유무에 따라 결정 (이미지 180 + 콘텐츠)
+  /// 슬라이드 높이: imageOnly면 이미지만(180), 아니면 이미지+콘텐츠(320) or 텍스트만(160)
   double _slideHeight(List<IamSlide> slides) {
     final hasImage = slides.any((s) => s.imageUrl != null);
+    if (widget.message.imageOnly) return hasImage ? 180 : 0;
     return hasImage ? 320 : 160;
   }
 
