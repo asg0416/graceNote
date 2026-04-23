@@ -104,12 +104,26 @@ jobs:
             --dart-define=SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }} \
             --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
 
-      - name: Deploy to Vercel
+      - name: Deploy to Vercel (Production)
+        if: github.ref == 'refs/heads/main'
         uses: amondnet/vercel-action@v20
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           zeit-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: ${{ github.ref == 'refs/heads/main' && '--prod' || '' }}
+          vercel-args: '--prod'
+          working-directory: build/web
+
+      - name: Deploy to Vercel (Preview / Dev)
+        if: github.ref != 'refs/heads/main'
+        uses: amondnet/vercel-action@v20
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          zeit-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          # --prod 없이 배포하면 Vercel이 브랜치별 고유 Preview URL을 생성.
+          # main 배포 후에도 dev는 항상 dev Supabase 환경으로 격리됨.
+          vercel-args: '--target preview'
           working-directory: build/web
