@@ -452,7 +452,7 @@ class _IamCardState extends ConsumerState<IamCard> {
           ),
         ),
       ],
-    );
+    ));
   }
 
   Future<void> _launchCta(String url) async {
