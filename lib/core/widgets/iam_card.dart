@@ -232,30 +232,27 @@ class _IamCardState extends ConsumerState<IamCard> {
 
         // ── 슬라이드 모드 ────────────────────────────────────────────
         if (hasSlides) ...[
-          // 이미지만 PageView에, 텍스트는 아래서 별도 렌더링 (동적 높이 적용)
-          if (message.slides.any((s) => s.imageUrl != null))
-            ExpandablePageView.builder(
-              controller: _pageCtrl,
-              itemCount: message.slides.length > 1
-                  ? message.slides.length * _loopMult
-                  : 1,
-              onPageChanged: (i) {
-                setState(() => _currentSlide = i % message.slides.length);
-              },
-              itemBuilder: (_, i) =>
-                  _buildSlide(message.slides[i % message.slides.length]),
-            ),
+          ExpandablePageView.builder(
+            controller: _pageCtrl,
+            itemCount: message.slides.length > 1
+                ? message.slides.length * _loopMult
+                : 1,
+            onPageChanged: (i) {
+              setState(() => _currentSlide = i % message.slides.length);
+            },
+            itemBuilder: (_, i) {
+              final slide = message.slides[i % message.slides.length];
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (slide.imageUrl != null) _buildSlide(slide),
+                  if (!message.imageOnly) _buildSlideText(slide),
+                ],
+              );
+            },
+          ),
           _buildDots(message.slides.length),
-          // 현재 슬라이드 텍스트 — 내용 높이에 맞게 자동 조정
-          if (!message.imageOnly)
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: KeyedSubtree(
-                key: ValueKey(_currentSlide),
-                child: _buildSlideText(
-                    message.slides[_currentSlide % message.slides.length]),
-              ),
-            ),
           const SizedBox(height: 4),
         ],
 
