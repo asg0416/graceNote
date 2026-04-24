@@ -612,6 +612,7 @@ export default function IamForm({ messageId }: IamFormProps) {
     const [activeSlide, setActiveSlide] = useState(0);
     const [churches, setChurches] = useState<Array<{id: string; name: string}>>([]);
     const [departments, setDepartments] = useState<Array<{id: string; name: string}>>([]);
+    const [originalMediaPaths, setOriginalMediaPaths] = useState<string[]>([]);
 
     const set = <K extends keyof IamFormData>(key: K, value: IamFormData[K]) =>
         setForm(prev => ({ ...prev, [key]: value }));
@@ -683,6 +684,23 @@ export default function IamForm({ messageId }: IamFormProps) {
                         survey_questions: (msg.survey_questions as SurveyQuestion[]) ?? [],
                         image_only: msg.image_only ?? false,
                     });
+
+                    // 추출 로직: 기존에 등록된 미디어 파일들의 경로를 보관
+                    const paths: string[] = [];
+                    const extractPath = (url: string | null | undefined) => {
+                        if (!url) return null;
+                        const match = url.match(/\/iam-images\/(.+)$/);
+                        return match ? match[1] : null;
+                    };
+                    const p1 = extractPath(msg.image_url);
+                    if (p1) paths.push(p1);
+                    if (Array.isArray(msg.slides)) {
+                        msg.slides.forEach((s: any) => {
+                            const sp = extractPath(s.image_url);
+                            if (sp) paths.push(sp);
+                        });
+                    }
+                    setOriginalMediaPaths(paths);
                 }
                 setLoading(false);
             }
@@ -782,6 +800,35 @@ export default function IamForm({ messageId }: IamFormProps) {
                     .update(payload)
                     .eq('id', messageId);
                 if (e) throw e;
+
+                // 삭제된 기존 파일 처리
+                const newPaths: string[] = [];
+                const extractPath = (url: string | null | undefined) => {
+                    if (!url) return null;
+                    const match = url.match(/\/iam-images\/(.+)$/);
+                    return match ? match[1] : null;
+                };
+                
+                const p1 = extractPath(payload.image_url);
+                if (p1) newPaths.push(p1);
+                
+                if (Array.isArray(payload.slides)) {
+                    payload.slides.forEach((s: any) => {
+                        const sp = extractPath(s.image_url);
+                        if (sp) newPaths.push(sp);
+                    });
+                }
+
+                // 기존 파일 중 현재 새 페이로드에 없는 파일은 삭제 대상
+                const pathsToDelete = originalMediaPaths.filter(p => !newPaths.includes(p));
+                
+                if (pathsToDelete.length > 0) {
+                    const { error: storageError } = await supabase.storage.from('iam-images').remove(pathsToDelete);
+                    if (storageError) {
+                        console.error('기존 수정된 파일 정리 실패:', storageError);
+                    }
+                }
+
             } else {
                 const churchId = form.target_scope === 'global'
                     ? null
