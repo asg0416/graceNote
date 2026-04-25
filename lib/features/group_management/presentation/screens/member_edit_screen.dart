@@ -163,16 +163,32 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
         throw Exception('프로필 정보를 불러올 수 없습니다. 네트워크 상태를 확인해주세요.');
       }
       
-      final data = {
+      // [개인형/부부형 방어 처리] 개인형 부서에서는 부부 관련 필드를 payload에서 제외
+      // → 기존 DB 데이터(결혼기념일/배우자/자녀)를 덮어쓰지 않고 보존
+      final userGroups = ref.read(userGroupsProvider).value ?? [];
+      final deptId = profile.departmentId;
+      final deptGroup = deptId != null
+          ? userGroups.cast<Map<String, dynamic>?>().firstWhere(
+              (g) => g?['department_id'] == deptId,
+              orElse: () => null,
+            )
+          : null;
+      final isCoupleModeForSave = deptGroup?['profile_mode'] == 'couple';
+
+      final data = <String, dynamic>{
         'full_name': _nameController.text.trim(),
         'phone': _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
         'birth_date': _birthController.text.trim().isEmpty ? null : _birthController.text.trim(),
-        'wedding_anniversary': _weddingController.text.trim().isEmpty ? null : _weddingController.text.trim(),
-        'spouse_name': _spouseController.text.trim().isEmpty ? null : _spouseController.text.trim(),
-        'children_info': _childrenController.text.trim().isEmpty ? null : _childrenController.text.trim(),
         'notes': _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
         'group_name': _selectedGroupName, // 변경된 조 이름 반영
         'is_active': _isActive, // 상태 반영
+        // 부부형 모드일 때만 부부 관련 필드를 포함 (개인형에서는 키 자체를 제외하여 기존 DB 값 보존)
+        if (isCoupleModeForSave) 'wedding_anniversary':
+            _weddingController.text.trim().isEmpty ? null : _weddingController.text.trim(),
+        if (isCoupleModeForSave) 'spouse_name':
+            _spouseController.text.trim().isEmpty ? null : _spouseController.text.trim(),
+        if (isCoupleModeForSave) 'children_info':
+            _childrenController.text.trim().isEmpty ? null : _childrenController.text.trim(),
       };
 
       if (widget.member == null) {
@@ -225,6 +241,25 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
     final activeRole = ref.watch(activeRoleProvider);
     final isAdmin = activeRole == AppRole.admin;
 
+    // [개인형/부부형 분기] 현재 사용자의 그룹 정보에서 profile_mode를 읽어 isCoupleMode 결정
+    // userGroupsProvider는 departments(profile_mode)를 이미 join하여 포함하고 있음
+    final profile = ref.watch(userProfileProvider).value;
+    final userGroupsAsync = ref.watch(userGroupsProvider);
+    final bool isCoupleMode = userGroupsAsync.when(
+      data: (groups) {
+        // 현재 부서(departmentId)에 속한 그룹의 profile_mode를 확인
+        final deptId = profile?.departmentId;
+        if (deptId == null) return false;
+        final deptGroup = groups.cast<Map<String, dynamic>?>().firstWhere(
+          (g) => g?['department_id'] == deptId,
+          orElse: () => null,
+        );
+        return deptGroup?['profile_mode'] == 'couple';
+      },
+      loading: () => false,
+      error: (_, __) => false,
+    );
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -263,13 +298,17 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
                   
                   _buildDivider(),
                   
-                  _buildSectionHeader('중요 기념일', '생일과 결혼기념일을 관리합니다.'),
+                  // [개인형/부부형 분기] 기념일 섹션 — 생년월일은 항상, 결혼기념일은 부부형만
+                  _buildSectionHeader(
+                    '중요 기념일',
+                    isCoupleMode ? '생일과 결혼기념일을 관리합니다.' : '생일을 관리합니다.',
+                  ),
                   _buildDateField(
                     context: context,
                     controller: _birthController,
                     label: '생년월일',
                   ),
-                  _buildDateField(
+                  if (isCoupleMode) _buildDateField(
                     context: context,
                     controller: _weddingController,
                     label: '결혼기념일',
@@ -277,13 +316,17 @@ class _MemberEditScreenState extends ConsumerState<MemberEditScreen> {
                   
                   _buildDivider(),
                   
-                  _buildSectionHeader('가족 및 기타', '가족 관계와 추가 참고 사항을 기록하세요.'),
-                  _buildTextField(
+                  // [개인형/부부형 분기] 가족 섹션 — 배우자/자녀는 부부형만, 메모는 항상
+                  _buildSectionHeader(
+                    isCoupleMode ? '가족 및 기타' : '기타',
+                    isCoupleMode ? '가족 관계와 추가 참고 사항을 기록하세요.' : '추가 참고 사항을 기록하세요.',
+                  ),
+                  if (isCoupleMode) _buildTextField(
                     controller: _spouseController,
                     label: '배우자 성함',
                     hint: '배우자 성함 입력',
                   ),
-                  _buildTextField(
+                  if (isCoupleMode) _buildTextField(
                     controller: _childrenController,
                     label: '자녀 정보',
                     hint: '자녀 이름, 나이 등',

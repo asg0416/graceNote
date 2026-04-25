@@ -483,7 +483,7 @@ class ScaffoldWithNavBar extends ConsumerStatefulWidget {
 }
 
 class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
-  bool _initialNavDone = false;
+  AppRole? _lastRole; // [FIX] 마지막으로 처리한 역할 — 역할 전환 감지 및 초기 진입 제어에 사용
 
   @override
   Widget build(BuildContext context) {
@@ -547,15 +547,26 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
       );
     }
 
-    // 최초 진입 시 역할에 따라 탭 설정: admin → 기도소식(1), leader → 기록(0)
-    if (!_initialNavDone && activeRole != null) {
-      _initialNavDone = true;
-      final capturedRole = activeRole; // 캡처 시점의 역할 명시적 보존
+    // 역할 전환 감지: 최초 진입(null → 역할) 또는 역할 변경 시 올바른 탭으로 이동하고
+    // 탭 스택을 루트로 초기화하여 이전 역할의 화면이 스택에 남아있는 버그를 방지
+    if (activeRole != null && activeRole != _lastRole) {
+      final previousRole = _lastRole;
+      _lastRole = activeRole;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (capturedRole == AppRole.admin && navigationShell.currentIndex != 1) {
+        if (activeRole == AppRole.admin) {
+          // 관리자: 기도소식 탭(1)으로 이동 & 현재 탭 스택 초기화
           navigationShell.goBranch(1, initialLocation: true);
-        } else if (capturedRole == AppRole.leader && navigationShell.currentIndex != 0) {
+          // record 탭(0) 스택도 초기화 (이전에 조장으로 쌓인 화면 제거)
+          if (previousRole != null) {
+            navigationShell.goBranch(0, initialLocation: true);
+            navigationShell.goBranch(1, initialLocation: true);
+          }
+        } else if (activeRole == AppRole.leader) {
+          // 조장: 기록 탭(0)으로 이동 & 스택 초기화
+          navigationShell.goBranch(0, initialLocation: true);
+        } else if (activeRole == AppRole.member) {
+          // 일반 조원: 나의기도 탭(0)으로 이동
           navigationShell.goBranch(0, initialLocation: true);
         }
       });
