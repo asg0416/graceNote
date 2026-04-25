@@ -97,11 +97,50 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
   /// 텍스트 입력 시 editing guard 활성화 (3초간 입력 없으면 자동 해제)
   void _onTextChanged() {
+    _isDirty = true;
     ref.read(isUserEditingProvider.notifier).state = true;
     _editingDebounceTimer?.cancel();
     _editingDebounceTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted) ref.read(isUserEditingProvider.notifier).state = false;
+      if (mounted) {
+        ref.read(isUserEditingProvider.notifier).state = false;
+        if (_isDirty) _autoSave();
+      }
     });
+  }
+
+  Future<void> _autoSave() async {
+    if (_isLoading || _currentChurchId == null || _currentGroupId == null) return;
+
+    // 모임없는 날 스킵
+    final profile = ref.read(userProfileProvider).value;
+    final departmentId = profile?.departmentId ?? '';
+    if (departmentId.isNotEmpty) {
+      final selectedDate = ref.read(attendanceSelectedWeekProvider);
+      final weekStr =
+          '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+      final noMeeting =
+          ref.read(noMeetingDayProvider('$departmentId:$weekStr')).value;
+      if (noMeeting != null) return;
+    }
+
+    // race condition 방지: await 직전에 초기화
+    _isDirty = false;
+
+    if (mounted) setState(() => _isAutoSaving = true);
+    _animationController.repeat();
+
+    try {
+      await _saveData(status: 'draft'); // TODO: Task 4에서 silent 파라미터 추가 예정
+    } catch (_) {
+      // 저장 실패 시 롤백 → 다음 타이머 or 수동저장에서 재시도
+      _isDirty = true;
+    } finally {
+      if (mounted) {
+        setState(() => _isAutoSaving = false);
+        _animationController.stop();
+        _animationController.reset();
+      }
+    }
   }
 
   /// 새로 생성된 controller에 editing guard 리스너를 등록
