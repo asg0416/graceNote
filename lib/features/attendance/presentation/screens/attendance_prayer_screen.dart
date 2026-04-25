@@ -126,8 +126,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     // race condition 방지: await 직전에 초기화
     _isDirty = false;
 
-    if (mounted) setState(() => _isAutoSaving = true);
-    _animationController.repeat();
+    if (mounted) {
+      setState(() => _isAutoSaving = true);
+      _animationController.repeat();
+    }
 
     try {
       await _saveData(status: 'draft'); // TODO: Task 4에서 silent 파라미터 추가 예정
