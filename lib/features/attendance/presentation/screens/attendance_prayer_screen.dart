@@ -54,6 +54,32 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
   @override
   void dispose() {
+    // 미저장 변경사항 best-effort 저장 (화면 이탈 시 데이터 유실 방지)
+    if (_isDirty && _currentChurchId != null && _currentGroupId != null) {
+      _syncMembersFromControllers();
+      final repo = ref.read(repositoryProvider);
+      final selectedDate = ref.read(attendanceSelectedWeekProvider);
+      repo
+          .getOrCreateWeek(_currentChurchId!, selectedDate, createIfMissing: true)
+          .then((weekId) {
+        if (weekId == null) return;
+        final prayers = _members
+            .where((m) => (m['prayerNote'] as String? ?? '').trim().isNotEmpty)
+            .map((m) => PrayerEntryModel(
+                  weekId: weekId,
+                  groupId: _currentGroupId!,
+                  memberId: m['id'],
+                  directoryMemberId: m['directoryMemberId'],
+                  content: m['prayerNote'],
+                  status: 'draft',
+                ))
+            .toList();
+        if (prayers.isNotEmpty) {
+          repo.saveAttendanceAndPrayers(
+              attendanceList: [], prayerList: prayers);
+        }
+      }).catchError((_) {});
+    }
     _animationController.dispose();
     _editingDebounceTimer?.cancel();
     for (final controller in _controllers.values) {
