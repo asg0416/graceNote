@@ -1604,41 +1604,51 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       label = '등록 완료';
       bgColor = const Color(0xFFECFDF5);
       textColor = const Color(0xFF10B981);
-    } else if (hasSavedDraft) {
-      label = '임시저장 중';
+    } else if (hasSavedDraft || _isAutoSaving) {
+      label = _isAutoSaving ? '저장 중...' : '임시저장 중';
       bgColor = const Color(0xFFFFF7ED);
       textColor = const Color(0xFFF59E0B);
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: bgColor.withOpacity(0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(
-              color: textColor,
-              shape: BoxShape.circle,
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 150),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: bgColor.withOpacity(0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isAutoSaving)
+              RotationTransition(
+                turns: _animationController,
+                child: Icon(lucide.LucideIcons.loader,
+                    size: 10, color: textColor),
+              )
+            else
+              Container(
+                width: 5,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: textColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            const SizedBox(width: 5),
+            Text(
+              _isAutoSaving ? '저장 중...' : label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+                fontFamily: 'Pretendard',
+              ),
             ),
-          ),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: textColor,
-              fontFamily: 'Pretendard',
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
