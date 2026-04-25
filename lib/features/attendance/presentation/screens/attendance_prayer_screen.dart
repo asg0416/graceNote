@@ -28,7 +28,7 @@ class AttendancePrayerScreen extends ConsumerStatefulWidget {
 }
 
 class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   @override
   bool get wantKeepAlive => true;
   bool _isRefining = false;
@@ -48,9 +48,13 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   Timer? _editingDebounceTimer;
   String? _currentChurchId;
   bool _isCoupleMode = false;
+  bool _isDirty = false;
+  bool _isAutoSaving = false;
+  late AnimationController _animationController;
 
   @override
   void dispose() {
+    _animationController.dispose();
     _editingDebounceTimer?.cancel();
     for (final controller in _controllers.values) {
       controller.removeListener(_onTextChanged);
@@ -94,6 +98,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
   }
 
   @override
