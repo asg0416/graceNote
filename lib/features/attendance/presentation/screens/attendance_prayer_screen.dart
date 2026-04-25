@@ -132,7 +132,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     }
 
     try {
-      await _saveData(status: 'draft'); // TODO: Task 4에서 silent 파라미터 추가 예정
+      await _saveData(status: 'draft', silent: true);
     } catch (_) {
       // 저장 실패 시 롤백 → 다음 타이머 or 수동저장에서 재시도
       _isDirty = true;
@@ -1078,13 +1078,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     }
   }
 
-  Future<void> _saveData({required String status}) async {
+  Future<void> _saveData({required String status, bool silent = false}) async {
     if (_currentChurchId == null || _currentGroupId == null) {
-      SnackBarUtil.showSnackBar(context,
-          message: '정보를 찾을 수 없습니다.', isError: true);
+      if (!silent)
+        SnackBarUtil.showSnackBar(context,
+            message: '정보를 찾을 수 없습니다.', isError: true);
       return;
     }
-    setState(() => _isLoading = true);
+    if (!silent) setState(() => _isLoading = true);
     try {
       // 저장 직전에 model 상태를 controller 값으로 강제 동기화
       _syncMembersFromControllers();
@@ -1094,8 +1095,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           _currentChurchId!, selectedDate,
           createIfMissing: true);
       if (weekIdResult == null) {
-        if (mounted) setState(() => _isLoading = false);
-        if (mounted)
+        if (mounted && !silent) setState(() => _isLoading = false);
+        if (mounted && !silent)
           SnackBarUtil.showSnackBar(context,
               message: '주차 정보를 확인하지 못했습니다.', isError: true);
         return;
@@ -1139,16 +1140,17 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       ref.invalidate(departmentWeeklyDataProvider);
       ref.invalidate(attendanceHistoryProvider);
 
-      if (mounted) setState(() => _isLoading = false);
-      if (mounted)
+      if (mounted && !silent) setState(() => _isLoading = false);
+      if (mounted && !silent)
         SnackBarUtil.showSnackBar(context,
             message: status == 'published' ? '등록되었습니다.' : '저장되었습니다.');
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && !silent) setState(() => _isLoading = false);
       debugPrint('Save Error: $e');
-      if (mounted)
+      if (mounted && !silent)
         SnackBarUtil.showSnackBar(context,
             message: '저장 중 오류가 발생했습니다.', isError: true);
+      if (silent) rethrow;
     }
   }
 
@@ -1981,9 +1983,15 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         children: [
           Expanded(
               child: OutlinedButton(
-                  onPressed: isDisabled ? () {
-                    SnackBarUtil.showSnackBar(context, message: '모임없는 날에는 저장할 수 없습니다.', isError: true);
-                  } : () => _saveData(status: 'draft'),
+                  onPressed: isDisabled
+                      ? () {
+                          SnackBarUtil.showSnackBar(context,
+                              message: '모임없는 날에는 저장할 수 없습니다.', isError: true);
+                        }
+                      : () {
+                          _isDirty = false;
+                          _saveData(status: 'draft');
+                        },
                   style: OutlinedButton.styleFrom(
                       minimumSize: const Size(0, 50),
                       side: BorderSide(color: isDisabled ? const Color(0xFFE2E8F0) : const Color(0xFFE2E8F0)),
@@ -2003,9 +2011,15 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                   child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: ShadButton(
-                          onPressed: isDisabled ? () {
-                            SnackBarUtil.showSnackBar(context, message: '모임없는 날에는 등록할 수 없습니다.', isError: true);
-                          } : () => _saveData(status: 'published'),
+                          onPressed: isDisabled
+                              ? () {
+                                  SnackBarUtil.showSnackBar(context,
+                                      message: '모임없는 날에는 등록할 수 없습니다.', isError: true);
+                                }
+                              : () {
+                                  _isDirty = false;
+                                  _saveData(status: 'published');
+                                },
                           backgroundColor: isDisabled ? const Color(0xFFE2E8F0) : const Color(0xFF8B5CF6),
                           size: ShadButtonSize.lg,
                           child: Text('최종 등록하기',
