@@ -282,7 +282,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 const fetchWithJoin = async (targetId: string, isDirectory: boolean) => {
                     const { data, error } = await supabase
                         .from('prayer_entries')
-                        .select('*, weeks(week_date)')
+                        .select('*, weeks(week_date), groups!group_id(name)')
                         .eq(isDirectory ? 'directory_member_id' : 'member_id', targetId)
                         .eq('status', 'published')
                         .order('first_published_at', { ascending: false })
@@ -451,6 +451,11 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
     const phase2ActiveAffiliations = (phase2Data?.memberships || []).filter((membership: any) => membership.status === 'active');
     const legacyAffiliations = member._affiliations?.length > 0 ? member._affiliations : [member];
     const usesPhase2Affiliations = Boolean(phase2Data?.person);
+    const formatGroupLabel = (groupName?: string | null) => {
+        const trimmed = groupName?.trim();
+        if (!trimmed) return null;
+        return trimmed.includes('조') || trimmed.includes('부') ? trimmed : `${trimmed} 조`;
+    };
 
     return (
         <div className="max-w-5xl mx-auto space-y-8 pb-20">
@@ -1041,11 +1046,17 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                                                         {prayer.weeks?.name || (prayer.weeks?.week_date ? new Date(prayer.weeks.week_date).toLocaleDateString() : '날짜 미상')}
                                                                     </span>
                                                                     {/** Group Origin Indicator **/}
-                                                                    {prayer.directory_member_id && member._affiliations?.find((a: any) => a.id === prayer.directory_member_id) && (
-                                                                        <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-100 dark:border-emerald-500/20">
-                                                                            {member._affiliations.find((a: any) => a.id === prayer.directory_member_id).group_name} 조
-                                                                        </span>
-                                                                    )}
+                                                                    {(() => {
+                                                                        const legacyGroupName = prayer.directory_member_id
+                                                                            ? member._affiliations?.find((a: any) => a.id === prayer.directory_member_id)?.group_name
+                                                                            : null;
+                                                                        const groupLabel = formatGroupLabel(prayer.groups?.name || legacyGroupName);
+                                                                        return groupLabel ? (
+                                                                            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-100 dark:border-emerald-500/20">
+                                                                                {groupLabel}
+                                                                            </span>
+                                                                        ) : null;
+                                                                    })()}
                                                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{prayer.updated_at ? new Date(prayer.updated_at).toLocaleDateString() : '-'}</span>
                                                                 </div>
                                                                 {prayer.ai_refined_content && (
