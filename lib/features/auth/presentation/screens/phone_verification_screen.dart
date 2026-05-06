@@ -6,9 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/error/exceptions.dart';
+import 'package:grace_note/core/constants/app_constants.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
-import 'package:grace_note/features/auth/presentation/screens/church_selection_screen.dart';
-import 'package:grace_note/features/auth/presentation/screens/group_selection_screen.dart';
 import 'package:grace_note/features/auth/presentation/screens/login_screen.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 
@@ -56,6 +55,77 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
     final minutes = (_remainingTime / 60).floor();
     final seconds = _remainingTime % 60;
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  bool get _isDevSmsBypassEnabled {
+    final url = AppConstants.supabaseUrl;
+    return url.contains('eftdfxmdiefdduksdpwg') ||
+        url.contains('127.0.0.1') ||
+        url.contains('localhost');
+  }
+
+  Future<void> _devBypassSmsVerification() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) {
+        throw Exception('로그인 세션이 없습니다. 다시 로그인해 주세요.');
+      }
+
+      final profileData = await Supabase.instance.client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (profileData == null) {
+        throw Exception('개발용 인증 건너뛰기는 기존 profiles row가 있는 계정에서만 사용할 수 있습니다.');
+      }
+
+      final typedProfile = Map<String, dynamic>.from(profileData);
+      final enteredName = _nameController.text.trim();
+      final enteredPhone = _phoneController.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
+      final fullName = (typedProfile['full_name'] as String?)?.trim().isNotEmpty == true
+          ? typedProfile['full_name'] as String
+          : enteredName;
+
+      if (fullName.trim().isEmpty) {
+        throw Exception('프로필 이름이 없습니다. 이름을 입력한 뒤 다시 시도해 주세요.');
+      }
+
+      final updateData = <String, dynamic>{
+        'full_name': fullName,
+        'is_onboarding_complete': true,
+      };
+      if (enteredPhone.isNotEmpty) {
+        updateData['phone'] = enteredPhone;
+      }
+
+      await Supabase.instance.client
+          .from('profiles')
+          .update(updateData)
+          .eq('id', user.id);
+
+      ref.invalidate(userProfileProvider);
+      ref.invalidate(userProfileFutureProvider);
+      ref.invalidate(userGroupsProvider);
+      await ref.read(userProfileFutureProvider.future);
+
+      if (mounted) {
+        SnackBarUtil.showSnackBar(context, message: '개발환경 인증을 건너뛰었습니다.');
+        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarUtil.showSnackBar(
+          context,
+          message: e.toString().replaceFirst('Exception: ', ''),
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _sendCode() async {
@@ -604,6 +674,53 @@ class _PhoneVerificationScreenState extends ConsumerState<PhoneVerificationScree
                     ),
               ),
             ),
+
+            if (_isDevSmsBypassEnabled) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.accentViolet,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.primaryViolet.withOpacity(0.18)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      '개발환경 전용',
+                      style: TextStyle(
+                        color: AppTheme.primaryViolet,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                        fontFamily: 'Pretendard',
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'SMS 발송 없이 현재 로그인 계정의 인증을 완료 처리합니다. 운영 환경에서는 표시되지 않습니다.',
+                      style: TextStyle(
+                        color: AppTheme.textSub,
+                        fontSize: 12,
+                        height: 1.45,
+                        fontFamily: 'Pretendard',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ShadButton.outline(
+                      onPressed: _isLoading ? null : _devBypassSmsVerification,
+                      child: const Text(
+                        '개발용 인증 건너뛰기',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Pretendard',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             if (_isCodeSent) ...[
               const SizedBox(height: 24),

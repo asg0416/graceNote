@@ -8,37 +8,46 @@ class GraceNoteRepository {
 
   // 특정 날짜의 Week ID 조회 또는 생성
   // 특정 날짜의 Week ID 조회 또는 생성
-  Future<String?> getOrCreateWeek(String churchId, DateTime weekDate, {bool createIfMissing = true}) async {
+  Future<String?> getOrCreateWeek(String churchId, DateTime weekDate,
+      {bool createIfMissing = true}) async {
     if (churchId.isEmpty) return null;
     // Snap to the preceding Sunday
     final sunday = weekDate.subtract(Duration(days: weekDate.weekday % 7));
     final dateStr = sunday.toIso8601String().split('T')[0];
-    
+
     final existing = await _supabase
         .from('weeks')
-        .select('id')
+        .select('id, is_active')
         .eq('church_id', churchId)
         .eq('week_date', dateStr)
         .maybeSingle();
-    
-    if (existing != null) return existing['id'];
-  if (!createIfMissing) return null;
 
-  try {
-    // [FIX] RLS 권한 문제 해결을 위해 RPC 함수 사용 (Security Definer)
-    final res = await _supabase.rpc('ensure_week_exists', params: {
-      'p_church_id': churchId,
-      'p_week_date': dateStr,
-    });
-    return res as String;
-  } catch (e) {
-    debugPrint('GraceNoteRepository: Error in getOrCreateWeek: $e');
-    return null;
+    if (existing != null) {
+      if (existing['is_active'] == false && createIfMissing) {
+        await _supabase
+            .from('weeks')
+            .update({'is_active': true}).eq('id', existing['id']);
+      }
+      return existing['id'];
+    }
+    if (!createIfMissing) return null;
+
+    try {
+      // [FIX] RLS 권한 문제 해결을 위해 RPC 함수 사용 (Security Definer)
+      final res = await _supabase.rpc('ensure_week_exists', params: {
+        'p_church_id': churchId,
+        'p_week_date': dateStr,
+      });
+      return res as String;
+    } catch (e) {
+      debugPrint('GraceNoteRepository: Error in getOrCreateWeek: $e');
+      return null;
+    }
   }
-}
 
   // 특정 조원의 활성 Group Member ID 조회
-  Future<String?> getActiveGroupMemberId(String groupId, String profileId) async {
+  Future<String?> getActiveGroupMemberId(
+      String groupId, String profileId) async {
     final res = await _supabase
         .from('group_members')
         .select('id')
@@ -57,21 +66,22 @@ class GraceNoteRepository {
     if (attendanceList.isNotEmpty) {
       // 팁: attendanceList의 각 항목에는 저장 시점의 groupId가 이미 포함되어 있어야 함
       await _supabase.from('attendance').upsert(
-        attendanceList.map((e) => e.toJson()).toList(),
-        onConflict: 'week_id,directory_member_id',
-      );
+            attendanceList.map((e) => e.toJson()).toList(),
+            onConflict: 'week_id,directory_member_id',
+          );
     }
 
     // 2. Prayer Entries Upsert (directory_member_id 기반)
     if (prayerList.isNotEmpty) {
       await _supabase.from('prayer_entries').upsert(
-        prayerList.map((e) => e.toJson()).toList(),
-        onConflict: 'week_id,directory_member_id',
-      );
+            prayerList.map((e) => e.toJson()).toList(),
+            onConflict: 'week_id,directory_member_id',
+          );
     }
   }
 
-  Future<Map<String, dynamic>> getWeeklyData(String groupId, String weekId, {bool includeDrafts = false}) async {
+  Future<Map<String, dynamic>> getWeeklyData(String groupId, String weekId,
+      {bool includeDrafts = false}) async {
     // 1. 조원 명단 정보 먼저 확보
     final members = await getGroupMembers(groupId);
 
@@ -114,7 +124,7 @@ class GraceNoteRepository {
         .where((id) => id != null && !currentMemberIds.contains(id))
         .cast<String>()
         .toSet();
-    
+
     missingMemberIds.addAll(prayerMemberIds);
 
     Map<String, dynamic> missingMembersMap = {};
@@ -125,7 +135,7 @@ class GraceNoteRepository {
             .from('member_directory')
             .select('id, full_name, group_name') // profile_id 등 제거
             .inFilter('id', missingMemberIds.toList());
-        
+
         for (final m in missingResponse) {
           missingMembersMap[m['id']] = m;
         }
@@ -136,17 +146,18 @@ class GraceNoteRepository {
 
     // 4. 데이터 병합 (Attendance)
     final List<Map<String, dynamic>> attendanceWithInfo = [];
-    
+
     // [FIX] 조장 화면에서도 미제출 시 빈 배열을 반환해야 "출석 등록하기" 버튼 노출 로직이 동작함
     if (attendanceList.isNotEmpty) {
       for (final att in attendanceList) {
         final dirId = att['directory_member_id'];
-        
+
         // 1순위: 현재 멤버 리스트
-        Map<String, dynamic>? memberInfo = members.cast<Map<String, dynamic>?>().firstWhere(
-          (m) => m?['id'] == dirId,
-          orElse: () => null,
-        );
+        Map<String, dynamic>? memberInfo =
+            members.cast<Map<String, dynamic>?>().firstWhere(
+                  (m) => m?['id'] == dirId,
+                  orElse: () => null,
+                );
 
         // 2순위: 추가 조회된 이동/비활성 멤버 리스트
         if (memberInfo == null) {
@@ -155,10 +166,8 @@ class GraceNoteRepository {
 
         attendanceWithInfo.add(<String, dynamic>{
           ...att,
-          'member_directory': memberInfo ?? { 
-             'full_name': '이동/비활성 성도', 
-             'id': dirId 
-          },
+          'member_directory':
+              memberInfo ?? {'full_name': '이동/비활성 성도', 'id': dirId},
         });
       }
     }
@@ -167,19 +176,20 @@ class GraceNoteRepository {
     // Prayer 객체에도 member_directory 정보를 넣어줘야 UI에서 이름을 표시함
     final List<Map<String, dynamic>> prayersWithInfo = [];
     for (final prayer in prayersList) {
-        final dirId = prayer['directory_member_id'];
-        Map<String, dynamic>? memberInfo = members.cast<Map<String, dynamic>?>().firstWhere(
-          (m) => m?['id'] == dirId,
-          orElse: () => null,
-        );
-        if (memberInfo == null) {
-          memberInfo = missingMembersMap[dirId];
-        }
+      final dirId = prayer['directory_member_id'];
+      Map<String, dynamic>? memberInfo =
+          members.cast<Map<String, dynamic>?>().firstWhere(
+                (m) => m?['id'] == dirId,
+                orElse: () => null,
+              );
+      if (memberInfo == null) {
+        memberInfo = missingMembersMap[dirId];
+      }
 
-        prayersWithInfo.add({
-          ...prayer,
-          'member_directory': memberInfo ?? { 'full_name': '알 수 없음', 'id': dirId },
-        });
+      prayersWithInfo.add({
+        ...prayer,
+        'member_directory': memberInfo ?? {'full_name': '알 수 없음', 'id': dirId},
+      });
     }
 
     return {
@@ -189,26 +199,34 @@ class GraceNoteRepository {
   }
 
   // 부서 전체의 특정 주차 데이터 가져오기 (전체 탭용)
-  Future<Map<String, dynamic>> getDepartmentWeeklyData(String departmentId, String weekId) async {
-    if (departmentId.isEmpty || weekId.isEmpty) return {'groups': [], 'prayers': []};
+  Future<Map<String, dynamic>> getDepartmentWeeklyData(
+      String departmentId, String weekId) async {
+    if (departmentId.isEmpty || weekId.isEmpty)
+      return {'groups': [], 'prayers': []};
     // 1. 부서 내 모든 조 조회
     final groupsResponse = await _supabase
         .from('groups')
         .select('id, name, color_hex, is_new_member_group, climbing_threshold')
-        .eq('department_id', departmentId);
-    
+        .eq('department_id', departmentId)
+        .eq('is_active', true);
+
     final groups = List<Map<String, dynamic>>.from(groupsResponse);
     final groupIds = groups.map((g) => g['id'] as String).toList();
 
     // 2. 모든 조의 기도제목 조회
     final prayersResponse = await _supabase
         .from('prayer_entries')
-        .select('*, member_directory!directory_member_id(family_name, full_name, person_id, spouse_name)') // [FIX] 없는 컬럼 family_id 제거
+        .select(
+            '*, member_directory!directory_member_id(family_name, full_name, person_id, spouse_name)') // [FIX] 없는 컬럼 family_id 제거
         .eq('status', 'published')
         .eq('week_id', weekId)
         .inFilter('group_id', groupIds)
-        .order('family_name', referencedTable: 'member_directory', ascending: true, nullsFirst: false)
-        .order('full_name', referencedTable: 'member_directory', ascending: true);
+        .order('family_name',
+            referencedTable: 'member_directory',
+            ascending: true,
+            nullsFirst: false)
+        .order('full_name',
+            referencedTable: 'member_directory', ascending: true);
 
     return {
       'groups': groups,
@@ -221,38 +239,45 @@ class GraceNoteRepository {
     final response = await _supabase
         .from('departments')
         .select()
-        .eq('church_id', churchId);
+        .eq('church_id', churchId)
+        .eq('is_active', true);
     return (response as List).map((e) => DepartmentModel.fromJson(e)).toList();
   }
 
   // 특정 부서의 모든 조 가져오기
-  Future<List<Map<String, dynamic>>> getGroupsInDepartment(String departmentId) async {
+  Future<List<Map<String, dynamic>>> getGroupsInDepartment(
+      String departmentId) async {
     final response = await _supabase
         .from('groups')
         .select('id, name, color_hex, is_new_member_group, climbing_threshold')
         .eq('department_id', departmentId)
+        .eq('is_active', true)
         .order('name');
-        
-    return (response as List).map((e) => {
-      'id': e['id'],
-      'name': e['name'],
-      'color_hex': e['color_hex'],
-      'is_new_member_group': e['is_new_member_group'] ?? false,
-      'climbing_threshold': e['climbing_threshold'], // [REFINED] Remove default value
-    }).toList();
+
+    return (response as List)
+        .map((e) => {
+              'id': e['id'],
+              'name': e['name'],
+              'color_hex': e['color_hex'],
+              'is_new_member_group': e['is_new_member_group'] ?? false,
+              'climbing_threshold':
+                  e['climbing_threshold'], // [REFINED] Remove default value
+            })
+        .toList();
   }
 
   // 프로필 ID, 이름, 또는 전화번호로 성도 명부 정보 가져오기 (가장 강력한 버전)
   Future<Map<String, dynamic>?> getMemberDirectoryEntry({
-    required String profileId, 
+    required String profileId,
     required String fullName,
     String? phone,
   }) async {
     final cleanName = fullName.trim();
     final cleanPhone = phone?.trim() ?? '';
-    
-    debugPrint('GraceNoteRepository: Seeking directory for [$cleanName] (ID: $profileId, Phone: $cleanPhone)');
-    
+
+    debugPrint(
+        'GraceNoteRepository: Seeking directory for [$cleanName] (ID: $profileId, Phone: $cleanPhone)');
+
     try {
       // 1. profile_id로 우선 조회
       final byIdRes = await _supabase
@@ -260,11 +285,12 @@ class GraceNoteRepository {
           .select()
           .eq('profile_id', profileId)
           .limit(1);
-      
+
       final byIdList = byIdRes as List;
       if (byIdList.isNotEmpty) {
         final found = byIdList.first;
-        debugPrint('GraceNoteRepository: Match found by profile_id -> DirectoryID: ${found['id']}, Name: ${found['full_name']}');
+        debugPrint(
+            'GraceNoteRepository: Match found by profile_id -> DirectoryID: ${found['id']}, Name: ${found['full_name']}');
         return Map<String, dynamic>.from(found);
       }
 
@@ -275,11 +301,12 @@ class GraceNoteRepository {
             .select()
             .eq('phone', cleanPhone)
             .limit(1);
-            
+
         final byPhoneList = byPhoneRes as List;
         if (byPhoneList.isNotEmpty) {
           final found = byPhoneList.first;
-          debugPrint('GraceNoteRepository: Match found by phone -> DirectoryID: ${found['id']}, Name: ${found['full_name']}');
+          debugPrint(
+              'GraceNoteRepository: Match found by phone -> DirectoryID: ${found['id']}, Name: ${found['full_name']}');
           return Map<String, dynamic>.from(found);
         }
       }
@@ -290,20 +317,23 @@ class GraceNoteRepository {
           .select()
           .eq('full_name', cleanName)
           .limit(1);
-          
+
       final byNameList = byNameRes as List;
       if (byNameList.isNotEmpty) {
         final found = byNameList.first;
-        debugPrint('GraceNoteRepository: Match found by full_name -> DirectoryID: ${found['id']}, Name: ${found['full_name']}');
+        debugPrint(
+            'GraceNoteRepository: Match found by full_name -> DirectoryID: ${found['id']}, Name: ${found['full_name']}');
         return Map<String, dynamic>.from(found);
       }
-      
-      debugPrint('GraceNoteRepository: No directory entry found for [$cleanName]');
+
+      debugPrint(
+          'GraceNoteRepository: No directory entry found for [$cleanName]');
     } catch (e) {
       debugPrint('GraceNoteRepository Error in getMemberDirectoryEntry: $e');
     }
-    
-    debugPrint('GraceNoteRepository: CRITICAL - No entry found in member_directory for $cleanName');
+
+    debugPrint(
+        'GraceNoteRepository: CRITICAL - No entry found in member_directory for $cleanName');
     return null;
   }
 
@@ -312,10 +342,11 @@ class GraceNoteRepository {
     // 1. 조 정보 가져오기
     final groupResponse = await _supabase
         .from('groups')
-        .select('church_id, department_id, name, is_new_member_group, climbing_threshold')
+        .select(
+            'church_id, department_id, name, is_new_member_group, climbing_threshold')
         .eq('id', groupId)
         .single();
-    
+
     final groupName = groupResponse['name'];
     final churchId = groupResponse['church_id'];
     final departmentId = groupResponse['department_id'];
@@ -330,7 +361,7 @@ class GraceNoteRepository {
         .eq('is_active', true)
         .order('family_name', ascending: true, nullsFirst: false)
         .order('full_name', ascending: true);
-        
+
     final membersList = List<Map<String, dynamic>>.from(directoryResponse);
     if (membersList.isEmpty) return [];
 
@@ -342,7 +373,7 @@ class GraceNoteRepository {
         .toList();
 
     // 4. 해당 프로필들의 정보와 group_members 정보 가져오기
-    // profile_id가 있는 경우 해당 ID들로 조회, 없으면 이름 매칭을 위해 부서 전체(혹은 빈 리스트) 대신 
+    // profile_id가 있는 경우 해당 ID들로 조회, 없으면 이름 매칭을 위해 부서 전체(혹은 빈 리스트) 대신
     // 이름 목록으로 필터링하여 가져옴
     final List<Map<String, dynamic>> allProfiles;
     if (profileIds.isNotEmpty) {
@@ -360,7 +391,7 @@ class GraceNoteRepository {
         .where((m) => m['profile_id'] == null)
         .map((m) => m['full_name'] as String)
         .toList();
-    
+
     if (missingNames.isNotEmpty) {
       final extraProfilesResponse = await _supabase
           .from('profiles')
@@ -368,34 +399,38 @@ class GraceNoteRepository {
           .eq('church_id', churchId)
           .eq('department_id', departmentId)
           .inFilter('full_name', missingNames);
-      allProfiles.addAll(List<Map<String, dynamic>>.from(extraProfilesResponse));
+      allProfiles
+          .addAll(List<Map<String, dynamic>>.from(extraProfilesResponse));
     }
 
     // 5. 메모리에서 조인 수행
     return membersList.map<Map<String, dynamic>>((dir) {
       final pId = dir['profile_id'];
       final name = dir['full_name'];
-      
+
       // 1순위: profile_id 매칭, 2순위: 이름 매칭
       Map<String, dynamic>? profile;
       if (pId != null) {
         profile = allProfiles.cast<Map<String, dynamic>?>().firstWhere(
-          (p) => p?['id'] == pId,
-          orElse: () => null,
-        );
+              (p) => p?['id'] == pId,
+              orElse: () => null,
+            );
       }
-      
+
       if (profile == null && name != null) {
         profile = allProfiles.cast<Map<String, dynamic>?>().firstWhere(
-          (p) => p?['full_name'] == name && p?['id'] != null, // 다른 사람과 겹치지 않게 조심
-          orElse: () => null,
-        );
+              (p) =>
+                  p?['full_name'] == name &&
+                  p?['id'] != null, // 다른 사람과 겹치지 않게 조심
+              orElse: () => null,
+            );
       }
-      
+
       String? groupMemberId;
       if (profile != null && profile['group_members'] != null) {
         final gMembers = profile['group_members'] as List;
-        final match = gMembers.firstWhere((gm) => gm['group_id'] == groupId, orElse: () => null);
+        final match = gMembers.firstWhere((gm) => gm['group_id'] == groupId,
+            orElse: () => null);
         groupMemberId = match?['id'];
       }
 
@@ -409,12 +444,11 @@ class GraceNoteRepository {
   }
 
   // 부서 설정 업데이트
-  Future<void> updateDepartmentSettings(String deptId, Map<String, dynamic> settings) async {
-    await _supabase
-        .from('departments')
-        .update(settings)
-        .eq('id', deptId);
+  Future<void> updateDepartmentSettings(
+      String deptId, Map<String, dynamic> settings) async {
+    await _supabase.from('departments').update(settings).eq('id', deptId);
   }
+
   // 온보딩 완료 (프로필 생성 및 조 가입)
   Future<void> completeOnboarding({
     required String profileId,
@@ -431,22 +465,27 @@ class GraceNoteRepository {
     if (matchedData != null) {
       if (matchedData['family_name'] != null) {
         // 이미 생성된 가족이 있는지 확인 (간소화 위해 이름 기반)
-        final existingFamily = (churchId != null) 
-            ? await _supabase.from('families')
+        final existingFamily = (churchId != null)
+            ? await _supabase
+                .from('families')
                 .select('id')
                 .eq('church_id', churchId)
                 .eq('name', matchedData['family_name'])
                 .maybeSingle()
             : null;
-        
+
         if (existingFamily != null) {
           familyId = existingFamily['id'];
         } else {
-          final newFamily = await _supabase.from('families').insert({
-            'church_id': churchId,
-            'department_id': departmentId,
-            'name': matchedData['family_name'],
-          }).select('id').single();
+          final newFamily = await _supabase
+              .from('families')
+              .insert({
+                'church_id': churchId,
+                'department_id': departmentId,
+                'name': matchedData['family_name'],
+              })
+              .select('id')
+              .single();
           familyId = newFamily['id'];
         }
       }
@@ -470,14 +509,14 @@ class GraceNoteRepository {
 
     await _supabase.from('profiles').upsert(updateData, onConflict: 'id');
 
-    // [NOTE] 나머지 group_members 및 member_directory 연결은 
+    // [NOTE] 나머지 group_members 및 member_directory 연결은
     // 백엔드의 sync_profile_to_all_memberships 트리거가 person_id 할당 시 자동으로 처리합니다.
   }
 
   // 소셜 로그인 (Kakao, Google)
   Future<void> signInWithOAuth(OAuthProvider provider) async {
     // [WEB FIX] Use actual location for Web, deep link for Mobile
-    final String? redirectTo = kIsWeb 
+    final String? redirectTo = kIsWeb
         ? null // Uses Site URL configured in Supabase (e.g., localhost:8080)
         : 'io.supabase.flutter://login-callback';
 
@@ -504,37 +543,44 @@ class GraceNoteRepository {
   }
 
   // 명부 멤버 정보 수정
-  Future<void> updateDirectoryMember(String id, Map<String, dynamic> data) async {
+  Future<void> updateDirectoryMember(
+      String id, Map<String, dynamic> data) async {
     await _supabase.from('member_directory').update(data).eq('id', id);
   }
 
   // 명부 멤버 활성화/비활성화 토글
   Future<void> toggleMemberActivation(String id, bool isActive) async {
-    await _supabase.from('member_directory').update({'is_active': isActive}).eq('id', id);
+    await _supabase
+        .from('member_directory')
+        .update({'is_active': isActive}).eq('id', id);
   }
 
   // 명부 멤버 제거
   Future<void> deleteDirectoryMember(String id) async {
-    await _supabase.from('member_directory').delete().eq('id', id);
+    await _supabase
+        .from('member_directory')
+        .update({'is_active': false}).eq('id', id);
   }
 
   // 특정 조의 주차별 출석 히스토리 및 통계 가져오기 (년/월 필터링 추가)
-  Future<List<Map<String, dynamic>>> getGroupAttendanceHistory(String groupId, {int? year, int? month, int limit = 6}) async {
+  Future<List<Map<String, dynamic>>> getGroupAttendanceHistory(String groupId,
+      {int? year, int? month, int limit = 6}) async {
     // 1. 조 정보 가져오기
     final group = await _supabase
         .from('groups')
         .select('church_id')
         .eq('id', groupId)
         .single();
-    
+
     final churchId = group['church_id'];
 
     // 2. 주차 정보 가져오기
     var query = _supabase
         .from('weeks')
         .select('id, week_date')
-        .eq('church_id', churchId);
-    
+        .eq('church_id', churchId)
+        .eq('is_active', true);
+
     if (year != null && month != null) {
       final startOfMonth = DateTime(year, month, 1);
       final endOfMonth = DateTime(year, month + 1, 0, 23, 59, 59);
@@ -543,10 +589,9 @@ class GraceNoteRepository {
           .lte('week_date', endOfMonth.toIso8601String());
     }
 
-    final weeksResponse = await query
-        .order('week_date', ascending: false)
-        .limit(limit);
-    
+    final weeksResponse =
+        await query.order('week_date', ascending: false).limit(limit);
+
     final weeks = List<Map<String, dynamic>>.from(weeksResponse);
     final weekIds = weeks.map((w) => w['id'] as String).toList();
 
@@ -558,17 +603,20 @@ class GraceNoteRepository {
         .select('week_id, status, directory_member_id')
         .inFilter('week_id', weekIds)
         .eq('group_id', groupId);
-    
+
     final attendanceData = List<Map<String, dynamic>>.from(attendanceResponse);
 
     // 4. 주차별로 그룹화 및 통계 계산
     return weeks.map((week) {
       final weekId = week['id'];
-      final weekAttendance = attendanceData.where((a) => a['week_id'] == weekId).toList();
-      
-      final presentCount = weekAttendance.where((a) => a['status'] == 'present' || a['status'] == 'late').length;
+      final weekAttendance =
+          attendanceData.where((a) => a['week_id'] == weekId).toList();
+
+      final presentCount = weekAttendance
+          .where((a) => a['status'] == 'present' || a['status'] == 'late')
+          .length;
       final totalCount = weekAttendance.length;
-      
+
       return {
         'week_id': weekId,
         'week_date': week['week_date'],
@@ -580,22 +628,27 @@ class GraceNoteRepository {
   }
 
   // 부서 전체의 주차별 출석 히스토리 및 통계 가져오기
-  Future<List<Map<String, dynamic>>> getDepartmentAttendanceHistory(String departmentId, {int? year, int? month, int limit = 6}) async {
+  Future<List<Map<String, dynamic>>> getDepartmentAttendanceHistory(
+      String departmentId,
+      {int? year,
+      int? month,
+      int limit = 6}) async {
     // 1. 부서 정보 가져오기
     final dept = await _supabase
         .from('departments')
         .select('church_id')
         .eq('id', departmentId)
         .single();
-    
+
     final churchId = dept['church_id'];
 
     // 2. 주차 정보
     var query = _supabase
         .from('weeks')
         .select('id, week_date')
-        .eq('church_id', churchId);
-    
+        .eq('church_id', churchId)
+        .eq('is_active', true);
+
     if (year != null && month != null) {
       final startOfMonth = DateTime(year, month, 1);
       final endOfMonth = DateTime(year, month + 1, 0, 23, 59, 59);
@@ -604,10 +657,9 @@ class GraceNoteRepository {
           .lte('week_date', endOfMonth.toIso8601String());
     }
 
-    final weeksResponse = await query
-        .order('week_date', ascending: false)
-        .limit(limit);
-    
+    final weeksResponse =
+        await query.order('week_date', ascending: false).limit(limit);
+
     final weeks = List<Map<String, dynamic>>.from(weeksResponse);
     final weekIds = weeks.map((w) => w['id'] as String).toList();
 
@@ -617,8 +669,10 @@ class GraceNoteRepository {
     final groupsResponse = await _supabase
         .from('groups')
         .select('id')
-        .eq('department_id', departmentId);
-    final groupIds = (groupsResponse as List).map((g) => g['id'] as String).toList();
+        .eq('department_id', departmentId)
+        .eq('is_active', true);
+    final groupIds =
+        (groupsResponse as List).map((g) => g['id'] as String).toList();
 
     // [NEW] 부서 내 전체 활성 멤버 수 조회 (안정적인 통계를 위해)
     final directoryResponse = await _supabase
@@ -634,17 +688,20 @@ class GraceNoteRepository {
         .select('week_id, status')
         .inFilter('week_id', weekIds)
         .inFilter('group_id', groupIds);
-    
+
     final attendanceData = List<Map<String, dynamic>>.from(attendanceResponse);
 
     return weeks.map((week) {
       final weekId = week['id'];
-      final weekAttendance = attendanceData.where((a) => a['week_id'] == weekId).toList();
-      
-      final presentCount = weekAttendance.where((a) => a['status'] == 'present' || a['status'] == 'late').length;
+      final weekAttendance =
+          attendanceData.where((a) => a['week_id'] == weekId).toList();
+
+      final presentCount = weekAttendance
+          .where((a) => a['status'] == 'present' || a['status'] == 'late')
+          .length;
       // 출석을 제출하지 않은 조가 있더라도 전체 인원수는 부서 총원으로 고정
       final totalCount = totalMembersInDept;
-      
+
       return {
         'week_id': weekId,
         'week_date': week['week_date'],
@@ -656,7 +713,8 @@ class GraceNoteRepository {
   }
 
   // [NEW] 부서 전체의 특정 주차 상세 출석 현황 (명단 포함)
-  Future<Map<String, dynamic>> getDepartmentWeeklyAttendanceDetails(String departmentId, String weekId) async {
+  Future<Map<String, dynamic>> getDepartmentWeeklyAttendanceDetails(
+      String departmentId, String weekId) async {
     if (departmentId.isEmpty || weekId.isEmpty) return {'groups': []};
 
     // 1. 부서 내 모든 조 조회
@@ -664,6 +722,7 @@ class GraceNoteRepository {
         .from('groups')
         .select('id, name')
         .eq('department_id', departmentId)
+        .eq('is_active', true)
         .order('name');
     final groups = List<Map<String, dynamic>>.from(groupsResponse);
 
@@ -701,7 +760,8 @@ class GraceNoteRepository {
           missingMembersMap[m['id']] = m;
         }
       } catch (e) {
-          debugPrint('GraceNoteRepository: Failed to fetch missing department members: $e');
+        debugPrint(
+            'GraceNoteRepository: Failed to fetch missing department members: $e');
       }
     }
 
@@ -709,17 +769,19 @@ class GraceNoteRepository {
     final resultGroups = groups.map((group) {
       final groupName = group['name'];
       final groupId = group['id'];
-      
-      final groupAttendanceData = attendanceData.where((a) => a['group_id'] == groupId).toList();
+
+      final groupAttendanceData =
+          attendanceData.where((a) => a['group_id'] == groupId).toList();
 
       final List<Map<String, dynamic>> membersWithStatus = [];
 
       // [기능 변경] 출석을 제출하지 않은 조: 가짜 현재 명단을 채워넣어 전부 '결석'처럼 보이게 하는 대신
-      // 아예 미제출(is_submitted: false) 상태로 반환. 
+      // 아예 미제출(is_submitted: false) 상태로 반환.
       // 단, 부서 전체 상단 통계(참석률 분모) 유지를 위해 total_count는 현재 조 인원으로 전달.
       if (groupAttendanceData.isEmpty) {
-        final groupMemberCount = allMembers.where((m) => m['group_name'] == groupName).length;
-        
+        final groupMemberCount =
+            allMembers.where((m) => m['group_name'] == groupName).length;
+
         return {
           'id': groupId,
           'name': groupName,
@@ -728,26 +790,27 @@ class GraceNoteRepository {
           'total_count': groupMemberCount,
           'members': <Map<String, dynamic>>[],
         };
-      } 
-      
-      // 출석 제출 기록이 있는 조: 과거 제출된 기록(Snapshot) 기반으로만 명단을 구성.
-      membersWithStatus.addAll(groupAttendanceData
-          .map((a) {
-             final dirId = a['directory_member_id'];
-             final memberInfo = allMembers.firstWhere(
-                (m) => m['id'] == dirId, 
-                orElse: () => missingMembersMap[dirId] ?? {},
-             );
-             
-             // 정보가 삭제된 성도여도 고유 식별 명단을 위해 남겨둠
-             return {
-               if (memberInfo.isNotEmpty) ...memberInfo else 'id': dirId,
-               'status': a['status'],
-               'source': 'snapshot',
-             };
-          }));
+      }
 
-      final presentCount = membersWithStatus.where((m) => m['status'] == 'present' || m['status'] == 'late').length;
+      // 출석 제출 기록이 있는 조: 과거 제출된 기록(Snapshot) 기반으로만 명단을 구성.
+      membersWithStatus.addAll(groupAttendanceData.map((a) {
+        final dirId = a['directory_member_id'];
+        final memberInfo = allMembers.firstWhere(
+          (m) => m['id'] == dirId,
+          orElse: () => missingMembersMap[dirId] ?? {},
+        );
+
+        // 정보가 삭제된 성도여도 고유 식별 명단을 위해 남겨둠
+        return {
+          if (memberInfo.isNotEmpty) ...memberInfo else 'id': dirId,
+          'status': a['status'],
+          'source': 'snapshot',
+        };
+      }));
+
+      final presentCount = membersWithStatus
+          .where((m) => m['status'] == 'present' || m['status'] == 'late')
+          .length;
 
       return {
         'id': groupId,
@@ -790,7 +853,8 @@ class GraceNoteRepository {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getPrayerInteractions(String profileId) async {
+  Future<List<Map<String, dynamic>>> getPrayerInteractions(
+      String profileId) async {
     final response = await _supabase
         .from('prayer_interactions')
         .select('prayer_id, interaction_type')
@@ -799,7 +863,8 @@ class GraceNoteRepository {
   }
 
   // Directory Member ID로 단일 멤버 조회
-  Future<Map<String, dynamic>?> getDirectoryMember(String directoryMemberId) async {
+  Future<Map<String, dynamic>?> getDirectoryMember(
+      String directoryMemberId) async {
     try {
       final res = await _supabase
           .from('member_directory')
@@ -813,11 +878,8 @@ class GraceNoteRepository {
     }
   }
 
-
   Future<List<Map<String, dynamic>>> getSavedPrayers(String profileId) async {
-    final response = await _supabase
-        .from('prayer_interactions')
-        .select('''
+    final response = await _supabase.from('prayer_interactions').select('''
           interaction_type,
           prayer_entries:prayer_id (
             id,
@@ -827,16 +889,18 @@ class GraceNoteRepository {
               full_name
             )
           )
-        ''')
-        .eq('profile_id', profileId)
-        .order('created_at', ascending: false);
+        ''').eq('profile_id', profileId).order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(response);
   }
 
   // 특정 멤버의 전체 기도제목 히스토리 가져오기 (타임라인용)
-  Future<List<Map<String, dynamic>>> getMemberPrayerHistory(String directoryMemberId, {int? page, int? pageSize}) async {
-    debugPrint('GraceNoteRepository: Fetching history for directoryMemberId: $directoryMemberId');
-    
+  Future<List<Map<String, dynamic>>> getMemberPrayerHistory(
+      String directoryMemberId,
+      {int? page,
+      int? pageSize}) async {
+    debugPrint(
+        'GraceNoteRepository: Fetching history for directoryMemberId: $directoryMemberId');
+
     // 1. Find the profile_id or identifiers for the given member
     final memberRes = await _supabase
         .from('member_directory')
@@ -845,7 +909,8 @@ class GraceNoteRepository {
         .maybeSingle();
 
     if (memberRes == null) {
-      debugPrint('GraceNoteRepository: Member entry not found for history query: $directoryMemberId');
+      debugPrint(
+          'GraceNoteRepository: Member entry not found for history query: $directoryMemberId');
       return [];
     }
 
@@ -856,18 +921,23 @@ class GraceNoteRepository {
 
     // 2. Find all directory member IDs associated with this person
     var relatedQuery = _supabase.from('member_directory').select('id');
-    
+
     if (profileId != null) {
       relatedQuery = relatedQuery.eq('profile_id', profileId);
     } else if (phone != null && phone.isNotEmpty) {
-      relatedQuery = relatedQuery.eq('full_name', fullName).eq('phone', phone).eq('church_id', churchId);
+      relatedQuery = relatedQuery
+          .eq('full_name', fullName)
+          .eq('phone', phone)
+          .eq('church_id', churchId);
     } else {
       relatedQuery = relatedQuery.eq('id', directoryMemberId);
     }
 
     final relatedMembers = await relatedQuery;
-    final List<String> allIds = List<String>.from(relatedMembers.map((m) => m['id'] as String));
-    debugPrint('GraceNoteRepository: Related directory IDs for person: $allIds');
+    final List<String> allIds =
+        List<String>.from(relatedMembers.map((m) => m['id'] as String));
+    debugPrint(
+        'GraceNoteRepository: Related directory IDs for person: $allIds');
 
     // 3. Fetch published prayers for those IDs (exclude drafts)
     var query = _supabase
@@ -886,16 +956,17 @@ class GraceNoteRepository {
       final end = start + pageSize - 1;
       query = query.range(start, end);
     }
-    
+
     final response = await query;
-    
+
     final result = List<Map<String, dynamic>>.from(response);
-    debugPrint('GraceNoteRepository: Found ${result.length} history entries (page $page)');
+    debugPrint(
+        'GraceNoteRepository: Found ${result.length} history entries (page $page)');
     return result;
   }
 
   Future<void> deleteWeek(String weekId) async {
-    await _supabase.from('weeks').delete().eq('id', weekId);
+    await _supabase.from('weeks').update({'is_active': false}).eq('id', weekId);
   }
 
   // 기도제목 검색 (이름 또는 내용)
@@ -906,14 +977,11 @@ class GraceNoteRepository {
     DateTime? date,
     String? searchTerm,
   }) async {
-    dynamic query = _supabase
-        .from('prayer_entries')
-        .select('''
+    dynamic query = _supabase.from('prayer_entries').select('''
           *,
           weeks(week_date),
           member_directory!directory_member_id(full_name, family_name, group_name, profile_id)
-        ''')
-        .eq('status', 'published');
+        ''').eq('status', 'published');
 
     // 1. 날짜 필터 (선택된 경우만)
     if (date != null) {
@@ -936,22 +1004,22 @@ class GraceNoteRepository {
     // 3. 검색어 필터 (이름 또는 내용)
     if (searchTerm != null && searchTerm.trim().isNotEmpty) {
       final term = '%${searchTerm.trim()}%';
-      
+
       // 1단계: 성도 명부에서 이름 검색하여 ID 목록 확보
       final nameSearchResponse = await _supabase
           .from('member_directory')
           .select('id')
           .eq('church_id', churchId)
           .ilike('full_name', term);
-      
-      final List<String> matchingDirectoryIds = (nameSearchResponse as List)
-          .map((m) => m['id'].toString())
-          .toList();
+
+      final List<String> matchingDirectoryIds =
+          (nameSearchResponse as List).map((m) => m['id'].toString()).toList();
 
       if (matchingDirectoryIds.isNotEmpty) {
         // 이름 매칭되는 사람이 있는 경우: (내용 검색 OR ID 목록 포함)
         final idList = matchingDirectoryIds.join(',');
-        query = query.or('content.ilike.$term,directory_member_id.in.($idList)');
+        query =
+            query.or('content.ilike.$term,directory_member_id.in.($idList)');
       } else {
         // 이름 매칭되는 사람이 없는 경우: 내용만 검색
         query = query.ilike('content', term);
@@ -961,15 +1029,20 @@ class GraceNoteRepository {
     // updated_at 대신 week_date 기준으로 정렬 (주차별 정기적인 흐름 확인을 위해)
     final response = await query
         .order('week_date', referencedTable: 'weeks', ascending: false)
-        .order('family_name', referencedTable: 'member_directory', ascending: true, nullsFirst: false)
-        .order('full_name', referencedTable: 'member_directory', ascending: true)
+        .order('family_name',
+            referencedTable: 'member_directory',
+            ascending: true,
+            nullsFirst: false)
+        .order('full_name',
+            referencedTable: 'member_directory', ascending: true)
         .order('id', ascending: true)
         .limit(50);
     return List<Map<String, dynamic>>.from(response);
   }
 
   // 프로필 정보 업데이트
-  Future<void> updateProfile(String profileId, Map<String, dynamic> data) async {
+  Future<void> updateProfile(
+      String profileId, Map<String, dynamic> data) async {
     await _supabase.from('profiles').update(data).eq('id', profileId);
   }
 
@@ -999,7 +1072,8 @@ class GraceNoteRepository {
       );
 
       if (response.status != 200) {
-        final error = response.data['message'] ?? response.data['error'] ?? '인증번호 발송 실패';
+        final error =
+            response.data['message'] ?? response.data['error'] ?? '인증번호 발송 실패';
         throw Exception(error);
       }
     } on FunctionException catch (e) {
@@ -1008,12 +1082,13 @@ class GraceNoteRepository {
   }
 
   // SMS 인증 확인 및 매칭 조회
-  Future<Map<String, dynamic>> verifySMS(String phone, String code, {String? fullName}) async {
+  Future<Map<String, dynamic>> verifySMS(String phone, String code,
+      {String? fullName}) async {
     try {
       final response = await _supabase.functions.invoke(
         'verify-sms',
         body: {
-          'phone': phone, 
+          'phone': phone,
           'code': code,
           if (fullName != null) 'fullName': fullName,
         },
@@ -1048,14 +1123,15 @@ class GraceNoteRepository {
   }
 
   // 성도의 등반 진행도 (출석 횟수) 조회
-  Future<int> getMemberClimbingProgress(String directoryMemberId, String groupId) async {
+  Future<int> getMemberClimbingProgress(
+      String directoryMemberId, String groupId) async {
     final response = await _supabase
         .from('attendance')
         .select('id')
         .eq('directory_member_id', directoryMemberId)
         .eq('group_id', groupId)
         .eq('status', 'present');
-    
+
     return (response as List).length;
   }
 
@@ -1070,7 +1146,8 @@ class GraceNoteRepository {
     return '${sunday.year}-${sunday.month.toString().padLeft(2, '0')}-${sunday.day.toString().padLeft(2, '0')}';
   }
 
-  Future<NoMeetingDayModel?> getNoMeetingDay(String departmentId, DateTime weekDate) async {
+  Future<NoMeetingDayModel?> getNoMeetingDay(
+      String departmentId, DateTime weekDate) async {
     if (departmentId.isEmpty) return null;
     final dateStr = _snapToSundayStr(weekDate);
     final response = await _supabase
@@ -1098,7 +1175,8 @@ class GraceNoteRepository {
     });
   }
 
-  Future<void> cancelNoMeetingDay(String departmentId, DateTime weekDate) async {
+  Future<void> cancelNoMeetingDay(
+      String departmentId, DateTime weekDate) async {
     final dateStr = _snapToSundayStr(weekDate);
     await _supabase
         .from('no_meeting_days')
@@ -1112,13 +1190,16 @@ class GraceNoteRepository {
     if (departmentId.isEmpty) return [];
     final startStr = '$year-${month.toString().padLeft(2, '0')}-01';
     final lastDay = DateTime(year, month + 1, 0).day;
-    final endStr = '$year-${month.toString().padLeft(2, '0')}-${lastDay.toString().padLeft(2, '0')}';
+    final endStr =
+        '$year-${month.toString().padLeft(2, '0')}-${lastDay.toString().padLeft(2, '0')}';
     final response = await _supabase
         .from('no_meeting_days')
         .select()
         .eq('department_id', departmentId)
         .gte('week_date', startStr)
         .lte('week_date', endStr);
-    return (response as List).map((e) => NoMeetingDayModel.fromJson(e)).toList();
+    return (response as List)
+        .map((e) => NoMeetingDayModel.fromJson(e))
+        .toList();
   }
 }

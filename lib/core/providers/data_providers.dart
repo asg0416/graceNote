@@ -19,6 +19,23 @@ final userProfileProvider = StreamProvider<ProfileModel?>((ref) async* {
     return;
   }
 
+  ProfileModel? lastKnownProfile;
+
+  try {
+    final initialProfile = await Supabase.instance.client
+        .from('profiles')
+        .select()
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (initialProfile != null) {
+      lastKnownProfile = ProfileModel.fromJson(initialProfile);
+      yield lastKnownProfile;
+    }
+  } catch (e) {
+    debugPrint('userProfileProvider: Initial profile fetch failed, falling back to realtime stream: $e');
+  }
+
   // [FIX] 웹소켓 끊김/초기 네트워크 에러 시 무한 재시도로 강력하게 복구
   while (true) {
     try {
@@ -27,8 +44,9 @@ final userProfileProvider = StreamProvider<ProfileModel?>((ref) async* {
           .stream(primaryKey: ['id'])
           .eq('id', user.id)
           .map((data) {
-            if (data.isEmpty) return null;
-            return ProfileModel.fromJson(data.first);
+            if (data.isEmpty) return lastKnownProfile;
+            lastKnownProfile = ProfileModel.fromJson(data.first);
+            return lastKnownProfile;
           })
           // [FIX] RealtimeSubscribeException(timedOut) 등 Realtime 에러를 stream 레벨에서 흡수
           // yield* 로 에러가 전파되기 전에 차단하여 provider가 AsyncError로 전환되지 않도록 방지
@@ -130,7 +148,8 @@ final churchGroupsProvider = FutureProvider.family<List<Map<String, dynamic>>, S
   final response = await Supabase.instance.client
       .from('groups')
       .select('id, name')
-      .eq('church_id', churchId);
+      .eq('church_id', churchId)
+      .eq('is_active', true);
       
   return (response as List).map<Map<String, dynamic>>((e) => {
     'id': e['id'],
@@ -146,7 +165,7 @@ final availableWeeksProvider = StreamProvider.family<List<DateTime>, String>((re
       .eq('church_id', churchId)
       .order('week_date', ascending: false) // 최신순 정렬
       .map((data) {
-        return data.map<DateTime>((e) {
+        return data.where((e) => e['is_active'] != false).map<DateTime>((e) {
           return DateTime.parse(e['week_date'] as String);
         }).toList();
       })
