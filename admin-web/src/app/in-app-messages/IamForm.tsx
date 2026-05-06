@@ -643,6 +643,7 @@ export default function IamForm({ messageId }: IamFormProps) {
                     .from('departments')
                     .select('id, name')
                     .eq('church_id', p.church_id)
+                    .eq('is_active', true)
                     .order('name');
                 setDepartments(depts ?? []);
             }
@@ -716,6 +717,7 @@ export default function IamForm({ messageId }: IamFormProps) {
             .from('departments')
             .select('id, name')
             .eq('church_id', form.target_church_id)
+            .eq('is_active', true)
             .order('name')
             .then(({ data }) => setDepartments(data ?? []));
     }, [form.target_church_id, profile?.is_master]);

@@ -80,7 +80,7 @@ export default function DashboardPage() {
         const { count: memberCount } = await supabase.from('member_directory').select('*', { count: 'exact', head: true });
         const { count: churchCount } = await supabase.from('churches').select('*', { count: 'exact', head: true });
         const { count: pendingCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('admin_status', 'pending');
-        const { count: groupCount } = await supabase.from('groups').select('*', { count: 'exact', head: true });
+        const { count: groupCount } = await supabase.from('groups').select('*', { count: 'exact', head: true }).eq('is_active', true);
 
         totalMembers = memberCount || 0;
         totalChurches = churchCount || 0;
@@ -90,7 +90,7 @@ export default function DashboardPage() {
         // Church Admin Specific Stats
         let memberQuery = supabase.from('member_directory').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id);
         let pendingQuery = supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id).eq('admin_status', 'pending');
-        let groupQuery = supabase.from('groups').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id);
+        let groupQuery = supabase.from('groups').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id).eq('is_active', true);
         let unassignedQuery = supabase.from('member_directory').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id).or('group_name.is.null,group_name.eq.""');
 
         if (userProfile.department_id) {

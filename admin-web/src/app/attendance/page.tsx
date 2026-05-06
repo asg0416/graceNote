@@ -133,7 +133,8 @@ export default function AttendancePage() {
                 let deptQuery = supabase
                     .from('departments')
                     .select('*')
-                    .eq('church_id', selectedChurchId);
+                    .eq('church_id', selectedChurchId)
+                    .eq('is_active', true);
 
                 if (profile?.department_id) {
                     deptQuery = deptQuery.eq('id', profile.department_id);
@@ -155,6 +156,7 @@ export default function AttendancePage() {
                     .from('weeks')
                     .select('*')
                     .eq('church_id', selectedChurchId)
+                    .eq('is_active', true)
                     .order('week_date', { ascending: false });
 
                 const sortedWeeks = weekList || [];
@@ -199,6 +201,7 @@ export default function AttendancePage() {
                     .from('weeks')
                     .select('*')
                     .eq('church_id', selectedChurchId)
+                    .eq('is_active', true)
                     .gte('week_date', startOfMonth)
                     .lte('week_date', endOfMonth)
                     .order('week_date', { ascending: true });
@@ -215,6 +218,7 @@ export default function AttendancePage() {
                     .from('weeks')
                     .select('id, week_date')
                     .eq('church_id', selectedChurchId)
+                    .eq('is_active', true)
                     .gte('week_date', startOfMonth)
                     .lte('week_date', endOfMonth)
                     .order('week_date', { ascending: true });
@@ -318,7 +322,8 @@ export default function AttendancePage() {
             const { data: deptGroups } = await supabase
                 .from('groups')
                 .select('*')
-                .eq('department_id', selectedDeptId);
+                .eq('department_id', selectedDeptId)
+                .eq('is_active', true);
 
             // 실시간 명단(members) 기준이 아니라, 실제 기록(attendance) 기준으로 명단 재구성
             // 단, 미제출된 성도는 members 명단에서 보충하되, "이미 제출된 조"는 건드리지 않음
@@ -406,6 +411,7 @@ export default function AttendancePage() {
                 .from('weeks')
                 .select('*')
                 .eq('church_id', selectedChurchId)
+                .eq('is_active', true)
                 .gte('week_date', startDate)
                 .lte('week_date', endDate)
                 .order('week_date', { ascending: false });
@@ -503,6 +509,7 @@ export default function AttendancePage() {
                 .from('weeks')
                 .select('*')
                 .eq('church_id', selectedChurchId)
+                .eq('is_active', true)
                 .gte('week_date', startStr)
                 .lte('week_date', endStr)
                 .order('week_date', { ascending: true });
@@ -1252,4 +1259,3 @@ export default function AttendancePage() {
         </div>
     );
 }
-

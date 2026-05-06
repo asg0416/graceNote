@@ -185,7 +185,7 @@ export default function NoticeForm({ noticeId }: NoticeFormProps) {
                 setChurches(churchesData || []);
             }
 
-            let deptQuery = supabase.from('departments').select('id, name, church_id');
+            let deptQuery = supabase.from('departments').select('id, name, church_id').eq('is_active', true);
             if (!profileData.is_master) {
                 deptQuery = deptQuery.eq('church_id', profileData.church_id);
             }

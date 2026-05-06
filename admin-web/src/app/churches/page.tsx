@@ -72,7 +72,8 @@ export default function ChurchesPage() {
                 const { count: deptCount } = await supabase
                     .from('departments')
                     .select('*', { count: 'exact', head: true })
-                    .eq('church_id', c.id);
+                    .eq('church_id', c.id)
+                    .eq('is_active', true);
 
                 // Find an admin for this church if any
                 const { data: adminData } = await supabase
@@ -124,15 +125,8 @@ export default function ChurchesPage() {
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('정말로 이 교회를 삭제하시겠습니까? 관련 데이터가 모두 삭제될 수 있습니다.')) return;
-        try {
-            const { error } = await supabase.from('churches').delete().eq('id', id);
-            if (error) throw error;
-            fetchChurches();
-        } catch (err) {
-            alert('삭제 중 오류가 발생했습니다.');
-        }
+    const handleDelete = () => {
+        alert('교회는 최상위 데이터 공간이라 운영 화면에서 영구 삭제할 수 없습니다. 교회 종료/보관 기능은 별도 안전 절차로 처리해야 합니다.');
     };
 
     const filteredChurches = churches.filter(c =>
