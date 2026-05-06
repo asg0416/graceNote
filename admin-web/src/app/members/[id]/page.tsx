@@ -1,17 +1,17 @@
 'use client';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
     ArrowLeft,
-    User,
     Phone,
     Users,
     Layers,
     Calendar,
     Heart,
-    Baby,
     StickyNote,
     History,
     Save,
@@ -20,8 +20,8 @@ import {
     MessageSquare,
     Sparkles,
     ChevronRight,
-    Clock,
-    Type
+    Fingerprint,
+    GitBranch
 } from 'lucide-react';
 import RichTextEditor from '@/components/RichTextEditor';
 import { clsx, type ClassValue } from 'clsx';
@@ -49,6 +49,8 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
     const PAGE_SIZE = 10;
     const [directoryIds, setDirectoryIds] = useState<string[]>([]);
     const [profileIds, setProfileIds] = useState<string[]>([]);
+    const [phase2Data, setPhase2Data] = useState<any>(null);
+    const [phase2Error, setPhase2Error] = useState<string | null>(null);
 
     const router = useRouter();
 
@@ -99,25 +101,145 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 // 2. Fetch all affiliations for the same person (using person_id or fallback to name+phone)
                 let relatedQuery = supabase
                     .from('member_directory')
-                    .select('id, profile_id, group_name, phone, departments!department_id(name, color_hex)');
+                    .select('id, profile_id, group_name, phone, role_in_group, is_active, departments!department_id(name, color_hex)')
+                    .eq('church_id', memberData.church_id);
 
                 if (memberData.person_id) {
                     relatedQuery = relatedQuery.eq('person_id', memberData.person_id);
                 } else {
                     relatedQuery = relatedQuery
                         .eq('full_name', memberData.full_name)
-                        .eq('phone', memberData.phone)
-                        .eq('church_id', memberData.church_id);
+                        .eq('phone', memberData.phone);
                 }
 
                 const { data: allAffiliations, error: affiliationError } = await relatedQuery;
                 if (affiliationError) console.error('Error fetching affiliations:', affiliationError);
 
-                const directoryIds = allAffiliations?.map(m => m.id) || [id];
-                const profileIds = Array.from(new Set([
+                const legacyDirectoryIds = allAffiliations?.map(m => m.id) || [id];
+                const rawProfileIds = Array.from(new Set([
                     memberData.profile_id,
                     ...(allAffiliations?.map(m => m.profile_id) || [])
                 ])).filter(Boolean);
+                let profileIds: string[] = [];
+
+                if (rawProfileIds.length > 0) {
+                    const { data: scopedProfiles, error: scopedProfilesError } = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .in('id', rawProfileIds)
+                        .eq('church_id', memberData.church_id);
+
+                    if (scopedProfilesError) throw scopedProfilesError;
+                    profileIds = (scopedProfiles || []).map(profile => profile.id);
+                }
+
+                let resolvedDirectoryIds = legacyDirectoryIds;
+                let resolvedProfileIds = profileIds;
+
+                setPhase2Data(null);
+                setPhase2Error(null);
+                try {
+                    const { data: phase2MemberProfile, error: mpError } = await supabase
+                        .from('member_profiles')
+                        .select('id, person_id')
+                        .eq('member_directory_id', id)
+                        .maybeSingle();
+
+                    if (mpError) throw mpError;
+
+                    if (phase2MemberProfile?.person_id) {
+                        const personId = phase2MemberProfile.person_id;
+                        const [
+                            personResult,
+                            identifierResult,
+                            memberProfileResult,
+                            membershipResult
+                        ] = await Promise.all([
+                            supabase
+                                .from('people')
+                                .select('id, display_name, normalized_phone, primary_profile_id, updated_at')
+                                .eq('id', personId)
+                                .maybeSingle(),
+                            supabase
+                                .from('person_identifiers')
+                                .select('kind, value, source_table, source_id, is_primary')
+                                .eq('person_id', personId)
+                                .order('kind', { ascending: true }),
+                            supabase
+                                .from('member_profiles')
+                                .select('id, profile_id, member_directory_id, full_name, phone, family_name')
+                                .eq('person_id', personId)
+                                .order('created_at', { ascending: true }),
+                            supabase
+                                .from('memberships')
+                                .select('id, role, status, starts_at, ends_at, legacy_group_member_id, legacy_member_directory_id, departments!department_id(name), groups!group_id(name)')
+                                .eq('person_id', personId)
+                                .eq('church_id', memberData.church_id)
+                                .order('starts_at', { ascending: false })
+                        ]);
+
+                        if (personResult.error) throw personResult.error;
+                        if (identifierResult.error) throw identifierResult.error;
+                        if (memberProfileResult.error) throw memberProfileResult.error;
+                        if (membershipResult.error) throw membershipResult.error;
+
+                        const phase2MemberProfiles = memberProfileResult.data || [];
+                        const phase2Memberships = membershipResult.data || [];
+                        let scopedPhase2MemberProfiles = phase2MemberProfiles;
+                        const candidateDirectoryIds = Array.from(new Set([
+                            ...phase2MemberProfiles.map(profile => profile.member_directory_id),
+                            ...phase2Memberships.map(membership => membership.legacy_member_directory_id)
+                        ].filter(Boolean)));
+
+                        if (candidateDirectoryIds.length > 0) {
+                            const { data: scopedDirectoryRows, error: scopedDirectoryError } = await supabase
+                                .from('member_directory')
+                                .select('id, profile_id')
+                                .in('id', candidateDirectoryIds)
+                                .eq('church_id', memberData.church_id);
+
+                            if (scopedDirectoryError) throw scopedDirectoryError;
+
+                            resolvedDirectoryIds = (scopedDirectoryRows || []).map(row => row.id);
+                            const phase2ProfileIds = Array.from(new Set([
+                                phase2MemberProfiles.map(profile => profile.profile_id),
+                                scopedDirectoryRows?.map(row => row.profile_id)
+                            ].flat().filter(Boolean)));
+
+                            if (phase2ProfileIds.length > 0) {
+                                const { data: scopedPhase2Profiles, error: scopedPhase2ProfilesError } = await supabase
+                                    .from('profiles')
+                                    .select('id')
+                                    .in('id', phase2ProfileIds)
+                                    .eq('church_id', memberData.church_id);
+
+                                if (scopedPhase2ProfilesError) throw scopedPhase2ProfilesError;
+                                resolvedProfileIds = (scopedPhase2Profiles || []).map(profile => profile.id);
+                            } else {
+                                resolvedProfileIds = [];
+                            }
+
+                            const scopedDirectoryIdSet = new Set(resolvedDirectoryIds);
+                            const scopedProfileIdSet = new Set(resolvedProfileIds);
+                            scopedPhase2MemberProfiles = phase2MemberProfiles.filter(profile => (
+                                (profile.member_directory_id && scopedDirectoryIdSet.has(profile.member_directory_id)) ||
+                                (profile.profile_id && scopedProfileIdSet.has(profile.profile_id))
+                            ));
+                        }
+
+                        setPhase2Data({
+                            person: personResult.data,
+                            identifiers: identifierResult.data || [],
+                            memberProfiles: scopedPhase2MemberProfiles,
+                            memberships: phase2Memberships
+                        });
+                    } else {
+                        setPhase2Error('Phase 2 member_profiles 연결을 찾지 못했습니다.');
+                    }
+                } catch (phase2Err: any) {
+                    console.warn('Phase 2 read-only panel unavailable:', phase2Err);
+                    setPhase2Error(phase2Err?.message || 'Phase 2 데이터를 불러오지 못했습니다.');
+                }
 
                 // Attach affiliations to member object
                 (memberData as any)._affiliations = allAffiliations || [];
@@ -126,12 +248,17 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 setNote(memberData.notes || '');
 
                 if (memberData.profile_id) {
-                    const { data } = await supabase.from('profiles').select('*').eq('id', memberData.profile_id).maybeSingle();
+                    const { data } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', memberData.profile_id)
+                        .eq('church_id', memberData.church_id)
+                        .maybeSingle();
                     if (data) setProfile(data);
                 }
 
-                setDirectoryIds(directoryIds);
-                setProfileIds(profileIds);
+                setDirectoryIds(resolvedDirectoryIds);
+                setProfileIds(resolvedProfileIds);
                 setPage(0);
                 setPrayers([]);
                 setHasMorePrayers(true);
@@ -144,7 +271,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
         };
 
         fetchMemberData();
-    }, [id]);
+    }, [id, router]);
 
     useEffect(() => {
         if (directoryIds.length === 0 && profileIds.length === 0) return;
@@ -294,7 +421,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
             if (error) throw error;
             setMember({ ...member, is_active: newStatus });
             alert(`${newStatus ? '활성화' : '비활성화'} 되었습니다.`);
-        } catch (err) {
+        } catch {
             alert('오류 발생');
         } finally {
             setIsSaving(false);
@@ -320,6 +447,10 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
             </div>
         );
     }
+
+    const phase2ActiveAffiliations = (phase2Data?.memberships || []).filter((membership: any) => membership.status === 'active');
+    const legacyAffiliations = member._affiliations?.length > 0 ? member._affiliations : [member];
+    const usesPhase2Affiliations = Boolean(phase2Data?.person);
 
     return (
         <div className="max-w-5xl mx-auto space-y-8 pb-20">
@@ -484,11 +615,45 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
                                 <Layers className="w-4 h-4 text-indigo-600" /> 소속 정보
                             </h3>
-                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Affiliations Info</p>
+                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">
+                                {usesPhase2Affiliations ? 'Phase 2 Read' : 'Legacy Fallback'}
+                            </p>
                         </div>
                         <div className="grid grid-cols-1 gap-2">
-                            {member._affiliations?.length > 0 ? (
-                                member._affiliations.map((aff: any) => (
+                            {usesPhase2Affiliations ? (
+                                phase2ActiveAffiliations.length > 0 ? (
+                                    phase2ActiveAffiliations.map((membership: any) => (
+                                        <div
+                                            key={membership.id}
+                                            className="flex items-center justify-between p-3.5 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60 group/aff"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                                                <div>
+                                                    <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-tighter">
+                                                        {membership.departments?.name || '부서 없음'}
+                                                    </span>
+                                                    <p className="text-[9px] font-bold text-slate-400 mt-0.5">
+                                                        role: {membership.role} / {membership.legacy_group_member_id ? 'group_members' : 'directory-only'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                                                <span className="text-[10px] font-black text-cyan-600 dark:text-cyan-400">
+                                                    {membership.groups?.name || '조 없음'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="p-3.5 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60">
+                                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 text-center block">
+                                            Phase 2 기준 현재 활성 소속이 없습니다.
+                                        </span>
+                                    </div>
+                                )
+                            ) : legacyAffiliations.length > 0 ? (
+                                legacyAffiliations.map((aff: any) => (
                                     <div
                                         key={aff.id}
                                         className="flex items-center justify-between p-3.5 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60 group/aff"
@@ -514,6 +679,203 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                 </div>
                             )}
                         </div>
+                    </div>
+
+                    {/* Phase 2 Read-Only Diagnostic Card */}
+                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-cyan-100 dark:border-cyan-500/20 p-8 space-y-6 shadow-xl shadow-cyan-500/[0.03]">
+                        <div className="flex items-center justify-between px-2">
+                            <h3 className="text-xs font-black text-slate-500 dark:text-slate-300 uppercase tracking-[0.2em] flex items-center gap-3">
+                                <Fingerprint className="w-4 h-4 text-cyan-600" /> Phase 2 데이터 확인
+                            </h3>
+                            <p className="text-[8px] font-black text-cyan-500 uppercase tracking-widest">Read Only</p>
+                        </div>
+
+                        {phase2Error ? (
+                            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20">
+                                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300 leading-relaxed">
+                                    {phase2Error}
+                                </p>
+                                <p className="text-[10px] font-bold text-amber-500/80 mt-2">
+                                    기존 성도 상세 기능에는 영향을 주지 않는 진단용 패널입니다.
+                                </p>
+                            </div>
+                        ) : phase2Data ? (
+                            <div className="space-y-5">
+                                {(() => {
+                                    const activeMemberships = phase2Data.memberships.filter((membership: any) => membership.status === 'active');
+                                    const historicalMemberships = phase2Data.memberships.filter((membership: any) => membership.status !== 'active');
+                                    const legacyActiveAffiliations = (member._affiliations?.length > 0 ? member._affiliations : [member])
+                                        .filter((affiliation: any) => affiliation.is_active !== false && affiliation.group_name);
+                                    const legacyActiveDirectoryIds = new Set(legacyActiveAffiliations.map((affiliation: any) => affiliation.id));
+                                    const phase2ActiveDirectoryIds = new Set(
+                                        activeMemberships
+                                            .map((membership: any) => membership.legacy_member_directory_id)
+                                            .filter(Boolean)
+                                    );
+                                    const missingPhase2Memberships = legacyActiveAffiliations.filter(
+                                        (affiliation: any) => !phase2ActiveDirectoryIds.has(affiliation.id)
+                                    );
+                                    const extraPhase2Memberships = activeMemberships.filter(
+                                        (membership: any) => !membership.legacy_member_directory_id || !legacyActiveDirectoryIds.has(membership.legacy_member_directory_id)
+                                    );
+                                    const isPhase2Consistent = missingPhase2Memberships.length === 0 && extraPhase2Memberships.length === 0;
+
+                                    return (
+                                        <>
+                                <div className="p-4 rounded-2xl bg-cyan-50/70 dark:bg-cyan-500/10 border border-cyan-100 dark:border-cyan-500/20">
+                                    <p className="text-[9px] font-black text-cyan-600 dark:text-cyan-300 uppercase tracking-widest mb-1">people</p>
+                                    <p className="text-sm font-black text-slate-900 dark:text-white">{phase2Data.person?.display_name || '이름 없음'}</p>
+                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1 break-all">
+                                        person_id: {phase2Data.person?.id || '-'}
+                                    </p>
+                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5">
+                                        normalized_phone: {phase2Data.person?.normalized_phone || '없음'}
+                                    </p>
+                                </div>
+
+                                <div className={cn(
+                                    "p-4 rounded-2xl border space-y-3",
+                                    isPhase2Consistent
+                                        ? "bg-emerald-50/70 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
+                                        : "bg-rose-50/70 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20"
+                                )}>
+                                    <div className="flex items-center justify-between gap-3">
+                                        <p className={cn(
+                                            "text-[9px] font-black uppercase tracking-widest",
+                                            isPhase2Consistent ? "text-emerald-600 dark:text-emerald-300" : "text-rose-600 dark:text-rose-300"
+                                        )}>
+                                            legacy vs phase 2 active comparison
+                                        </p>
+                                        <span className={cn(
+                                            "px-2 py-1 rounded-lg text-[9px] font-black uppercase",
+                                            isPhase2Consistent
+                                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"
+                                                : "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200"
+                                        )}>
+                                            {isPhase2Consistent ? '일치' : '확인 필요'}
+                                        </span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="p-3 rounded-xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">legacy active</p>
+                                            <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{legacyActiveAffiliations.length}</p>
+                                        </div>
+                                        <div className="p-3 rounded-xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">phase 2 active</p>
+                                            <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{activeMemberships.length}</p>
+                                        </div>
+                                    </div>
+                                    {!isPhase2Consistent && (
+                                        <div className="space-y-2">
+                                            {missingPhase2Memberships.length > 0 && (
+                                                <p className="text-[10px] font-bold text-rose-600 dark:text-rose-300 leading-relaxed">
+                                                    Phase 2에 없는 legacy 소속: {missingPhase2Memberships.map((affiliation: any) => `${affiliation.departments?.name || '부서 없음'} / ${affiliation.group_name}`).join(', ')}
+                                                </p>
+                                            )}
+                                            {extraPhase2Memberships.length > 0 && (
+                                                <p className="text-[10px] font-bold text-rose-600 dark:text-rose-300 leading-relaxed">
+                                                    legacy active와 직접 연결되지 않은 Phase 2 소속: {extraPhase2Memberships.map((membership: any) => `${membership.departments?.name || '부서 없음'} / ${membership.groups?.name || '조 없음'}`).join(', ')}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2 px-1">
+                                        <GitBranch className="w-3.5 h-3.5 text-slate-400" />
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">active memberships</p>
+                                    </div>
+                                    {activeMemberships.length > 0 ? (
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {activeMemberships.map((membership: any) => (
+                                                <div key={membership.id} className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <p className="text-[11px] font-black text-slate-800 dark:text-slate-100">
+                                                            {membership.departments?.name || '부서 없음'} / {membership.groups?.name || '조 없음'}
+                                                        </p>
+                                                        <span className={cn(
+                                                            "px-2 py-0.5 rounded-lg text-[9px] font-black uppercase",
+                                                            membership.status === 'active'
+                                                                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                                                : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                                                        )}>
+                                                            {membership.status}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1">
+                                                        role: {membership.role} / source: {membership.legacy_group_member_id ? 'group_members' : 'directory-only'}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs font-bold text-slate-400 px-1">현재 활성 소속 정보가 없습니다.</p>
+                                    )}
+                                </div>
+
+                                {historicalMemberships.length > 0 && (
+                                    <div className="space-y-2">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">ended / inactive history</p>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {historicalMemberships.map((membership: any) => (
+                                                <div key={membership.id} className="p-3 rounded-2xl bg-slate-50/70 dark:bg-slate-900/30 border border-dashed border-slate-200 dark:border-slate-800 opacity-80">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <p className="text-[11px] font-black text-slate-600 dark:text-slate-300">
+                                                            {membership.departments?.name || '부서 없음'} / {membership.groups?.name || '조 없음'}
+                                                        </p>
+                                                        <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                                            {membership.status}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[10px] font-bold text-slate-400 mt-1">
+                                                        role: {membership.role} / source: {membership.legacy_group_member_id ? 'group_members' : 'directory-only'}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">person_identifiers</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {phase2Data.identifiers.map((identifier: any, index: number) => (
+                                            <span
+                                                key={`${identifier.kind}-${identifier.value}-${index}`}
+                                                className="px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-[9px] font-black text-slate-500 dark:text-slate-400"
+                                            >
+                                                {identifier.kind}{identifier.is_primary ? ' *' : ''}
+                                            </span>
+                                        ))}
+                                        {phase2Data.identifiers.length === 0 && (
+                                            <span className="text-xs font-bold text-slate-400">식별자가 없습니다.</span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">member_profiles</p>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {phase2Data.memberProfiles.map((mp: any) => (
+                                            <div key={mp.id} className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                                                <p className="text-[11px] font-black text-slate-800 dark:text-slate-100">{mp.full_name}</p>
+                                                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1">
+                                                    directory: {mp.member_directory_id ? '연결됨' : '없음'} / profile: {mp.profile_id ? '연결됨' : '없음'}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        ) : (
+                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                                <p className="text-xs font-bold text-slate-400">Phase 2 데이터를 확인하는 중입니다.</p>
+                            </div>
+                        )}
                     </div>
 
                     {/* Family Info Card */}

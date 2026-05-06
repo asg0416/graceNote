@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import Papa from 'papaparse';
 import { supabase } from '@/lib/supabase';
 import { Modal } from '@/components/Modal';
 import {
@@ -23,6 +22,7 @@ interface Department {
     id: string;
     name: string;
     color_hex?: string;
+    profile_mode?: 'individual' | 'couple' | null;
 }
 
 interface MemberData {
@@ -44,10 +44,22 @@ interface DBMatch {
     id: string;
     full_name: string;
     phone: string | null;
-    person_id: string;
+    person_id: string | null;
     profile_id: string | null;
     group_name: string | null;
     department_name?: string;
+}
+
+interface SmartBatchMatchRow {
+    id: string;
+    full_name: string;
+    phone: string | null;
+    person_id: string | null;
+    profile_id: string | null;
+    group_name: string | null;
+    department?: {
+        name?: string | null;
+    } | null;
 }
 
 interface SmartBatchModalProps {
@@ -58,18 +70,23 @@ interface SmartBatchModalProps {
     initialDeptId?: string;
 }
 
+type ParsedAIResponse = Partial<MemberData>[];
+
+const getErrorMessage = (error: unknown) => {
+    return error instanceof Error ? error.message : '알 수 없는 오류';
+};
+
 export default function SmartBatchModal({ onClose, onSuccess, churchId, departments, initialDeptId }: SmartBatchModalProps) {
     const [step, setStep] = useState<'upload' | 'preview' | 'syncing'>('upload');
-    const [tab, setTab] = useState<'ai'>('ai'); // Unified AI tab
     const [rawText, setRawText] = useState('');
     const [parsedData, setParsedData] = useState<Partial<MemberData>[]>([]);
     const [selectedDeptId, setSelectedDeptId] = useState(initialDeptId || '');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [dbMatches, setDbMatches] = useState<Record<string, DBMatch[]>>({});
-    const [matchingLoading, setMatchingLoading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const csvInputRef = useRef<HTMLInputElement>(null);
+    const selectedProfileMode = departments.find(department => department.id === selectedDeptId)?.profile_mode || 'individual';
+    const isCoupleProfileMode = selectedProfileMode === 'couple';
 
     const handleUpdateRow = (index: number, updates: Partial<MemberData>) => {
         const newData = [...parsedData];
@@ -196,7 +213,6 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
         const names = Array.from(new Set(data.map(d => d.full_name).filter(Boolean))) as string[];
         if (names.length === 0) return;
 
-        setMatchingLoading(true);
         try {
             const { data: matches, error: matchError } = await supabase
                 .from('member_directory')
@@ -207,15 +223,17 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                     person_id, 
                     profile_id, 
                     group_name,
+                    is_active,
                     department:departments!department_id(name)
                 `)
                 .in('full_name', names)
-                .eq('church_id', churchId);
+                .eq('church_id', churchId)
+                .eq('is_active', true);
 
             if (matchError) throw matchError;
 
             const matchMap: Record<string, DBMatch[]> = {};
-            matches?.forEach((m: any) => {
+            (matches as SmartBatchMatchRow[] | null)?.forEach((m) => {
                 if (!matchMap[m.full_name]) matchMap[m.full_name] = [];
                 matchMap[m.full_name].push({
                     id: m.id,
@@ -224,18 +242,16 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                     person_id: m.person_id,
                     profile_id: m.profile_id,
                     group_name: m.group_name,
-                    department_name: m.departments?.name
+                    department_name: m.department?.name ?? undefined
                 });
             });
             setDbMatches(matchMap);
         } catch (err) {
             console.error('Error fetching matches:', err);
-        } finally {
-            setMatchingLoading(false);
         }
     };
 
-    const getRowConflictStatus = (item: Partial<MemberData>, index: number) => {
+    const getRowConflictStatus = (item: Partial<MemberData>) => {
         const name = item.full_name?.trim();
         if (!name) return { type: 'none', label: '' };
 
@@ -271,10 +287,21 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
 
     const handleLinkSameNames = (name: string, personId?: string, profileId?: string | null) => {
         const batchLinkId = personId ? undefined : Math.random().toString(36).substring(7);
+        const matchedPerson = personId ? dbMatches[name]?.find(match => match.person_id === personId) : null;
+
+        // When linking to DB person: use DB phone. When batch-linking: use the first non-empty phone among same-name rows.
+        const firstExistingPhone = !personId
+            ? parsedData.find(r => r.full_name?.trim() === name && r.phone)?.phone || ''
+            : '';
+
         const newData = parsedData.map(row => {
             if (row.full_name?.trim() === name) {
+                const resolvedPhone = personId
+                    ? (matchedPerson?.phone || row.phone)  // DB link: use DB phone
+                    : (firstExistingPhone || row.phone);   // Batch link: use canonical phone
                 return {
                     ...row,
+                    phone: resolvedPhone,
                     person_id: personId || row.person_id,
                     profile_id: personId ? (profileId ?? null) : row.profile_id,
                     is_linked: personId ? !!profileId : row.is_linked,
@@ -289,8 +316,13 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
     const handleUnlinkSameNames = (name: string) => {
         const newData = parsedData.map(row => {
             if (row.full_name?.trim() === name) {
-                const { person_id, profile_id, batch_link_id, ...rest } = row;
-                return { ...rest, is_linked: false };
+                return {
+                    ...row,
+                    person_id: undefined,
+                    profile_id: undefined,
+                    batch_link_id: undefined,
+                    is_linked: false
+                };
             }
             return row;
         });
@@ -331,9 +363,9 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 throw new Error(errorData.error || 'AI 분석에 실패했습니다.');
             }
 
-            const { data } = await response.json();
+            const { data } = await response.json() as { data: ParsedAIResponse };
 
-            const mappedData: Partial<MemberData>[] = data.map((item: any) => ({
+            const mappedData: Partial<MemberData>[] = data.map((item) => ({
                 ...item,
                 role_in_group: item.role_in_group as 'leader' | 'member',
                 church_id: churchId,
@@ -344,9 +376,9 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
             setParsedData(mappedData);
             setStep('preview');
             fetchMatchesFromDB(mappedData);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError('이미지 분석 중 오류가 발생했습니다: ' + err.message);
+            setError('이미지 분석 중 오류가 발생했습니다: ' + getErrorMessage(err));
         } finally {
             setLoading(false);
         }
@@ -383,22 +415,22 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 throw new Error(errorData.error || 'AI 분석에 실패했습니다.');
             }
 
-            const { data } = await response.json();
+            const { data } = await response.json() as { data: ParsedAIResponse };
 
-            const mapped: Partial<MemberData>[] = data.map((item: any) => ({
+            const mapped: Partial<MemberData>[] = data.map((item) => ({
                 ...item,
                 role_in_group: item.role_in_group as 'leader' | 'member',
                 church_id: churchId,
                 department_id: selectedDeptId,
                 is_linked: false
-            })).filter((item: any) => item.full_name);
+            })).filter((item) => item.full_name);
 
             setParsedData(mapped);
             setStep('preview');
             fetchMatchesFromDB(mapped);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError('CSV 파일 AI 분석 중 오류가 발생했습니다: ' + err.message);
+            setError('CSV 파일 AI 분석 중 오류가 발생했습니다: ' + getErrorMessage(err));
         } finally {
             setLoading(false);
         }
@@ -437,15 +469,15 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 throw new Error(errorData.error || 'AI 분석에 실패했습니다.');
             }
 
-            const { data } = await response.json();
+            const { data } = await response.json() as { data: ParsedAIResponse };
 
-            const mapped: Partial<MemberData>[] = data.map((item: any) => ({
+            const mapped: Partial<MemberData>[] = data.map((item) => ({
                 ...item,
                 role_in_group: item.role_in_group as 'leader' | 'member',
                 church_id: churchId,
                 department_id: selectedDeptId,
                 is_linked: false
-            })).filter((item: any) => item.full_name);
+            })).filter((item) => item.full_name);
 
             if (mapped.length === 0) {
                 throw new Error('데이터를 찾을 수 없습니다.');
@@ -454,30 +486,27 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
             setParsedData(mapped);
             setStep('preview');
             fetchMatchesFromDB(mapped);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError('엑셀 파일 AI 분석 중 오류가 발생했습니다: ' + err.message);
+            setError('엑셀 파일 AI 분석 중 오류가 발생했습니다: ' + getErrorMessage(err));
         } finally {
             setLoading(false);
         }
     };
 
-    const downloadTemplate = () => {
-        const headers = ['이름', '조', '역할', '배우자', '자녀'];
-        const rows = [
-            ['홍길동', '열매조', '조장', '심청이', '홍길순'],
-            ['심청이', '열매조', '조원', '홍길동', '홍길순'],
-            ['임꺽정', '희망조', '조장', '', ''],
-        ];
-        const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
-        const encodedUri = encodeURI("data:text/csv;charset=utf-8,\uFEFF" + csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", "Gracenote_Member_Template.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    const getPreviewPersonKey = (item: Partial<MemberData>, index: number) => {
+        const normalizedPhone = (item.phone || '').replace(/[^0-9]/g, '');
+
+        if (item.person_id) return `person:${item.person_id}`;
+        if (item.batch_link_id) return `batch:${item.batch_link_id}`;
+        if (item.full_name && normalizedPhone) return `name-phone:${item.full_name}|${normalizedPhone}`;
+
+        return `row:${index}`;
     };
+
+    const previewPersonCount = new Set(
+        parsedData.map((item, index) => getPreviewPersonKey(item, index))
+    ).size;
 
     const handleProcessText = () => {
         if (!selectedDeptId) {
@@ -503,17 +532,58 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
         // 0. Preliminary Duplicate Check (Advanced)
         const unaddressedConflicts: string[] = [];
 
-        parsedData.forEach((item, idx) => {
-            const status = getRowConflictStatus(item, idx);
+        // Collect canonical phone per batch_link_id (first non-empty phone wins)
+        const batchPhoneMap: Record<string, string> = {};
+        parsedData.forEach(item => {
+            if (item.batch_link_id && item.phone) {
+                const cleanPhone = item.phone.replace(/[^0-9]/g, '');
+                if (cleanPhone && !batchPhoneMap[item.batch_link_id]) {
+                    batchPhoneMap[item.batch_link_id] = cleanPhone;
+                }
+            }
+        });
+
+        parsedData.forEach((item) => {
+            const status = getRowConflictStatus(item);
             if (status.type === 'red') {
                 unaddressedConflicts.push(`${item.full_name} (${item.group_name || '미정'}): 같은 조 내 중복`);
             } else if (status.type === 'yellow' && !item.batch_link_id && !item.person_id) {
                 unaddressedConflicts.push(`${item.full_name}: 타 조 소속 동일인 여부를 확인해 주세요 (연동 또는 이름 수정)`);
             } else if (status.type === 'indigo' && !item.person_id) {
-                // If its indigo but has person_id, it means its resolved via DB link. 
-                // But getRowConflictStatus already returns 'green' if it has person_id.
-                // So if we are here in indigo, it DEFINITELY needs name change or DB link.
+                // DB match exists but not linked — block and guide to link or rename
                 unaddressedConflicts.push(`${item.full_name}: DB에 이미 있는 이름입니다. 동일인이라면 '연결'하시고, 아니라면 '구분자(A, B 등)'를 붙여주세요.`);
+            }
+
+            // Check batch-linked rows have consistent phones
+            if (item.batch_link_id && batchPhoneMap[item.batch_link_id]) {
+                const cleanPhone = (item.phone || '').replace(/[^0-9]/g, '');
+                if (cleanPhone && cleanPhone !== batchPhoneMap[item.batch_link_id]) {
+                    unaddressedConflicts.push(
+                        `${item.full_name}: 동일인으로 연결된 행들의 전화번호가 다릅니다 (${cleanPhone} ≠ ${batchPhoneMap[item.batch_link_id]}). 같은 번호로 통일해 주세요.`
+                    );
+                }
+            }
+
+            // Check: DB-linked person (person_id set) is already registered in this department
+            // — whether targeting the same group OR a different group, block with a clear message.
+            // Same group → upsert UPDATE would work but is a no-op; guide to editing.
+            // Different group → would try to INSERT second active row → unique constraint violation.
+            if (item.person_id) {
+                const existingRows = dbMatches[item.full_name?.trim() || ''] || [];
+                const matchedExistingRow = existingRows.find(match => match.person_id === item.person_id);
+                if (matchedExistingRow) {
+                    const targetGroup = item.group_name?.trim() || '미정';
+                    const currentGroup = matchedExistingRow.group_name || '미정';
+                    if (currentGroup === targetGroup) {
+                        unaddressedConflicts.push(
+                            `${item.full_name}: 이미 '${currentGroup}' 조에 소속되어 있습니다. 성도 정보 수정은 명부 상세에서, 조 변경은 조편성 관리에서 해주세요.`
+                        );
+                    } else {
+                        unaddressedConflicts.push(
+                            `${item.full_name}: 이미 이 부서에 소속되어 있습니다 (현재 '${currentGroup}' 조). 다른 조로 이동하려면 조편성 관리에서 해주세요.`
+                        );
+                    }
+                }
             }
         });
 
@@ -528,19 +598,37 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
 
         try {
             // 0. Clean and Validate Data
-            const cleanParsedData: MemberData[] = parsedData.map(item => ({
-                church_id: churchId,
-                department_id: selectedDeptId,
-                full_name: item.full_name?.trim() || '',
-                phone: (item.phone || '').replace(/[^0-9]/g, ''),
-                group_name: item.group_name?.trim() || '미정',
-                role_in_group: item.role_in_group || 'member',
-                spouse_name: item.spouse_name?.trim() || null,
-                children_info: item.children_info?.trim() || null,
-                person_id: item.person_id || null,
-                profile_id: item.profile_id || null,
-                is_linked: !!item.profile_id
-            })).filter(item => item.full_name);
+            // For batch-linked rows, normalize phone to the canonical phone for that batch_link_id
+            const resolvedBatchPhones: Record<string, string> = {};
+            parsedData.forEach(item => {
+                if (item.batch_link_id) {
+                    const cleanPhone = (item.phone || '').replace(/[^0-9]/g, '');
+                    if (cleanPhone && !resolvedBatchPhones[item.batch_link_id]) {
+                        resolvedBatchPhones[item.batch_link_id] = cleanPhone;
+                    }
+                }
+            });
+
+            const cleanParsedData: MemberData[] = parsedData.map(item => {
+                const rawPhone = (item.phone || '').replace(/[^0-9]/g, '');
+                // Use canonical batch phone if this row is batch-linked
+                const resolvedPhone = item.batch_link_id && resolvedBatchPhones[item.batch_link_id]
+                    ? resolvedBatchPhones[item.batch_link_id]
+                    : rawPhone;
+                return {
+                    church_id: churchId,
+                    department_id: selectedDeptId,
+                    full_name: item.full_name?.trim() || '',
+                    phone: resolvedPhone,
+                    group_name: item.group_name?.trim() || '미정',
+                    role_in_group: item.role_in_group || 'member',
+                    spouse_name: isCoupleProfileMode ? (item.spouse_name?.trim() || null) : null,
+                    children_info: isCoupleProfileMode ? (item.children_info?.trim() || null) : null,
+                    person_id: item.person_id || null,
+                    profile_id: item.profile_id || null,
+                    is_linked: !!item.profile_id
+                };
+            }).filter(item => item.full_name);
 
             console.log('Cleaned Data:', cleanParsedData);
 
@@ -565,7 +653,8 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 const groupRecords = uniqueGroupNames.map(name => ({
                     church_id: churchId,
                     department_id: selectedDeptId,
-                    name: name
+                    name: name,
+                    is_active: true
                 }));
 
                 const { error: groupError } = await supabase
@@ -582,7 +671,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
             console.log('Sending bulk upsert to member_directory...');
             const { error: insertError } = await supabase
                 .from('member_directory')
-                .upsert(cleanParsedData, { onConflict: 'church_id,department_id,group_name,full_name' });
+                .upsert(cleanParsedData, { onConflict: 'church_id,department_id,group_name,full_name,phone' });
 
             if (insertError) {
                 console.error('Member Insert Error:', insertError);
@@ -592,9 +681,9 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
             console.log('Upload successful!');
             onSuccess();
             onClose();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Final Catch Error:', err);
-            setError('데이터 저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
+            setError('데이터 저장 중 오류가 발생했습니다: ' + getErrorMessage(err));
             setStep('preview');
         } finally {
             setLoading(false);
@@ -657,7 +746,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                                 <p className="text-sm font-black text-slate-900 dark:text-white tracking-tight">중복 데이터 및 동명이인 안내</p>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
                                     • <span className="text-indigo-600 dark:text-indigo-400 font-bold">복수 조 활동</span>이 가능합니다. 동일인이 두 개 이상의 조에 소속될 경우 각 조에 이름을 등록해 주세요.<br />
-                                    • 동명이인을 구분해야 할 때만 <span className="text-indigo-600 dark:text-indigo-400 font-bold">"홍길동(A)", "홍길동(82)"</span> 처럼 구분하여 입력해 주세요.
+                                    • 동명이인을 구분해야 할 때만 <span className="text-indigo-600 dark:text-indigo-400 font-bold">&quot;홍길동(A)&quot;, &quot;홍길동(82)&quot;</span> 처럼 구분하여 입력해 주세요.
                                 </p>
                             </div>
                         </div>
@@ -751,7 +840,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                                     <div className="space-y-1">
                                         <p className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight">동명이인 식별 규칙</p>
                                         <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-                                            이름 뒤에 <span className="text-indigo-600 dark:text-indigo-400 font-bold">"(A)", "(1)"</span> 처럼 고유한 값을 붙여주시면 안전하게 구분됩니다.
+                                            이름 뒤에 <span className="text-indigo-600 dark:text-indigo-400 font-bold">&quot;(A)&quot;, &quot;(1)&quot;</span> 처럼 고유한 값을 붙여주시면 안전하게 구분됩니다.
                                         </p>
                                     </div>
                                 </div>
@@ -762,7 +851,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                                     <div className="space-y-1">
                                         <p className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight">자동 업데이트 지원</p>
                                         <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-                                            이미 등록된 성도는 <span className="text-emerald-600 dark:text-emerald-400 font-bold">새 정보로 덮어씌워지며</span>, 소속 조 정보가 즉시 갱신됩니다.
+                                            이미 같은 부서에 등록된 성도는 새로 만들지 않고 <span className="text-emerald-600 dark:text-emerald-400 font-bold">연결 여부를 확인</span>합니다. 조 변경은 조편성 관리에서 진행해 주세요.
                                         </p>
                                     </div>
                                 </div>
@@ -775,8 +864,11 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                     <div className="space-y-8">
                         <div className="flex items-center justify-between">
                             <div className="space-y-1">
-                                <h4 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">분석 결과 미리보기 ({parsedData.length}명)</h4>
+                                <h4 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">분석 결과 미리보기 ({previewPersonCount}명)</h4>
                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">실제 명부 등록 전 내용을 확인하고 즉시 수정하세요.</p>
+                                {parsedData.length !== previewPersonCount && (
+                                    <p className="text-[10px] text-slate-400 font-bold">동일인 연결 기준 {previewPersonCount}명, 소속 입력 {parsedData.length}건입니다.</p>
+                                )}
                             </div>
                             <div className="flex items-center gap-4">
                                 <button
@@ -823,7 +915,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
                                         {parsedData.map((item, idx) => {
-                                            const status = getRowConflictStatus(item, idx);
+                                            const status = getRowConflictStatus(item);
                                             const rowBgColor =
                                                 status.type === 'red' ? 'bg-rose-50/50 dark:bg-rose-500/5' :
                                                     status.type === 'yellow' ? 'bg-amber-50/50 dark:bg-amber-500/5' :
@@ -895,7 +987,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                                                                                 key={mIdx}
                                                                                 onClick={() => {
                                                                                     // Link all instances of this name to this person_id
-                                                                                    handleLinkSameNames(match.full_name, match.person_id, match.profile_id);
+                                                                                    handleLinkSameNames(match.full_name, match.person_id ?? undefined, match.profile_id);
                                                                                 }}
                                                                                 className={`flex flex-col text-[9px] px-2 py-1 rounded-lg border transition-all text-left ${item.person_id === match.person_id
                                                                                     ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-400'
@@ -920,28 +1012,30 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                            <div className="flex gap-3">
-                                                                <div className="flex-1">
-                                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-0.5">Spouse</p>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={item.spouse_name || ''}
-                                                                        onChange={(e) => handleUpdateRow(idx, { spouse_name: e.target.value })}
-                                                                        className="w-full bg-slate-100/50 dark:bg-slate-800/50 border-0 rounded-lg px-2 py-1 text-[11px] font-medium focus:ring-1 focus:ring-indigo-500/30 focus:outline-none"
-                                                                        placeholder="배우자 없음"
-                                                                    />
+                                                            {isCoupleProfileMode && (
+                                                                <div className="flex gap-3">
+                                                                    <div className="flex-1">
+                                                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-0.5">Spouse</p>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={item.spouse_name || ''}
+                                                                            onChange={(e) => handleUpdateRow(idx, { spouse_name: e.target.value })}
+                                                                            className="w-full bg-slate-100/50 dark:bg-slate-800/50 border-0 rounded-lg px-2 py-1 text-[11px] font-medium focus:ring-1 focus:ring-indigo-500/30 focus:outline-none"
+                                                                            placeholder="배우자 없음"
+                                                                        />
+                                                                    </div>
+                                                                    <div className="flex-2">
+                                                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-0.5">Children</p>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={item.children_info || ''}
+                                                                            onChange={(e) => handleUpdateRow(idx, { children_info: e.target.value })}
+                                                                            className="w-full bg-slate-100/50 dark:bg-slate-800/50 border-0 rounded-lg px-2 py-1 text-[11px] font-medium focus:ring-1 focus:ring-indigo-500/30 focus:outline-none"
+                                                                            placeholder="자녀 정보 없음"
+                                                                        />
+                                                                    </div>
                                                                 </div>
-                                                                <div className="flex-2">
-                                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-0.5">Children</p>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={item.children_info || ''}
-                                                                        onChange={(e) => handleUpdateRow(idx, { children_info: e.target.value })}
-                                                                        className="w-full bg-slate-100/50 dark:bg-slate-800/50 border-0 rounded-lg px-2 py-1 text-[11px] font-medium focus:ring-1 focus:ring-indigo-500/30 focus:outline-none"
-                                                                        placeholder="자녀 정보 없음"
-                                                                    />
-                                                                </div>
-                                                            </div>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4 align-top">

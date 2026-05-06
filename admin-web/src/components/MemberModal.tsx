@@ -33,7 +33,7 @@ interface MemberModalProps {
     departmentId?: string;
     groupId?: string;
     groupName?: string;
-    departments: { id: string; name: string }[];
+    departments: { id: string; name: string; profile_mode?: 'individual' | 'couple' | null }[];
     groups?: { department_id: string; name: string }[]; // For local state support (Regrouping Dashboard)
     persistImmediately?: boolean; // If false, will not call Supabase and just return the data on success
 }
@@ -69,6 +69,8 @@ export const MemberModal: React.FC<MemberModalProps> = ({
 
     const [availableGroups, setAvailableGroups] = useState<{ name: string }[]>([]);
     const [nameSuggestions, setNameSuggestions] = useState<MemberProfile[]>([]);
+    const selectedProfileMode = departments.find(department => department.id === formData.department_id)?.profile_mode || 'individual';
+    const isCoupleProfileMode = selectedProfileMode === 'couple';
 
     useEffect(() => {
         if (member) {
@@ -109,6 +111,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                         .from('groups')
                         .select('name')
                         .eq('department_id', formData.department_id)
+                        .eq('is_active', true)
                         .order('name');
                     setAvailableGroups(data || []);
                 }
@@ -133,6 +136,9 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 ...formData,
                 phone: (formData.phone || '').replace(/[^0-9]/g, ''),
                 church_id: churchId,
+                spouse_name: isCoupleProfileMode ? (formData.spouse_name || '') : null,
+                children_info: isCoupleProfileMode ? (formData.children_info || '') : null,
+                wedding_anniversary: isCoupleProfileMode ? (formData.wedding_anniversary || '') : null,
             };
 
             // Remove internal state keys if they exist from spread (defensive)
@@ -160,6 +166,32 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 if (error) throw error;
                 result = data;
             } else {
+                let duplicatePersonQuery = supabase
+                    .from('member_directory')
+                    .select('id, group_name')
+                    .eq('church_id', churchId)
+                    .eq('department_id', dataToSave.department_id)
+                    .neq('is_active', false);
+
+                if (dataToSave.person_id) {
+                    duplicatePersonQuery = duplicatePersonQuery.eq('person_id', dataToSave.person_id);
+                } else {
+                    duplicatePersonQuery = duplicatePersonQuery
+                        .eq('full_name', dataToSave.full_name)
+                        .eq('phone', dataToSave.phone);
+                }
+
+                const { data: duplicatePerson, error: duplicatePersonError } = await duplicatePersonQuery
+                    .limit(1)
+                    .maybeSingle();
+
+                if (duplicatePersonError) throw duplicatePersonError;
+                if (duplicatePerson) {
+                    alert(`이미 이 부서 명부에 등록된 성도입니다${duplicatePerson.group_name ? ` (${duplicatePerson.group_name})` : ''}. 다른 조 편성은 조편성 관리 화면에서 이동/복사해 주세요.`);
+                    setLoading(false);
+                    return;
+                }
+
                 // Insert for new member
                 const { data, error } = await supabase
                     .from('member_directory')
@@ -206,9 +238,21 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                                         const { data } = await supabase
                                             .from('member_directory')
                                             .select('*')
+                                            .eq('church_id', churchId)
+                                            .neq('is_active', false)
                                             .ilike('full_name', `%${val}%`)
-                                            .limit(5);
-                                        setNameSuggestions(data || []);
+                                            .order('full_name')
+                                            .limit(20);
+                                        const seen = new Set<string>();
+                                        const dedupedSuggestions = (data || []).filter(candidate => {
+                                            const normalizedPhone = (candidate.phone || '').replace(/[^0-9]/g, '');
+                                            const identityKey = candidate.person_id || `${candidate.full_name}|${normalizedPhone}`;
+                                            if (seen.has(identityKey)) return false;
+                                            seen.add(identityKey);
+                                            return true;
+                                        }).slice(0, 5);
+
+                                        setNameSuggestions(dedupedSuggestions);
                                     } else {
                                         setNameSuggestions([]);
                                     }
@@ -229,10 +273,10 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                                                     ...formData,
                                                     full_name: m.full_name,
                                                     phone: m.phone || '',
-                                                    spouse_name: m.spouse_name || '',
-                                                    children_info: m.children_info || '',
+                                                    spouse_name: isCoupleProfileMode ? (m.spouse_name || '') : '',
+                                                    children_info: isCoupleProfileMode ? (m.children_info || '') : '',
                                                     birth_date: m.birth_date || '',
-                                                    wedding_anniversary: m.wedding_anniversary || '',
+                                                    wedding_anniversary: isCoupleProfileMode ? (m.wedding_anniversary || '') : '',
                                                     notes: m.notes || '',
                                                     person_id: m.person_id,
                                                     is_linked: m.is_linked
@@ -272,7 +316,17 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                         <select
                             required
                             value={formData.department_id || ''}
-                            onChange={e => setFormData({ ...formData, department_id: e.target.value, group_name: '' })}
+                            onChange={e => {
+                                const nextProfileMode = departments.find(d => d.id === e.target.value)?.profile_mode || 'individual';
+                                setFormData({
+                                    ...formData,
+                                    department_id: e.target.value,
+                                    group_name: '',
+                                    spouse_name: nextProfileMode === 'couple' ? formData.spouse_name : '',
+                                    children_info: nextProfileMode === 'couple' ? formData.children_info : '',
+                                    wedding_anniversary: nextProfileMode === 'couple' ? formData.wedding_anniversary : ''
+                                });
+                            }}
                             className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold"
                         >
                             <option value="">부서 선택</option>
@@ -294,26 +348,28 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">배우자</label>
-                        <input
-                            type="text"
-                            value={formData.spouse_name || ''}
-                            onChange={e => setFormData({ ...formData, spouse_name: e.target.value })}
-                            className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold"
-                        />
+                {isCoupleProfileMode && (
+                    <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">배우자</label>
+                            <input
+                                type="text"
+                                value={formData.spouse_name || ''}
+                                onChange={e => setFormData({ ...formData, spouse_name: e.target.value })}
+                                className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">자녀 정보</label>
+                            <input
+                                type="text"
+                                value={formData.children_info || ''}
+                                onChange={e => setFormData({ ...formData, children_info: e.target.value })}
+                                className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold"
+                            />
+                        </div>
                     </div>
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">자녀 정보</label>
-                        <input
-                            type="text"
-                            value={formData.children_info || ''}
-                            onChange={e => setFormData({ ...formData, children_info: e.target.value })}
-                            className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold"
-                        />
-                    </div>
-                </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2">
@@ -325,15 +381,17 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                             className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold"
                         />
                     </div>
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">결혼기념일</label>
-                        <input
-                            type="date"
-                            value={formData.wedding_anniversary || ''}
-                            onChange={e => setFormData({ ...formData, wedding_anniversary: e.target.value })}
-                            className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold"
-                        />
-                    </div>
+                    {isCoupleProfileMode && (
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">결혼기념일</label>
+                            <input
+                                type="date"
+                                value={formData.wedding_anniversary || ''}
+                                onChange={e => setFormData({ ...formData, wedding_anniversary: e.target.value })}
+                                className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold"
+                            />
+                        </div>
+                    )}
                 </div>
 
                 <div className="space-y-2">

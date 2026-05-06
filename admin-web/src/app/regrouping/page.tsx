@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo, useRef, Suspense } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+import { useEffect, useState, useMemo, useRef, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
@@ -65,6 +67,19 @@ function RegroupingPageInner() {
     const [autoMoveCouples, setAutoMoveCouples] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
+    const [phase2RegroupingCheck, setPhase2RegroupingCheck] = useState<{
+        status: 'idle' | 'ok' | 'warning' | 'unavailable';
+        legacyActiveCount: number;
+        phase2ActiveCount: number;
+        issueCount: number;
+        message: string;
+    }>({
+        status: 'idle',
+        legacyActiveCount: 0,
+        phase2ActiveCount: 0,
+        issueCount: 0,
+        message: 'Phase 2 진단 대기 중'
+    });
 
     const [hasChanges, setHasChanges] = useState(false);
     const boardRef = useRef<HTMLDivElement>(null);
@@ -177,6 +192,7 @@ function RegroupingPageInner() {
             .from('departments')
             .select('id, name, color_hex, profile_mode')
             .eq('church_id', churchId)
+            .eq('is_active', true)
             .order('name');
         setDepartments(data || []);
 
@@ -222,26 +238,145 @@ function RegroupingPageInner() {
             .from('member_directory')
             .select('*')
             .eq('church_id', churchId)
-            .eq('department_id', deptId);
+            .eq('department_id', deptId)
+            .neq('is_active', false);
 
         // Match members with their group_id for Kanban
         const { data: groupData } = await supabase
             .from('groups')
             .select('id, name')
-            .eq('department_id', deptId);
+            .eq('department_id', deptId)
+            .eq('is_active', true);
 
         const membersWithGroupId = (data || []).map(m => ({
             ...m,
             group_id: groupData?.find(g => g.name === m.group_name)?.id || null
         }));
 
+        await refreshPhase2RegroupingCheck(membersWithGroupId, churchId, deptId);
         setMembers(membersWithGroupId);
         setLocalMembers(JSON.parse(JSON.stringify(membersWithGroupId)));
         setHasChanges(false);
         setLoading(false);
     };
 
+    const refreshPhase2RegroupingCheck = async (loadedMembers: any[], churchId: string, deptId: string) => {
+        // '미정'(unassigned)은 아직 조에 배정되지 않은 대기 상태 — Phase 2 group membership이 없어도 정상이므로 진단에서 제외
+        const activeLegacyMembers = loadedMembers.filter(member =>
+            member.is_active !== false &&
+            Boolean(member.group_name) &&
+            member.group_name !== '미정'
+        );
+        const activeLegacyDirectoryIds = new Set(activeLegacyMembers.map(member => member.id));
+        const directoryIds = loadedMembers.map(member => member.id).filter(Boolean);
+
+        if (directoryIds.length === 0) {
+            setPhase2RegroupingCheck({
+                status: 'ok',
+                legacyActiveCount: 0,
+                phase2ActiveCount: 0,
+                issueCount: 0,
+                message: '확인할 명부 row가 없습니다.'
+            });
+            return;
+        }
+
+        try {
+            const { data: memberProfiles, error: memberProfilesError } = await supabase
+                .from('member_profiles')
+                .select('person_id, member_directory_id')
+                .in('member_directory_id', directoryIds);
+
+            if (memberProfilesError) throw memberProfilesError;
+
+            const personIds = Array.from(new Set((memberProfiles || []).map(profile => profile.person_id).filter(Boolean)));
+            if (personIds.length === 0) {
+                setPhase2RegroupingCheck({
+                    status: activeLegacyMembers.length === 0 ? 'ok' : 'warning',
+                    legacyActiveCount: activeLegacyMembers.length,
+                    phase2ActiveCount: 0,
+                    issueCount: activeLegacyMembers.length,
+                    message: activeLegacyMembers.length === 0
+                        ? 'Phase 2 비교 대상이 없습니다.'
+                        : 'Phase 2 member_profiles 연결이 없는 active 명부가 있습니다.'
+                });
+                return;
+            }
+
+            const { data: memberships, error: membershipsError } = await supabase
+                .from('memberships')
+                .select('id, person_id, status, department_id, legacy_member_directory_id')
+                .in('person_id', personIds)
+                .eq('church_id', churchId)
+                .eq('department_id', deptId)
+                .eq('status', 'active');
+
+            if (membershipsError) throw membershipsError;
+
+            const activeMemberships = memberships || [];
+            const phase2ActiveDirectoryIds = new Set(
+                activeMemberships
+                    .map(membership => membership.legacy_member_directory_id)
+                    .filter(Boolean)
+            );
+            const missingPhase2Count = activeLegacyMembers.filter(member => !phase2ActiveDirectoryIds.has(member.id)).length;
+            const extraPhase2Count = activeMemberships.filter(membership => (
+                !membership.legacy_member_directory_id || !activeLegacyDirectoryIds.has(membership.legacy_member_directory_id)
+            )).length;
+            const issueCount = missingPhase2Count + extraPhase2Count;
+
+            setPhase2RegroupingCheck({
+                status: issueCount === 0 ? 'ok' : 'warning',
+                legacyActiveCount: activeLegacyMembers.length,
+                phase2ActiveCount: activeMemberships.length,
+                issueCount,
+                message: issueCount === 0
+                    ? '선택 부서의 조편성 active 소속이 Phase 2와 일치합니다.'
+                    : `누락 ${missingPhase2Count}건 / 추가 확인 ${extraPhase2Count}건`
+            });
+        } catch (error) {
+            console.warn('Phase 2 regrouping diagnostic unavailable:', error);
+            setPhase2RegroupingCheck({
+                status: 'unavailable',
+                legacyActiveCount: activeLegacyMembers.length,
+                phase2ActiveCount: 0,
+                issueCount: 0,
+                message: 'Phase 2 조편성 진단을 불러오지 못했습니다.'
+            });
+        }
+    };
+
+    const getMemberIdentityKey = useCallback((member: any) => {
+        const normalizedPhone = (member.phone || '').replace(/[^0-9]/g, '');
+        return member.person_id || `${member.full_name}|${normalizedPhone}`;
+    }, []);
+
+    const findDuplicateIdentityNames = useCallback((candidateMembers: any[]) => {
+        const identityMap = new Map<string, string[]>();
+
+        candidateMembers.forEach(member => {
+            const key = getMemberIdentityKey(member);
+            const names = identityMap.get(key) || [];
+            names.push(member.full_name);
+            identityMap.set(key, names);
+        });
+
+        return Array.from(identityMap.values())
+            .filter(names => names.length > 1)
+            .flat();
+    }, [getMemberIdentityKey]);
+
     const handleReorderMembers = useMemo(() => (ids: string[], targetGroupId: string | null) => {
+        if (targetGroupId) {
+            const movingMembers = localMembers.filter(member => ids.includes(member.id));
+            const duplicateMovingNames = findDuplicateIdentityNames(movingMembers);
+
+            if (duplicateMovingNames.length > 0) {
+                alert(`같은 사람의 여러 소속 카드를 한 조에 동시에 넣을 수 없습니다: ${Array.from(new Set(duplicateMovingNames)).join(', ')}`);
+                return;
+            }
+        }
+
         // Prevent duplicates in the target group
         if (targetGroupId) {
             const targetGroupMembers = localMembers.filter(m => m.group_id === targetGroupId);
@@ -278,7 +413,7 @@ function RegroupingPageInner() {
             return changed ? next : prev;
         });
         setHasChanges(true);
-    }, [localMembers]); // Needs localMembers for duplicate check
+    }, [findDuplicateIdentityNames, localMembers]); // Needs localMembers for duplicate check
 
     const handleMoveMembers = (ids: string[], targetGroupId: string | null, isCopy: boolean = false, targetIndex?: number) => {
         let finalIdsToMove = [...ids];
@@ -302,16 +437,32 @@ function RegroupingPageInner() {
             finalIdsToMove = [...finalIdsToMove, ...spousesToInclude];
         }
 
+        if (targetGroupId) {
+            const movingMembers = localMembers.filter(member => finalIdsToMove.includes(member.id));
+            const duplicateMovingNames = findDuplicateIdentityNames(movingMembers);
+
+            if (duplicateMovingNames.length > 0) {
+                alert(`같은 사람의 여러 소속 카드를 한 조에 동시에 넣을 수 없습니다: ${Array.from(new Set(duplicateMovingNames)).join(', ')}`);
+                setSelectedMemberIds([]);
+                return;
+            }
+        }
+
         // Prevent duplicates in the target group
         if (targetGroupId) {
             const targetGroupMembers = localMembers.filter(m => m.group_id === targetGroupId);
-            const duplicates = ids.filter(id => {
+            const idsBeingMoved = new Set(finalIdsToMove);
+            const duplicates = finalIdsToMove.filter(id => {
                 const memberToMove = localMembers.find(m => m.id === id);
                 if (!memberToMove) return false;
 
+                if (isCopy && (memberToMove.group_id || null) === targetGroupId) {
+                    return true;
+                }
+
                 // Check if someone with same identity already exists in the target group (excluding the ones being moved)
                 return targetGroupMembers.some(tm =>
-                    !ids.includes(tm.id) && (
+                    !idsBeingMoved.has(tm.id) && (
                         (tm.person_id && tm.person_id === memberToMove.person_id) ||
                         (tm.full_name === memberToMove.full_name && (tm.phone || '').replace(/[^0-9]/g, '') === (memberToMove.phone || '').replace(/[^0-9]/g, ''))
                     )
@@ -332,7 +483,7 @@ function RegroupingPageInner() {
         }
 
         if (isCopy) {
-            const membersToCopy = localMembers.filter(m => ids.includes(m.id));
+            const membersToCopy = localMembers.filter(m => finalIdsToMove.includes(m.id));
             const newCopies = membersToCopy.map(m => ({
                 ...m,
                 id: `temp-copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -432,7 +583,7 @@ function RegroupingPageInner() {
 
     const handleMemberClick = (id: string) => {
         const member = localMembers.find(m => m.id === id);
-        let idsToToggle = [id];
+        const idsToToggle = [id];
 
         if (autoMoveCouples && member?.spouse_name) {
             const spouse = localMembers.find(s =>
@@ -675,7 +826,8 @@ function RegroupingPageInner() {
             const { data: remoteGroups, error: groupsError } = await supabase
                 .from('groups')
                 .select('*')
-                .eq('department_id', selectedDeptId);
+                .eq('department_id', selectedDeptId)
+                .eq('is_active', true);
 
             if (groupsError) throw groupsError;
 
@@ -684,7 +836,7 @@ function RegroupingPageInner() {
             if (groupsToDelete.length > 0) {
                 const { error: delError } = await supabase
                     .from('groups')
-                    .delete()
+                    .update({ is_active: false })
                     .in('id', groupsToDelete.map(g => g.id));
                 if (delError) throw delError;
             }
@@ -741,6 +893,32 @@ function RegroupingPageInner() {
             // 2. Process Member Changes
             // Identify new members, moved members, and renamed groups
             const existingMemberUpdates = localMembers.filter(m => !m.id.startsWith('temp-'));
+            const duplicateAssignments = new Map<string, string[]>();
+            localMembers.forEach(member => {
+                const mappedGroupId = member.group_id ? (groupIdMap[member.group_id] || member.group_id) : null;
+                const targetGroup = mappedGroupId ? upsertedGroups.find(group => group.id === mappedGroupId) : null;
+                const targetGroupName = targetGroup?.name || null;
+                if (!targetGroupName) return;
+
+                const key = [
+                    currentChurchId,
+                    selectedDeptId,
+                    targetGroupName,
+                    member.full_name,
+                    member.phone || ''
+                ].join('|');
+                const labels = duplicateAssignments.get(key) || [];
+                labels.push(member.full_name);
+                duplicateAssignments.set(key, labels);
+            });
+
+            const duplicateAssignmentNames = Array.from(duplicateAssignments.values())
+                .filter(labels => labels.length > 1)
+                .flat();
+
+            if (duplicateAssignmentNames.length > 0) {
+                throw new Error(`같은 조에 같은 이름/전화번호의 성도가 중복 편성되어 있습니다: ${Array.from(new Set(duplicateAssignmentNames)).join(', ')}`);
+            }
 
             // CRITICAL: Identify members that were REMOVED from the view (duplicate cards that were deleted)
             const removedMembers = members.filter(orig => !localMembers.find(lm => lm.id === orig.id));
@@ -780,7 +958,7 @@ function RegroupingPageInner() {
 
                 const { error: delError } = await supabase
                     .from('member_directory')
-                    .delete()
+                    .update({ is_active: false, left_at: new Date().toISOString() })
                     .in('id', idsToDelete);
                 if (delError) throw delError;
             }
@@ -927,11 +1105,21 @@ function RegroupingPageInner() {
     }, [currentChurchId, churches]);
 
     const stats = useMemo(() => {
-        const total = localMembers.length;
-        const assigned = localMembers.filter(m => m.group_id).length;
+        const people = new Map<string, { assigned: boolean }>();
+
+        localMembers.forEach(member => {
+            const identityKey = getMemberIdentityKey(member);
+            const current = people.get(identityKey) || { assigned: false };
+            people.set(identityKey, {
+                assigned: current.assigned || Boolean(member.group_id)
+            });
+        });
+
+        const total = people.size;
+        const assigned = Array.from(people.values()).filter(person => person.assigned).length;
         const unassigned = total - assigned;
         return { total, assigned, unassigned };
-    }, [localMembers]);
+    }, [getMemberIdentityKey, localMembers]);
 
     if (loading) {
         return (
@@ -1019,6 +1207,72 @@ function RegroupingPageInner() {
                     </div>
                 </div>
             )}
+
+            <div className={cn(
+                "mx-2 rounded-[24px] border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm",
+                phase2RegroupingCheck.status === 'warning'
+                    ? "bg-rose-50/80 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20"
+                    : phase2RegroupingCheck.status === 'unavailable'
+                        ? "bg-amber-50/80 dark:bg-amber-500/10 border-amber-100 dark:border-amber-500/20"
+                        : "bg-emerald-50/80 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
+            )}>
+                <div className="flex items-start gap-3">
+                    <div className={cn(
+                        "w-10 h-10 rounded-2xl flex items-center justify-center shrink-0",
+                        phase2RegroupingCheck.status === 'warning'
+                            ? "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-300"
+                            : phase2RegroupingCheck.status === 'unavailable'
+                                ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300"
+                                : "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300"
+                    )}>
+                        {phase2RegroupingCheck.status === 'warning'
+                            ? <AlertCircle className="w-5 h-5" />
+                            : <CheckCircle2 className="w-5 h-5" />}
+                    </div>
+                    <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">
+                                Phase 2 조편성 진단
+                            </p>
+                            <span className="px-2 py-0.5 rounded-lg bg-white/70 dark:bg-slate-900/50 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                                Read Only
+                            </span>
+                        </div>
+                        <p className={cn(
+                            "text-xs sm:text-sm font-black",
+                            phase2RegroupingCheck.status === 'warning'
+                                ? "text-rose-700 dark:text-rose-300"
+                                : phase2RegroupingCheck.status === 'unavailable'
+                                    ? "text-amber-700 dark:text-amber-300"
+                                    : "text-emerald-700 dark:text-emerald-300"
+                        )}>
+                            {phase2RegroupingCheck.message}
+                        </p>
+                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                            저장 전후 선택 부서의 legacy active 소속과 Phase 2 active memberships를 비교합니다. 조편성 저장 로직에는 영향을 주지 않습니다.
+                        </p>
+                    </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 sm:min-w-[280px]">
+                    <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">legacy</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-white">{phase2RegroupingCheck.legacyActiveCount}</p>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">phase 2</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-white">{phase2RegroupingCheck.phase2ActiveCount}</p>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">issues</p>
+                        <p className={cn(
+                            "text-lg font-black",
+                            phase2RegroupingCheck.issueCount > 0 ? "text-rose-600 dark:text-rose-300" : "text-slate-900 dark:text-white"
+                        )}>
+                            {phase2RegroupingCheck.issueCount}
+                        </p>
+                    </div>
+                </div>
+            </div>
 
             {/* Sticky Interaction Toolbar */}
             <div className="sticky top-16 sm:top-20 z-30 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 mb-12 shadow-sm transition-all">

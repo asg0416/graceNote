@@ -99,7 +99,7 @@ function MembersPageInner() {
     const [isGroupedView, setIsGroupedView] = useState(false);
 
     const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
-    const [lastAction, setLastAction] = useState<{ type: 'move' | 'delete', data: MemberProfile[] } | null>(null);
+    const [lastAction, setLastAction] = useState<{ type: 'move' | 'archive', data: MemberProfile[] } | null>(null);
     const [showUndo, setShowUndo] = useState(false);
     const [sortBy, setSortBy] = useState<'name' | 'group' | 'role' | 'family'>('name');
     const [filterStatus, setFilterStatus] = useState<'all' | 'linked' | 'not_linked'>('all');
@@ -110,6 +110,19 @@ function MembersPageInner() {
     const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
     const [collapsedDepts, setCollapsedDepts] = useState<string[]>([]);
     const [nameSuggestions, setNameSuggestions] = useState<MemberProfile[]>([]);
+    const [phase2ListCheck, setPhase2ListCheck] = useState<{
+        status: 'idle' | 'ok' | 'warning' | 'unavailable';
+        legacyActiveCount: number;
+        phase2ActiveCount: number;
+        issueCount: number;
+        message: string;
+    }>({
+        status: 'idle',
+        legacyActiveCount: 0,
+        phase2ActiveCount: 0,
+        issueCount: 0,
+        message: 'Phase 2 진단 대기 중'
+    });
 
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -256,8 +269,9 @@ function MembersPageInner() {
         try {
             let query = supabase
                 .from('departments')
-                .select('id, name, color_hex')
-                .eq('church_id', churchId);
+                .select('id, name, color_hex, profile_mode')
+                .eq('church_id', churchId)
+                .eq('is_active', true);
 
             if (assignedDeptId) {
                 query = query.eq('id', assignedDeptId);
@@ -280,6 +294,7 @@ function MembersPageInner() {
                 .from('groups')
                 .select('id, name, color_hex')
                 .eq('department_id', deptId)
+                .eq('is_active', true)
                 .order('name');
             setGroups((data as Group[]) || []);
         } catch (err) {
@@ -322,13 +337,109 @@ function MembersPageInner() {
             if (error) throw error;
             const fetchedMembers = data || [];
 
-
+            await refreshPhase2ListCheck(fetchedMembers as MemberProfile[], churchId, deptId);
 
             setMembers(fetchedMembers as MemberProfile[]);
         } catch (err) {
             console.error(err);
+            setPhase2ListCheck({
+                status: 'unavailable',
+                legacyActiveCount: 0,
+                phase2ActiveCount: 0,
+                issueCount: 0,
+                message: 'Phase 2 목록 진단을 실행하지 못했습니다.'
+            });
         } finally {
             setLoading(false);
+        }
+    };
+
+    const refreshPhase2ListCheck = async (fetchedMembers: MemberProfile[], churchId: string, deptId: string = 'all') => {
+        // '미정'(unassigned)은 아직 조에 배정되지 않은 대기 상태 — Phase 2 group membership이 없어도 정상이므로 진단에서 제외
+        const activeLegacyMembers = fetchedMembers.filter(member =>
+            member.is_active !== false &&
+            Boolean(member.group_name) &&
+            member.group_name !== '미정'
+        );
+        const activeLegacyDirectoryIds = new Set(activeLegacyMembers.map(member => member.id));
+        const directoryIds = fetchedMembers.map(member => member.id).filter(Boolean);
+
+        if (directoryIds.length === 0) {
+            setPhase2ListCheck({
+                status: 'ok',
+                legacyActiveCount: 0,
+                phase2ActiveCount: 0,
+                issueCount: 0,
+                message: '확인할 명부 row가 없습니다.'
+            });
+            return;
+        }
+
+        try {
+            const { data: memberProfiles, error: memberProfilesError } = await supabase
+                .from('member_profiles')
+                .select('person_id, member_directory_id')
+                .in('member_directory_id', directoryIds);
+
+            if (memberProfilesError) throw memberProfilesError;
+
+            const personIds = Array.from(new Set((memberProfiles || []).map(profile => profile.person_id).filter(Boolean)));
+            if (personIds.length === 0) {
+                setPhase2ListCheck({
+                    status: activeLegacyMembers.length === 0 ? 'ok' : 'warning',
+                    legacyActiveCount: activeLegacyMembers.length,
+                    phase2ActiveCount: 0,
+                    issueCount: activeLegacyMembers.length,
+                    message: activeLegacyMembers.length === 0
+                        ? 'Phase 2 비교 대상이 없습니다.'
+                        : 'Phase 2 member_profiles 연결이 없는 active 명부가 있습니다.'
+                });
+                return;
+            }
+
+            const { data: memberships, error: membershipsError } = await supabase
+                .from('memberships')
+                .select('id, person_id, status, department_id, legacy_member_directory_id')
+                .in('person_id', personIds)
+                .eq('church_id', churchId)
+                .eq('status', 'active');
+
+            if (membershipsError) throw membershipsError;
+
+            const relevantActiveMemberships = (memberships || []).filter(membership => {
+                if (deptId !== 'all' && membership.department_id !== deptId) return false;
+                return true;
+            });
+            const phase2ActiveDirectoryIds = new Set(
+                relevantActiveMemberships
+                    .map(membership => membership.legacy_member_directory_id)
+                    .filter(Boolean)
+            );
+
+            const missingPhase2Count = activeLegacyMembers.filter(member => !phase2ActiveDirectoryIds.has(member.id)).length;
+            const extraPhase2Count = relevantActiveMemberships.filter(membership => (
+                !membership.legacy_member_directory_id || !activeLegacyDirectoryIds.has(membership.legacy_member_directory_id)
+            )).length;
+            const issueCount = missingPhase2Count + extraPhase2Count;
+
+            setPhase2ListCheck({
+                status: issueCount === 0 ? 'ok' : 'warning',
+                legacyActiveCount: activeLegacyMembers.length,
+                phase2ActiveCount: relevantActiveMemberships.length,
+                issueCount,
+                message: issueCount === 0
+                    ? '현재 목록 범위의 active 소속이 Phase 2와 일치합니다.'
+                    : `누락 ${missingPhase2Count}건 / 추가 확인 ${extraPhase2Count}건`
+            });
+        } catch (error) {
+            console.warn('Phase 2 list diagnostic unavailable:', error);
+            setPhase2ListCheck({
+                status: 'unavailable',
+                legacyActiveCount: activeLegacyMembers.length,
+                phase2ActiveCount: 0,
+                issueCount: 0,
+                message: 'Phase 2 목록 진단을 불러오지 못했습니다.'
+            });
         }
     };
 
@@ -439,11 +550,13 @@ function MembersPageInner() {
                         .update({ group_name: item.group_name, department_id: item.department_id })
                         .eq('id', item.id);
                 }
-            } else if (lastAction.type === 'delete') {
-                // Restore delete: re-insert
+            } else if (lastAction.type === 'archive') {
+                // Restore archived members.
+                const ids = lastAction.data.map((item) => item.id);
                 const { error } = await supabase
                     .from('member_directory')
-                    .insert(lastAction.data);
+                    .update({ is_active: true })
+                    .in('id', ids);
                 if (error) throw error;
             }
 
@@ -546,13 +659,13 @@ function MembersPageInner() {
     };
 
     const handleDeleteMember = async (id: string) => {
-        if (!confirm('이 성도 정보를 삭제하시겠습니까?')) return;
+        if (!confirm('이 성도를 비활성화하시겠습니까? 출석/기도 기록은 보존됩니다.')) return;
         try {
-            const { error } = await supabase.from('member_directory').delete().eq('id', id);
+            const { error } = await supabase.from('member_directory').update({ is_active: false }).eq('id', id);
             if (error) throw error;
             if (currentChurchId) fetchMembers(currentChurchId, selectedDeptId);
         } catch (err) {
-            alert('삭제 중 오류가 발생했습니다.');
+            alert('비활성화 중 오류가 발생했습니다.');
         }
     };
 
@@ -881,6 +994,70 @@ function MembersPageInner() {
                         )}
                     </div>
                 </div>
+
+                <div className={cn(
+                    "rounded-[24px] border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm",
+                    phase2ListCheck.status === 'warning'
+                        ? "bg-rose-50/80 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20"
+                        : phase2ListCheck.status === 'unavailable'
+                            ? "bg-amber-50/80 dark:bg-amber-500/10 border-amber-100 dark:border-amber-500/20"
+                            : "bg-emerald-50/80 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
+                )}>
+                    <div className="flex items-start gap-3">
+                        <div className={cn(
+                            "w-10 h-10 rounded-2xl flex items-center justify-center shrink-0",
+                            phase2ListCheck.status === 'warning'
+                                ? "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-300"
+                                : phase2ListCheck.status === 'unavailable'
+                                    ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300"
+                                    : "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300"
+                        )}>
+                            {phase2ListCheck.status === 'warning' ? <ShieldCheck className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                        </div>
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">
+                                    Phase 2 목록 진단
+                                </p>
+                                <span className="px-2 py-0.5 rounded-lg bg-white/70 dark:bg-slate-900/50 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                                    Read Only
+                                </span>
+                            </div>
+                            <p className={cn(
+                                "text-xs sm:text-sm font-black",
+                                phase2ListCheck.status === 'warning'
+                                    ? "text-rose-700 dark:text-rose-300"
+                                    : phase2ListCheck.status === 'unavailable'
+                                        ? "text-amber-700 dark:text-amber-300"
+                                        : "text-emerald-700 dark:text-emerald-300"
+                            )}>
+                                {phase2ListCheck.message}
+                            </p>
+                            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                현재 교회/부서 로드 범위에서 legacy active와 Phase 2 active memberships를 비교합니다. 기존 명부 기능에는 영향을 주지 않습니다.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 sm:min-w-[280px]">
+                        <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">legacy</p>
+                            <p className="text-lg font-black text-slate-900 dark:text-white">{phase2ListCheck.legacyActiveCount}</p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">phase 2</p>
+                            <p className="text-lg font-black text-slate-900 dark:text-white">{phase2ListCheck.phase2ActiveCount}</p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">issues</p>
+                            <p className={cn(
+                                "text-lg font-black",
+                                phase2ListCheck.issueCount > 0 ? "text-rose-600 dark:text-rose-300" : "text-slate-900 dark:text-white"
+                            )}>
+                                {phase2ListCheck.issueCount}
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Group Tabs (Only visible when a department is selected) */}
@@ -1043,24 +1220,24 @@ function MembersPageInner() {
                                 </button>
                                 <button
                                     onClick={async () => {
-                                        if (!confirm(`${selectedMemberIds.length}명을 일괄 삭제하시겠습니까?`)) return;
-                                        const deletedMembers = members.filter(m => selectedMemberIds.includes(m.id));
+                                        if (!confirm(`${selectedMemberIds.length}명을 일괄 비활성화하시겠습니까? 출석/기도 기록은 보존됩니다.`)) return;
+                                        const archivedMembers = members.filter(m => selectedMemberIds.includes(m.id));
                                         try {
-                                            const { error } = await supabase.from('member_directory').delete().in('id', selectedMemberIds);
+                                            const { error } = await supabase.from('member_directory').update({ is_active: false }).in('id', selectedMemberIds);
                                             if (error) throw error;
-                                            setLastAction({ type: 'delete', data: deletedMembers });
+                                            setLastAction({ type: 'archive', data: archivedMembers });
                                             setShowUndo(true);
                                             setSelectedMemberIds([]);
                                             if (currentChurchId) fetchMembers(currentChurchId, selectedDeptId);
                                             setTimeout(() => setShowUndo(false), 10000);
                                         } catch (err) {
-                                            alert('삭제 오류');
+                                            alert('비활성화 오류');
                                         }
                                     }}
                                     className="flex items-center gap-2 px-5 py-2.5 bg-rose-500/20 dark:bg-rose-50 hover:bg-rose-500/30 dark:hover:bg-rose-100 text-rose-500 rounded-2xl font-black text-xs transition-all active:scale-95 group"
                                 >
                                     <TrashIcon className="w-4 h-4 group-hover:shake transition-transform" />
-                                    일괄 삭제
+                                    일괄 비활성화
                                 </button>
                                 <button
                                     onClick={() => setSelectedMemberIds([])}
@@ -1079,7 +1256,7 @@ function MembersPageInner() {
                 showUndo && lastAction && (
                     <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-5 duration-500">
                         <div className="bg-indigo-600 text-white px-6 py-4 rounded-[24px] shadow-2xl flex items-center gap-4">
-                            <p className="text-sm font-bold">삭제되었습니다.</p>
+                            <p className="text-sm font-bold">비활성화되었습니다.</p>
                             <button
                                 onClick={handleUndo}
                                 className="bg-white text-indigo-600 px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-50 transition-all active:scale-95"
