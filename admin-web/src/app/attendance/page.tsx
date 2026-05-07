@@ -29,7 +29,9 @@ import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
 import { Tooltip } from '@/components/Tooltip';
 import {
+    buildAttendanceTargetExplanation,
     calculateWeekAttendanceMetrics,
+    getCurrentActiveRoster,
     getActiveRosterForWeek,
     sortRosterForDisplay,
     type AttendanceRecordForMetrics,
@@ -108,9 +110,7 @@ type WeekRow = {
 };
 
 const fetchMembershipRoster = async (
-    departmentId: string,
-    _rangeStart: string,
-    _rangeEnd: string
+    departmentId: string
 ): Promise<AttendanceDirectoryMember[]> => {
     try {
         const membershipQuery = supabase
@@ -179,11 +179,9 @@ const fetchMembershipRoster = async (
 };
 
 const fetchAttendanceRoster = async (
-    departmentId: string,
-    rangeStart: string,
-    rangeEnd: string
+    departmentId: string
 ): Promise<AttendanceDirectoryMember[]> => {
-    const phase2Roster = await fetchMembershipRoster(departmentId, rangeStart, rangeEnd);
+    const phase2Roster = await fetchMembershipRoster(departmentId);
     if (phase2Roster.length > 0) return phase2Roster;
 
     const { data, error } = await supabase
@@ -220,6 +218,27 @@ const toMetricAttendance = (attendance: AttendanceRow[]): AttendanceRecordForMet
     }));
 };
 
+const formatNames = (members: AttendanceRosterMember[], limit = 5) => {
+    const names = Array.from(new Set(members.map((member) => member.fullName))).filter(Boolean);
+    if (names.length <= limit) return names.join(', ');
+    return `${names.slice(0, limit).join(', ')} 외 ${names.length - limit}명`;
+};
+
+const getRetroactiveBackfillMembers = (
+    roster: AttendanceRosterMember[],
+    weekDate: string,
+    attendance: AttendanceRecordForMetrics[]
+) => {
+    const activePersonIds = new Set(getActiveRosterForWeek(roster, weekDate).map((member) => member.personId));
+    const directoryToPerson = new Map(roster.map((member) => [member.directoryMemberId, member.personId]));
+    attendance.forEach((record) => {
+        const personId = directoryToPerson.get(record.directoryMemberId);
+        if (personId) activePersonIds.add(personId);
+    });
+
+    return getCurrentActiveRoster(roster).filter((member) => !activePersonIds.has(member.personId));
+};
+
 const getAttendanceItemFamilyKey = (item: AttendanceDashboardItem) => {
     if (item.familyName) return `family:${item.familyName}`;
     if (item.spouseName) return `spouse:${[item.name, item.spouseName].sort().join('_')}`;
@@ -254,6 +273,7 @@ export default function AttendancePage() {
     const [attendanceData, setAttendanceData] = useState<AttendanceDashboardItem[]>([]);
     const [groupStats, setGroupStats] = useState<any[]>([]);
     const [selectedWeekMetrics, setSelectedWeekMetrics] = useState<WeekAttendanceMetrics | null>(null);
+    const [targetExplanation, setTargetExplanation] = useState<string[]>([]);
 
     // Monthly/Weekly View States
     const [monthWeeks, setMonthWeeks] = useState<any[]>([]);
@@ -433,7 +453,7 @@ export default function AttendancePage() {
                     .order('week_date', { ascending: true });
 
                 // 안정적인 통계를 위해 주차 날짜 기준 Phase 2 active person 수 조회
-                const monthRoster = toMetricRoster(await fetchAttendanceRoster(selectedDeptId, startOfMonth, endOfMonth));
+                const monthRoster = toMetricRoster(await fetchAttendanceRoster(selectedDeptId));
                 const { data: monthNoMeetingDays } = await supabase
                     .from('no_meeting_days')
                     .select('week_date')
@@ -458,6 +478,7 @@ export default function AttendancePage() {
                             roster: monthRoster,
                             attendance: toMetricAttendance((weekAtt || []) as AttendanceRow[]),
                             noMeetingDates: monthNoMeetingDateSet,
+                            backfillMode: 'current-active',
                         });
 
                         return {
@@ -520,7 +541,7 @@ export default function AttendancePage() {
             if (!selectedWeek) return;
 
             // 1. Fetch members active on this week from Phase 2 memberships first.
-            const members = await fetchAttendanceRoster(selectedDeptId, selectedWeek.week_date, selectedWeek.week_date);
+            const members = await fetchAttendanceRoster(selectedDeptId);
             const metricRoster = toMetricRoster(members);
             const activeMetricRoster = getActiveRosterForWeek(metricRoster, selectedWeek.week_date);
             const activeDirectoryIds = new Set(activeMetricRoster.map((member) => member.directoryMemberId));
@@ -554,8 +575,21 @@ export default function AttendancePage() {
                 roster: metricRoster,
                 attendance: toMetricAttendance(attendanceRows),
                 noMeetingDates: selectedNoMeetingDateSet,
+                backfillMode: 'current-active',
             });
             setSelectedWeekMetrics(metrics);
+            const explanation = buildAttendanceTargetExplanation(metrics);
+            if (metrics.usedRetroactiveBackfill) {
+                const backfilledMembers = getRetroactiveBackfillMembers(
+                    metricRoster,
+                    selectedWeek.week_date,
+                    toMetricAttendance(attendanceRows)
+                );
+                if (backfilledMembers.length > 0) {
+                    explanation.push(`보정 포함 대상: ${formatNames(backfilledMembers)}`);
+                }
+            }
+            setTargetExplanation(explanation);
 
             // 3. Merge & Reconstruct Data
             // 부서 내 전체 조 목록 조회 (미제출 조 표시용)
@@ -614,7 +648,7 @@ export default function AttendancePage() {
             setAttendanceData(finalMerged);
 
             // 4. Calculate Group Stats (All Groups in Dept)
-            const groupsMap = new Map();
+            const groupsMap = new Map<string, { name: string; total: number; present: number }>();
             // 먼저 부서 내 모든 조를 0으로 초기화
             deptGroups?.forEach(g => {
                 groupsMap.set(g.name, { name: g.name, total: 0, present: 0 });
@@ -625,6 +659,7 @@ export default function AttendancePage() {
                     groupsMap.set(item.group, { name: item.group, total: 0, present: 0 });
                 }
                 const g = groupsMap.get(item.group);
+                if (!g) return;
                 g.total++;
                 if (item.status === 'present' || item.status === 'late') g.present++;
             });
@@ -679,7 +714,7 @@ export default function AttendancePage() {
             const meetingWeeks = (periodWeeks as WeekRow[]).filter((week) => !noMeetingDateSet.has(week.week_date));
 
             // Fetch members active during the selected period.
-            const members = await fetchAttendanceRoster(selectedDeptId, startDate, endDate);
+            const members = await fetchAttendanceRoster(selectedDeptId);
             const metricRoster = toMetricRoster(members);
             if (metricRoster.length === 0) return;
 
@@ -701,7 +736,23 @@ export default function AttendancePage() {
             const report = Array.from(rosterByPerson.entries()).map(([personId, personRoster]) => {
                 const displayMember = sortRosterForDisplay(personRoster)[0];
                 const activeMeetingWeeks = meetingWeeks.filter((week) =>
-                    personRoster.some((member) => getActiveRosterForWeek([member], week.week_date).length > 0)
+                    personRoster.some((member) => {
+                        if (getActiveRosterForWeek([member], week.week_date).length > 0) return true;
+                        const weekAttendance = attendanceRows
+                            .filter((attendance) => attendance.week_id === week.id)
+                            .map((attendance) => ({
+                                directoryMemberId: attendance.directory_member_id,
+                                status: attendance.status,
+                            }));
+                        const weekMetrics = calculateWeekAttendanceMetrics({
+                            weekDate: week.week_date,
+                            roster: metricRoster,
+                            attendance: weekAttendance,
+                            noMeetingDates: noMeetingDateSet,
+                            backfillMode: 'current-active',
+                        });
+                        return weekMetrics.usedRetroactiveBackfill && !member.endsAt;
+                    })
                 );
                 const activeWeekIds = new Set(activeMeetingWeeks.map((week) => week.id));
                 const personDirectoryIds = new Set(personRoster.map((member) => member.directoryMemberId));
@@ -743,18 +794,19 @@ export default function AttendancePage() {
             }).sort((a, b) => a.rate - b.rate));
 
             // [NEW] Calculate Group Rankings
-            const groupsMap = new Map();
+            const groupsMap = new Map<string, { name: string; presentSum: number; totalAttCount: number }>();
             report.forEach(r => {
                 if (!groupsMap.has(r.group_name)) {
                     groupsMap.set(r.group_name, { name: r.group_name, presentSum: 0, totalAttCount: 0 });
                 }
                 const g = groupsMap.get(r.group_name);
+                if (!g) return;
                 g.presentSum += r.presentCount;
-                g.totalAttCount += periodWeeks.length;
+                g.totalAttCount += r.totalWeeks;
             });
 
             const rankings = Array.from(groupsMap.values())
-                .map((g: any) => ({
+                .map((g) => ({
                     ...g,
                     rate: g.totalAttCount > 0 ? (g.presentSum / g.totalAttCount) * 100 : 0
                 }))
@@ -798,7 +850,7 @@ export default function AttendancePage() {
 
             // 2. Fetch all members
             const members = sortRosterForDisplay(
-                toMetricRoster(await fetchAttendanceRoster(selectedDeptId, startStr, endStr))
+                toMetricRoster(await fetchAttendanceRoster(selectedDeptId))
             );
             if (members.length === 0) return;
 
@@ -825,9 +877,29 @@ export default function AttendancePage() {
             if (!allAtt) return;
 
             // 4. Transform to Excel data (Rows: Members, Columns: Weeks)
+            const attendanceRows = (allAtt as PeriodAttendanceRow[]);
+            const metricsByWeekId = new Map<string, WeekAttendanceMetrics>();
+            (rangeWeeks as WeekRow[]).forEach((week) => {
+                const weekAttendance = attendanceRows
+                    .filter((attendance) => attendance.week_id === week.id)
+                    .map((attendance) => ({
+                        directoryMemberId: attendance.directory_member_id,
+                        status: attendance.status,
+                    }));
+
+                metricsByWeekId.set(week.id, calculateWeekAttendanceMetrics({
+                    weekDate: week.week_date,
+                    roster: members,
+                    attendance: weekAttendance,
+                    noMeetingDates: noMeetingDateSet,
+                    backfillMode: 'current-active',
+                }));
+            });
+
             const exportData = members.map(m => {
                 const activeMeetingWeeks = meetingWeeks.filter((week) =>
-                    getActiveRosterForWeek([m], week.week_date).length > 0
+                    getActiveRosterForWeek([m], week.week_date).length > 0 ||
+                    (Boolean(metricsByWeekId.get(week.id)?.usedRetroactiveBackfill) && !m.endsAt)
                 );
                 const row: Record<string, string> = {
                     '조': m.groupName || '조 없음',
@@ -838,10 +910,13 @@ export default function AttendancePage() {
                 (rangeWeeks as WeekRow[]).forEach((w) => {
                     if (noMeetingDateSet.has(w.week_date)) {
                         row[w.week_date] = '모임없음';
-                    } else if (getActiveRosterForWeek([m], w.week_date).length === 0) {
+                    } else if (
+                        getActiveRosterForWeek([m], w.week_date).length === 0 &&
+                        !(Boolean(metricsByWeekId.get(w.id)?.usedRetroactiveBackfill) && !m.endsAt)
+                    ) {
                         row[w.week_date] = '-';
                     } else {
-                        const att = (allAtt as PeriodAttendanceRow[]).find((a) => a.directory_member_id === m.directoryMemberId && a.week_id === w.id);
+                        const att = attendanceRows.find((a) => a.directory_member_id === m.directoryMemberId && a.week_id === w.id);
                         row[w.week_date] = att
                             ? (att.status === 'present' ? 'O'
                                 : att.status === 'absent' ? 'X'
@@ -852,7 +927,7 @@ export default function AttendancePage() {
                 });
 
                 const activeWeekIds = new Set(activeMeetingWeeks.map((week) => week.id));
-                const myAtts = (allAtt as PeriodAttendanceRow[]).filter((a) =>
+                const myAtts = attendanceRows.filter((a) =>
                     a.directory_member_id === m.directoryMemberId && activeWeekIds.has(a.week_id)
                 );
                 const presentCount = myAtts.filter((a) => a.status === 'present' || a.status === 'late').length;
@@ -1043,7 +1118,7 @@ export default function AttendancePage() {
                     <div>
                         <p className="text-[10px] font-black text-indigo-100/60 uppercase tracking-widest mb-1">선택 주차 출석률</p>
                         <h4 className="text-3xl font-black text-white tracking-tighter">
-                            {selectedWeekMetrics?.rate === null || selectedWeekMetrics?.rate === undefined ? '-' : selectedWeekMetrics.rate}%
+                            {selectedWeekMetrics?.rate === null || selectedWeekMetrics?.rate === undefined ? '-' : `${selectedWeekMetrics.rate}%`}
                         </h4>
                     </div>
                     <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-white">
@@ -1051,6 +1126,34 @@ export default function AttendancePage() {
                     </div>
                 </div>
             </div>
+
+            {targetExplanation.length > 0 && (
+                <div className="px-1">
+                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+                        <div className="flex items-start gap-3">
+                            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm dark:bg-indigo-500/20 dark:text-indigo-200">
+                                <AlertCircle className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-sm font-black text-slate-900 dark:text-white">선택 주차 대상 산정 기준</p>
+                                <p className="mt-1 text-xs font-bold leading-5 text-slate-500 dark:text-slate-400">
+                                    과거 출석을 나중에 입력한 주차는 당시 소속 이력이 부족할 수 있어, 현재 active roster를 함께 참고해 분모를 보정합니다.
+                                </p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {targetExplanation.map((item) => (
+                                        <span
+                                            key={item}
+                                            className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-indigo-700 shadow-sm ring-1 ring-indigo-100 dark:bg-slate-900/40 dark:text-indigo-200 dark:ring-indigo-500/20"
+                                        >
+                                            {item}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 mt-4 px-1">
                 {/* Main Content Column (Left/Center) */}

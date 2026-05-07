@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildAttendanceTargetExplanation,
   calculateWeekAttendanceMetrics,
   getActiveRosterForWeek,
   sortRosterForDisplay,
@@ -32,6 +33,13 @@ const roster: AttendanceRosterMember[] = [
     groupName: '동준 상희 조',
     spouseName: '김보영',
     startsAt: '2026-01-01T00:00:00Z',
+  },
+  {
+    directoryMemberId: 'dir-c-current',
+    personId: 'person-c',
+    fullName: '박민영',
+    groupName: '동준 상희 조',
+    startsAt: '2026-03-01T00:00:00Z',
   },
 ];
 
@@ -77,6 +85,28 @@ test('historical attendance snapshot participates in denominator even before rec
   assert.equal(metrics.totalPeople, 2);
   assert.equal(metrics.presentPeople, 1);
   assert.equal(metrics.rate, 50);
+});
+
+test('retroactive backfill includes current active roster when historical startsAt undercounts submitted week', () => {
+  const metrics = calculateWeekAttendanceMetrics({
+    weekDate: '2026-01-25',
+    roster,
+    attendance: [
+      { directoryMemberId: 'dir-a-old', status: 'present' },
+    ],
+    backfillMode: 'current-active',
+  });
+
+  assert.equal(metrics.activeWindowPeople, 1);
+  assert.equal(metrics.snapshotPeople, 1);
+  assert.equal(metrics.totalPeople, 3);
+  assert.equal(metrics.backfilledPeople, 1);
+  assert.equal(metrics.usedRetroactiveBackfill, true);
+  assert.deepEqual(buildAttendanceTargetExplanation(metrics), [
+    '주차 기준 active person 1명',
+    '출석 기록에 포함된 person 1명',
+    '과거 입력 보정으로 현재 active roster 1명 추가 반영',
+  ]);
 });
 
 test('late counts as attendance and no-meeting days have no denominator', () => {

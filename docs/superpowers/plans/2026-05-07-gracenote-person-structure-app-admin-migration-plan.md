@@ -302,14 +302,21 @@ Decision:
 - Attendance denominator now uses distinct people by week:
   - people active by `memberships.starts_at/ends_at` on the week date.
   - plus people who have an attendance snapshot row for that week, because historical Phase 2 `starts_at` was reconstructed and may be later than old attendance records.
+- For retroactive weeks entered after the fact, selected-week/trend/insight/export metrics can use current active roster backfill:
+  - This is needed for cases like January attendance that was entered after the service was introduced in February.
+  - Without this, unsubmitted groups disappear from the denominator and the attendance rate looks artificially high.
+  - The dashboard now shows a “선택 주차 대상 산정 기준” explanation so the target count change is visible instead of looking like a random bug.
 - Attendance numerator uses distinct people with `present` or `late`.
 - No-meeting days have no denominator/rate.
 - The UI label changed from `종합 출석률` to `선택 주차 출석률`.
 - Weekly trend, selected-week cards, insight report, and export now share the same metric rules.
+- Group ranking now uses each person's actual metric denominator week count instead of blindly using the whole selected period length.
 - Export and detailed display sorting now use group first, then spouse/family-aware sort inside the group.
 
 Verification:
-- `node --test src/lib/attendanceMetrics.test.ts`: 5 tests passed.
+- `node --test src/lib/attendanceMetrics.test.ts`: 6 tests passed.
+- `npm run lint -- src/lib/attendanceMetrics.ts`: passed.
+- `npm run lint -- src/app/attendance/page.tsx`: still fails because of existing broad file lint debt (`any`, unused state/imports, hook dependency warnings). New helper-specific issues were removed.
 - `npx tsc --noEmit --pretty false`: no attendance/metrics errors. Existing unrelated `src/app/churches/page.tsx(253,81)` error remains.
 - `verify_phase2_consistency_dev_2026-04-30.sql`: all mismatch counts 0.
 
