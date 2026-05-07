@@ -59,7 +59,27 @@ interface Group {
 
 type RosterMember = MemberProfile & {
     phase2_person_id?: string | null;
+    phase2_affiliations?: RosterAffiliation[];
 };
+
+interface RosterAffiliation {
+    id: string;
+    departmentName: string | null;
+    departmentColor: string | null;
+    groupName: string | null;
+    groupColor: string | null;
+    role: string | null;
+    source: 'group_member' | 'directory_only';
+}
+
+interface RawMembershipAffiliation {
+    id: string;
+    person_id: string;
+    role: string | null;
+    legacy_group_member_id: string | null;
+    departments: { name: string | null; color_hex: string | null } | null;
+    groups: { name: string | null; color_hex: string | null } | null;
+}
 
 interface Phase2ListCheck {
     status: 'idle' | 'ok' | 'warning' | 'unavailable';
@@ -331,6 +351,49 @@ function MembersPageInner() {
         );
     };
 
+    const fetchPhase2AffiliationsMap = async (churchId: string, personIds: string[], deptId: string = 'all') => {
+        const uniquePersonIds = Array.from(new Set(personIds.filter(Boolean)));
+        if (uniquePersonIds.length === 0) return new Map<string, RosterAffiliation[]>();
+
+        let query = supabase
+            .from('memberships')
+            .select(`
+                id,
+                person_id,
+                role,
+                legacy_group_member_id,
+                departments!department_id (name, color_hex),
+                groups!group_id (name, color_hex)
+            `)
+            .eq('church_id', churchId)
+            .eq('status', 'active')
+            .in('person_id', uniquePersonIds);
+
+        if (deptId !== 'all') {
+            query = query.eq('department_id', deptId);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: true });
+        if (error) throw error;
+
+        const affiliationsByPerson = new Map<string, RosterAffiliation[]>();
+        ((data || []) as unknown as RawMembershipAffiliation[]).forEach((membership) => {
+            const affiliations = affiliationsByPerson.get(membership.person_id) || [];
+            affiliations.push({
+                id: membership.id,
+                departmentName: membership.departments?.name || null,
+                departmentColor: membership.departments?.color_hex || null,
+                groupName: membership.groups?.name || null,
+                groupColor: membership.groups?.color_hex || null,
+                role: membership.role,
+                source: membership.legacy_group_member_id ? 'group_member' : 'directory_only'
+            });
+            affiliationsByPerson.set(membership.person_id, affiliations);
+        });
+
+        return affiliationsByPerson;
+    };
+
     const fetchMembers = async (churchId: string, deptId: string = 'all') => {
         setLoading(true);
         // Reset collapse states on refresh or filter change if needed, 
@@ -366,9 +429,17 @@ function MembersPageInner() {
             if (error) throw error;
             const fetchedMembers = (data || []) as MemberProfile[];
             const phase2PersonMap = await fetchPhase2PersonMap(fetchedMembers.map(member => member.id));
+            const phase2AffiliationsMap = await fetchPhase2AffiliationsMap(
+                churchId,
+                Array.from(new Set(fetchedMembers.map(member => phase2PersonMap.get(member.id)).filter(Boolean))) as string[],
+                deptId
+            );
             const enrichedMembers: RosterMember[] = fetchedMembers.map(member => ({
                 ...member,
-                phase2_person_id: phase2PersonMap.get(member.id) || null
+                phase2_person_id: phase2PersonMap.get(member.id) || null,
+                phase2_affiliations: phase2PersonMap.get(member.id)
+                    ? phase2AffiliationsMap.get(phase2PersonMap.get(member.id) as string) || []
+                    : []
             }));
 
             await refreshPhase2ListCheck(enrichedMembers, churchId, deptId);
@@ -1447,7 +1518,7 @@ const getGroupColor = (groupName: string, customHex?: string) => {
 
 // Helper component for each row
 interface MemberRowProps {
-    member: MemberProfile;
+    member: RosterMember;
     groupedGroups: Group[];
     isSelected: boolean;
     onToggle: () => void;
@@ -1458,6 +1529,7 @@ interface MemberRowProps {
 const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onDelete }: MemberRowProps) => {
     const groupInfo = groupedGroups.find((g) => g.name === m.group_name);
     const groupColor = getGroupColor(m.group_name || '', groupInfo?.color_hex);
+    const phase2Affiliations = m.phase2_affiliations || [];
 
     return (
         <tr className={cn("hover:bg-slate-50/80 dark:hover:bg-indigo-500/[0.02] transition-colors group", isSelected && "bg-indigo-50/50 dark:bg-indigo-500/[0.05]")}>
@@ -1512,20 +1584,56 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                 </div>
             </td>
             <td className="px-4 sm:px-6 py-4 sm:py-5 hidden sm:table-cell">
-                <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.departments?.color_hex || '#e2e8f0' }} />
-                        <span className="text-[11px] sm:text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-tight">{m.departments?.name}</span>
-                    </div>
-                    <div
-                        className={cn(
-                            "inline-flex px-2.5 py-1 border rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-colors",
-                            groupColor.className
-                        )}
-                        style={groupColor.style}
-                    >
-                        {m.group_name || '미정'}
-                    </div>
+                <div className="space-y-2">
+                    {phase2Affiliations.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 max-w-[320px]">
+                            {phase2Affiliations.map((affiliation) => {
+                                const affiliationColor = getGroupColor(affiliation.groupName || '', affiliation.groupColor || undefined);
+                                return (
+                                    <div
+                                        key={affiliation.id}
+                                        className="inline-flex items-center gap-1.5 max-w-full px-2.5 py-1 border rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest bg-white dark:bg-slate-900/40 border-slate-200 dark:border-slate-800"
+                                    >
+                                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: affiliation.departmentColor || '#e2e8f0' }} />
+                                        <span className="text-slate-700 dark:text-slate-200 truncate">{affiliation.departmentName || '부서 미정'}</span>
+                                        <span
+                                            className={cn(
+                                                "px-1.5 py-0.5 border rounded-md truncate",
+                                                affiliationColor.className
+                                            )}
+                                            style={affiliationColor.style}
+                                        >
+                                            {affiliation.groupName || '미정'}
+                                        </span>
+                                        {affiliation.role === 'leader' && (
+                                            <span className="text-amber-600 dark:text-amber-400">leader</span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex items-center gap-1.5">
+                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.departments?.color_hex || '#e2e8f0' }} />
+                                <span className="text-[11px] sm:text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-tight">{m.departments?.name}</span>
+                            </div>
+                            <div
+                                className={cn(
+                                    "inline-flex px-2.5 py-1 border rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-colors",
+                                    groupColor.className
+                                )}
+                                style={groupColor.style}
+                            >
+                                {m.group_name || '미정'}
+                            </div>
+                        </>
+                    )}
+                    {phase2Affiliations.length > 1 && (
+                        <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">
+                            {phase2Affiliations.length} active memberships
+                        </p>
+                    )}
                 </div>
             </td>
             <td className="px-4 sm:px-6 py-4 sm:py-5 hidden lg:table-cell">

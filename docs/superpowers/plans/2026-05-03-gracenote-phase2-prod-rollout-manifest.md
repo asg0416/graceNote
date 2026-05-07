@@ -313,6 +313,7 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-07 Phase 2D member detail read-switch | `npm run lint -- src/app/members/[id]/page.tsx`: 0 errors. `verify_phase2_consistency_dev_2026-04-30.sql`: people 148/148, group_members 133/133, directory-only 32/32, member_profiles 149/149, all mismatches 0 |
 | 2026-05-07 Phase 2D member detail manual smoke | 다중 소속 사람을 서로 다른 legacy 상세 링크로 진입해도 같은 `people` 정보와 전체 active memberships가 표시됨. inactive/ended history는 현재 소속과 분리 표시됨 |
 | 2026-05-07 Phase 2D member list person-count read-switch | `npm run lint -- src/app/members/page.tsx`: 0 errors, existing warnings only. 성도명부 상단/진단 숫자를 Phase 2 `person_id` 기준 실제 사람 수 우선 표시로 전환 |
+| 2026-05-07 Phase 2D member list affiliation read | 성도명부 row의 소속 칸을 Phase 2 active `memberships` 기준으로 보강. 한 사람이 여러 현재 소속을 가지면 같은 row 안에 여러 부서/조 칩 표시. `verify_phase2_consistency_dev_2026-04-30.sql`: people 148/148, group_members 133/133, directory-only 32/32, member_profiles 149/149, all mismatches 0 |
 
 ## Future Logging Protocol
 
