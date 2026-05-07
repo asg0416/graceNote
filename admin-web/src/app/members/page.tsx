@@ -702,8 +702,12 @@ function MembersPageInner() {
         rowsByPerson.forEach((rows) => {
             const hasActiveMembership = rows.some(row => (row.phase2_affiliations || []).length > 0);
             if (hasActiveMembership) {
-                const activeRows = rows.filter(row => row.is_active !== false);
-                visibleRows.push(...(activeRows.length > 0 ? activeRows : [selectPreferredInactiveRosterRow(rows)]));
+                const assignedActiveRows = rows.filter(row =>
+                    row.is_active !== false &&
+                    Boolean(row.group_name) &&
+                    row.group_name !== '미정'
+                );
+                visibleRows.push(...(assignedActiveRows.length > 0 ? assignedActiveRows : [selectPreferredInactiveRosterRow(rows)]));
                 return;
             }
 
