@@ -32,6 +32,11 @@ import { MemberModal } from '@/components/MemberModal';
 import { Modal } from '@/components/Modal';
 import { Tooltip } from '@/components/Tooltip';
 
+const getRegroupingIdentityKey = (member: any) => {
+    const normalizedPhone = (member.phone || '').replace(/[^0-9]/g, '');
+    return member.phase2_person_id || member.person_id || `${member.full_name}|${normalizedPhone}`;
+};
+
 export default function RegroupingPage() {
     return (
         <Suspense fallback={
@@ -71,12 +76,16 @@ function RegroupingPageInner() {
         status: 'idle' | 'ok' | 'warning' | 'unavailable';
         legacyActiveCount: number;
         phase2ActiveCount: number;
+        legacyActivePersonCount: number;
+        phase2ActivePersonCount: number;
         issueCount: number;
         message: string;
     }>({
         status: 'idle',
         legacyActiveCount: 0,
         phase2ActiveCount: 0,
+        legacyActivePersonCount: 0,
+        phase2ActivePersonCount: 0,
         issueCount: 0,
         message: 'Phase 2 진단 대기 중'
     });
@@ -93,15 +102,13 @@ function RegroupingPageInner() {
 
         // Count by identity (person_id or normalized name+phone)
         localMembers.forEach(m => {
-            const normalizedPhone = (m.phone || '').replace(/[^0-9]/g, '');
-            const key = m.person_id || `${m.full_name}-${normalizedPhone}`;
+            const key = getRegroupingIdentityKey(m);
             counts[key] = (counts[key] || 0) + 1;
         });
 
         const map: Record<string, boolean> = {};
         localMembers.forEach(m => {
-            const normalizedPhone = (m.phone || '').replace(/[^0-9]/g, '');
-            const key = m.person_id || `${m.full_name}-${normalizedPhone}`;
+            const key = getRegroupingIdentityKey(m);
             // Member is deletable if their identity appears more than once
             // OR if it's a temporary copy/new member
             map[m.id] = counts[key] > 1 || m.id.startsWith('temp-');
@@ -232,6 +239,23 @@ function RegroupingPageInner() {
         setGroups(data || []);
     };
 
+    const fetchPhase2PersonMap = async (directoryIds: string[]) => {
+        if (directoryIds.length === 0) return new Map<string, string>();
+
+        const { data, error } = await supabase
+            .from('member_profiles')
+            .select('person_id, member_directory_id')
+            .in('member_directory_id', directoryIds);
+
+        if (error) throw error;
+
+        return new Map(
+            (data || [])
+                .filter(profile => profile.member_directory_id && profile.person_id)
+                .map(profile => [profile.member_directory_id as string, profile.person_id as string])
+        );
+    };
+
     const fetchMembers = async (churchId: string, deptId: string) => {
         setLoading(true);
         const { data } = await supabase
@@ -248,9 +272,11 @@ function RegroupingPageInner() {
             .eq('department_id', deptId)
             .eq('is_active', true);
 
+        const phase2PersonMap = await fetchPhase2PersonMap((data || []).map(m => m.id));
         const membersWithGroupId = (data || []).map(m => ({
             ...m,
-            group_id: groupData?.find(g => g.name === m.group_name)?.id || null
+            group_id: groupData?.find(g => g.name === m.group_name)?.id || null,
+            phase2_person_id: phase2PersonMap.get(m.id) || null
         }));
 
         await refreshPhase2RegroupingCheck(membersWithGroupId, churchId, deptId);
@@ -268,6 +294,7 @@ function RegroupingPageInner() {
             member.group_name !== '미정'
         );
         const activeLegacyDirectoryIds = new Set(activeLegacyMembers.map(member => member.id));
+        const activeLegacyPersonIds = new Set(activeLegacyMembers.map(getRegroupingIdentityKey));
         const directoryIds = loadedMembers.map(member => member.id).filter(Boolean);
 
         if (directoryIds.length === 0) {
@@ -275,6 +302,8 @@ function RegroupingPageInner() {
                 status: 'ok',
                 legacyActiveCount: 0,
                 phase2ActiveCount: 0,
+                legacyActivePersonCount: 0,
+                phase2ActivePersonCount: 0,
                 issueCount: 0,
                 message: '확인할 명부 row가 없습니다.'
             });
@@ -295,6 +324,8 @@ function RegroupingPageInner() {
                     status: activeLegacyMembers.length === 0 ? 'ok' : 'warning',
                     legacyActiveCount: activeLegacyMembers.length,
                     phase2ActiveCount: 0,
+                    legacyActivePersonCount: activeLegacyPersonIds.size,
+                    phase2ActivePersonCount: 0,
                     issueCount: activeLegacyMembers.length,
                     message: activeLegacyMembers.length === 0
                         ? 'Phase 2 비교 대상이 없습니다.'
@@ -314,6 +345,7 @@ function RegroupingPageInner() {
             if (membershipsError) throw membershipsError;
 
             const activeMemberships = memberships || [];
+            const phase2ActivePersonIds = new Set(activeMemberships.map(membership => membership.person_id).filter(Boolean));
             const phase2ActiveDirectoryIds = new Set(
                 activeMemberships
                     .map(membership => membership.legacy_member_directory_id)
@@ -329,9 +361,11 @@ function RegroupingPageInner() {
                 status: issueCount === 0 ? 'ok' : 'warning',
                 legacyActiveCount: activeLegacyMembers.length,
                 phase2ActiveCount: activeMemberships.length,
+                legacyActivePersonCount: activeLegacyPersonIds.size,
+                phase2ActivePersonCount: phase2ActivePersonIds.size,
                 issueCount,
                 message: issueCount === 0
-                    ? '선택 부서의 조편성 active 소속이 Phase 2와 일치합니다.'
+                    ? '선택 부서의 조편성 active 사람/소속이 Phase 2와 일치합니다.'
                     : `누락 ${missingPhase2Count}건 / 추가 확인 ${extraPhase2Count}건`
             });
         } catch (error) {
@@ -340,6 +374,8 @@ function RegroupingPageInner() {
                 status: 'unavailable',
                 legacyActiveCount: activeLegacyMembers.length,
                 phase2ActiveCount: 0,
+                legacyActivePersonCount: activeLegacyPersonIds.size,
+                phase2ActivePersonCount: 0,
                 issueCount: 0,
                 message: 'Phase 2 조편성 진단을 불러오지 못했습니다.'
             });
@@ -347,8 +383,7 @@ function RegroupingPageInner() {
     };
 
     const getMemberIdentityKey = useCallback((member: any) => {
-        const normalizedPhone = (member.phone || '').replace(/[^0-9]/g, '');
-        return member.person_id || `${member.full_name}|${normalizedPhone}`;
+        return getRegroupingIdentityKey(member);
     }, []);
 
     const findDuplicateIdentityNames = useCallback((candidateMembers: any[]) => {
@@ -1249,18 +1284,20 @@ function RegroupingPageInner() {
                             {phase2RegroupingCheck.message}
                         </p>
                         <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                            저장 전후 선택 부서의 legacy active 소속과 Phase 2 active memberships를 비교합니다. 조편성 저장 로직에는 영향을 주지 않습니다.
+                            저장 전후 선택 부서의 실제 사람 수와 active 소속 수를 Phase 2와 비교합니다. 조편성 저장 로직에는 영향을 주지 않습니다.
                         </p>
                     </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2 sm:min-w-[280px]">
                     <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">legacy</p>
-                        <p className="text-lg font-black text-slate-900 dark:text-white">{phase2RegroupingCheck.legacyActiveCount}</p>
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">legacy people</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-white">{phase2RegroupingCheck.legacyActivePersonCount}</p>
+                        <p className="text-[8px] font-bold text-slate-400">{phase2RegroupingCheck.legacyActiveCount} rows</p>
                     </div>
                     <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">phase 2</p>
-                        <p className="text-lg font-black text-slate-900 dark:text-white">{phase2RegroupingCheck.phase2ActiveCount}</p>
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">phase2 people</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-white">{phase2RegroupingCheck.phase2ActivePersonCount}</p>
+                        <p className="text-[8px] font-bold text-slate-400">{phase2RegroupingCheck.phase2ActiveCount} memberships</p>
                     </div>
                     <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
                         <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">issues</p>

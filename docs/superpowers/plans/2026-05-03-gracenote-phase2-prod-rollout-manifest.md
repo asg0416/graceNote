@@ -315,6 +315,7 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-07 Phase 2D member list person-count read-switch | `npm run lint -- src/app/members/page.tsx`: 0 errors, existing warnings only. 성도명부 상단/진단 숫자를 Phase 2 `person_id` 기준 실제 사람 수 우선 표시로 전환 |
 | 2026-05-07 Phase 2D member list affiliation read | 성도명부 row의 소속 칸을 Phase 2 active `memberships` 기준으로 보강. 한 사람이 여러 현재 소속을 가지면 같은 row 안에 여러 부서/조 칩 표시. `verify_phase2_consistency_dev_2026-04-30.sql`: people 148/148, group_members 133/133, directory-only 32/32, member_profiles 149/149, all mismatches 0 |
 | 2026-05-07 Phase 2D member list grouping UX | 전체 부서 보기의 그룹 모드는 부서별 섹션으로 표시. 특정 부서 보기의 그룹 모드는 조별 소속 row 기준으로 표시. `npm run lint -- src/app/members/page.tsx`: 0 errors. consistency gate all mismatches 0 |
+| 2026-05-07 Phase 2D regrouping identity read prep | 조편성 화면의 통계/중복/삭제가능/진단 identity 기준을 Phase 2 `member_profiles.person_id` 우선으로 보강. write-flow는 legacy + dual-write 유지. `npm run lint -- src/app/regrouping/page.tsx`: 0 errors, existing warnings only. consistency gate all mismatches 0 |
 
 ## Future Logging Protocol
 
