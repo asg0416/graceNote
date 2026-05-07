@@ -50,6 +50,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
     rowsByPerson.forEach((rows) => {
         const activeMembershipRows = rows.filter(row =>
             Boolean(row.phase2_person_id) &&
+            Boolean(row.phase2_membership_id) &&
             Boolean(row.group_id) &&
             row.is_active !== false
         );
@@ -317,6 +318,26 @@ function RegroupingPageInner() {
         );
     };
 
+    const fetchPhase2ActiveMembershipMap = async (directoryIds: string[], churchId: string, deptId: string) => {
+        if (directoryIds.length === 0) return new Map<string, any>();
+
+        const { data, error } = await supabase
+            .from('memberships')
+            .select('id, person_id, legacy_member_directory_id, group_id, role')
+            .eq('church_id', churchId)
+            .eq('department_id', deptId)
+            .eq('status', 'active')
+            .in('legacy_member_directory_id', directoryIds);
+
+        if (error) throw error;
+
+        return new Map(
+            (data || [])
+                .filter(membership => membership.legacy_member_directory_id)
+                .map(membership => [membership.legacy_member_directory_id as string, membership])
+        );
+    };
+
     const fetchMembers = async (churchId: string, deptId: string) => {
         setLoading(true);
         const { data } = await supabase
@@ -333,11 +354,17 @@ function RegroupingPageInner() {
             .eq('department_id', deptId)
             .eq('is_active', true);
 
-        const phase2PersonMap = await fetchPhase2PersonMap((data || []).map(m => m.id));
+        const directoryIds = (data || []).map(m => m.id);
+        const [phase2PersonMap, phase2MembershipMap] = await Promise.all([
+            fetchPhase2PersonMap(directoryIds),
+            fetchPhase2ActiveMembershipMap(directoryIds, churchId, deptId)
+        ]);
         const membersWithGroupId = applyCanonicalFamilyInfo((data || []).map(m => ({
             ...m,
-            group_id: groupData?.find(g => g.name === m.group_name)?.id || null,
-            phase2_person_id: phase2PersonMap.get(m.id) || null
+            group_id: phase2MembershipMap.get(m.id)?.group_id || groupData?.find(g => g.name === m.group_name)?.id || null,
+            role_in_group: phase2MembershipMap.get(m.id)?.role || m.role_in_group,
+            phase2_membership_id: phase2MembershipMap.get(m.id)?.id || null,
+            phase2_person_id: phase2MembershipMap.get(m.id)?.person_id || phase2PersonMap.get(m.id) || null
         })));
 
         await refreshPhase2RegroupingCheck(membersWithGroupId, churchId, deptId);
