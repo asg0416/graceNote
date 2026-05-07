@@ -243,6 +243,7 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 | P2-061 | Flutter 앱 smoke용 실제 권한 계정이 dev Auth에 없음 | `profiles`에는 smoke 대상 row가 있지만 `auth.users`가 없어 앱 로그인 후 실제 조장/관리자/일반 화면 smoke를 할 수 없음 | `supabase/fix_dev_auth_users_for_app_smoke_2026-05-06.sql`: 기존 `profiles.id`를 Auth UID로 사용하는 dev-only Auth/identity row 생성. Auth token text fields는 빈 문자열, password hash는 bcrypt cost 10으로 보정 | 적용 결과: dev Auth row 2개, identity_count 각 1, Auth password token API HTTP 200 | DEV ONLY. 운영 적용 금지, 비밀번호는 문서에 저장하지 않음 |
 | P2-062 | P0 이후 성도 재활성화 검증 SQL의 기대값이 오래됨 | 비활성화 시 `group_name`을 비워 active assignment 자리를 release하도록 바뀌었으므로, `is_active=true`만으로는 조 membership이 복구되지 않는 것이 정상 | `verify_phase2_member_directory_write_flow_dev_2026-05-03.sql`: 재활성화 검증을 `is_active=true + group_name 재지정` 기준으로 수정 | 수정 후 active_memberships 1, inactive_memberships 0 | 운영 기능 변경 아님. prod-safe verify 작성 시 동일 기준 사용 |
 | P2-063 | 조편성 화면은 Phase 2 표시 모델을 쓰지만 이미지/엑셀 내보내기는 원본 legacy row를 사용 | 화면에서는 숨긴 미편성/비활성 중복 row가 내보내기 파일에 다시 나타날 수 있음 | `admin-web/src/app/regrouping/page.tsx`: Excel export와 hidden `ExportTableView`도 `displayLocalMembers` 기준으로 전환 | `npm run lint -- src/app/regrouping/page.tsx`: 0 errors, consistency gate all mismatches 0 | 운영 UI 배포 후보 |
+| P2-064 | 같은 `person_id`인데 소속 row마다 가족정보 표시가 다름 | 가족정보가 `people` 기준이 아니라 legacy `member_directory` row별로 흩어져 있어, 박민영처럼 일반조 row에는 가족정보가 있고 새가족조 row에는 비어 있을 수 있음 | `admin-web/src/app/members/page.tsx`, `admin-web/src/app/members/[id]/page.tsx`, `admin-web/src/app/regrouping/page.tsx`: 같은 person의 row 중 가족정보가 있는 값을 read model에서 대표값으로 보강 | targeted lint 0 errors, consistency gate all mismatches 0 | 운영 UI 배포 후보. 장기적으로 가족정보 저장 위치를 person/member_profile 중심으로 정리 필요 |
 
 
 ## Prod Execution Gates
@@ -321,6 +322,7 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-07 Phase 2D unassigned row refinement | active 조 소속이 있는 person은 성도명부 조별 모드의 미배정 row에서도 숨김. 박민영 smoke에서 다른 조 active 소속이 있는데 미배정 row가 남는 문제 보정. `npm run lint -- src/app/members/page.tsx`: 0 errors. consistency gate all mismatches 0 |
 | 2026-05-07 Phase 2D regrouping display read model | 조편성 Kanban 표시 데이터는 Phase 2 `person_id`가 있는 경우 active group membership row를 우선 사용. legacy 저장 원본 `localMembers`는 유지해 write-flow는 변경하지 않음. `npm run lint -- src/app/regrouping/page.tsx`: 0 errors. consistency gate all mismatches 0 |
 | 2026-05-07 Phase 2D regrouping export display model | 조편성 이미지/엑셀 내보내기도 화면과 같은 `displayLocalMembers` 기준을 사용하도록 보정. `npm run lint -- src/app/regrouping/page.tsx`: 0 errors. consistency gate all mismatches 0 |
+| 2026-05-07 Phase 2D canonical family display | 같은 person의 여러 명부 row 중 일부에만 가족정보가 있어도 성도상세/성도명부/조편성에서는 가족정보 대표값을 보강해 표시. `npm run lint -- src/app/members/page.tsx src/app/regrouping/page.tsx src/app/members/[id]/page.tsx`: 0 errors. consistency gate all mismatches 0 |
 
 ## Future Logging Protocol
 

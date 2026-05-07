@@ -99,6 +99,30 @@ const selectPreferredInactiveRosterRow = (rows: RosterMember[]) => (
     rows[0]
 );
 
+const applyCanonicalFamilyInfo = (sourceMembers: RosterMember[]) => {
+    const rowsByPerson = new Map<string, RosterMember[]>();
+    sourceMembers.forEach((member) => {
+        const key = getRosterPersonKey(member);
+        const rows = rowsByPerson.get(key) || [];
+        rows.push(member);
+        rowsByPerson.set(key, rows);
+    });
+
+    return sourceMembers.map((member) => {
+        const rows = rowsByPerson.get(getRosterPersonKey(member)) || [member];
+        const spouseName = rows.find(row => row.spouse_name)?.spouse_name || member.spouse_name;
+        const childrenInfo = rows.find(row => row.children_info)?.children_info || member.children_info;
+        const weddingAnniversary = rows.find(row => row.wedding_anniversary)?.wedding_anniversary || member.wedding_anniversary;
+
+        return {
+            ...member,
+            spouse_name: member.spouse_name || spouseName || null,
+            children_info: member.children_info || childrenInfo || null,
+            wedding_anniversary: member.wedding_anniversary || weddingAnniversary || null
+        };
+    });
+};
+
 export default function MembersPage() {
     return (
         <Suspense fallback={
@@ -440,13 +464,13 @@ function MembersPageInner() {
                 Array.from(new Set(fetchedMembers.map(member => phase2PersonMap.get(member.id)).filter(Boolean))) as string[],
                 deptId
             );
-            const enrichedMembers: RosterMember[] = fetchedMembers.map(member => ({
+            const enrichedMembers: RosterMember[] = applyCanonicalFamilyInfo(fetchedMembers.map(member => ({
                 ...member,
                 phase2_person_id: phase2PersonMap.get(member.id) || null,
                 phase2_affiliations: phase2PersonMap.get(member.id)
                     ? phase2AffiliationsMap.get(phase2PersonMap.get(member.id) as string) || []
                     : []
-            }));
+            })));
 
             await refreshPhase2ListCheck(enrichedMembers, churchId, deptId);
 

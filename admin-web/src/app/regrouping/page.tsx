@@ -74,6 +74,30 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
     return visibleRows;
 };
 
+const applyCanonicalFamilyInfo = (sourceMembers: any[]) => {
+    const rowsByPerson = new Map<string, any[]>();
+    sourceMembers.forEach((member) => {
+        const key = getRegroupingIdentityKey(member);
+        const rows = rowsByPerson.get(key) || [];
+        rows.push(member);
+        rowsByPerson.set(key, rows);
+    });
+
+    return sourceMembers.map((member) => {
+        const rows = rowsByPerson.get(getRegroupingIdentityKey(member)) || [member];
+        const spouseName = rows.find(row => row.spouse_name)?.spouse_name || member.spouse_name;
+        const childrenInfo = rows.find(row => row.children_info)?.children_info || member.children_info;
+        const weddingAnniversary = rows.find(row => row.wedding_anniversary)?.wedding_anniversary || member.wedding_anniversary;
+
+        return {
+            ...member,
+            spouse_name: member.spouse_name || spouseName || null,
+            children_info: member.children_info || childrenInfo || null,
+            wedding_anniversary: member.wedding_anniversary || weddingAnniversary || null
+        };
+    });
+};
+
 export default function RegroupingPage() {
     return (
         <Suspense fallback={
@@ -310,11 +334,11 @@ function RegroupingPageInner() {
             .eq('is_active', true);
 
         const phase2PersonMap = await fetchPhase2PersonMap((data || []).map(m => m.id));
-        const membersWithGroupId = (data || []).map(m => ({
+        const membersWithGroupId = applyCanonicalFamilyInfo((data || []).map(m => ({
             ...m,
             group_id: groupData?.find(g => g.name === m.group_name)?.id || null,
             phase2_person_id: phase2PersonMap.get(m.id) || null
-        }));
+        })));
 
         await refreshPhase2RegroupingCheck(membersWithGroupId, churchId, deptId);
         setMembers(membersWithGroupId);

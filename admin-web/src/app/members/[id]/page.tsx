@@ -101,7 +101,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 // 2. Fetch all affiliations for the same person (using person_id or fallback to name+phone)
                 let relatedQuery = supabase
                     .from('member_directory')
-                    .select('id, profile_id, group_name, phone, role_in_group, is_active, departments!department_id(name, color_hex)')
+                    .select('id, profile_id, group_name, phone, role_in_group, is_active, spouse_name, children_info, wedding_anniversary, departments!department_id(name, color_hex)')
                     .eq('church_id', memberData.church_id);
 
                 if (memberData.person_id) {
@@ -114,6 +114,16 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
 
                 const { data: allAffiliations, error: affiliationError } = await relatedQuery;
                 if (affiliationError) console.error('Error fetching affiliations:', affiliationError);
+
+                const familyRows = [memberData, ...(allAffiliations || [])];
+                const familySource = {
+                    spouse_name: familyRows.find(row => row.spouse_name)?.spouse_name || memberData.spouse_name,
+                    children_info: familyRows.find(row => row.children_info)?.children_info || memberData.children_info,
+                    wedding_anniversary: familyRows.find(row => row.wedding_anniversary)?.wedding_anniversary || memberData.wedding_anniversary
+                };
+                memberData.spouse_name = memberData.spouse_name || familySource.spouse_name || null;
+                memberData.children_info = memberData.children_info || familySource.children_info || null;
+                memberData.wedding_anniversary = memberData.wedding_anniversary || familySource.wedding_anniversary || null;
 
                 const legacyDirectoryIds = allAffiliations?.map(m => m.id) || [id];
                 const rawProfileIds = Array.from(new Set([
