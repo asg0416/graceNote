@@ -318,6 +318,7 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-07 Phase 2D regrouping identity read prep | 조편성 화면의 통계/중복/삭제가능/진단 identity 기준을 Phase 2 `member_profiles.person_id` 우선으로 보강. write-flow는 legacy + dual-write 유지. `npm run lint -- src/app/regrouping/page.tsx`: 0 errors, existing warnings only. consistency gate all mismatches 0 |
 | 2026-05-07 Phase 2D inactive/unassigned display policy | 성도명부 일반 화면은 active 소속이 있는 person의 inactive/ended row를 숨김. active 소속이 전혀 없는 person은 1행만 남김. 조편성 화면은 같은 person의 미편성 중복 카드를 1개로 정규화. targeted lint 0 errors, consistency gate all mismatches 0 |
 | 2026-05-07 Phase 2D unassigned row refinement | active 조 소속이 있는 person은 성도명부 조별 모드의 미배정 row에서도 숨김. 박민영 smoke에서 다른 조 active 소속이 있는데 미배정 row가 남는 문제 보정. `npm run lint -- src/app/members/page.tsx`: 0 errors. consistency gate all mismatches 0 |
+| 2026-05-07 Phase 2D regrouping display read model | 조편성 Kanban 표시 데이터는 Phase 2 `person_id`가 있는 경우 active group membership row를 우선 사용. legacy 저장 원본 `localMembers`는 유지해 write-flow는 변경하지 않음. `npm run lint -- src/app/regrouping/page.tsx`: 0 errors. consistency gate all mismatches 0 |
 
 ## Future Logging Protocol
 

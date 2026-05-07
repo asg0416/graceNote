@@ -48,9 +48,22 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
 
     const visibleRows: any[] = [];
     rowsByPerson.forEach((rows) => {
-        const assignedRows = rows.filter(row => Boolean(row.group_id));
-        if (assignedRows.length > 0) {
-            visibleRows.push(...assignedRows);
+        const activeMembershipRows = rows.filter(row =>
+            Boolean(row.phase2_person_id) &&
+            Boolean(row.group_id) &&
+            row.is_active !== false
+        );
+        if (activeMembershipRows.length > 0) {
+            visibleRows.push(...activeMembershipRows);
+            return;
+        }
+
+        const assignedLegacyRows = rows.filter(row =>
+            Boolean(row.group_id) &&
+            row.is_active !== false
+        );
+        if (assignedLegacyRows.length > 0) {
+            visibleRows.push(...assignedLegacyRows);
             return;
         }
 
