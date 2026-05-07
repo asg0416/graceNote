@@ -745,13 +745,21 @@ function MembersPageInner() {
         if (!isGroupedView) return null;
 
         const groups: Record<string, RosterMember[]> = {};
-        masterMembers.forEach((m: RosterMember) => {
-            const groupName = m.group_name || '미배정';
+        const sourceMembers = selectedDeptId === 'all' ? masterMembers : filteredMembers;
+
+        sourceMembers.forEach((m: RosterMember) => {
+            const groupName = selectedDeptId === 'all'
+                ? m.departments?.name || '부서 미정'
+                : m.group_name || '미배정';
             if (!groups[groupName]) groups[groupName] = [];
             groups[groupName].push(m);
         });
         return groups;
-    }, [masterMembers, isGroupedView]);
+    }, [filteredMembers, masterMembers, isGroupedView, selectedDeptId]);
+
+    const visibleMembers = isGroupedView && selectedDeptId !== 'all' ? filteredMembers : masterMembers;
+    const groupedCountUnit = selectedDeptId === 'all' ? '명' : '개 소속';
+    const groupedModeLabel = selectedDeptId === 'all' ? '부서별 모드' : '조별 모드';
 
     const toggleMemberSelection = (id: string) => {
         setSelectedMemberIds(prev =>
@@ -760,10 +768,10 @@ function MembersPageInner() {
     };
 
     const toggleAllMembers = () => {
-        if (selectedMemberIds.length === masterMembers.length) {
+        if (selectedMemberIds.length === visibleMembers.length) {
             setSelectedMemberIds([]);
         } else {
-            setSelectedMemberIds(masterMembers.map((m: RosterMember) => m.id));
+            setSelectedMemberIds(visibleMembers.map((m: RosterMember) => m.id));
         }
     };
 
@@ -950,7 +958,7 @@ function MembersPageInner() {
                         )}
                     </div>
 
-                    <Tooltip content={isGroupedView ? "모든 성도를 한 번에 나열하여 확인합니다." : "성도를 조별로 묶어서 관리하기 편하게 보여줍니다."}>
+                    <Tooltip content={isGroupedView ? "모든 성도를 한 번에 나열하여 확인합니다." : selectedDeptId === 'all' ? "성도를 부서별로 묶어서 확인합니다." : "성도를 조별 소속 기준으로 묶어서 확인합니다."}>
                         <button
                             onClick={() => setIsGroupedView(!isGroupedView)}
                             className={cn(
@@ -962,7 +970,7 @@ function MembersPageInner() {
                             title={""}
                         >
                             {isGroupedView ? <LayoutGrid className="w-4 h-4 text-indigo-500" /> : <Layout className="w-4 h-4" />}
-                            <span>{isGroupedView ? '조별 모드' : '목록 모드'}</span>
+                            <span>{isGroupedView ? groupedModeLabel : '목록 모드'}</span>
                         </button>
                     </Tooltip>
 
@@ -1251,7 +1259,7 @@ function MembersPageInner() {
                             <tr className="bg-slate-50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800/60">
                                 <th className="pl-6 sm:pl-8 py-4 w-10">
                                     <button onClick={toggleAllMembers} className="text-slate-400 hover:text-indigo-600 transition-colors">
-                                        {selectedMemberIds.length === masterMembers.length ? <CheckSquare className="w-5 h-5 text-indigo-600" /> : <Square className="w-5 h-5" />}
+                                        {selectedMemberIds.length === visibleMembers.length ? <CheckSquare className="w-5 h-5 text-indigo-600" /> : <Square className="w-5 h-5" />}
                                     </button>
                                 </th>
                                 <th className="px-4 sm:px-6 py-4 text-[9px] sm:text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">성도 이름</th>
@@ -1277,7 +1285,7 @@ function MembersPageInner() {
                                                     </div>
                                                     <span className="flex items-center gap-2">
                                                         {groupName}
-                                                        <span className="text-slate-400 dark:text-slate-500 font-bold ml-1">({groupMembers.length}명)</span>
+                                                        <span className="text-slate-400 dark:text-slate-500 font-bold ml-1">({groupMembers.length}{groupedCountUnit})</span>
                                                     </span>
                                                 </button>
                                             </td>
@@ -1308,7 +1316,7 @@ function MembersPageInner() {
                                     />
                                 ))
                             )}
-                            {masterMembers.length === 0 && (
+                            {visibleMembers.length === 0 && (
                                 <tr>
                                     <td colSpan={6} className="px-8 py-32 text-center">
                                         <div className="flex flex-col items-center gap-4">
