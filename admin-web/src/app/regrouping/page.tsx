@@ -692,7 +692,7 @@ function RegroupingPageInner() {
         const currentProfileMode = departments.find(d => d.id === selectedDeptId)?.profile_mode;
 
         groups.forEach(group => {
-            const members = localMembers.filter(m => m.group_id === group.id);
+            const members = displayLocalMembers.filter(m => m.group_id === group.id);
 
             // Unified Leader logic for Excel
             const currentLeaders = members.filter(m => m.role_in_group === 'leader');
@@ -771,7 +771,7 @@ function RegroupingPageInner() {
         });
 
         // Add unassigned
-        const unassigned = localMembers.filter(m => !m.group_id);
+        const unassigned = displayLocalMembers.filter(m => !m.group_id);
         if (unassigned.length > 0) {
             exportData.push({
                 '조': '미편성',
@@ -1533,7 +1533,7 @@ function RegroupingPageInner() {
                     tableRef={exportTableRef}
                     deptName={departments.find(d => d.id === selectedDeptId)?.name || '조편성'}
                     groups={groups}
-                    localMembers={localMembers}
+                    localMembers={displayLocalMembers}
                     profileMode={departments.find(d => d.id === selectedDeptId)?.profile_mode}
                 />
             </div>
