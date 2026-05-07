@@ -93,6 +93,12 @@ interface Phase2ListCheck {
 
 const getRosterPersonKey = (member: RosterMember) => member.phase2_person_id || member.person_id || member.id;
 
+const selectPreferredInactiveRosterRow = (rows: RosterMember[]) => (
+    rows.find(row => row.is_active !== false) ||
+    rows.find(row => Boolean(row.group_name) && row.group_name !== '미정') ||
+    rows[0]
+);
+
 export default function MembersPage() {
     return (
         <Suspense fallback={
@@ -681,7 +687,34 @@ function MembersPageInner() {
         }
     };
 
-    const filteredMembers = members.filter(m => {
+    const rosterDisplayMembers = useMemo(() => {
+        if (filterActive !== 'all') return members;
+
+        const rowsByPerson = new Map<string, RosterMember[]>();
+        members.forEach((member) => {
+            const key = getRosterPersonKey(member);
+            const rows = rowsByPerson.get(key) || [];
+            rows.push(member);
+            rowsByPerson.set(key, rows);
+        });
+
+        const visibleRows: RosterMember[] = [];
+        rowsByPerson.forEach((rows) => {
+            const hasActiveMembership = rows.some(row => (row.phase2_affiliations || []).length > 0);
+            if (hasActiveMembership) {
+                const activeRows = rows.filter(row => row.is_active !== false);
+                visibleRows.push(...(activeRows.length > 0 ? activeRows : [selectPreferredInactiveRosterRow(rows)]));
+                return;
+            }
+
+            const fallbackRow = selectPreferredInactiveRosterRow(rows);
+            if (fallbackRow) visibleRows.push(fallbackRow);
+        });
+
+        return visibleRows;
+    }, [filterActive, members]);
+
+    const filteredMembers = rosterDisplayMembers.filter(m => {
         const matchesSearch = m.full_name?.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesGroup = selectedGroupId === 'all' || m.group_name === groups.find(g => g.id === selectedGroupId)?.name;
         const matchesStatus = filterStatus === 'all'

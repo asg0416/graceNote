@@ -37,6 +37,30 @@ const getRegroupingIdentityKey = (member: any) => {
     return member.phase2_person_id || member.person_id || `${member.full_name}|${normalizedPhone}`;
 };
 
+const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
+    const rowsByPerson = new Map<string, any[]>();
+    sourceMembers.forEach((member) => {
+        const key = getRegroupingIdentityKey(member);
+        const rows = rowsByPerson.get(key) || [];
+        rows.push(member);
+        rowsByPerson.set(key, rows);
+    });
+
+    const visibleRows: any[] = [];
+    rowsByPerson.forEach((rows) => {
+        const assignedRows = rows.filter(row => Boolean(row.group_id));
+        if (assignedRows.length > 0) {
+            visibleRows.push(...assignedRows);
+            return;
+        }
+
+        const preferredUnassignedRow = rows.find(row => row.is_active !== false) || rows[0];
+        if (preferredUnassignedRow) visibleRows.push(preferredUnassignedRow);
+    });
+
+    return visibleRows;
+};
+
 export default function RegroupingPage() {
     return (
         <Suspense fallback={
@@ -1095,13 +1119,15 @@ function RegroupingPageInner() {
         }
     };
 
+    const displayLocalMembers = useMemo(() => normalizeRegroupingDisplayMembers(localMembers), [localMembers]);
+
     const filteredLocalMembers = useMemo(() => {
-        if (!searchTerm) return localMembers;
-        return localMembers.filter(m =>
+        if (!searchTerm) return displayLocalMembers;
+        return displayLocalMembers.filter(m =>
             m.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             m.phone?.includes(searchTerm)
         );
-    }, [localMembers, searchTerm]);
+    }, [displayLocalMembers, searchTerm]);
 
     const sortedMembers = useMemo(() => {
         const dept = departments.find(d => d.id === selectedDeptId);
@@ -1142,7 +1168,7 @@ function RegroupingPageInner() {
     const stats = useMemo(() => {
         const people = new Map<string, { assigned: boolean }>();
 
-        localMembers.forEach(member => {
+        displayLocalMembers.forEach(member => {
             const identityKey = getMemberIdentityKey(member);
             const current = people.get(identityKey) || { assigned: false };
             people.set(identityKey, {
@@ -1154,7 +1180,7 @@ function RegroupingPageInner() {
         const assigned = Array.from(people.values()).filter(person => person.assigned).length;
         const unassigned = total - assigned;
         return { total, assigned, unassigned };
-    }, [getMemberIdentityKey, localMembers]);
+    }, [displayLocalMembers, getMemberIdentityKey]);
 
     if (loading) {
         return (
