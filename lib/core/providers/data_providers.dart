@@ -247,17 +247,66 @@ final userGroupsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   return controller.stream;
 });
 
-// Helper for re-fetching detailed group data with joins
-// [ENHANCEMENT] Use synced role_in_group from group_members and sort by privilege
+// Helper for re-fetching detailed group data with joins.
+// Phase 2 memberships are preferred; legacy group_members remains a fallback
+// because attendance/prayer writes still use legacy IDs in this phase.
 Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
+  try {
+    final phase2Groups = await _fetchUserGroupsFromMemberships(profileId);
+    if (phase2Groups.isNotEmpty) return phase2Groups;
+  } catch (e) {
+    debugPrint('userGroupsProvider: memberships read failed, using legacy fallback: $e');
+  }
+
+  return _fetchUserGroupsFromGroupMembers(profileId);
+}
+
+Future<List<Map<String, dynamic>>> _fetchUserGroupsFromMemberships(String profileId) async {
+  final profile = await Supabase.instance.client
+      .from('profiles')
+      .select('person_id')
+      .eq('id', profileId)
+      .maybeSingle();
+
+  final personId = profile?['person_id']?.toString();
+  if (personId == null || personId.isEmpty) return <Map<String, dynamic>>[];
+
+  final response = await Supabase.instance.client
+      .from('memberships')
+      .select('id, group_id, role, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, departments(name, profile_mode))')
+      .eq('person_id', personId)
+      .eq('status', 'active')
+      .not('group_id', 'is', null)
+      .order('starts_at', ascending: false);
+
+  return _normalizeUserGroupRows(
+    response as List,
+    roleKey: 'role',
+    source: 'phase2',
+  );
+}
+
+Future<List<Map<String, dynamic>>> _fetchUserGroupsFromGroupMembers(String profileId) async {
   final response = await Supabase.instance.client
       .from('group_members')
       .select('group_id, role_in_group, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, departments(name, profile_mode))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
       .order('joined_at', ascending: false);
-      
-  final List<Map<String, dynamic>> rawGroups = (response as List).map<Map<String, dynamic>>((e) {
+
+  return _normalizeUserGroupRows(
+    response as List,
+    roleKey: 'role_in_group',
+    source: 'legacy',
+  );
+}
+
+List<Map<String, dynamic>> _normalizeUserGroupRows(
+  List<dynamic> rows, {
+  required String roleKey,
+  required String source,
+}) {
+  final List<Map<String, dynamic>> rawGroups = rows.map<Map<String, dynamic>>((e) {
     return {
       'group_id': e['group_id']?.toString() ?? '',
       'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
@@ -266,9 +315,11 @@ Future<List<Map<String, dynamic>>> _fetchUserGroups(String profileId) async {
       'color_hex': e['groups']?['color_hex']?.toString() ?? '', // [NEW] 조 색상 추가
       'department_name': e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
       'profile_mode': e['groups']?['departments']?['profile_mode']?.toString() ?? 'individual',
-      'role_in_group': (e['role_in_group'] ?? 'member').toString(),
+      'role_in_group': (e[roleKey] ?? 'member').toString(),
       'is_new_member_group': e['groups']?['is_new_member_group'] ?? false,
       'climbing_threshold': e['groups']?['climbing_threshold'],
+      'phase2_membership_id': source == 'phase2' ? e['id']?.toString() : null,
+      'membership_source': source,
     };
   }).toList();
 
