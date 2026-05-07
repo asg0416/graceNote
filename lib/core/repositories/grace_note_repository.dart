@@ -351,8 +351,11 @@ class GraceNoteRepository {
     final churchId = groupResponse['church_id'];
     final departmentId = groupResponse['department_id'];
 
-    // 2. 명부 데이터 가져오기
-    final directoryResponse = await _supabase
+    // 2. 명부 데이터 가져오기: Phase 2 memberships 우선, legacy group_name fallback.
+    final phase2Members = await _getGroupMembersFromMemberships(groupId);
+    final directoryResponse = phase2Members.isNotEmpty
+        ? phase2Members
+        : await _supabase
         .from('member_directory')
         .select()
         .eq('church_id', churchId)
@@ -438,9 +441,59 @@ class GraceNoteRepository {
         ...dir,
         'profiles': profile,
         'profile_id': profile?['id'] ?? pId, // 프로필을 못 찾더라도 명부의 pId는 유지
-        'group_member_id': groupMemberId,
+        'group_member_id': dir['group_member_id'] ?? groupMemberId,
       };
     }).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> _getGroupMembersFromMemberships(
+      String groupId) async {
+    try {
+      final membershipsResponse = await _supabase
+          .from('memberships')
+          .select('legacy_member_directory_id, legacy_group_member_id, role')
+          .eq('group_id', groupId)
+          .eq('status', 'active')
+          .not('legacy_member_directory_id', 'is', null);
+
+      final memberships = List<Map<String, dynamic>>.from(membershipsResponse);
+      if (memberships.isEmpty) return [];
+
+      final directoryIds = memberships
+          .map((m) => m['legacy_member_directory_id'])
+          .where((id) => id != null)
+          .cast<String>()
+          .toList();
+
+      if (directoryIds.isEmpty) return [];
+
+      final membershipByDirectoryId = {
+        for (final membership in memberships)
+          membership['legacy_member_directory_id'] as String: membership
+      };
+
+      final directoryResponse = await _supabase
+          .from('member_directory')
+          .select()
+          .inFilter('id', directoryIds)
+          .eq('is_active', true)
+          .order('family_name', ascending: true, nullsFirst: false)
+          .order('full_name', ascending: true);
+
+      return List<Map<String, dynamic>>.from(directoryResponse).map((dir) {
+        final membership = membershipByDirectoryId[dir['id']];
+        return <String, dynamic>{
+          ...dir,
+          'group_member_id': membership?['legacy_group_member_id'],
+          'role_in_group': membership?['role'] ?? dir['role_in_group'],
+          'phase2_membership_source': 'memberships',
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint(
+          'GraceNoteRepository: memberships group member read failed, using legacy fallback: $e');
+      return [];
+    }
   }
 
   // 부서 설정 업데이트

@@ -39,7 +39,7 @@ These FKs are still part of the current app behavior and historical records. The
 | Order | Track | Why First / Later |
 | --- | --- | --- |
 | 1 | Flutter membership/role read-switch | Done. Uses active memberships to decide available groups/roles with legacy fallback. |
-| 2 | Flutter group member list read fallback | Attendance screens can display current members via Phase 2 but still save legacy IDs. |
+| 2 | Flutter group member list read fallback | Implemented. Attendance screens can display current members via Phase 2 but still save legacy IDs. |
 | 3 | Admin attendance read analysis | Admin attendance has real record impact, so analyze before changing. |
 | 4 | Edge Function notification target read-switch | No UI, but high operational impact. Needs SQL-equivalent verification. |
 | 5 | Prod-safe rollout manifest | Only after app/admin/edge read paths have gates. |
@@ -134,7 +134,7 @@ HOME=/private/tmp DART_SUPPRESS_ANALYTICS=true dart analyze lib/core/providers/d
 
 Result: No issues found.
 
-- [ ] Manual smoke.
+- [x] Manual smoke.
 
 Check:
 - 윤영미/이지욱 로그인
@@ -142,7 +142,9 @@ Check:
 - 조장/조원 role 정상
 - 출석/기도 화면 진입 정상
 
-- [ ] Commit.
+Actual: user confirmed smoke 정상.
+
+- [x] Commit.
 
 ```bash
 git add lib/core/providers/data_providers.dart docs/superpowers/plans/2026-05-07-gracenote-person-structure-app-admin-migration-plan.md
@@ -159,14 +161,14 @@ git commit -m "flutter: prefer memberships for user groups"
 
 ### Steps
 
-- [ ] Add a helper to fetch active group member directory rows through Phase 2 memberships.
+- [x] Add a helper to fetch active group member directory rows through Phase 2 memberships.
 
 Target behavior:
 - Query `memberships` where `group_id = groupId`, `status = active`.
 - Use `legacy_member_directory_id` to fetch `member_directory` rows.
 - Keep existing `member_directory.group_name` query as fallback.
 
-- [ ] Ensure returned row shape still contains:
+- [x] Ensure returned row shape still contains:
 
 ```text
 id
@@ -180,7 +182,7 @@ spouse_name
 children_info
 ```
 
-- [ ] Keep attendance/prayer save unchanged.
+- [x] Keep attendance/prayer save unchanged.
 
 Do not modify:
 
@@ -190,8 +192,21 @@ AttendanceModel.directoryMemberId
 PrayerEntryModel.directoryMemberId
 ```
 
-- [ ] Analyze and manual smoke:
+- [x] Analyze:
 - 출석 체크 조원 목록
+- 출석 저장/재진입 유지
+- 기도 저장/목록 표시
+
+Actual:
+
+```bash
+HOME=/private/tmp DART_SUPPRESS_ANALYTICS=true dart analyze lib/core/repositories/grace_note_repository.dart
+```
+
+Result: no errors/warnings, existing style info only.
+
+- [ ] Manual smoke:
+- 출석 체크 조원 목록이 기존처럼 표시
 - 출석 저장/재진입 유지
 - 기도 저장/목록 표시
 
