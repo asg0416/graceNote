@@ -35,7 +35,7 @@
 
 ## Current Work Position
 
-현재 실제 위치는 Phase 2D 1차 read-switch 진행 중이다.
+현재 실제 위치는 Phase 2D 2차 read-switch 진행 중이다.
 
 | Phase | Actual State | Meaning |
 | --- | --- | --- |
@@ -45,7 +45,7 @@
 | Phase 2B | Dev complete, prod not applied | 운영 복제 데이터 기준 backfill dev 검증 완료 |
 | Phase 2C | Dev gate complete | dual-write/write-flow DB 검증, Admin/Flutter/SmartBatch smoke 완료 |
 | P0 hard delete gate | Dev verified, prod not applied | 부서/조/주차/명부 hard-delete 차단 운영 후보 |
-| Phase 2D | Started | 1차 대상 성도상세 read-switch 구현/검증. 목록/조편성/앱 read-switch는 아직 미전환 |
+| Phase 2D | Started | 1차 성도상세 read-switch 구현/검증 완료. 2차 성도명부 목록은 실제 사람 수 표시부터 전환 중. 조편성/앱 read-switch는 아직 미전환 |
 | Phase 2E | Not started | legacy 의존 제거 준비 전 |
 
 **운영 반영 타이밍**: Phase 2A~E 전체 dev 검증(UI smoke 포함)이 완료된 후 단계적으로 적용한다. Phase 2C smoke 완료가 운영 반영 조건이 아니라 Phase 2E 완료가 운영 반영 검토 시점이다.
@@ -79,6 +79,13 @@ UI/app smoke checklist: `docs/superpowers/plans/2026-05-04-gracenote-phase2c-ui-
 - write path는 변경하지 않음: 프로필 수정, 가족 정보 수정, 메모 저장, 비활성화는 legacy write + dual-write trigger 유지
 - Verification: `npm run lint -- src/app/members/[id]/page.tsx` 통과, Phase 2 consistency gate mismatch 0
 - Manual smoke: 여러 조에 속한 사람을 서로 다른 legacy 상세 링크로 들어가도 같은 `people` 정보와 전체 active memberships가 보임. inactive/ended 이력도 현재 소속과 분리되어 보임
+
+2026-05-07 Phase 2D second target:
+- 2차 read-switch 대상: `admin-web/src/app/members/page.tsx`
+- 성도명부 목록은 아직 write-flow 때문에 `member_directory.id`로 진입/수정하지만, 표시 기준은 Phase 2 `member_profiles.person_id`를 우선 사용한다.
+- 상단 숫자는 legacy row 수가 아니라 “실제 사람 수”를 기본으로 보여준다. 한 사람이 여러 조/소속 row를 가지고 있어도 사람 수는 1명으로 계산한다.
+- Phase 2 목록 진단은 실제 사람 수와 active 소속 수를 함께 표시한다. row/membership count는 보조 정보로만 남긴다.
+- 조편성 kanban과 성도명부 write path는 아직 legacy 기준 유지. 순수 person route(`/people/[id]`)는 Phase 2E 이후 별도 작업이다.
 
 ## Prod Migration Candidate Order
 
@@ -305,6 +312,7 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-06 consistency after dev cleanup | people 148/148, group_members 133/133, directory-only 32/32, member_profiles 149/149, all mismatches 0, same-church phone duplicate candidates 0 |
 | 2026-05-07 Phase 2D member detail read-switch | `npm run lint -- src/app/members/[id]/page.tsx`: 0 errors. `verify_phase2_consistency_dev_2026-04-30.sql`: people 148/148, group_members 133/133, directory-only 32/32, member_profiles 149/149, all mismatches 0 |
 | 2026-05-07 Phase 2D member detail manual smoke | 다중 소속 사람을 서로 다른 legacy 상세 링크로 진입해도 같은 `people` 정보와 전체 active memberships가 표시됨. inactive/ended history는 현재 소속과 분리 표시됨 |
+| 2026-05-07 Phase 2D member list person-count read-switch | `npm run lint -- src/app/members/page.tsx`: 0 errors, existing warnings only. 성도명부 상단/진단 숫자를 Phase 2 `person_id` 기준 실제 사람 수 우선 표시로 전환 |
 
 ## Future Logging Protocol
 

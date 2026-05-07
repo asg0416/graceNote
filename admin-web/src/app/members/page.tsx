@@ -57,6 +57,22 @@ interface Group {
     color_hex?: string;
 }
 
+type RosterMember = MemberProfile & {
+    phase2_person_id?: string | null;
+};
+
+interface Phase2ListCheck {
+    status: 'idle' | 'ok' | 'warning' | 'unavailable';
+    legacyActiveCount: number;
+    phase2ActiveCount: number;
+    legacyActivePersonCount: number;
+    phase2ActivePersonCount: number;
+    issueCount: number;
+    message: string;
+}
+
+const getRosterPersonKey = (member: RosterMember) => member.phase2_person_id || member.person_id || member.id;
+
 export default function MembersPage() {
     return (
         <Suspense fallback={
@@ -72,7 +88,7 @@ export default function MembersPage() {
 
 function MembersPageInner() {
     const [loading, setLoading] = useState(true);
-    const [members, setMembers] = useState<MemberProfile[]>([]);
+    const [members, setMembers] = useState<RosterMember[]>([]);
     const [churches, setChurches] = useState<Church[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
     const [isMaster, setIsMaster] = useState(false);
@@ -110,16 +126,12 @@ function MembersPageInner() {
     const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
     const [collapsedDepts, setCollapsedDepts] = useState<string[]>([]);
     const [nameSuggestions, setNameSuggestions] = useState<MemberProfile[]>([]);
-    const [phase2ListCheck, setPhase2ListCheck] = useState<{
-        status: 'idle' | 'ok' | 'warning' | 'unavailable';
-        legacyActiveCount: number;
-        phase2ActiveCount: number;
-        issueCount: number;
-        message: string;
-    }>({
+    const [phase2ListCheck, setPhase2ListCheck] = useState<Phase2ListCheck>({
         status: 'idle',
         legacyActiveCount: 0,
         phase2ActiveCount: 0,
+        legacyActivePersonCount: 0,
+        phase2ActivePersonCount: 0,
         issueCount: 0,
         message: 'Phase 2 진단 대기 중'
     });
@@ -302,6 +314,23 @@ function MembersPageInner() {
         }
     };
 
+    const fetchPhase2PersonMap = async (directoryIds: string[]) => {
+        if (directoryIds.length === 0) return new Map<string, string>();
+
+        const { data, error } = await supabase
+            .from('member_profiles')
+            .select('person_id, member_directory_id')
+            .in('member_directory_id', directoryIds);
+
+        if (error) throw error;
+
+        return new Map(
+            (data || [])
+                .filter(profile => profile.member_directory_id && profile.person_id)
+                .map(profile => [profile.member_directory_id as string, profile.person_id as string])
+        );
+    };
+
     const fetchMembers = async (churchId: string, deptId: string = 'all') => {
         setLoading(true);
         // Reset collapse states on refresh or filter change if needed, 
@@ -335,17 +364,24 @@ function MembersPageInner() {
             const { data, error } = await query.order('full_name');
 
             if (error) throw error;
-            const fetchedMembers = data || [];
+            const fetchedMembers = (data || []) as MemberProfile[];
+            const phase2PersonMap = await fetchPhase2PersonMap(fetchedMembers.map(member => member.id));
+            const enrichedMembers: RosterMember[] = fetchedMembers.map(member => ({
+                ...member,
+                phase2_person_id: phase2PersonMap.get(member.id) || null
+            }));
 
-            await refreshPhase2ListCheck(fetchedMembers as MemberProfile[], churchId, deptId);
+            await refreshPhase2ListCheck(enrichedMembers, churchId, deptId);
 
-            setMembers(fetchedMembers as MemberProfile[]);
+            setMembers(enrichedMembers);
         } catch (err) {
             console.error(err);
             setPhase2ListCheck({
                 status: 'unavailable',
                 legacyActiveCount: 0,
                 phase2ActiveCount: 0,
+                legacyActivePersonCount: 0,
+                phase2ActivePersonCount: 0,
                 issueCount: 0,
                 message: 'Phase 2 목록 진단을 실행하지 못했습니다.'
             });
@@ -354,7 +390,7 @@ function MembersPageInner() {
         }
     };
 
-    const refreshPhase2ListCheck = async (fetchedMembers: MemberProfile[], churchId: string, deptId: string = 'all') => {
+    const refreshPhase2ListCheck = async (fetchedMembers: RosterMember[], churchId: string, deptId: string = 'all') => {
         // '미정'(unassigned)은 아직 조에 배정되지 않은 대기 상태 — Phase 2 group membership이 없어도 정상이므로 진단에서 제외
         const activeLegacyMembers = fetchedMembers.filter(member =>
             member.is_active !== false &&
@@ -362,13 +398,16 @@ function MembersPageInner() {
             member.group_name !== '미정'
         );
         const activeLegacyDirectoryIds = new Set(activeLegacyMembers.map(member => member.id));
-        const directoryIds = fetchedMembers.map(member => member.id).filter(Boolean);
+        const activeLegacyPersonIds = new Set(activeLegacyMembers.map(getRosterPersonKey));
+        const personIds = Array.from(new Set(fetchedMembers.map(member => member.phase2_person_id).filter(Boolean)));
 
-        if (directoryIds.length === 0) {
+        if (fetchedMembers.length === 0) {
             setPhase2ListCheck({
                 status: 'ok',
                 legacyActiveCount: 0,
                 phase2ActiveCount: 0,
+                legacyActivePersonCount: 0,
+                phase2ActivePersonCount: 0,
                 issueCount: 0,
                 message: '확인할 명부 row가 없습니다.'
             });
@@ -376,19 +415,13 @@ function MembersPageInner() {
         }
 
         try {
-            const { data: memberProfiles, error: memberProfilesError } = await supabase
-                .from('member_profiles')
-                .select('person_id, member_directory_id')
-                .in('member_directory_id', directoryIds);
-
-            if (memberProfilesError) throw memberProfilesError;
-
-            const personIds = Array.from(new Set((memberProfiles || []).map(profile => profile.person_id).filter(Boolean)));
             if (personIds.length === 0) {
                 setPhase2ListCheck({
                     status: activeLegacyMembers.length === 0 ? 'ok' : 'warning',
                     legacyActiveCount: activeLegacyMembers.length,
                     phase2ActiveCount: 0,
+                    legacyActivePersonCount: activeLegacyPersonIds.size,
+                    phase2ActivePersonCount: 0,
                     issueCount: activeLegacyMembers.length,
                     message: activeLegacyMembers.length === 0
                         ? 'Phase 2 비교 대상이 없습니다.'
@@ -410,6 +443,7 @@ function MembersPageInner() {
                 if (deptId !== 'all' && membership.department_id !== deptId) return false;
                 return true;
             });
+            const phase2ActivePersonIds = new Set(relevantActiveMemberships.map(membership => membership.person_id).filter(Boolean));
             const phase2ActiveDirectoryIds = new Set(
                 relevantActiveMemberships
                     .map(membership => membership.legacy_member_directory_id)
@@ -426,9 +460,11 @@ function MembersPageInner() {
                 status: issueCount === 0 ? 'ok' : 'warning',
                 legacyActiveCount: activeLegacyMembers.length,
                 phase2ActiveCount: relevantActiveMemberships.length,
+                legacyActivePersonCount: activeLegacyPersonIds.size,
+                phase2ActivePersonCount: phase2ActivePersonIds.size,
                 issueCount,
                 message: issueCount === 0
-                    ? '현재 목록 범위의 active 소속이 Phase 2와 일치합니다.'
+                    ? '현재 목록 범위의 실제 사람과 active 소속이 Phase 2와 일치합니다.'
                     : `누락 ${missingPhase2Count}건 / 추가 확인 ${extraPhase2Count}건`
             });
         } catch (error) {
@@ -437,6 +473,8 @@ function MembersPageInner() {
                 status: 'unavailable',
                 legacyActiveCount: activeLegacyMembers.length,
                 phase2ActiveCount: 0,
+                legacyActivePersonCount: activeLegacyPersonIds.size,
+                phase2ActivePersonCount: 0,
                 issueCount: 0,
                 message: 'Phase 2 목록 진단을 불러오지 못했습니다.'
             });
@@ -591,7 +629,7 @@ function MembersPageInner() {
     }).sort((a, b) => {
         // Priority 1: If sorted by family OR in couple mode, use family grouping
         if (sortBy === 'family' || (sortBy === 'name' && deptProfileMode === 'couple')) {
-            const getFamilyKey = (m: MemberProfile) => {
+            const getFamilyKey = (m: RosterMember) => {
                 if (m.family_id) return m.family_id;
                 if (m.spouse_name) {
                     // Create a stable key from both names so husband/wife get same key
@@ -615,13 +653,13 @@ function MembersPageInner() {
 
     // 3. Deduplicate by person_id to create 'Master List'
     const masterMembers = useMemo(() => {
-        const map = new Map();
-        filteredMembers.forEach((m: MemberProfile) => {
-            const key = m.person_id || m.id;
+        const map = new Map<string, RosterMember>();
+        filteredMembers.forEach((m: RosterMember) => {
+            const key = getRosterPersonKey(m);
             // If already exists, keep the one with group info or preferred metadata
             if (!map.has(key)) {
                 map.set(key, m);
-            } else if (!map.get(key).group_name && m.group_name) {
+            } else if (!map.get(key)?.group_name && m.group_name) {
                 map.set(key, m);
             }
         });
@@ -635,8 +673,8 @@ function MembersPageInner() {
     const groupedData = useMemo(() => {
         if (!isGroupedView) return null;
 
-        const groups: Record<string, MemberProfile[]> = {};
-        masterMembers.forEach((m: MemberProfile) => {
+        const groups: Record<string, RosterMember[]> = {};
+        masterMembers.forEach((m: RosterMember) => {
             const groupName = m.group_name || '미배정';
             if (!groups[groupName]) groups[groupName] = [];
             groups[groupName].push(m);
@@ -651,10 +689,10 @@ function MembersPageInner() {
     };
 
     const toggleAllMembers = () => {
-        if (selectedMemberIds.length === filteredMembers.length) {
+        if (selectedMemberIds.length === masterMembers.length) {
             setSelectedMemberIds([]);
         } else {
-            setSelectedMemberIds(filteredMembers.map((m: MemberProfile) => m.id));
+            setSelectedMemberIds(masterMembers.map((m: RosterMember) => m.id));
         }
     };
 
@@ -718,7 +756,7 @@ function MembersPageInner() {
                         <p className="text-slate-500 dark:text-slate-500 font-bold text-xs sm:text-sm tracking-tight">
                             {isMaster
                                 ? '성도 개개인의 상세 프로필과 신상 정보를 통합 관리하는 마스터 명부입니다.'
-                                : <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || (selectedDeptId === 'all' ? '교회 전체' : '부서')}</span> 명부입니다. 소속 성도들의 정보를 관리합니다.</>}
+                                : <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || (selectedDeptId === 'all' ? '교회 전체' : '부서')}</span> 명부입니다. 실제 사람 기준으로 성도를 관리합니다.</>}
                         </p>
                     </div>
                     <div className="flex items-center gap-2 sm:gap-3">
@@ -995,6 +1033,24 @@ function MembersPageInner() {
                     </div>
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="p-4 rounded-[22px] bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Actual People</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{masterMembers.length}명</p>
+                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">현재 필터에서 중복 소속을 합친 실제 사람 수</p>
+                    </div>
+                    <div className="p-4 rounded-[22px] bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Roster Rows</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{filteredMembers.length}개</p>
+                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">legacy 명부 row 수, 한 사람이 여러 번 잡힐 수 있음</p>
+                    </div>
+                    <div className="p-4 rounded-[22px] bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Active People</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{phase2ListCheck.phase2ActivePersonCount}명</p>
+                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">Phase 2 memberships 기준 현재 활동 사람 수</p>
+                    </div>
+                </div>
+
                 <div className={cn(
                     "rounded-[24px] border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm",
                     phase2ListCheck.status === 'warning'
@@ -1034,18 +1090,20 @@ function MembersPageInner() {
                                 {phase2ListCheck.message}
                             </p>
                             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                                현재 교회/부서 로드 범위에서 legacy active와 Phase 2 active memberships를 비교합니다. 기존 명부 기능에는 영향을 주지 않습니다.
+                                현재 교회/부서 로드 범위에서 실제 사람 수와 active 소속 수를 함께 비교합니다. 기존 명부 기능에는 영향을 주지 않습니다.
                             </p>
                         </div>
                     </div>
                     <div className="grid grid-cols-3 gap-2 sm:min-w-[280px]">
                         <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
-                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">legacy</p>
-                            <p className="text-lg font-black text-slate-900 dark:text-white">{phase2ListCheck.legacyActiveCount}</p>
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">legacy people</p>
+                            <p className="text-lg font-black text-slate-900 dark:text-white">{phase2ListCheck.legacyActivePersonCount}</p>
+                            <p className="text-[8px] font-bold text-slate-400">{phase2ListCheck.legacyActiveCount} rows</p>
                         </div>
                         <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
-                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">phase 2</p>
-                            <p className="text-lg font-black text-slate-900 dark:text-white">{phase2ListCheck.phase2ActiveCount}</p>
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">phase2 people</p>
+                            <p className="text-lg font-black text-slate-900 dark:text-white">{phase2ListCheck.phase2ActivePersonCount}</p>
+                            <p className="text-[8px] font-bold text-slate-400">{phase2ListCheck.phase2ActiveCount} memberships</p>
                         </div>
                         <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">issues</p>
@@ -1122,7 +1180,7 @@ function MembersPageInner() {
                             <tr className="bg-slate-50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800/60">
                                 <th className="pl-6 sm:pl-8 py-4 w-10">
                                     <button onClick={toggleAllMembers} className="text-slate-400 hover:text-indigo-600 transition-colors">
-                                        {selectedMemberIds.length === filteredMembers.length ? <CheckSquare className="w-5 h-5 text-indigo-600" /> : <Square className="w-5 h-5" />}
+                                        {selectedMemberIds.length === masterMembers.length ? <CheckSquare className="w-5 h-5 text-indigo-600" /> : <Square className="w-5 h-5" />}
                                     </button>
                                 </th>
                                 <th className="px-4 sm:px-6 py-4 text-[9px] sm:text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">성도 이름</th>
@@ -1153,7 +1211,7 @@ function MembersPageInner() {
                                                 </button>
                                             </td>
                                         </tr>
-                                        {!collapsedGroups.includes(groupName) && groupMembers.map((m: MemberProfile) => (
+                                        {!collapsedGroups.includes(groupName) && groupMembers.map((m: RosterMember) => (
                                             <MemberRow
                                                 key={m.id}
                                                 member={m}
@@ -1167,7 +1225,7 @@ function MembersPageInner() {
                                     </Fragment>
                                 ))
                             ) : (
-                                masterMembers.map((m: MemberProfile) => (
+                                masterMembers.map((m: RosterMember) => (
                                     <MemberRow
                                         key={m.id}
                                         member={m}
