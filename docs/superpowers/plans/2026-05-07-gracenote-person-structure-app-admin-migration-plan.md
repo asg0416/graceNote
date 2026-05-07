@@ -205,12 +205,14 @@ HOME=/private/tmp DART_SUPPRESS_ANALYTICS=true dart analyze lib/core/repositorie
 
 Result: no errors/warnings, existing style info only.
 
-- [ ] Manual smoke:
+- [x] Manual smoke:
 - 출석 체크 조원 목록이 기존처럼 표시
 - 출석 저장/재진입 유지
 - 기도 저장/목록 표시
 
-- [ ] Commit.
+Actual: user confirmed Task 2 smoke 정상.
+
+- [x] Commit.
 
 ```bash
 git add lib/core/repositories/grace_note_repository.dart
@@ -227,9 +229,9 @@ git commit -m "flutter: prefer memberships for group member reads"
 
 ### Steps
 
-- [ ] Identify which queries are display-only and which queries affect saves.
-- [ ] Do not change save flow in the same commit.
-- [ ] If there is a safe display-only count/list, create a separate implementation task.
+- [x] Identify which queries are display-only and which queries affect saves.
+- [x] Do not change save flow in the same commit.
+- [x] If there is a safe display-only count/list, create a separate implementation task.
 - [ ] If display and save are too tightly coupled, mark admin attendance as Phase 3.
 
 Expected decision output:
@@ -237,6 +239,44 @@ Expected decision output:
 ```text
 safe read cleanup now / defer to Phase 3
 ```
+
+Actual decision:
+
+```text
+safe read cleanup now
+```
+
+Reason:
+- `admin-web/src/app/attendance/page.tsx` has no insert/update/delete/upsert flow.
+- It reads attendance records and current roster data for display, statistics, insights, and export.
+- The attendance records themselves still use legacy `attendance.directory_member_id`.
+- Therefore the safe change is to read the current roster from active Phase 2 `memberships` first, while preserving legacy `directory_member_id` shape and legacy fallback.
+
+Implementation task:
+- [x] Add active-membership roster helper.
+- [x] Use helper for current week supplement list, weekly trend denominator, insights roster, and export roster.
+- [x] Keep attendance record query and historical snapshot matching by `directory_member_id`.
+- [x] Targeted lint/typecheck.
+- [x] Phase 2 consistency SQL.
+- [ ] Manual smoke.
+- [x] Commit.
+
+Actual implementation:
+- `fetchAttendanceRoster()` reads active `memberships` first and joins back to active `member_directory` through `legacy_member_directory_id`.
+- Legacy `member_directory` read remains as fallback.
+- Attendance rows still match by `attendance.directory_member_id`, so historical records and save-compatible shapes are preserved.
+
+Verification:
+- `npm run lint -- src/app/attendance/page.tsx`: fails because this file already has broad existing `any`, unused import/state, and hook dependency lint debt. The new helper-specific `any` and new hook warning were removed.
+- `npx tsc --noEmit --pretty false`: no error from `attendance/page.tsx`; existing unrelated `src/app/churches/page.tsx(253,81)` error remains.
+- `verify_phase2_consistency_dev_2026-04-30.sql`: all mismatch counts 0.
+
+Manual smoke:
+- [ ] 출석 현황 화면 로드
+- [ ] 주차별 추세/전체 구성원/출석률이 기존과 큰 방향에서 맞음
+- [ ] 상세 명단 보기에서 조별 명단 표시
+- [ ] 인사이트 리포트/출석 우수자/집중 보살핌 표시
+- [ ] 리포트 추출 파일 생성
 
 ---
 

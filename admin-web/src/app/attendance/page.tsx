@@ -30,6 +30,113 @@ import { Modal } from '@/components/Modal';
 import { Tooltip } from '@/components/Tooltip';
 import * as XLSX from 'xlsx';
 
+type AttendanceDirectoryMember = {
+    id: string;
+    full_name?: string | null;
+    group_id?: string | null;
+    group_name?: string | null;
+    group_member_id?: string | null;
+    person_id?: string | null;
+    phase2_membership_source?: string | null;
+    role_in_group?: string | null;
+    family_name?: string | null;
+    spouse_name?: string | null;
+    children_info?: string | null;
+    is_active?: boolean | null;
+    [key: string]: unknown;
+};
+
+type Phase2AttendanceMembership = {
+    person_id: string | null;
+    role: string | null;
+    legacy_member_directory_id: string | null;
+    legacy_group_member_id: string | null;
+    groups?: {
+        id?: string | null;
+        name?: string | null;
+    } | null;
+};
+
+type AttendanceStatusRow = {
+    status?: string | null;
+};
+
+const fetchActiveMembershipRoster = async (departmentId: string): Promise<AttendanceDirectoryMember[]> => {
+    try {
+        const { data: memberships, error: membershipError } = await supabase
+            .from('memberships')
+            .select(`
+                person_id,
+                role,
+                legacy_member_directory_id,
+                legacy_group_member_id,
+                groups!group_id(id, name)
+            `)
+            .eq('department_id', departmentId)
+            .eq('status', 'active')
+            .not('legacy_member_directory_id', 'is', null);
+
+        if (membershipError) throw membershipError;
+        if (!memberships || memberships.length === 0) return [];
+
+        const typedMemberships = memberships as Phase2AttendanceMembership[];
+        const directoryIds = Array.from(new Set(
+            typedMemberships
+                .map((membership) => membership.legacy_member_directory_id)
+                .filter(Boolean)
+        ));
+
+        if (directoryIds.length === 0) return [];
+
+        const { data: directoryRows, error: directoryError } = await supabase
+            .from('member_directory')
+            .select('*')
+            .in('id', directoryIds)
+            .eq('is_active', true);
+
+        if (directoryError) throw directoryError;
+
+        const directoryById = new Map<string, AttendanceDirectoryMember>(
+            ((directoryRows || []) as AttendanceDirectoryMember[]).map((directory) => [directory.id, directory])
+        );
+
+        return typedMemberships
+            .reduce<AttendanceDirectoryMember[]>((roster, membership) => {
+                if (!membership.legacy_member_directory_id) return roster;
+                const directory = directoryById.get(membership.legacy_member_directory_id);
+                if (!directory) return roster;
+
+                roster.push({
+                    ...directory,
+                    group_id: membership.groups?.id || directory.group_id,
+                    group_name: membership.groups?.name || directory.group_name,
+                    role_in_group: membership.role || directory.role_in_group,
+                    group_member_id: membership.legacy_group_member_id,
+                    person_id: membership.person_id,
+                    phase2_membership_source: 'memberships'
+                });
+                return roster;
+            }, []);
+    } catch (error) {
+        console.warn('Attendance Phase 2 roster read failed. Falling back to legacy member_directory.', error);
+        return [];
+    }
+};
+
+const fetchAttendanceRoster = async (departmentId: string): Promise<AttendanceDirectoryMember[]> => {
+    const phase2Roster = await fetchActiveMembershipRoster(departmentId);
+    if (phase2Roster.length > 0) return phase2Roster;
+
+    const { data, error } = await supabase
+        .from('member_directory')
+        .select('*')
+        .eq('department_id', departmentId)
+        .eq('is_active', true);
+
+    if (error) throw error;
+    return (data || []) as AttendanceDirectoryMember[];
+};
+
 export default function AttendancePage() {
     const [loading, setLoading] = useState(true);
     const [profile, setProfile] = useState<any>(null);
@@ -223,12 +330,8 @@ export default function AttendancePage() {
                     .lte('week_date', endOfMonth)
                     .order('week_date', { ascending: true });
 
-                // [NEW] 안정적인 통계를 위해 부서 전체 활성 멤버 수 조회
-                const { count: totalDeptMembers } = await supabase
-                    .from('member_directory')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('department_id', selectedDeptId)
-                    .eq('is_active', true);
+                // 안정적인 통계를 위해 Phase 2 기준 현재 활성 출석 대상 수 조회
+                const currentRoster = await fetchAttendanceRoster(selectedDeptId);
 
                 if (trendWeeks && trendWeeks.length > 0) {
                     const trendData = await Promise.all(trendWeeks.map(async (w) => {
@@ -239,8 +342,9 @@ export default function AttendancePage() {
                             .eq('week_id', w.id)
                             .eq('groups.department_id', selectedDeptId);
 
-                        const present = (weekAtt as any[])?.filter(a => a.status === 'present').length || 0;
-                        const total = totalDeptMembers || (weekAtt as any[])?.length || 0;
+                        const weeklyAttendance = (weekAtt || []) as AttendanceStatusRow[];
+                        const present = weeklyAttendance.filter(a => a.status === 'present').length || 0;
+                        const total = currentRoster.length || weeklyAttendance.length || 0;
 
                         return {
                             id: w.id,
@@ -296,13 +400,8 @@ export default function AttendancePage() {
         if (!selectedDeptId || !selectedWeekId) return;
 
         try {
-            // 1. Fetch current members (to get names for matching records)
-            const { data: members, error: mError } = await supabase
-                .from('member_directory')
-                .select('*')
-                .eq('department_id', selectedDeptId);
-
-            if (mError) throw mError;
+            // 1. Fetch current members from Phase 2 memberships first.
+            const members = await fetchAttendanceRoster(selectedDeptId);
 
             // 2. Fetch Attendance + Groups (Snapshot) for this week
             // 해당 부서의 조들에 속한 모든 출석 기록을 가져옴
@@ -332,7 +431,7 @@ export default function AttendancePage() {
             const submittedGroupNames = new Set((attendance || []).map(a => (a as any).groups?.name).filter(Boolean));
 
             const mergedSnapshot = (attendance || []).map(att => {
-                const memberInfo = members?.find(m => m.id === att.directory_member_id);
+                const memberInfo = members.find(m => m.id === att.directory_member_id);
                 return {
                     id: att.directory_member_id,
                     name: memberInfo?.full_name || '이동/비활성 성도',
@@ -346,7 +445,7 @@ export default function AttendancePage() {
 
             // 스냅샷에 없지만 현재 활성 상태인 멤버들 추가 (출석 미체크 조/멤버)
             // 중요: 이미 출석이 '조별로' 제출된 조는 명단 보충에서 제외 (스냅샷 보호)
-            const missingMembers = (members || [])
+            const missingMembers = members
                 .filter(m => {
                     const isNotChecked = !snapshotIds.has(m.id);
                     // ID 또는 이름 기반으로 이미 제출된 조인지 확인
@@ -419,12 +518,8 @@ export default function AttendancePage() {
             if (!periodWeeks || periodWeeks.length === 0) return;
 
             // Fetch all members
-            const { data: members } = await supabase
-                .from('member_directory')
-                .select('id, full_name, group_name')
-                .eq('department_id', selectedDeptId);
-
-            if (!members) return;
+            const members = await fetchAttendanceRoster(selectedDeptId);
+            if (members.length === 0) return;
 
             // Fetch all attendance for this department for the period
             const { data: allAtt } = await supabase
@@ -520,14 +615,8 @@ export default function AttendancePage() {
             }
 
             // 2. Fetch all members
-            const { data: members } = await supabase
-                .from('member_directory')
-                .select('*')
-                .eq('department_id', selectedDeptId)
-                .order('group_name', { ascending: true })
-                .order('full_name', { ascending: true });
-
-            if (!members) return;
+            const members = await fetchAttendanceRoster(selectedDeptId);
+            if (members.length === 0) return;
 
             // 2.5. 해당 기간의 모임없는 날 조회
             const { data: noMeetingDays } = await supabase
