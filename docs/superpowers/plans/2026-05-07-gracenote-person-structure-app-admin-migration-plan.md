@@ -297,6 +297,22 @@ Decision:
   4. 부부형 부서 정렬: family/spouse aware sort를 export와 상세 명단에 적용.
   5. 김보영 같은 과거 소속 보정은 코드 문제가 아니라 데이터 이력 보정 후보로 별도 관리.
 
+2026-05-08 implementation:
+- Added `admin-web/src/lib/attendanceMetrics.ts`.
+- Attendance denominator now uses distinct people by week:
+  - people active by `memberships.starts_at/ends_at` on the week date.
+  - plus people who have an attendance snapshot row for that week, because historical Phase 2 `starts_at` was reconstructed and may be later than old attendance records.
+- Attendance numerator uses distinct people with `present` or `late`.
+- No-meeting days have no denominator/rate.
+- The UI label changed from `종합 출석률` to `선택 주차 출석률`.
+- Weekly trend, selected-week cards, insight report, and export now share the same metric rules.
+- Export and detailed display sorting now use group first, then spouse/family-aware sort inside the group.
+
+Verification:
+- `node --test src/lib/attendanceMetrics.test.ts`: 5 tests passed.
+- `npx tsc --noEmit --pretty false`: no attendance/metrics errors. Existing unrelated `src/app/churches/page.tsx(253,81)` error remains.
+- `verify_phase2_consistency_dev_2026-04-30.sql`: all mismatch counts 0.
+
 ---
 
 ## Task 4: Edge Function Read-Switch Plan

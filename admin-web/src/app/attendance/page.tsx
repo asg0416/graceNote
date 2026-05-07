@@ -28,6 +28,14 @@ import {
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
 import { Tooltip } from '@/components/Tooltip';
+import {
+    calculateWeekAttendanceMetrics,
+    getActiveRosterForWeek,
+    sortRosterForDisplay,
+    type AttendanceRecordForMetrics,
+    type AttendanceRosterMember,
+    type WeekAttendanceMetrics,
+} from '@/lib/attendanceMetrics';
 import * as XLSX from 'xlsx';
 
 type AttendanceDirectoryMember = {
@@ -42,8 +50,23 @@ type AttendanceDirectoryMember = {
     family_name?: string | null;
     spouse_name?: string | null;
     children_info?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
     is_active?: boolean | null;
     [key: string]: unknown;
+};
+
+type AttendanceDashboardItem = {
+    id: string;
+    personId?: string | null;
+    name: string;
+    department: string;
+    group: string;
+    role: string;
+    status: string;
+    updatedAt: string | null;
+    spouseName?: string | null;
+    familyName?: string | null;
 };
 
 type Phase2AttendanceMembership = {
@@ -51,6 +74,8 @@ type Phase2AttendanceMembership = {
     role: string | null;
     legacy_member_directory_id: string | null;
     legacy_group_member_id: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
     groups?: {
         id?: string | null;
         name?: string | null;
@@ -61,20 +86,48 @@ type AttendanceStatusRow = {
     status?: string | null;
 };
 
-const fetchActiveMembershipRoster = async (departmentId: string): Promise<AttendanceDirectoryMember[]> => {
+type AttendanceRow = AttendanceStatusRow & {
+    directory_member_id: string;
+    group_id?: string | null;
+    updated_at?: string | null;
+    groups?: {
+        id?: string | null;
+        name?: string | null;
+    } | null;
+};
+
+type PeriodAttendanceRow = {
+    directory_member_id: string;
+    status?: string | null;
+    week_id: string;
+};
+
+type WeekRow = {
+    id: string;
+    week_date: string;
+};
+
+const fetchMembershipRoster = async (
+    departmentId: string,
+    _rangeStart: string,
+    _rangeEnd: string
+): Promise<AttendanceDirectoryMember[]> => {
     try {
-        const { data: memberships, error: membershipError } = await supabase
+        const membershipQuery = supabase
             .from('memberships')
             .select(`
                 person_id,
                 role,
                 legacy_member_directory_id,
                 legacy_group_member_id,
+                starts_at,
+                ends_at,
                 groups!group_id(id, name)
             `)
             .eq('department_id', departmentId)
-            .eq('status', 'active')
             .not('legacy_member_directory_id', 'is', null);
+
+        const { data: memberships, error: membershipError } = await membershipQuery;
 
         if (membershipError) throw membershipError;
         if (!memberships || memberships.length === 0) return [];
@@ -113,6 +166,8 @@ const fetchActiveMembershipRoster = async (departmentId: string): Promise<Attend
                     role_in_group: membership.role || directory.role_in_group,
                     group_member_id: membership.legacy_group_member_id,
                     person_id: membership.person_id,
+                    starts_at: membership.starts_at,
+                    ends_at: membership.ends_at,
                     phase2_membership_source: 'memberships'
                 });
                 return roster;
@@ -123,8 +178,12 @@ const fetchActiveMembershipRoster = async (departmentId: string): Promise<Attend
     }
 };
 
-const fetchAttendanceRoster = async (departmentId: string): Promise<AttendanceDirectoryMember[]> => {
-    const phase2Roster = await fetchActiveMembershipRoster(departmentId);
+const fetchAttendanceRoster = async (
+    departmentId: string,
+    rangeStart: string,
+    rangeEnd: string
+): Promise<AttendanceDirectoryMember[]> => {
+    const phase2Roster = await fetchMembershipRoster(departmentId, rangeStart, rangeEnd);
     if (phase2Roster.length > 0) return phase2Roster;
 
     const { data, error } = await supabase
@@ -135,6 +194,48 @@ const fetchAttendanceRoster = async (departmentId: string): Promise<AttendanceDi
 
     if (error) throw error;
     return (data || []) as AttendanceDirectoryMember[];
+};
+
+const toMetricRoster = (members: AttendanceDirectoryMember[]): AttendanceRosterMember[] => {
+    return members
+        .filter((member) => member.person_id)
+        .map((member) => ({
+            directoryMemberId: member.id,
+            personId: String(member.person_id),
+            fullName: member.full_name || '이름 없음',
+            groupId: member.group_id,
+            groupName: member.group_name,
+            role: member.role_in_group,
+            spouseName: member.spouse_name,
+            familyName: member.family_name,
+            startsAt: typeof member.starts_at === 'string' ? member.starts_at : null,
+            endsAt: typeof member.ends_at === 'string' ? member.ends_at : null,
+        }));
+};
+
+const toMetricAttendance = (attendance: AttendanceRow[]): AttendanceRecordForMetrics[] => {
+    return attendance.map((record) => ({
+        directoryMemberId: record.directory_member_id,
+        status: record.status,
+    }));
+};
+
+const getAttendanceItemFamilyKey = (item: AttendanceDashboardItem) => {
+    if (item.familyName) return `family:${item.familyName}`;
+    if (item.spouseName) return `spouse:${[item.name, item.spouseName].sort().join('_')}`;
+    return `person:${item.name}`;
+};
+
+const sortAttendanceItemsForDisplay = (items: AttendanceDashboardItem[]) => {
+    return [...items].sort((a, b) => {
+        const groupDiff = a.group.localeCompare(b.group);
+        if (groupDiff !== 0) return groupDiff;
+
+        const familyDiff = getAttendanceItemFamilyKey(a).localeCompare(getAttendanceItemFamilyKey(b));
+        if (familyDiff !== 0) return familyDiff;
+
+        return a.name.localeCompare(b.name);
+    });
 };
 
 export default function AttendancePage() {
@@ -150,8 +251,9 @@ export default function AttendancePage() {
     const [selectedWeekId, setSelectedWeekId] = useState<string>('');
 
     // Data States
-    const [attendanceData, setAttendanceData] = useState<any[]>([]);
+    const [attendanceData, setAttendanceData] = useState<AttendanceDashboardItem[]>([]);
     const [groupStats, setGroupStats] = useState<any[]>([]);
+    const [selectedWeekMetrics, setSelectedWeekMetrics] = useState<WeekAttendanceMetrics | null>(null);
 
     // Monthly/Weekly View States
     const [monthWeeks, setMonthWeeks] = useState<any[]>([]);
@@ -330,27 +432,41 @@ export default function AttendancePage() {
                     .lte('week_date', endOfMonth)
                     .order('week_date', { ascending: true });
 
-                // 안정적인 통계를 위해 Phase 2 기준 현재 활성 출석 대상 수 조회
-                const currentRoster = await fetchAttendanceRoster(selectedDeptId);
+                // 안정적인 통계를 위해 주차 날짜 기준 Phase 2 active person 수 조회
+                const monthRoster = toMetricRoster(await fetchAttendanceRoster(selectedDeptId, startOfMonth, endOfMonth));
+                const { data: monthNoMeetingDays } = await supabase
+                    .from('no_meeting_days')
+                    .select('week_date')
+                    .eq('department_id', selectedDeptId)
+                    .gte('week_date', startOfMonth)
+                    .lte('week_date', endOfMonth);
+                const monthNoMeetingDateSet = new Set<string>(
+                    ((monthNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
+                );
 
                 if (trendWeeks && trendWeeks.length > 0) {
                     const trendData = await Promise.all(trendWeeks.map(async (w) => {
                         // 스냅샷 방식: 해당 부서 내의 조들로 기록된 특정 주차의 데이터를 모두 조회
                         const { data: weekAtt } = await supabase
                             .from('attendance')
-                            .select('status, groups!inner(department_id)')
+                            .select('directory_member_id, status, groups!inner(department_id)')
                             .eq('week_id', w.id)
                             .eq('groups.department_id', selectedDeptId);
 
-                        const weeklyAttendance = (weekAtt || []) as AttendanceStatusRow[];
-                        const present = weeklyAttendance.filter(a => a.status === 'present').length || 0;
-                        const total = currentRoster.length || weeklyAttendance.length || 0;
+                        const metrics = calculateWeekAttendanceMetrics({
+                            weekDate: w.week_date,
+                            roster: monthRoster,
+                            attendance: toMetricAttendance((weekAtt || []) as AttendanceRow[]),
+                            noMeetingDates: monthNoMeetingDateSet,
+                        });
 
                         return {
                             id: w.id,
                             date: w.week_date.substring(5), // MM-DD
-                            present,
-                            total
+                            present: metrics.presentPeople,
+                            total: metrics.totalPeople,
+                            rate: metrics.rate,
+                            isNoMeetingDay: metrics.isNoMeetingDay,
                         };
                     }));
                     setWeeklyTrendData(trendData);
@@ -400,8 +516,14 @@ export default function AttendancePage() {
         if (!selectedDeptId || !selectedWeekId) return;
 
         try {
-            // 1. Fetch current members from Phase 2 memberships first.
-            const members = await fetchAttendanceRoster(selectedDeptId);
+            const selectedWeek = weeks.find((week) => week.id === selectedWeekId) as WeekRow | undefined;
+            if (!selectedWeek) return;
+
+            // 1. Fetch members active on this week from Phase 2 memberships first.
+            const members = await fetchAttendanceRoster(selectedDeptId, selectedWeek.week_date, selectedWeek.week_date);
+            const metricRoster = toMetricRoster(members);
+            const activeMetricRoster = getActiveRosterForWeek(metricRoster, selectedWeek.week_date);
+            const activeDirectoryIds = new Set(activeMetricRoster.map((member) => member.directoryMemberId));
 
             // 2. Fetch Attendance + Groups (Snapshot) for this week
             // 해당 부서의 조들에 속한 모든 출석 기록을 가져옴
@@ -415,6 +537,25 @@ export default function AttendancePage() {
                 .eq('groups.department_id', selectedDeptId);
 
             if (aError) throw aError;
+            const attendanceRows = (attendance || []) as AttendanceRow[];
+
+            const { data: selectedNoMeetingDays } = await supabase
+                .from('no_meeting_days')
+                .select('week_date')
+                .eq('department_id', selectedDeptId)
+                .eq('week_date', selectedWeek.week_date);
+
+            const selectedNoMeetingDateSet = new Set<string>(
+                ((selectedNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
+            );
+
+            const metrics = calculateWeekAttendanceMetrics({
+                weekDate: selectedWeek.week_date,
+                roster: metricRoster,
+                attendance: toMetricAttendance(attendanceRows),
+                noMeetingDates: selectedNoMeetingDateSet,
+            });
+            setSelectedWeekMetrics(metrics);
 
             // 3. Merge & Reconstruct Data
             // 부서 내 전체 조 목록 조회 (미제출 조 표시용)
@@ -426,20 +567,23 @@ export default function AttendancePage() {
 
             // 실시간 명단(members) 기준이 아니라, 실제 기록(attendance) 기준으로 명단 재구성
             // 단, 미제출된 성도는 members 명단에서 보충하되, "이미 제출된 조"는 건드리지 않음
-            const snapshotIds = new Set((attendance || []).map(a => a.directory_member_id));
-            const submittedGroupIds = new Set((attendance || []).map(a => a.group_id || (a as any).groups?.id).filter(Boolean));
-            const submittedGroupNames = new Set((attendance || []).map(a => (a as any).groups?.name).filter(Boolean));
+            const snapshotIds = new Set(attendanceRows.map(a => a.directory_member_id));
+            const submittedGroupIds = new Set(attendanceRows.map(a => a.group_id || a.groups?.id).filter(Boolean));
+            const submittedGroupNames = new Set(attendanceRows.map(a => a.groups?.name).filter(Boolean));
 
-            const mergedSnapshot = (attendance || []).map(att => {
+            const mergedSnapshot = attendanceRows.map(att => {
                 const memberInfo = members.find(m => m.id === att.directory_member_id);
                 return {
                     id: att.directory_member_id,
+                    personId: memberInfo?.person_id,
                     name: memberInfo?.full_name || '이동/비활성 성도',
                     department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
                     group: att.groups?.name || '조 없음',
                     role: memberInfo?.role_in_group || '성도',
                     status: att.status || 'absent',
-                    updatedAt: att.updated_at
+                    updatedAt: att.updated_at || null,
+                    spouseName: memberInfo?.spouse_name,
+                    familyName: memberInfo?.family_name,
                 };
             });
 
@@ -448,21 +592,25 @@ export default function AttendancePage() {
             const missingMembers = members
                 .filter(m => {
                     const isNotChecked = !snapshotIds.has(m.id);
+                    const isActiveOnWeek = activeDirectoryIds.has(m.id);
                     // ID 또는 이름 기반으로 이미 제출된 조인지 확인
                     const isNotSubmittedGroup = !submittedGroupIds.has(m.group_id) && !submittedGroupNames.has(m.group_name);
-                    return isNotChecked && isNotSubmittedGroup && m.is_active;
+                    return isNotChecked && isNotSubmittedGroup && isActiveOnWeek;
                 })
                 .map(m => ({
                     id: m.id,
-                    name: m.full_name,
+                    personId: m.person_id,
+                    name: m.full_name || '이름 없음',
                     department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
                     group: m.group_name || '조 없음',
                     role: m.role_in_group || '성도',
                     status: 'absent',
-                    updatedAt: null
+                    updatedAt: null,
+                    spouseName: m.spouse_name,
+                    familyName: m.family_name,
                 }));
 
-            const finalMerged = [...mergedSnapshot, ...missingMembers];
+            const finalMerged = sortAttendanceItemsForDisplay([...mergedSnapshot, ...missingMembers]);
             setAttendanceData(finalMerged);
 
             // 4. Calculate Group Stats (All Groups in Dept)
@@ -517,9 +665,23 @@ export default function AttendancePage() {
 
             if (!periodWeeks || periodWeeks.length === 0) return;
 
-            // Fetch all members
-            const members = await fetchAttendanceRoster(selectedDeptId);
-            if (members.length === 0) return;
+            const noMeetingDateSet = new Set<string>();
+            const { data: noMeetingDaysForInsight } = await supabase
+                .from('no_meeting_days')
+                .select('week_date')
+                .eq('department_id', selectedDeptId)
+                .gte('week_date', startDate)
+                .lte('week_date', endDate);
+            ((noMeetingDaysForInsight || []) as { week_date: string }[]).forEach((day) => {
+                noMeetingDateSet.add(day.week_date);
+            });
+
+            const meetingWeeks = (periodWeeks as WeekRow[]).filter((week) => !noMeetingDateSet.has(week.week_date));
+
+            // Fetch members active during the selected period.
+            const members = await fetchAttendanceRoster(selectedDeptId, startDate, endDate);
+            const metricRoster = toMetricRoster(members);
+            if (metricRoster.length === 0) return;
 
             // Fetch all attendance for this department for the period
             const { data: allAtt } = await supabase
@@ -529,25 +691,45 @@ export default function AttendancePage() {
 
             if (!allAtt) return;
 
-            // Analyze
-            const report = members.map(m => {
-                const myAtt = allAtt.filter(a => a.directory_member_id === m.id);
-                const presentCount = myAtt.filter(a => a.status === 'present').length;
-                const rate = periodWeeks.length > 0 ? (presentCount / periodWeeks.length) * 100 : 0;
+            const attendanceRows = (allAtt || []) as PeriodAttendanceRow[];
+            const rosterByPerson = new Map<string, AttendanceRosterMember[]>();
+            metricRoster.forEach((member) => {
+                rosterByPerson.set(member.personId, [...(rosterByPerson.get(member.personId) || []), member]);
+            });
+
+            // Analyze by real person, not member_directory row.
+            const report = Array.from(rosterByPerson.entries()).map(([personId, personRoster]) => {
+                const displayMember = sortRosterForDisplay(personRoster)[0];
+                const activeMeetingWeeks = meetingWeeks.filter((week) =>
+                    personRoster.some((member) => getActiveRosterForWeek([member], week.week_date).length > 0)
+                );
+                const activeWeekIds = new Set(activeMeetingWeeks.map((week) => week.id));
+                const personDirectoryIds = new Set(personRoster.map((member) => member.directoryMemberId));
+                const myAtt = attendanceRows.filter((attendance) =>
+                    personDirectoryIds.has(attendance.directory_member_id) && activeWeekIds.has(attendance.week_id)
+                );
+                const presentWeekIds = new Set(
+                    myAtt
+                        .filter(a => a.status === 'present' || a.status === 'late')
+                        .map(a => a.week_id)
+                );
+                const presentCount = presentWeekIds.size;
+                const rate = activeMeetingWeeks.length > 0 ? (presentCount / activeMeetingWeeks.length) * 100 : 0;
 
                 // Check consecutive absences (last 3 weeks of the period)
-                const last3Weeks = periodWeeks.slice(0, 3);
+                const last3Weeks = activeMeetingWeeks.slice(0, 3);
                 const consecutiveAbsences = last3Weeks.length >= 3 && last3Weeks.every(w => {
-                    const found = myAtt.find(a => a.week_id === w.id);
-                    return !found || found.status === 'absent';
+                    return !presentWeekIds.has(w.id);
                 });
 
                 return {
-                    ...m,
+                    id: personId,
+                    full_name: displayMember.fullName,
+                    group_name: displayMember.groupName || '조 없음',
                     presentCount,
                     rate,
                     consecutiveAbsences,
-                    totalWeeks: periodWeeks.length
+                    totalWeeks: activeMeetingWeeks.length
                 };
             });
 
@@ -615,7 +797,9 @@ export default function AttendancePage() {
             }
 
             // 2. Fetch all members
-            const members = await fetchAttendanceRoster(selectedDeptId);
+            const members = sortRosterForDisplay(
+                toMetricRoster(await fetchAttendanceRoster(selectedDeptId, startStr, endStr))
+            );
             if (members.length === 0) return;
 
             // 2.5. 해당 기간의 모임없는 날 조회
@@ -630,7 +814,7 @@ export default function AttendancePage() {
                 (noMeetingDays || []).map((d: any) => d.week_date as string)
             );
             // 출석률 분모에서 모임없는 날 제외
-            const meetingWeeks = rangeWeeks.filter((w: any) => !noMeetingDateSet.has(w.week_date));
+            const meetingWeeks = (rangeWeeks as WeekRow[]).filter((w) => !noMeetingDateSet.has(w.week_date));
 
             // 3. Fetch all attendance for these weeks
             const { data: allAtt } = await supabase
@@ -642,17 +826,22 @@ export default function AttendancePage() {
 
             // 4. Transform to Excel data (Rows: Members, Columns: Weeks)
             const exportData = members.map(m => {
-                const row: any = {
-                    '조': m.group_name || '조 없음',
-                    '이름': m.full_name,
-                    '역할': m.role_in_group || '성도'
+                const activeMeetingWeeks = meetingWeeks.filter((week) =>
+                    getActiveRosterForWeek([m], week.week_date).length > 0
+                );
+                const row: Record<string, string> = {
+                    '조': m.groupName || '조 없음',
+                    '이름': m.fullName,
+                    '역할': m.role || '성도'
                 };
 
-                rangeWeeks.forEach((w: any) => {
+                (rangeWeeks as WeekRow[]).forEach((w) => {
                     if (noMeetingDateSet.has(w.week_date)) {
                         row[w.week_date] = '모임없음';
+                    } else if (getActiveRosterForWeek([m], w.week_date).length === 0) {
+                        row[w.week_date] = '-';
                     } else {
-                        const att = allAtt.find((a: any) => a.directory_member_id === m.id && a.week_id === w.id);
+                        const att = (allAtt as PeriodAttendanceRow[]).find((a) => a.directory_member_id === m.directoryMemberId && a.week_id === w.id);
                         row[w.week_date] = att
                             ? (att.status === 'present' ? 'O'
                                 : att.status === 'absent' ? 'X'
@@ -662,10 +851,13 @@ export default function AttendancePage() {
                     }
                 });
 
-                const myAtts = (allAtt as any[]).filter((a: any) => a.directory_member_id === m.id);
-                const presentCount = myAtts.filter((a: any) => a.status === 'present' || a.status === 'late').length;
-                row['출석률'] = meetingWeeks.length > 0
-                    ? `${Math.round((presentCount / meetingWeeks.length) * 100)}%`
+                const activeWeekIds = new Set(activeMeetingWeeks.map((week) => week.id));
+                const myAtts = (allAtt as PeriodAttendanceRow[]).filter((a) =>
+                    a.directory_member_id === m.directoryMemberId && activeWeekIds.has(a.week_id)
+                );
+                const presentCount = myAtts.filter((a) => a.status === 'present' || a.status === 'late').length;
+                row['출석률'] = activeMeetingWeeks.length > 0
+                    ? `${Math.round((presentCount / activeMeetingWeeks.length) * 100)}%`
                     : '-';
 
                 return row;
@@ -818,8 +1010,8 @@ export default function AttendancePage() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 px-1">
                 <div className="bg-white dark:bg-slate-800/40 p-6 rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-indigo-500/30 transition-all">
                     <div>
-                        <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">전체 구성원</p>
-                        <h4 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">{attendanceData.length}</h4>
+                        <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">선택 주차 대상</p>
+                        <h4 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">{selectedWeekMetrics?.totalPeople ?? 0}</h4>
                     </div>
                     <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-700/50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500 group-hover:text-white transition-all">
                         <Users className="w-6 h-6" />
@@ -829,7 +1021,7 @@ export default function AttendancePage() {
                     <div>
                         <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">금주 출석</p>
                         <h4 className="text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tighter">
-                            {attendanceData.filter(a => a.status === 'present').length}
+                            {selectedWeekMetrics?.presentPeople ?? 0}
                         </h4>
                     </div>
                     <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white transition-all">
@@ -840,7 +1032,7 @@ export default function AttendancePage() {
                     <div>
                         <p className="text-[10px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest mb-1">금주 결석</p>
                         <h4 className="text-3xl font-black text-rose-600 dark:text-rose-400 tracking-tighter">
-                            {attendanceData.length - attendanceData.filter(a => a.status === 'present').length}
+                            {selectedWeekMetrics?.absentPeople ?? 0}
                         </h4>
                     </div>
                     <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-500/10 flex items-center justify-center text-rose-500 group-hover:bg-rose-500 group-hover:text-white transition-all">
@@ -849,9 +1041,9 @@ export default function AttendancePage() {
                 </div>
                 <div className="bg-indigo-600 p-6 rounded-2xl shadow-xl shadow-indigo-500/20 flex items-center justify-between group hover:scale-[1.02] transition-all">
                     <div>
-                        <p className="text-[10px] font-black text-indigo-100/60 uppercase tracking-widest mb-1">종합 출석률</p>
+                        <p className="text-[10px] font-black text-indigo-100/60 uppercase tracking-widest mb-1">선택 주차 출석률</p>
                         <h4 className="text-3xl font-black text-white tracking-tighter">
-                            {attendanceData.length > 0 ? Math.round((attendanceData.filter(a => a.status === 'present').length / attendanceData.length) * 100) : 0}%
+                            {selectedWeekMetrics?.rate === null || selectedWeekMetrics?.rate === undefined ? '-' : selectedWeekMetrics.rate}%
                         </h4>
                     </div>
                     <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-white">
