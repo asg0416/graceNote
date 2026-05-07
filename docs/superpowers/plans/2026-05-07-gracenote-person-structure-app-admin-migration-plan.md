@@ -278,6 +278,25 @@ Manual smoke:
 - [ ] 인사이트 리포트/출석 우수자/집중 보살핌 표시
 - [ ] 리포트 추출 파일 생성
 
+2026-05-08 smoke findings:
+- 출석 현황 화면은 Phase 2 roster를 읽는 smoke 자체는 크게 깨지지 않았다.
+- 다만 화면의 기존 계산 모델 결함이 드러났다.
+- 예닮부 현재 active membership rows는 112개이고 active people은 107명이다.
+- 주차별 화면 총원은 실제 person 수가 바뀌어서가 아니라 `해당 주 attendance snapshot + 미제출 조 current roster supplement`를 섞기 때문에 97~113처럼 흔들린다.
+- 김보영은 데이터상 2026-01-31에 첫 `member_directory` row가 생겼고, 동준 상희 조 active row는 2026-02-02에 생겼다. 그래서 1월 리포트에 없거나 2월부터 보이는 것은 현재 dev 데이터 기준으로는 정상이다. 실제 운영 사실과 다르면 시작일/이력 보정이 필요하다.
+- 부부 정렬은 attendance page에 구현되어 있지 않다. 현재 roster/export/insight는 `group_name`, `full_name` 중심이라 같은 부부라도 서로 다른 active group row가 있거나 spouse 관계가 cross-group이면 떨어져 보일 수 있다.
+- `종합 출석률` 라벨은 실제로 선택 주차의 출석률이다. 라벨을 `선택 주차 출석률` 등으로 바꾸는 것이 맞다.
+- 인사이트 리포트와 export의 출석률 계산 기준이 다르다. insight는 `present`만 출석으로 보고 no-meeting day도 분모에 포함한다. export는 `present`와 `late`를 출석으로 보고 no-meeting day를 분모에서 제외한다.
+
+Decision:
+- Admin attendance는 단순 read-switch가 아니라 별도 attendance dashboard audit/fix로 분리한다.
+- Fix order should be:
+  1. 라벨 수정: `종합 출석률` -> `선택 주차 출석률`.
+  2. insight/export 출석률 기준 통일: no-meeting day 제외, present+late 출석 인정 여부 확정.
+  3. weekly total/card denominator 정책 확정: snapshot total vs current active people/rows를 UI에서 분리.
+  4. 부부형 부서 정렬: family/spouse aware sort를 export와 상세 명단에 적용.
+  5. 김보영 같은 과거 소속 보정은 코드 문제가 아니라 데이터 이력 보정 후보로 별도 관리.
+
 ---
 
 ## Task 4: Edge Function Read-Switch Plan
