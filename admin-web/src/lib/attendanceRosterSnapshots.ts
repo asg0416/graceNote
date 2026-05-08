@@ -12,6 +12,7 @@ export type AttendanceRosterSnapshotMember = {
   attendanceStatus: SnapshotAttendanceStatus;
   included: boolean;
   source?: string | null;
+  reason?: string | null;
 };
 
 export type SnapshotAttendanceMetrics = {
@@ -77,6 +78,7 @@ type AttendanceRosterSnapshotMemberRow = {
   attendance_status?: string | null;
   included?: boolean | null;
   source?: string | null;
+  reason?: string | null;
 };
 
 const isPresentStatus = (status: SnapshotAttendanceStatus) => (
@@ -107,6 +109,7 @@ export const mapSnapshotMemberRow = (
   attendanceStatus: normalizeSnapshotStatus(row.attendance_status),
   included: row.included !== false,
   source: row.source,
+  reason: row.reason,
 });
 
 export const calculateSnapshotMetrics = (
@@ -200,7 +203,8 @@ export const fetchAttendanceRosterSnapshotMembers = async (
       role,
       attendance_status,
       included,
-      source
+      source,
+      reason
     `)
     .eq('snapshot_id', snapshotId)
     .order('group_name', { ascending: true, nullsFirst: false })
@@ -285,6 +289,21 @@ export const loadGroupRosterIntoSnapshot = async (
 
   if (error) {
     throw new Error(error.message || '조명단을 snapshot에 불러오지 못했습니다.');
+  }
+
+  return typeof data === 'number' ? data : 0;
+};
+
+export const loadMissingGroupRostersIntoSnapshot = async (
+  client: RpcClientLike,
+  snapshotId: string
+) => {
+  const { data, error } = await client.rpc('load_missing_group_rosters_into_attendance_snapshot', {
+    p_snapshot_id: snapshotId,
+  });
+
+  if (error) {
+    throw new Error(error.message || '미제출 조명단을 snapshot에 불러오지 못했습니다.');
   }
 
   return typeof data === 'number' ? data : 0;

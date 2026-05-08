@@ -325,6 +325,33 @@ Verification:
 - `npx tsc --noEmit --pretty false`: no attendance/metrics errors. Existing unrelated `src/app/churches/page.tsx(253,81)` error remains.
 - `verify_phase2_consistency_dev_2026-04-30.sql`: all mismatch counts 0.
 
+2026-05-09 snapshot UI/export follow-up:
+- The dashboard moved from formula-based denominator repair to explicit `attendance_roster_snapshots` / `attendance_roster_snapshot_members`.
+- Admins can adjust a week+department snapshot like an Excel attendance sheet:
+  - toggle present/absent by badge click,
+  - exclude a person from that week only,
+  - add a person to that week only,
+  - load one missing group roster,
+  - bulk-load all groups that have no included snapshot members.
+- Admin web can now set/cancel `no_meeting_days` for a selected week when no leader attendance has been submitted.
+- Leader-submitted attendance conflicts are handled as:
+  - `덮어쓰기`: apply leader-submitted statuses to the admin snapshot,
+  - `병합하기`: add leader-submitted excluded people while keeping existing admin changes,
+  - `관리자 화면 유지`: keep the admin snapshot and persist the decision in snapshot member `reason`.
+- This persistent reason prevents the same resolved conflict from reappearing after refresh.
+- Export now follows the same snapshot source:
+  - no-meeting weeks are excluded from rate,
+  - snapshot members with `unknown` status export as `X` because they are included in the denominator,
+  - `-` means the person was not in that week snapshot,
+  - spouse/family-aware sort is applied,
+  - if one person has multiple group rows in the same department/week, export merges them by attendance priority: `present` > `late` > `absent/unknown`.
+
+Verification:
+- `node --test admin-web/src/lib/attendanceRosterSnapshots.test.ts`: 4 tests passed.
+- `git diff --check`: passed.
+- `npx tsc --noEmit --pretty false`: no attendance/snapshot errors. Existing unrelated `src/app/churches/page.tsx(253,81)` error remains.
+- Manual smoke: user confirmed the updated conflict UI, snapshot edit behavior, report export reflection, no-meeting flow, and multi-group attendance merge direction.
+
 ---
 
 ## Task 4: Edge Function Read-Switch Plan

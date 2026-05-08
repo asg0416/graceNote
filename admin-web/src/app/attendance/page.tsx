@@ -42,6 +42,7 @@ import {
     ensureAttendanceRosterSnapshot,
     fetchAttendanceRosterSnapshotMembers,
     loadGroupRosterIntoSnapshot,
+    loadMissingGroupRostersIntoSnapshot,
     setSnapshotMemberIncluded,
     setSnapshotMemberStatus,
     type AttendanceRosterSnapshotMembersClient,
@@ -82,17 +83,32 @@ type AttendanceDashboardItem = {
     updatedAt: string | null;
     spouseName?: string | null;
     familyName?: string | null;
+    included?: boolean;
+    submittedStatus?: SnapshotAttendanceStatus | null;
+    hasSubmissionConflict?: boolean;
+    reason?: string | null;
 };
 
 type AttendanceGroupRow = {
     id: string;
     name: string;
+    created_at?: string | null;
 };
 
 type SnapshotAddCandidate = {
     personId: string;
     name: string;
     groupName?: string | null;
+    scopeLabel: string;
+};
+
+type ExportAttendancePerson = {
+    name: string;
+    role: string;
+    groupName: string;
+    spouseName?: string | null;
+    familyName?: string | null;
+    weeks: Map<string, AttendanceRosterSnapshotMember>;
 };
 
 type Phase2AttendanceMembership = {
@@ -108,6 +124,8 @@ type Phase2AttendanceMembership = {
         name?: string | null;
     } | null;
 };
+
+const SUBMISSION_CONFLICT_KEEP_ADMIN_REASON = 'admin attendance dashboard keep admin over submitted attendance';
 
 type AttendanceStatusRow = {
     status?: string | null;
@@ -252,8 +270,16 @@ const getAttendanceItemFamilyKey = (item: AttendanceDashboardItem) => {
     return `person:${item.name}`;
 };
 
-const sortAttendanceItemsForDisplay = (items: AttendanceDashboardItem[]) => {
+const sortAttendanceItemsForDisplay = (
+    items: AttendanceDashboardItem[],
+    groupOrder = new Map<string, number>()
+) => {
     return [...items].sort((a, b) => {
+        const aGroupOrder = groupOrder.get(a.group) ?? 9999;
+        const bGroupOrder = groupOrder.get(b.group) ?? 9999;
+        const groupOrderDiff = aGroupOrder - bGroupOrder;
+        if (groupOrderDiff !== 0) return groupOrderDiff;
+
         const groupDiff = a.group.localeCompare(b.group);
         if (groupDiff !== 0) return groupDiff;
 
@@ -286,6 +312,52 @@ const applyAttendanceRowsToSnapshotMembers = (
                 : member.attendanceStatus,
         };
     });
+};
+
+const normalizeSubmittedAttendanceStatus = (
+    status?: string | null
+): SnapshotAttendanceStatus | null => {
+    if (status === 'present' || status === 'late' || status === 'absent') {
+        return status;
+    }
+
+    return null;
+};
+
+const getCompactAttendanceLabel = (status?: SnapshotAttendanceStatus | null) => {
+    switch (status) {
+        case 'present':
+            return '출석';
+        case 'late':
+            return '지각';
+        case 'absent':
+            return '결석';
+        default:
+            return '미확인';
+    }
+};
+
+const getExportAttendanceMark = (status?: SnapshotAttendanceStatus | null) => {
+    switch (status) {
+        case 'present':
+            return 'O';
+        case 'late':
+            return 'L';
+        case 'absent':
+        case 'unknown':
+            return 'X';
+        default:
+            return '-';
+    }
+};
+
+const mergeExportAttendanceStatus = (
+    current: SnapshotAttendanceStatus,
+    incoming: SnapshotAttendanceStatus
+): SnapshotAttendanceStatus => {
+    if (current === 'present' || incoming === 'present') return 'present';
+    if (current === 'late' || incoming === 'late') return 'late';
+    return 'absent';
 };
 
 const formatSnapshotMemberNames = (
@@ -348,6 +420,10 @@ export default function AttendancePage() {
     const [selectedWeekMetrics, setSelectedWeekMetrics] = useState<WeekAttendanceMetrics | SnapshotAttendanceMetrics | null>(null);
     const [targetExplanation, setTargetExplanation] = useState<string[]>([]);
     const [snapshotEditLoadingId, setSnapshotEditLoadingId] = useState<string | null>(null);
+    const [ignoredSubmissionConflictKeys, setIgnoredSubmissionConflictKeys] = useState<Set<string>>(new Set());
+    const [selectedWeekNoMeetingReason, setSelectedWeekNoMeetingReason] = useState<string | null>(null);
+    const [selectedWeekHasSubmittedAttendance, setSelectedWeekHasSubmittedAttendance] = useState(false);
+    const [isNoMeetingMutationLoading, setIsNoMeetingMutationLoading] = useState(false);
 
     // Monthly/Weekly View States
     const [monthWeeks, setMonthWeeks] = useState<any[]>([]);
@@ -608,6 +684,8 @@ export default function AttendancePage() {
         } else {
             setAttendanceData([]);
             setGroupStats([]);
+            setSelectedWeekNoMeetingReason(null);
+            setSelectedWeekHasSubmittedAttendance(false);
         }
     }, [selectedWeekId]);
 
@@ -629,15 +707,26 @@ export default function AttendancePage() {
 
             const { data: selectedNoMeetingDays } = await supabase
                 .from('no_meeting_days')
-                .select('week_date')
+                .select('week_date, reason')
                 .eq('department_id', selectedDeptId)
                 .eq('week_date', selectedWeek.week_date);
 
             const selectedNoMeetingDateSet = new Set<string>(
                 ((selectedNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
             );
+            const selectedNoMeetingDay = ((selectedNoMeetingDays || []) as { week_date: string; reason?: string | null }[])[0];
 
             const isNoMeetingDay = selectedNoMeetingDateSet.has(selectedWeek.week_date);
+            setSelectedWeekNoMeetingReason(isNoMeetingDay ? selectedNoMeetingDay?.reason || '' : null);
+            setSelectedWeekHasSubmittedAttendance(attendanceRows.length > 0);
+            const rawSnapshotMemberById = new Map(
+                snapshotMembers.map((member) => [member.id, member])
+            );
+            const submittedAttendanceByDirectoryId = new Map(
+                attendanceRows
+                    .filter((row) => row.directory_member_id)
+                    .map((row) => [row.directory_member_id, normalizeSubmittedAttendanceStatus(row.status)])
+            );
             const metrics = isNoMeetingDay
                 ? {
                     totalPeople: 0,
@@ -700,32 +789,83 @@ export default function AttendancePage() {
             // 부서 내 전체 조 목록 조회 (미제출 조 표시용)
             const { data: deptGroups } = await supabase
                 .from('groups')
-                .select('id, name')
+                .select('id, name, created_at')
                 .eq('department_id', selectedDeptId)
-                .eq('is_active', true);
-            setAttendanceGroups((deptGroups || []) as AttendanceGroupRow[]);
+                .eq('is_active', true)
+                .order('created_at', { ascending: true })
+                .order('name', { ascending: true });
+            const orderedGroups = ((deptGroups || []) as AttendanceGroupRow[]);
+            const groupOrder = new Map(orderedGroups.map((group, index) => [group.name, index]));
+            setAttendanceGroups(orderedGroups);
+
+            const rosterForFamilySort = await fetchAttendanceRoster(selectedDeptId);
+            const familySortByPersonId = new Map(
+                rosterForFamilySort
+                    .filter((member) => member.person_id)
+                    .map((member) => [
+                        String(member.person_id),
+                        {
+                            spouseName: member.spouse_name || null,
+                            familyName: member.family_name || null,
+                        },
+                    ])
+            );
 
             const finalMerged = sortAttendanceItemsForDisplay(
                 snapshotMembersWithAttendance
-                    .filter((member) => member.included)
-                    .map((member) => ({
-                        id: member.legacyMemberDirectoryId || member.id,
-                        snapshotMemberId: member.id,
-                        personId: member.personId,
-                        name: member.displayName || '이름 없음',
-                        department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
-                        group: member.groupName || '미편성',
-                        role: member.role || 'member',
-                        status: member.attendanceStatus === 'unknown' ? 'absent' : member.attendanceStatus,
-                        updatedAt: null,
-                    }))
+                    .filter((member) => (
+                        member.included ||
+                        Boolean(
+                            member.legacyMemberDirectoryId &&
+                            submittedAttendanceByDirectoryId.has(member.legacyMemberDirectoryId)
+                        )
+                    ))
+                    .map((member) => {
+                        const familySort = familySortByPersonId.get(member.personId);
+                        const submittedStatus = member.legacyMemberDirectoryId
+                            ? submittedAttendanceByDirectoryId.get(member.legacyMemberDirectoryId) || null
+                            : null;
+                        const rawSnapshotStatus = rawSnapshotMemberById.get(member.id)?.attendanceStatus || 'unknown';
+                        const isExcludedButSubmitted = member.included === false && Boolean(submittedStatus);
+                        const isSubmittedConflictResolved = member.reason === SUBMISSION_CONFLICT_KEEP_ADMIN_REASON;
+                        const hasSubmissionConflict = Boolean(
+                            !isSubmittedConflictResolved &&
+                            (
+                                isExcludedButSubmitted ||
+                                (
+                                    submittedStatus &&
+                                    rawSnapshotStatus !== 'unknown' &&
+                                    rawSnapshotStatus !== submittedStatus
+                                )
+                            )
+                        );
+
+                        return {
+                            id: member.legacyMemberDirectoryId || member.id,
+                            snapshotMemberId: member.id,
+                            personId: member.personId,
+                            name: member.displayName || '이름 없음',
+                            department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
+                            group: member.groupName || '미편성',
+                            role: member.role || 'member',
+                            status: member.attendanceStatus === 'unknown' ? 'absent' : member.attendanceStatus,
+                            updatedAt: null,
+                            spouseName: familySort?.spouseName || null,
+                            familyName: familySort?.familyName || null,
+                            included: member.included,
+                            submittedStatus,
+                            hasSubmissionConflict,
+                            reason: member.reason,
+                        };
+                    }),
+                groupOrder
             );
             setAttendanceData(finalMerged);
 
             // 4. Calculate Group Stats (All Groups in Dept)
             const groupsMap = new Map<string, { name: string; total: number; present: number }>();
             // 먼저 부서 내 모든 조를 0으로 초기화
-            deptGroups?.forEach(g => {
+            orderedGroups.forEach(g => {
                 groupsMap.set(g.name, { name: g.name, total: 0, present: 0 });
             });
 
@@ -735,12 +875,18 @@ export default function AttendancePage() {
                 }
                 const g = groupsMap.get(item.group);
                 if (!g) return;
+                if (item.included === false) return;
                 g.total++;
                 if (item.status === 'present' || item.status === 'late') g.present++;
             });
 
             const stats = Array.from(groupsMap.values());
-            setGroupStats(stats.sort((a, b) => (b.total > 0 ? b.present / b.total : 0) - (a.total > 0 ? a.present / a.total : 0)));
+            setGroupStats(stats.sort((a, b) => {
+                const aOrder = groupOrder.get(a.name) ?? 9999;
+                const bOrder = groupOrder.get(b.name) ?? 9999;
+                if (aOrder !== bOrder) return aOrder - bOrder;
+                return a.name.localeCompare(b.name);
+            }));
 
             fetchInsights();
         } catch (err) {
@@ -793,8 +939,248 @@ export default function AttendancePage() {
         }
     };
 
+    const restoreSnapshotMemberWithSubmittedStatus = async (member: AttendanceDashboardItem) => {
+        if (!member.snapshotMemberId || !member.submittedStatus) return;
+
+        try {
+            setSnapshotEditLoadingId(member.snapshotMemberId);
+            await setSnapshotMemberIncluded(
+                supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                member.snapshotMemberId,
+                true,
+                'admin attendance dashboard restore submitted member'
+            );
+            await setSnapshotMemberStatus(
+                supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                member.snapshotMemberId,
+                member.submittedStatus,
+                'admin attendance dashboard apply submitted status'
+            );
+            setAttendanceSnapshotVersion((value) => value + 1);
+            await fetchAttendance();
+        } catch (err) {
+            console.error('Snapshot restore submitted member error:', err);
+            alert(err instanceof Error ? err.message : '조장 제출값 적용 중 오류가 발생했습니다.');
+        } finally {
+            setSnapshotEditLoadingId(null);
+        }
+    };
+
+    const applySubmittedStatusesForGroup = async (
+        groupName: string,
+        members: AttendanceDashboardItem[]
+    ) => {
+        const targets = members.filter((member) => member.snapshotMemberId && member.submittedStatus);
+        if (targets.length === 0) return;
+        if (!confirm(`${groupName} 조의 조장 제출 출석부를 관리자 확정값으로 적용할까요?`)) return;
+
+        const loadingKey = `group-submission:${groupName}`;
+        try {
+            setSnapshotEditLoadingId(loadingKey);
+            for (const member of targets) {
+                if (!member.snapshotMemberId || !member.submittedStatus) continue;
+
+                if (member.included === false) {
+                    await setSnapshotMemberIncluded(
+                        supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                        member.snapshotMemberId,
+                        true,
+                        'admin attendance dashboard restore group submitted member'
+                    );
+                }
+
+                await setSnapshotMemberStatus(
+                    supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                    member.snapshotMemberId,
+                    member.submittedStatus,
+                    'admin attendance dashboard apply group submitted status'
+                );
+            }
+            setAttendanceSnapshotVersion((value) => value + 1);
+            await fetchAttendance();
+        } catch (err) {
+            console.error('Apply group submitted statuses error:', err);
+            alert(err instanceof Error ? err.message : '조장 제출 출석부 적용 중 오류가 발생했습니다.');
+        } finally {
+            setSnapshotEditLoadingId(null);
+        }
+    };
+
+    const mergeSubmittedStatusesForGroup = async (
+        groupName: string,
+        members: AttendanceDashboardItem[]
+    ) => {
+        const excludedSubmittedTargets = members
+            .filter((member) => member.included === false)
+            .filter((member) => member.snapshotMemberId && member.submittedStatus);
+        const keepAdminTargets = members
+            .filter((member) => member.included !== false)
+            .filter((member) => member.hasSubmissionConflict && member.snapshotMemberId);
+        if (excludedSubmittedTargets.length === 0 && keepAdminTargets.length === 0) {
+            alert('병합할 조장 제출 변경사항이 없습니다.');
+            return;
+        }
+        if (!confirm(`${groupName} 조에서 조장이 제출한 새 인원은 추가하고, 기존 관리자 수정값은 유지할까요?`)) return;
+
+        const loadingKey = `group-submission:${groupName}`;
+        try {
+            setSnapshotEditLoadingId(loadingKey);
+            for (const member of excludedSubmittedTargets) {
+                if (!member.snapshotMemberId || !member.submittedStatus) continue;
+                await setSnapshotMemberIncluded(
+                    supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                    member.snapshotMemberId,
+                    true,
+                    'admin attendance dashboard merge submitted member'
+                );
+                await setSnapshotMemberStatus(
+                    supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                    member.snapshotMemberId,
+                    member.submittedStatus,
+                    'admin attendance dashboard merge submitted status'
+                );
+            }
+            for (const member of keepAdminTargets) {
+                if (!member.snapshotMemberId) continue;
+                await setSnapshotMemberStatus(
+                    supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                    member.snapshotMemberId,
+                    (member.status as SnapshotAttendanceStatus) || 'absent',
+                    SUBMISSION_CONFLICT_KEEP_ADMIN_REASON
+                );
+            }
+            setAttendanceSnapshotVersion((value) => value + 1);
+            await fetchAttendance();
+        } catch (err) {
+            console.error('Merge group submitted statuses error:', err);
+            alert(err instanceof Error ? err.message : '조장 제출 출석부 병합 중 오류가 발생했습니다.');
+        } finally {
+            setSnapshotEditLoadingId(null);
+        }
+    };
+
+    const getSubmissionConflictKey = (groupName: string) => `${selectedWeekId}:${groupName}`;
+
+    const keepAdminAttendanceForGroup = (groupName: string) => {
+        const targets = attendanceData
+            .filter((member) => member.group === groupName)
+            .filter((member) => member.hasSubmissionConflict)
+            .filter((member) => member.snapshotMemberId);
+
+        if (targets.length === 0) return;
+        if (!confirm(`${groupName} 조는 현재 관리자 화면을 확정하고 조장 제출본을 무시할까요?`)) return;
+
+        const loadingKey = `group-submission:${groupName}`;
+        const persistKeepAdminChoice = async () => {
+            try {
+                setSnapshotEditLoadingId(loadingKey);
+                for (const member of targets) {
+                    if (!member.snapshotMemberId) continue;
+
+                    if (member.included === false) {
+                        await setSnapshotMemberIncluded(
+                            supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                            member.snapshotMemberId,
+                            false,
+                            SUBMISSION_CONFLICT_KEEP_ADMIN_REASON
+                        );
+                    } else {
+                        await setSnapshotMemberStatus(
+                            supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                            member.snapshotMemberId,
+                            (member.status as SnapshotAttendanceStatus) || 'absent',
+                            SUBMISSION_CONFLICT_KEEP_ADMIN_REASON
+                        );
+                    }
+                }
+                setIgnoredSubmissionConflictKeys((previous) => {
+                    const next = new Set(previous);
+                    next.add(getSubmissionConflictKey(groupName));
+                    return next;
+                });
+                setAttendanceSnapshotVersion((value) => value + 1);
+                await fetchAttendance();
+            } catch (err) {
+                console.error('Keep admin attendance conflict resolution error:', err);
+                alert(err instanceof Error ? err.message : '관리자 화면 유지 처리 중 오류가 발생했습니다.');
+            } finally {
+                setSnapshotEditLoadingId(null);
+            }
+        };
+
+        void persistKeepAdminChoice();
+    };
+
+    const refreshAttendanceDashboard = async () => {
+        setAttendanceSnapshotVersion((value) => value + 1);
+        await fetchAttendance();
+    };
+
+    const markSelectedWeekAsNoMeetingDay = async () => {
+        if (!selectedDeptId || !selectedWeekId) return;
+
+        const selectedWeek = weeks.find((week) => week.id === selectedWeekId) as WeekRow | undefined;
+        if (!selectedWeek) return;
+
+        const reason = window.prompt('모임없는 날 사유를 입력하세요.', '모임 없음');
+        if (reason === null) return;
+
+        try {
+            setIsNoMeetingMutationLoading(true);
+            const { error } = await supabase
+                .from('no_meeting_days')
+                .upsert({
+                    department_id: selectedDeptId,
+                    week_date: selectedWeek.week_date,
+                    reason: reason.trim() || '모임 없음',
+                    created_by: profile?.id || null,
+                }, {
+                    onConflict: 'department_id,week_date',
+                });
+
+            if (error) throw error;
+
+            await refreshAttendanceDashboard();
+        } catch (err) {
+            console.error('No meeting day set error:', err);
+            alert(err instanceof Error ? err.message : '모임없는 날 지정 중 오류가 발생했습니다.');
+        } finally {
+            setIsNoMeetingMutationLoading(false);
+        }
+    };
+
+    const cancelSelectedWeekNoMeetingDay = async () => {
+        if (!selectedDeptId || !selectedWeekId) return;
+
+        const selectedWeek = weeks.find((week) => week.id === selectedWeekId) as WeekRow | undefined;
+        if (!selectedWeek) return;
+        if (!confirm('이 주차의 모임없는 날 지정을 취소할까요?')) return;
+
+        try {
+            setIsNoMeetingMutationLoading(true);
+            const { error } = await supabase
+                .from('no_meeting_days')
+                .delete()
+                .eq('department_id', selectedDeptId)
+                .eq('week_date', selectedWeek.week_date);
+
+            if (error) throw error;
+
+            await refreshAttendanceDashboard();
+        } catch (err) {
+            console.error('No meeting day cancel error:', err);
+            alert(err instanceof Error ? err.message : '모임없는 날 지정 취소 중 오류가 발생했습니다.');
+        } finally {
+            setIsNoMeetingMutationLoading(false);
+        }
+    };
+
     const toggleSnapshotMemberAttendance = async (member: AttendanceDashboardItem) => {
         if (!member.snapshotMemberId) return;
+        if (member.included === false && member.submittedStatus) {
+            await restoreSnapshotMemberWithSubmittedStatus(member);
+            return;
+        }
         await updateSnapshotMemberStatus(
             member.snapshotMemberId,
             member.status === 'present' || member.status === 'late' ? 'absent' : 'present'
@@ -802,24 +1188,48 @@ export default function AttendancePage() {
     };
 
     const openAddSnapshotMemberModal = async (groupId: string | null) => {
-        if (!selectedDeptId) return;
+        if (!selectedDeptId || !selectedChurchId) return;
         setAddSnapshotGroupId(groupId);
         setAddSnapshotSearch('');
 
         const roster = await fetchAttendanceRoster(selectedDeptId);
-        const seen = new Set<string>();
-        const candidates = roster
+        const candidatesByPerson = new Map<string, SnapshotAddCandidate>();
+
+        roster
             .filter((member) => member.person_id)
-            .filter((member) => {
-                if (!member.person_id || seen.has(member.person_id)) return false;
-                seen.add(member.person_id);
-                return true;
-            })
-            .map((member) => ({
-                personId: String(member.person_id),
-                name: member.full_name || '이름 없음',
-                groupName: member.group_name,
-            }))
+            .forEach((member) => {
+                const personId = String(member.person_id);
+                if (candidatesByPerson.has(personId)) return;
+
+                candidatesByPerson.set(personId, {
+                    personId,
+                    name: member.full_name || '이름 없음',
+                    groupName: member.group_name,
+                    scopeLabel: '현재 부서',
+                });
+            });
+
+        const { data: churchPeople, error: churchPeopleError } = await supabase
+            .from('people')
+            .select('id, display_name')
+            .eq('church_id', selectedChurchId)
+            .order('display_name', { ascending: true });
+
+        if (churchPeopleError) throw churchPeopleError;
+
+        (churchPeople || []).forEach((person) => {
+            const personId = String(person.id);
+            if (candidatesByPerson.has(personId)) return;
+
+            candidatesByPerson.set(personId, {
+                personId,
+                name: person.display_name || '이름 없음',
+                groupName: null,
+                scopeLabel: '같은 교회 / 현재 부서 소속 아님',
+            });
+        });
+
+        const candidates = Array.from(candidatesByPerson.values())
             .sort((a, b) => a.name.localeCompare(b.name));
 
         setAddSnapshotCandidates(candidates);
@@ -864,6 +1274,24 @@ export default function AttendancePage() {
         } catch (err) {
             console.error('Load group roster error:', err);
             alert(err instanceof Error ? err.message : '조명단 불러오기 중 오류가 발생했습니다.');
+        }
+    };
+
+    const loadMissingGroupRosters = async () => {
+        if (!currentSnapshotId) return;
+        if (!confirm('이 주차에 출석 대상이 비어 있는 조들의 현재 조명단을 한 번에 불러올까요?')) return;
+
+        try {
+            const count = await loadMissingGroupRostersIntoSnapshot(
+                supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                currentSnapshotId
+            );
+            setAttendanceSnapshotVersion((value) => value + 1);
+            await fetchAttendance();
+            alert(`${count}명의 미제출 조명단을 snapshot에 반영했습니다.`);
+        } catch (err) {
+            console.error('Load missing group rosters error:', err);
+            alert(err instanceof Error ? err.message : '미제출 조명단 불러오기 중 오류가 발생했습니다.');
         }
     };
 
@@ -1042,13 +1470,7 @@ export default function AttendancePage() {
                 return;
             }
 
-            // 2. Fetch all members
-            const members = sortRosterForDisplay(
-                toMetricRoster(await fetchAttendanceRoster(selectedDeptId))
-            );
-            if (members.length === 0) return;
-
-            // 2.5. 해당 기간의 모임없는 날 조회
+            // 2. 해당 기간의 모임없는 날 조회
             const { data: noMeetingDays } = await supabase
                 .from('no_meeting_days')
                 .select('week_date, reason')
@@ -1059,72 +1481,153 @@ export default function AttendancePage() {
             const noMeetingDateSet = new Set<string>(
                 (noMeetingDays || []).map((d: any) => d.week_date as string)
             );
-            // 출석률 분모에서 모임없는 날 제외
-            const meetingWeeks = (rangeWeeks as WeekRow[]).filter((w) => !noMeetingDateSet.has(w.week_date));
 
-            // 3. Fetch all attendance for these weeks
-            const { data: allAtt } = await supabase
-                .from('attendance')
-                .select('*')
-                .in('week_id', rangeWeeks.map(w => w.id));
+            const { data: exportGroups } = await supabase
+                .from('groups')
+                .select('id, name, created_at')
+                .eq('department_id', selectedDeptId)
+                .order('created_at', { ascending: true })
+                .order('name', { ascending: true });
 
-            if (!allAtt) return;
+            const exportGroupOrder = new Map(
+                ((exportGroups || []) as AttendanceGroupRow[])
+                    .map((group, index) => [group.name, index])
+            );
+            const rosterForFamilySort = await fetchAttendanceRoster(selectedDeptId);
+            const familySortByPersonId = new Map(
+                rosterForFamilySort
+                    .filter((member) => member.person_id)
+                    .map((member) => [
+                        String(member.person_id),
+                        {
+                            spouseName: member.spouse_name || null,
+                            familyName: member.family_name || null,
+                        },
+                    ])
+            );
 
-            // 4. Transform to Excel data (Rows: Members, Columns: Weeks)
-            const attendanceRows = (allAtt as PeriodAttendanceRow[]);
-            const metricsByWeekId = new Map<string, WeekAttendanceMetrics>();
-            (rangeWeeks as WeekRow[]).forEach((week) => {
-                const weekAttendance = attendanceRows
-                    .filter((attendance) => attendance.week_id === week.id)
-                    .map((attendance) => ({
-                        directoryMemberId: attendance.directory_member_id,
-                        status: attendance.status,
+            const snapshotMembersByWeekId = new Map<string, AttendanceRosterSnapshotMember[]>();
+            const peopleById = new Map<string, ExportAttendancePerson>();
+
+            for (const week of rangeWeeks as WeekRow[]) {
+                if (noMeetingDateSet.has(week.week_date)) {
+                    snapshotMembersByWeekId.set(week.id, []);
+                    continue;
+                }
+
+                const { snapshotMembersWithAttendance } = await getSnapshotMembersForWeek(
+                    selectedDeptId,
+                    week.id
+                );
+                const includedMembers = snapshotMembersWithAttendance
+                    .filter((member) => member.included);
+                snapshotMembersByWeekId.set(week.id, includedMembers);
+
+                includedMembers.forEach((member) => {
+                    const familySort = familySortByPersonId.get(member.personId);
+                    const existing = peopleById.get(member.personId) || {
+                        name: member.displayName || '이름 없음',
+                        role: member.role || '성도',
+                        groupName: member.groupName || '조 없음',
+                        spouseName: familySort?.spouseName || null,
+                        familyName: familySort?.familyName || null,
+                        weeks: new Map<string, AttendanceRosterSnapshotMember>(),
+                    };
+
+                    const existingWeekMember = existing.weeks.get(week.id);
+                    if (existingWeekMember) {
+                        existing.weeks.set(week.id, {
+                            ...existingWeekMember,
+                            attendanceStatus: mergeExportAttendanceStatus(
+                                existingWeekMember.attendanceStatus,
+                                member.attendanceStatus
+                            ),
+                        });
+                    } else {
+                        existing.weeks.set(week.id, member);
+                    }
+                    if (member.groupName && existing.groupName === '조 없음') {
+                        existing.groupName = member.groupName;
+                    }
+                    if (member.role && existing.role === '성도') {
+                        existing.role = member.role;
+                    }
+                    if (!existing.spouseName && familySort?.spouseName) {
+                        existing.spouseName = familySort.spouseName;
+                    }
+                    if (!existing.familyName && familySort?.familyName) {
+                        existing.familyName = familySort.familyName;
+                    }
+
+                    peopleById.set(member.personId, existing);
+                });
+            }
+
+            const exportPeople = Array.from(peopleById.values())
+                .sort((a, b) => {
+                    const aGroupOrder = exportGroupOrder.get(a.groupName) ?? 9999;
+                    const bGroupOrder = exportGroupOrder.get(b.groupName) ?? 9999;
+                    if (aGroupOrder !== bGroupOrder) return aGroupOrder - bGroupOrder;
+
+                    const groupDiff = a.groupName.localeCompare(b.groupName);
+                    if (groupDiff !== 0) return groupDiff;
+
+                    const familyDiff = getAttendanceItemFamilyKey({
+                        id: a.name,
+                        name: a.name,
+                        department: '',
+                        group: a.groupName,
+                        role: a.role,
+                        status: '',
+                        updatedAt: null,
+                        spouseName: a.spouseName,
+                        familyName: a.familyName,
+                    }).localeCompare(getAttendanceItemFamilyKey({
+                        id: b.name,
+                        name: b.name,
+                        department: '',
+                        group: b.groupName,
+                        role: b.role,
+                        status: '',
+                        updatedAt: null,
+                        spouseName: b.spouseName,
+                        familyName: b.familyName,
                     }));
+                    if (familyDiff !== 0) return familyDiff;
 
-                metricsByWeekId.set(week.id, calculateWeekAttendanceMetrics({
-                    weekDate: week.week_date,
-                    roster: members,
-                    attendance: weekAttendance,
-                    noMeetingDates: noMeetingDateSet,
-                    backfillMode: 'current-active',
-                }));
-            });
+                    return a.name.localeCompare(b.name);
+                });
 
-            const exportData = members.map(m => {
-                const activeMeetingWeeks = meetingWeeks.filter((week) =>
-                    getActiveRosterForWeek([m], week.week_date).length > 0 ||
-                    (Boolean(metricsByWeekId.get(week.id)?.usedRetroactiveBackfill) && !m.endsAt)
+            if (exportPeople.length === 0) {
+                alert('해당 기간에 추출할 출석 대상 snapshot이 없습니다.');
+                return;
+            }
+
+            const exportData = exportPeople.map(person => {
+                const activeMeetingWeeks = (rangeWeeks as WeekRow[]).filter((week) =>
+                    !noMeetingDateSet.has(week.week_date) && person.weeks.has(week.id)
                 );
                 const row: Record<string, string> = {
-                    '조': m.groupName || '조 없음',
-                    '이름': m.fullName,
-                    '역할': m.role || '성도'
+                    '조': person.groupName || '조 없음',
+                    '이름': person.name,
+                    '역할': person.role || '성도'
                 };
 
                 (rangeWeeks as WeekRow[]).forEach((w) => {
                     if (noMeetingDateSet.has(w.week_date)) {
                         row[w.week_date] = '모임없음';
-                    } else if (
-                        getActiveRosterForWeek([m], w.week_date).length === 0 &&
-                        !(Boolean(metricsByWeekId.get(w.id)?.usedRetroactiveBackfill) && !m.endsAt)
-                    ) {
+                    } else if (!person.weeks.has(w.id)) {
                         row[w.week_date] = '-';
                     } else {
-                        const att = attendanceRows.find((a) => a.directory_member_id === m.directoryMemberId && a.week_id === w.id);
-                        row[w.week_date] = att
-                            ? (att.status === 'present' ? 'O'
-                                : att.status === 'absent' ? 'X'
-                                : att.status === 'late' ? 'L'
-                                : att.status === 'excused' ? 'E' : '-')
-                            : '-';
+                        const snapshotMember = person.weeks.get(w.id);
+                        row[w.week_date] = getExportAttendanceMark(snapshotMember?.attendanceStatus);
                     }
                 });
 
-                const activeWeekIds = new Set(activeMeetingWeeks.map((week) => week.id));
-                const myAtts = attendanceRows.filter((a) =>
-                    a.directory_member_id === m.directoryMemberId && activeWeekIds.has(a.week_id)
-                );
-                const presentCount = myAtts.filter((a) => a.status === 'present' || a.status === 'late').length;
+                const presentCount = activeMeetingWeeks.filter((week) => {
+                    const status = person.weeks.get(week.id)?.attendanceStatus;
+                    return status === 'present' || status === 'late';
+                }).length;
                 row['출석률'] = activeMeetingWeeks.length > 0
                     ? `${Math.round((presentCount / activeMeetingWeeks.length) * 100)}%`
                     : '-';
@@ -1321,6 +1824,61 @@ export default function AttendancePage() {
                 </div>
             </div>
 
+            {(selectedWeekNoMeetingReason !== null || !selectedWeekHasSubmittedAttendance) && (
+                <div className="px-1">
+                    <div className={cn(
+                        "rounded-2xl border p-4 shadow-sm",
+                        selectedWeekNoMeetingReason !== null
+                            ? "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40"
+                            : "border-amber-100 bg-amber-50/70 dark:border-amber-500/20 dark:bg-amber-500/10"
+                    )}>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-start gap-3">
+                                <div className={cn(
+                                    "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm",
+                                    selectedWeekNoMeetingReason !== null
+                                        ? "bg-white text-slate-500 dark:bg-slate-900 dark:text-slate-300"
+                                        : "bg-white text-amber-600 dark:bg-amber-500/20 dark:text-amber-200"
+                                )}>
+                                    <CalendarDays className="h-5 w-5" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-sm font-black text-slate-900 dark:text-white">
+                                        {selectedWeekNoMeetingReason !== null ? '모임없는 날로 지정된 주차입니다' : '아직 출석 제출이 없는 주차입니다'}
+                                    </p>
+                                    <p className="mt-1 text-xs font-bold leading-5 text-slate-500 dark:text-slate-400">
+                                        {selectedWeekNoMeetingReason !== null
+                                            ? `사유: ${selectedWeekNoMeetingReason || '모임 없음'}`
+                                            : '이 주차에 실제 모임이 없었다면 관리자 웹에서도 모임없는 날로 지정할 수 있습니다.'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                                {selectedWeekNoMeetingReason !== null ? (
+                                    <button
+                                        type="button"
+                                        onClick={cancelSelectedWeekNoMeetingDay}
+                                        disabled={isNoMeetingMutationLoading}
+                                        className="rounded-2xl bg-white px-4 py-2 text-[11px] font-black text-slate-600 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-0.5 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:bg-slate-950/50 dark:text-slate-200 dark:ring-slate-700"
+                                    >
+                                        {isNoMeetingMutationLoading ? '처리 중...' : '지정 취소'}
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={markSelectedWeekAsNoMeetingDay}
+                                        disabled={isNoMeetingMutationLoading}
+                                        className="rounded-2xl bg-amber-600 px-4 py-2 text-[11px] font-black text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-amber-700 disabled:cursor-wait disabled:opacity-60 dark:bg-amber-400 dark:text-amber-950 dark:hover:bg-amber-300"
+                                    >
+                                        {isNoMeetingMutationLoading ? '처리 중...' : '모임없는 날 지정'}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {targetExplanation.length > 0 && (
                 <div className="px-1">
                     <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
@@ -1387,7 +1945,7 @@ export default function AttendancePage() {
                                     </div>
                                 </div>
 
-                                <div className="relative h-48 mt-4 flex items-center justify-center">
+                                <div className="relative mt-4 flex h-56 items-center justify-center">
                                     {isTrendLoading ? (
                                         <div className="flex flex-col items-center gap-3">
                                             <Loader2 className="w-8 h-8 text-indigo-500 animate-spin opacity-50" />
@@ -1401,7 +1959,7 @@ export default function AttendancePage() {
                                     ) : (
                                         <>
                                             {/* Y-Axis Scale & Grids */}
-                                            <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pr-2">
+                                            <div className="absolute inset-x-0 top-0 bottom-8 flex flex-col justify-between pointer-events-none pr-2">
                                                 {[100, 75, 50, 25, 0].map((tick) => (
                                                     <div key={tick} className="w-full flex items-center gap-3 group/grid">
                                                         <span className="text-[9px] font-black text-slate-300 dark:text-slate-600 w-6 text-right transition-colors group-hover/grid:text-indigo-400">{tick}%</span>
@@ -1412,45 +1970,42 @@ export default function AttendancePage() {
                                                 ))}
                                             </div>
 
-                                            <div className="absolute inset-0 flex items-stretch justify-between gap-4 pl-10 pr-4">
+                                            <div className="absolute inset-x-0 top-0 bottom-0 flex justify-between gap-4 pl-10 pr-4">
                                                 {weeklyTrendData.map((data, idx) => (
                                                     <div
                                                         key={idx}
                                                         className={cn(
-                                                            "flex-1 flex flex-col items-center gap-3 group cursor-pointer transition-all rounded-2xl px-1 py-2",
+                                                            "group grid flex-1 cursor-pointer grid-rows-[1fr_2rem] items-stretch justify-items-center transition-all",
                                                             selectedWeekId === data.id
-                                                                ? "scale-110 bg-indigo-50/80 ring-2 ring-indigo-500/30 shadow-lg shadow-indigo-500/10 dark:bg-indigo-500/10 dark:ring-indigo-400/40"
-                                                                : "opacity-60 hover:opacity-100 hover:scale-105"
+                                                                ? "scale-[1.03]"
+                                                                : "opacity-70 hover:opacity-100 hover:scale-[1.02]"
                                                         )}
                                                         onClick={() => setSelectedWeekId(data.id)}
                                                     >
-                                                        <div className="relative w-full flex flex-col items-center justify-end flex-1">
+                                                        <div className="relative row-start-1 h-full w-full">
                                                             {/* Bar BG */}
                                                             <div className={cn(
-                                                                "w-3 sm:w-5 rounded-full h-full absolute inset-0 mx-auto transition-colors",
-                                                                selectedWeekId === data.id ? "bg-indigo-100 dark:bg-indigo-900/30" : "bg-slate-100 dark:bg-slate-800/50"
+                                                                "absolute inset-y-0 left-1/2 w-3 -translate-x-1/2 rounded-full transition-colors sm:w-5",
+                                                                selectedWeekId === data.id
+                                                                    ? "bg-indigo-100 ring-2 ring-indigo-200/70 dark:bg-indigo-900/30 dark:ring-indigo-500/25"
+                                                                    : "bg-slate-100 dark:bg-slate-800/50"
                                                             )} />
                                                             {/* Bar Fill */}
                                                             <div
                                                                 className={cn(
-                                                                    "rounded-full transition-all duration-1000 ease-out relative z-10",
+                                                                    "absolute bottom-0 left-1/2 z-10 w-3 -translate-x-1/2 rounded-full transition-all duration-1000 ease-out sm:w-5",
                                                                     selectedWeekId === data.id
-                                                                        ? "w-5 sm:w-7 bg-indigo-700 dark:bg-indigo-300 shadow-[0_0_22px_rgba(79,70,229,0.55)]"
-                                                                        : "w-3 sm:w-5 bg-indigo-400 dark:bg-indigo-600 group-hover:bg-indigo-600"
+                                                                        ? "bg-indigo-700 dark:bg-indigo-400 shadow-[0_0_14px_rgba(79,70,229,0.35)]"
+                                                                        : "bg-indigo-500/70 dark:bg-indigo-500/70 group-hover:bg-indigo-600"
                                                                 )}
                                                                 style={{ height: `${(data.present / (data.total || 1)) * 100}%` }}
                                                             >
                                                                 <div className="absolute top-1.5 inset-x-0 h-1 bg-white/20 rounded-full mx-1" />
-                                                                {selectedWeekId === data.id && (
-                                                                    <div className="absolute -top-9 left-1/2 -translate-x-1/2 rounded-full bg-indigo-700 px-2.5 py-1 text-[9px] font-black text-white shadow-lg dark:bg-indigo-300 dark:text-indigo-950">
-                                                                        선택됨
-                                                                    </div>
-                                                                )}
                                                                 {/* Number Label */}
                                                                 <div className={cn(
                                                                     "absolute left-1/2 -translate-x-1/2 text-[10px] font-black",
                                                                     selectedWeekId === data.id
-                                                                        ? "-top-5 text-indigo-900 dark:text-indigo-100"
+                                                                        ? "-top-6 text-indigo-700 dark:text-indigo-300"
                                                                         : "-top-6 text-indigo-500 dark:text-indigo-400"
                                                                 )}>
                                                                     {data.present}
@@ -1462,11 +2017,14 @@ export default function AttendancePage() {
                                                             </div>
                                                         </div>
                                                         <span className={cn(
-                                                            "rounded-full px-2 py-1 text-[10px] font-black transition-colors shrink-0",
+                                                            "relative row-start-2 self-end rounded-full px-2 py-1 text-[10px] font-black transition-colors",
                                                             selectedWeekId === data.id
-                                                                ? "bg-indigo-700 text-white dark:bg-indigo-300 dark:text-indigo-950"
+                                                                ? "bg-indigo-600 text-white shadow-sm dark:bg-indigo-400 dark:text-indigo-950"
                                                                 : "text-slate-400 group-hover:text-indigo-600"
                                                         )}>
+                                                            {selectedWeekId === data.id && (
+                                                                <span className="absolute -top-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-indigo-600 ring-2 ring-white dark:bg-indigo-300 dark:ring-slate-900" />
+                                                            )}
                                                             {data.date}
                                                         </span>
                                                     </div>
@@ -1479,17 +2037,28 @@ export default function AttendancePage() {
 
                             {/* Overall Progress - Segmented Bars */}
                             <div className="bg-white dark:bg-slate-800/40 p-8 rounded-3xl border border-slate-100 dark:border-slate-800/50 shadow-sm space-y-8">
-                                <div className="flex items-center justify-between">
+                                <div className="flex items-center justify-between gap-3">
                                     <div className="flex items-center gap-2">
                                         <BarChart3 className="w-5 h-5 text-indigo-500" />
                                         <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">전체 조별 출석 현황</h3>
                                     </div>
-                                    <button
-                                        onClick={() => setIsDetailExpanded(!isDetailExpanded)}
-                                        className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 hover:scale-105 transition-all bg-indigo-50 dark:bg-indigo-500/10 px-4 py-2 rounded-xl"
-                                    >
-                                        {isDetailExpanded ? '요약 보기' : '상세 명단 보기'}
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        {isDetailExpanded && groupStats.some((group) => group.total === 0) && (
+                                            <button
+                                                type="button"
+                                                onClick={loadMissingGroupRosters}
+                                                className="rounded-xl bg-emerald-50 px-4 py-2 text-[11px] font-black text-emerald-600 transition-all hover:scale-105 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                            >
+                                                미제출 조명단 한 번에 불러오기
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => setIsDetailExpanded(!isDetailExpanded)}
+                                            className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 hover:scale-105 transition-all bg-indigo-50 dark:bg-indigo-500/10 px-4 py-2 rounded-xl"
+                                        >
+                                            {isDetailExpanded ? '요약 보기' : '상세 명단 보기'}
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="space-y-6">
@@ -1502,16 +2071,33 @@ export default function AttendancePage() {
                                         <div className="space-y-10">
                                             {groupStats.map(gs => {
                                                 const groupMembers = attendanceData.filter(a => a.group === gs.name);
+                                                const adminMembers = groupMembers.filter((member) => member.included !== false);
+                                                const isSubmittedConflictIgnored = ignoredSubmissionConflictKeys.has(getSubmissionConflictKey(gs.name));
+                                                const conflictMembers = isSubmittedConflictIgnored
+                                                    ? []
+                                                    : groupMembers.filter((member) => member.hasSubmissionConflict);
+                                                const submittedMembers = groupMembers.filter((member) => (
+                                                    member.submittedStatus ||
+                                                    member.hasSubmissionConflict
+                                                ));
+                                                const groupConflictLoading = snapshotEditLoadingId === `group-submission:${gs.name}`;
                                                 return (
                                                     <div key={gs.name} className="space-y-4">
                                                         <div className="flex items-center justify-between border-l-4 border-indigo-500 pl-4 py-1">
-                                                            <h4 className="font-black text-slate-900 dark:text-white uppercase tracking-tight">{gs.name}</h4>
+                                                            <div className="flex items-center gap-2">
+                                                                <h4 className="font-black text-slate-900 dark:text-white uppercase tracking-tight">{gs.name}</h4>
+                                                                {conflictMembers.length > 0 && (
+                                                                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-600 dark:bg-amber-500/10 dark:text-amber-300">
+                                                                        조장 제출 확인 필요 {conflictMembers.length}
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                             <div className="text-[10px] font-bold text-slate-400">
                                                                 출석: <span className="text-indigo-600">{gs.present}</span> / 전체: {gs.total}
                                                             </div>
                                                         </div>
                                                         <div className="flex flex-wrap gap-2">
-                                                            {groupMembers.map(m => (
+                                                            {adminMembers.map(m => (
                                                                 <button
                                                                     type="button"
                                                                     key={m.snapshotMemberId || m.id}
@@ -1520,7 +2106,8 @@ export default function AttendancePage() {
                                                                         "group/member relative px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition-all text-[11px] font-bold hover:-translate-y-0.5 hover:shadow-sm",
                                                                         m.status === 'present' || m.status === 'late'
                                                                             ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                                                                            : "bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-700/50 text-slate-400"
+                                                                            : "bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-700/50 text-slate-400",
+                                                                        m.hasSubmissionConflict && "ring-1 ring-amber-200"
                                                                     )}
                                                                 >
                                                                     {m.status === 'present' || m.status === 'late' ? (
@@ -1529,7 +2116,10 @@ export default function AttendancePage() {
                                                                         <XCircle className="w-3 h-3" />
                                                                     )}
                                                                     <span>{m.name}</span>
-                                                                    {m.snapshotMemberId && (
+                                                                    {m.hasSubmissionConflict && (
+                                                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" title="조장 제출값과 다름" />
+                                                                    )}
+                                                                    {m.snapshotMemberId && m.included !== false && (
                                                                         <span
                                                                             role="button"
                                                                             tabIndex={0}
@@ -1565,7 +2155,7 @@ export default function AttendancePage() {
                                                             >
                                                                 + 성도 추가
                                                             </button>
-                                                            {groupMembers.length === 0 && (() => {
+                                                            {adminMembers.length === 0 && (() => {
                                                                 const group = attendanceGroups.find((item) => item.name === gs.name);
                                                                 if (!group) return null;
                                                                 return (
@@ -1579,6 +2169,97 @@ export default function AttendancePage() {
                                                                 );
                                                             })()}
                                                         </div>
+                                                        {conflictMembers.length > 0 && (
+                                                            <div className="rounded-3xl border border-amber-100 bg-amber-50/60 p-4 shadow-sm dark:border-amber-500/20 dark:bg-amber-500/10">
+                                                                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                                                                    <div className="space-y-1">
+                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                            <p className="text-sm font-black text-slate-900 dark:text-white">
+                                                                                조장 제출본과 관리자 화면이 다릅니다
+                                                                            </p>
+                                                                            <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-amber-700 shadow-sm ring-1 ring-amber-100 dark:bg-slate-950/60 dark:text-amber-200 dark:ring-amber-500/20">
+                                                                                확인 필요 {conflictMembers.length}명
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                                                            위 명단은 현재 관리자 화면입니다. 아래 조장 제출본을 보고 이 조의 출석부를 어떻게 처리할지 선택하세요.
+                                                                        </p>
+                                                                    </div>
+                                                                    <div className="flex flex-wrap items-center gap-2">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => applySubmittedStatusesForGroup(gs.name, submittedMembers)}
+                                                                            disabled={groupConflictLoading}
+                                                                            className="rounded-2xl bg-slate-900 px-4 py-2 text-[11px] font-black text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
+                                                                        >
+                                                                            {groupConflictLoading ? '처리 중...' : '덮어쓰기'}
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => mergeSubmittedStatusesForGroup(gs.name, submittedMembers)}
+                                                                            disabled={groupConflictLoading}
+                                                                            className="rounded-2xl bg-white px-4 py-2 text-[11px] font-black text-indigo-600 shadow-sm ring-1 ring-indigo-100 transition-all hover:-translate-y-0.5 hover:bg-indigo-50 disabled:cursor-wait disabled:opacity-60 dark:bg-slate-950/70 dark:text-indigo-300 dark:ring-indigo-500/20"
+                                                                        >
+                                                                            병합하기
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => keepAdminAttendanceForGroup(gs.name)}
+                                                                            className="rounded-2xl bg-white/80 px-4 py-2 text-[11px] font-black text-slate-500 shadow-sm ring-1 ring-slate-100 transition-all hover:-translate-y-0.5 hover:bg-white dark:bg-slate-950/50 dark:text-slate-300 dark:ring-slate-800"
+                                                                        >
+                                                                            관리자 화면 유지
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="rounded-2xl border border-white bg-white/90 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+                                                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                                                        <div>
+                                                                            <p className="text-[11px] font-black text-slate-700 dark:text-slate-200">조장 제출본</p>
+                                                                            <p className="mt-0.5 text-[10px] font-bold text-slate-400">
+                                                                                앱에서 조장이 제출한 이 조의 출석부 전체입니다.
+                                                                            </p>
+                                                                        </div>
+                                                                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                                                                            {submittedMembers.length}명
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                        {submittedMembers.map((member) => {
+                                                                            const isSubmittedPresent = member.submittedStatus === 'present' || member.submittedStatus === 'late';
+                                                                            return (
+                                                                                <span
+                                                                                    key={`submitted-${member.snapshotMemberId || member.id}`}
+                                                                                    className={cn(
+                                                                                        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black",
+                                                                                        isSubmittedPresent
+                                                                                            ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20"
+                                                                                            : "bg-slate-100 text-slate-500 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700",
+                                                                                        member.included === false && "ring-amber-300 dark:ring-amber-500/40"
+                                                                                    )}
+                                                                                >
+                                                                                    {isSubmittedPresent ? (
+                                                                                        <CheckCircle2 className="h-3 w-3" />
+                                                                                    ) : (
+                                                                                        <XCircle className="h-3 w-3" />
+                                                                                    )}
+                                                                                    {member.name}
+                                                                                    <span className="text-[9px] opacity-60">
+                                                                                        {getCompactAttendanceLabel(member.submittedStatus)}
+                                                                                    </span>
+                                                                                </span>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="mt-3 grid gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 md:grid-cols-3">
+                                                                    <p><span className="font-black text-slate-700 dark:text-slate-200">덮어쓰기</span> 조장 제출본을 이 조의 관리자 확정값으로 적용</p>
+                                                                    <p><span className="font-black text-slate-700 dark:text-slate-200">병합하기</span> 관리자 화면은 유지하고 조장이 제출한 추가 인원만 반영</p>
+                                                                    <p><span className="font-black text-slate-700 dark:text-slate-200">관리자 화면 유지</span> 조장 제출본을 리포트에 반영하지 않음</p>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 );
                                             })}
@@ -1861,7 +2542,10 @@ export default function AttendancePage() {
                                     onClick={() => addPersonToCurrentSnapshot(candidate)}
                                     className="flex w-full items-center justify-between rounded-2xl border border-slate-100 bg-white px-4 py-3 text-left hover:border-indigo-200 hover:bg-indigo-50/50 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-500/30 dark:hover:bg-indigo-500/10"
                                 >
-                                    <span className="text-sm font-black text-slate-900 dark:text-white">{candidate.name}</span>
+                                    <span className="flex flex-col gap-1">
+                                        <span className="text-sm font-black text-slate-900 dark:text-white">{candidate.name}</span>
+                                        <span className="text-[10px] font-bold text-slate-400">{candidate.scopeLabel}</span>
+                                    </span>
                                     <span className="text-[11px] font-bold text-slate-400">{candidate.groupName || '미편성'}</span>
                                 </button>
                             ))}
