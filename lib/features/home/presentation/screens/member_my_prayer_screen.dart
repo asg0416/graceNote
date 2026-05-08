@@ -12,7 +12,8 @@ class MemberMyPrayerScreen extends ConsumerStatefulWidget {
   const MemberMyPrayerScreen({super.key});
 
   @override
-  ConsumerState<MemberMyPrayerScreen> createState() => _MemberMyPrayerScreenState();
+  ConsumerState<MemberMyPrayerScreen> createState() =>
+      _MemberMyPrayerScreenState();
 }
 
 class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
@@ -21,7 +22,7 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
   String? _groupId;
   String? _churchId;
   String? _directoryMemberId;
-  
+
   bool _isPresent = false;
   String _prayerNote = '';
   final _noteController = TextEditingController();
@@ -56,11 +57,12 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
       _directoryMemberId = null; // 초기화
       _groupId = null;
     });
-    
+
     try {
       final groups = await ref.read(userGroupsProvider.future);
-      debugPrint('MemberMyPrayerScreen: UserGroups fetched. Count: ${groups.length}');
-      
+      debugPrint(
+          'MemberMyPrayerScreen: UserGroups fetched. Count: ${groups.length}');
+
       if (groups.isEmpty) {
         debugPrint('MemberMyPrayerScreen: No groups found for user.');
         setState(() => _isLoading = false);
@@ -69,26 +71,29 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
 
       final profileAsync = ref.read(userProfileProvider);
       final profile = profileAsync.value;
-      
+
       if (profile == null) {
-        debugPrint('MemberMyPrayerScreen: Profile is NULL in userProfileProvider. Waiting...');
+        debugPrint(
+            'MemberMyPrayerScreen: Profile is NULL in userProfileProvider. Waiting...');
         setState(() => _isLoading = false);
         return;
       }
-      debugPrint('MemberMyPrayerScreen: Profile Verified -> Name: ${profile.fullName}, ID: ${profile.id}, Phone: ${profile.phone}');
+      debugPrint(
+          'MemberMyPrayerScreen: Profile Verified -> Name: ${profile.fullName}, ID: ${profile.id}, Phone: ${profile.phone}');
 
       final repo = ref.read(repositoryProvider);
-      
+
       // 1. 성도 명부에서의 본인 정보를 최우선으로 확보
       final directoryMember = await repo.getMemberDirectoryEntry(
-        profileId: profile.id, 
+        profileId: profile.id,
         fullName: profile.fullName,
         phone: profile.phone,
       );
-      
+
       if (directoryMember != null) {
-        debugPrint('MemberMyPrayerScreen: Linkage SUCCESS -> DirectoryID: ${directoryMember['id']}');
-        
+        debugPrint(
+            'MemberMyPrayerScreen: Linkage SUCCESS -> DirectoryID: ${directoryMember['id']}');
+
         // 해당 멤버의 명부상 조 정보가 groups 리스트에 있는지 확인 (UI 컨텍스트 유지용)
         final dirGroupName = directoryMember['group_name'];
         final matchedGroup = groups.firstWhere(
@@ -103,7 +108,8 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
             _churchId = matchedGroup['church_id'];
           });
         }
-        debugPrint('MemberMyPrayerScreen: State Updated -> Group: ${_groupId}, DirectoryMember: $_directoryMemberId');
+        debugPrint(
+            'MemberMyPrayerScreen: State Updated -> Group: ${_groupId}, DirectoryMember: $_directoryMemberId');
       } else {
         // 끝내 못 찾았다면 첫 번째 소속 그룹이라도 기본값으로 사용
         if (mounted) {
@@ -113,11 +119,14 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
             _directoryMemberId = null;
           });
         }
-        debugPrint('MemberMyPrayerScreen: FAILED to find any directoryMember entry.');
+        debugPrint(
+            'MemberMyPrayerScreen: FAILED to find any directoryMember entry.');
       }
 
       // 2. 주차 정보 조회 (내부 상태 유지를 위해 최소한으로 수행)
-      final weekId = await repo.getOrCreateWeek(_churchId!, ref.read(selectedWeekDateProvider), createIfMissing: false);
+      final weekId = await repo.getOrCreateWeek(
+          _churchId!, ref.read(selectedWeekDateProvider),
+          createIfMissing: false);
       _weekId = weekId;
 
       if (_weekId != null && _directoryMemberId != null) {
@@ -163,7 +172,8 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
 
   Future<void> _savePrayer() async {
     if (_weekId == null || _groupId == null || _directoryMemberId == null) {
-      SnackBarUtil.showSnackBar(context, message: '아직 이번 주 기록이 시작되지 않았습니다.', isError: true);
+      SnackBarUtil.showSnackBar(context,
+          message: '아직 이번 주 기록이 시작되지 않았습니다.', isError: true);
       return;
     }
 
@@ -171,7 +181,7 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
     try {
       final repo = ref.read(repositoryProvider);
       final profile = await ref.read(userProfileProvider.future);
-      
+
       await repo.saveAttendanceAndPrayers(
         attendanceList: [], // Attendance is managed by leader
         prayerList: [
@@ -185,7 +195,7 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
           ),
         ],
       );
-      
+
       SnackBarUtil.showSnackBar(context, message: '기도제목이 저장되었습니다.');
       _refreshData();
     } catch (e) {
@@ -210,14 +220,15 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
 
     // [CRITICAL] Watch profile ID to trigger refresh on account switch
     final profileId = ref.watch(userProfileProvider.select((p) => p.value?.id));
-    
+
     // Listen for profile changes to force refresh
     ref.listen(userProfileProvider, (previous, next) {
       final oldId = previous?.value?.id;
       final newId = next.value?.id;
       // 실제 사용자 변경 시에만 refresh (invalidate 후 재로딩 null→같은값 무시)
       if (newId != null && oldId != null && oldId != newId) {
-        debugPrint('MemberMyPrayerScreen: Detected user change ($oldId -> $newId). Resetting state and refreshing...');
+        debugPrint(
+            'MemberMyPrayerScreen: Detected user change ($oldId -> $newId). Resetting state and refreshing...');
         setState(() {
           _directoryMemberId = null;
           _groupId = null;
@@ -230,7 +241,8 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
     // Initial fetch
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_groupId == null && _isLoading) {
-        debugPrint('MemberMyPrayerScreen: Initial fetch for profileId: $profileId');
+        debugPrint(
+            'MemberMyPrayerScreen: Initial fetch for profileId: $profileId');
         _refreshData();
       }
     });
@@ -238,52 +250,64 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('나의 기도 타임라인', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: AppTheme.textMain)),
+        title: const Text('나의 기도 타임라인',
+            style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 20,
+                color: AppTheme.textMain)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
       ),
-      body: _isLoading 
-        ? Center(child: ShadcnSpinner())
-        : RefreshIndicator(
-            onRefresh: _refreshData,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    '기도의 여정',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppTheme.textMain),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '조장이 기록해 준 소중한 기도제목들입니다.',
-                    style: TextStyle(fontSize: 14, color: AppTheme.textSub),
-                  ),
-                  const SizedBox(height: 32),
-                  _buildTimelineSection(),
-                ],
+      body: _isLoading
+          ? Center(child: ShadcnSpinner())
+          : RefreshIndicator(
+              onRefresh: _refreshData,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      '기도의 여정',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: AppTheme.textMain),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '조장이 기록해 준 소중한 기도제목들입니다.',
+                      style: TextStyle(fontSize: 14, color: AppTheme.textSub),
+                    ),
+                    const SizedBox(height: 32),
+                    _buildTimelineSection(),
+                  ],
+                ),
               ),
             ),
-          ),
     );
   }
 
   Widget _buildTimelineSection() {
     if (_directoryMemberId == null) {
-      return Center(child: Padding(
+      return Center(
+          child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.person_search_rounded, size: 48, color: AppTheme.textSub.withOpacity(0.5)),
+            Icon(Icons.person_search_rounded,
+                size: 48, color: AppTheme.textSub.withOpacity(0.5)),
             const SizedBox(height: 16),
             const Text(
               '조 명부에 등록되지 않아\n히스토리를 불러올 수 없습니다.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontSize: 16),
+              style: TextStyle(
+                  color: AppTheme.textMain,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16),
             ),
             const SizedBox(height: 12),
             GestureDetector(
@@ -307,7 +331,9 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
                       ],
                     ),
                     actions: [
-                      TextButton(onPressed: () => Navigator.pop(context), child: const Text('닫기')),
+                      TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('닫기')),
                     ],
                   ),
                 );
@@ -323,7 +349,8 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
       ));
     }
 
-    final historyAsync = ref.watch(memberPrayerHistoryProvider(_directoryMemberId!));
+    final historyAsync =
+        ref.watch(memberPrayerHistoryProvider(_directoryMemberId!));
 
     return historyAsync.when(
       skipLoadingOnRefresh: true,
@@ -334,7 +361,8 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
           return const Center(
             child: Padding(
               padding: EdgeInsets.symmetric(vertical: 40),
-              child: Text('아직 기록된 기도제목이 없습니다.', style: TextStyle(color: AppTheme.textSub)),
+              child: Text('아직 기록된 기도제목이 없습니다.',
+                  style: TextStyle(color: AppTheme.textSub)),
             ),
           );
         }
@@ -347,7 +375,7 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
             final item = history[index];
             final weekInfo = item['weeks'] as Map<String, dynamic>?;
             if (weekInfo == null) return const SizedBox.shrink();
-            
+
             final date = DateTime.parse(weekInfo['week_date']);
             final content = (item['content'] ?? '').toString();
             final isLast = index == history.length - 1;
@@ -377,12 +405,20 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
                         height: 12,
                         margin: const EdgeInsets.only(top: 4, left: 4),
                         decoration: BoxDecoration(
-                          color: index == 0 ? AppTheme.primaryViolet : AppTheme.divider,
+                          color: index == 0
+                              ? AppTheme.primaryViolet
+                              : AppTheme.divider,
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
-                          boxShadow: index == 0 ? [
-                            BoxShadow(color: AppTheme.primaryViolet.withOpacity(0.3), blurRadius: 4, spreadRadius: 1)
-                          ] : null,
+                          boxShadow: index == 0
+                              ? [
+                                  BoxShadow(
+                                      color: AppTheme.primaryViolet
+                                          .withOpacity(0.3),
+                                      blurRadius: 4,
+                                      spreadRadius: 1)
+                                ]
+                              : null,
                         ),
                       ),
                       const SizedBox(width: 24),
@@ -394,21 +430,27 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
                             Row(
                               children: [
                                 Text(
-                                  DateFormat('yyyy년 M월 d일 주차').format(date),
+                                  DateFormat('yyyy. M. d.').format(date),
                                   style: TextStyle(
-                                    fontSize: 14, 
-                                    fontWeight: FontWeight.w800, 
-                                    color: index == 0 ? AppTheme.primaryViolet : AppTheme.textSub
-                                  ),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                      color: index == 0
+                                          ? AppTheme.primaryViolet
+                                          : AppTheme.textSub),
                                 ),
-                                if (item['member'] != null && item['member']['group_name'] != null) ...[
+                                if (item['member'] != null &&
+                                    item['member']['group_name'] != null) ...[
                                   const SizedBox(width: 8),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.primaryViolet.withOpacity(0.08),
+                                      color: AppTheme.primaryViolet
+                                          .withOpacity(0.08),
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: AppTheme.primaryViolet.withOpacity(0.2)),
+                                      border: Border.all(
+                                          color: AppTheme.primaryViolet
+                                              .withOpacity(0.2)),
                                     ),
                                     child: Text(
                                       '${item['member']['group_name']} 조',
@@ -429,7 +471,8 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: AppTheme.divider.withOpacity(0.5)),
+                                border: Border.all(
+                                    color: AppTheme.divider.withOpacity(0.5)),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black.withOpacity(0.02),
@@ -441,8 +484,9 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
                               child: Text(
                                 content,
                                 style: const TextStyle(
-                                  fontSize: 15, 
-                                  height: 1.5, // Reduced slightly for web stability
+                                  fontSize: 15,
+                                  height:
+                                      1.5, // Reduced slightly for web stability
                                   color: AppTheme.textMain,
                                 ),
                               ),

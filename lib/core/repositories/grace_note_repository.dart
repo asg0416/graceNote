@@ -6,6 +6,136 @@ import 'package:flutter/foundation.dart';
 class GraceNoteRepository {
   final _supabase = Supabase.instance.client;
 
+  Future<Set<String>> _getRelatedDirectoryIdsByPhase2Person(
+      String directoryMemberId) async {
+    try {
+      final profile = await _supabase
+          .from('member_profiles')
+          .select('person_id')
+          .eq('member_directory_id', directoryMemberId)
+          .maybeSingle();
+
+      final personId = profile?['person_id']?.toString();
+      if (personId == null || personId.isEmpty) return {directoryMemberId};
+
+      final profiles = await _supabase
+          .from('member_profiles')
+          .select('member_directory_id')
+          .eq('person_id', personId)
+          .not('member_directory_id', 'is', null);
+
+      final ids = List<Map<String, dynamic>>.from(profiles)
+          .map((row) => row['member_directory_id']?.toString())
+          .whereType<String>()
+          .toSet();
+
+      ids.add(directoryMemberId);
+      return ids;
+    } catch (e) {
+      debugPrint(
+          'GraceNoteRepository: Phase 2 related directory lookup failed: $e');
+      return {directoryMemberId};
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _enrichPrayerRowsWithPhase2MemberInfo(
+      List<Map<String, dynamic>> rows) async {
+    final directoryIds = rows
+        .map((row) => row['directory_member_id']?.toString())
+        .whereType<String>()
+        .toSet()
+        .toList();
+
+    if (directoryIds.isEmpty) return rows;
+
+    try {
+      final memberProfilesResponse = await _supabase
+          .from('member_profiles')
+          .select(
+              'person_id, profile_id, member_directory_id, full_name, family_name')
+          .inFilter('member_directory_id', directoryIds);
+
+      final memberProfiles =
+          List<Map<String, dynamic>>.from(memberProfilesResponse);
+      final profileByDirectoryId = {
+        for (final profile in memberProfiles)
+          if (profile['member_directory_id'] != null)
+            profile['member_directory_id'].toString(): profile
+      };
+
+      final personIds = memberProfiles
+          .map((profile) => profile['person_id']?.toString())
+          .whereType<String>()
+          .toSet()
+          .toList();
+
+      final Map<String, Map<String, dynamic>> membershipByDirectoryId = {};
+      if (personIds.isNotEmpty) {
+        final membershipsResponse = await _supabase
+            .from('memberships')
+            .select(
+                'person_id, legacy_member_directory_id, role, status, groups(name)')
+            .inFilter('person_id', personIds)
+            .not('legacy_member_directory_id', 'is', null);
+
+        for (final membership
+            in List<Map<String, dynamic>>.from(membershipsResponse)) {
+          final directoryId =
+              membership['legacy_member_directory_id']?.toString();
+          if (directoryId == null) continue;
+          final existing = membershipByDirectoryId[directoryId];
+          if (existing == null || existing['status'] != 'active') {
+            membershipByDirectoryId[directoryId] = membership;
+          }
+        }
+      }
+
+      return rows.map((row) {
+        final directoryId = row['directory_member_id']?.toString();
+        if (directoryId == null) return row;
+
+        final profile = profileByDirectoryId[directoryId];
+        final membership = membershipByDirectoryId[directoryId];
+        if (profile == null && membership == null) return row;
+
+        final memberDirectory = Map<String, dynamic>.from(
+            (row['member_directory'] as Map?) ??
+                (row['member'] as Map?) ??
+                <String, dynamic>{});
+
+        final group = membership?['groups'];
+        final enrichedMemberDirectory = {
+          ...memberDirectory,
+          'id': directoryId,
+          if (profile?['person_id'] != null) 'person_id': profile!['person_id'],
+          if (profile?['profile_id'] != null)
+            'profile_id': profile!['profile_id'],
+          if (profile?['full_name'] != null) 'full_name': profile!['full_name'],
+          if (profile?['family_name'] != null)
+            'family_name': profile!['family_name'],
+          if (group is Map && group['name'] != null)
+            'group_name': group['name'],
+          if (membership?['role'] != null) 'role_in_group': membership!['role'],
+          if (membership?['status'] != null)
+            'membership_status': membership!['status'],
+          'phase2_member_source': 'member_profiles',
+        };
+
+        return {
+          ...row,
+          'member_directory': enrichedMemberDirectory,
+          // Some older app screens read the alias `member` instead of
+          // `member_directory`; keep both display aliases in sync.
+          'member': enrichedMemberDirectory,
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint(
+          'GraceNoteRepository: Phase 2 prayer member enrichment failed: $e');
+      return rows;
+    }
+  }
+
   // 특정 날짜의 Week ID 조회 또는 생성
   // 특정 날짜의 Week ID 조회 또는 생성
   Future<String?> getOrCreateWeek(String churchId, DateTime weekDate,
@@ -228,9 +358,12 @@ class GraceNoteRepository {
         .order('full_name',
             referencedTable: 'member_directory', ascending: true);
 
+    final enrichedPrayers = await _enrichPrayerRowsWithPhase2MemberInfo(
+        List<Map<String, dynamic>>.from(prayersResponse));
+
     return {
       'groups': groups,
-      'prayers': prayersResponse,
+      'prayers': enrichedPrayers,
     };
   }
 
@@ -356,14 +489,14 @@ class GraceNoteRepository {
     final directoryResponse = phase2Members.isNotEmpty
         ? phase2Members
         : await _supabase
-        .from('member_directory')
-        .select()
-        .eq('church_id', churchId)
-        .eq('department_id', departmentId)
-        .eq('group_name', groupName)
-        .eq('is_active', true)
-        .order('family_name', ascending: true, nullsFirst: false)
-        .order('full_name', ascending: true);
+            .from('member_directory')
+            .select()
+            .eq('church_id', churchId)
+            .eq('department_id', departmentId)
+            .eq('group_name', groupName)
+            .eq('is_active', true)
+            .order('family_name', ascending: true, nullsFirst: false)
+            .order('full_name', ascending: true);
 
     final membersList = List<Map<String, dynamic>>.from(directoryResponse);
     if (membersList.isEmpty) return [];
@@ -938,12 +1071,40 @@ class GraceNoteRepository {
             id,
             content,
             updated_at,
+            directory_member_id,
             member_directory:directory_member_id (
-              full_name
+              full_name,
+              group_name,
+              profile_id,
+              person_id,
+              family_name
             )
           )
         ''').eq('profile_id', profileId).order('created_at', ascending: false);
-    return List<Map<String, dynamic>>.from(response);
+
+    final interactions = List<Map<String, dynamic>>.from(response);
+    final prayers = interactions
+        .map((interaction) => interaction['prayer_entries'])
+        .whereType<Map>()
+        .map((prayer) => Map<String, dynamic>.from(prayer))
+        .toList();
+
+    final enrichedPrayers =
+        await _enrichPrayerRowsWithPhase2MemberInfo(prayers);
+    final enrichedById = {
+      for (final prayer in enrichedPrayers)
+        if (prayer['id'] != null) prayer['id'].toString(): prayer
+    };
+
+    return interactions.map((interaction) {
+      final prayer = interaction['prayer_entries'];
+      if (prayer is! Map || prayer['id'] == null) return interaction;
+      return {
+        ...interaction,
+        'prayer_entries': enrichedById[prayer['id'].toString()] ??
+            Map<String, dynamic>.from(prayer),
+      };
+    }).toList();
   }
 
   // 특정 멤버의 전체 기도제목 히스토리 가져오기 (타임라인용)
@@ -972,23 +1133,32 @@ class GraceNoteRepository {
     final String? phone = memberRes['phone'];
     final String churchId = memberRes['church_id'];
 
-    // 2. Find all directory member IDs associated with this person
-    var relatedQuery = _supabase.from('member_directory').select('id');
+    // 2. Find all directory member IDs associated with this person.
+    // Phase 2 person linkage is authoritative for read expansion. Legacy
+    // profile/phone matching stays as fallback for old rows not backfilled yet.
+    Set<String> allIdSet =
+        await _getRelatedDirectoryIdsByPhase2Person(directoryMemberId);
 
-    if (profileId != null) {
-      relatedQuery = relatedQuery.eq('profile_id', profileId);
-    } else if (phone != null && phone.isNotEmpty) {
-      relatedQuery = relatedQuery
-          .eq('full_name', fullName)
-          .eq('phone', phone)
-          .eq('church_id', churchId);
-    } else {
-      relatedQuery = relatedQuery.eq('id', directoryMemberId);
+    if (allIdSet.length == 1) {
+      var relatedQuery = _supabase.from('member_directory').select('id');
+
+      if (profileId != null) {
+        relatedQuery = relatedQuery.eq('profile_id', profileId);
+      } else if (phone != null && phone.isNotEmpty) {
+        relatedQuery = relatedQuery
+            .eq('full_name', fullName)
+            .eq('phone', phone)
+            .eq('church_id', churchId);
+      } else {
+        relatedQuery = relatedQuery.eq('id', directoryMemberId);
+      }
+
+      final relatedMembers = await relatedQuery;
+      allIdSet.addAll(
+          List<String>.from(relatedMembers.map((m) => m['id'] as String)));
     }
 
-    final relatedMembers = await relatedQuery;
-    final List<String> allIds =
-        List<String>.from(relatedMembers.map((m) => m['id'] as String));
+    final List<String> allIds = allIdSet.toList();
     debugPrint(
         'GraceNoteRepository: Related directory IDs for person: $allIds');
 
@@ -1012,7 +1182,8 @@ class GraceNoteRepository {
 
     final response = await query;
 
-    final result = List<Map<String, dynamic>>.from(response);
+    final result = await _enrichPrayerRowsWithPhase2MemberInfo(
+        List<Map<String, dynamic>>.from(response));
     debugPrint(
         'GraceNoteRepository: Found ${result.length} history entries (page $page)');
     return result;
@@ -1058,15 +1229,51 @@ class GraceNoteRepository {
     if (searchTerm != null && searchTerm.trim().isNotEmpty) {
       final term = '%${searchTerm.trim()}%';
 
-      // 1단계: 성도 명부에서 이름 검색하여 ID 목록 확보
-      final nameSearchResponse = await _supabase
-          .from('member_directory')
-          .select('id')
-          .eq('church_id', churchId)
+      // 1단계: Phase 2 person 기준으로 이름 검색 후 관련 legacy directory ID 확보.
+      // 검색 자체는 여전히 prayer_entries.directory_member_id로 필터링해야 하므로
+      // person_id -> member_profiles.member_directory_id로 확장한다.
+      final phase2NameResponse = await _supabase
+          .from('member_profiles')
+          .select('person_id, member_directory_id, people!inner(church_id)')
+          .eq('people.church_id', churchId)
           .ilike('full_name', term);
 
-      final List<String> matchingDirectoryIds =
-          (nameSearchResponse as List).map((m) => m['id'].toString()).toList();
+      final phase2Matches = List<Map<String, dynamic>>.from(phase2NameResponse);
+      final matchingPersonIds = phase2Matches
+          .map((profile) => profile['person_id']?.toString())
+          .whereType<String>()
+          .toSet()
+          .toList();
+
+      final Set<String> matchingDirectoryIds = phase2Matches
+          .map((profile) => profile['member_directory_id']?.toString())
+          .whereType<String>()
+          .toSet();
+
+      if (matchingPersonIds.isNotEmpty) {
+        final relatedProfiles = await _supabase
+            .from('member_profiles')
+            .select('member_directory_id')
+            .inFilter('person_id', matchingPersonIds)
+            .not('member_directory_id', 'is', null);
+
+        matchingDirectoryIds.addAll(
+            List<Map<String, dynamic>>.from(relatedProfiles)
+                .map((profile) => profile['member_directory_id']?.toString())
+                .whereType<String>());
+      }
+
+      if (matchingDirectoryIds.isEmpty) {
+        final legacyNameSearchResponse = await _supabase
+            .from('member_directory')
+            .select('id')
+            .eq('church_id', churchId)
+            .ilike('full_name', term);
+
+        matchingDirectoryIds.addAll((legacyNameSearchResponse as List)
+            .map((m) => m['id']?.toString())
+            .whereType<String>());
+      }
 
       if (matchingDirectoryIds.isNotEmpty) {
         // 이름 매칭되는 사람이 있는 경우: (내용 검색 OR ID 목록 포함)
@@ -1090,7 +1297,8 @@ class GraceNoteRepository {
             referencedTable: 'member_directory', ascending: true)
         .order('id', ascending: true)
         .limit(50);
-    return List<Map<String, dynamic>>.from(response);
+    return _enrichPrayerRowsWithPhase2MemberInfo(
+        List<Map<String, dynamic>>.from(response));
   }
 
   // 프로필 정보 업데이트

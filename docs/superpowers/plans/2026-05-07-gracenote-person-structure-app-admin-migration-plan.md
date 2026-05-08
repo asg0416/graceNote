@@ -47,6 +47,92 @@ These FKs are still part of the current app behavior and historical records. The
 
 ---
 
+## Role / Permission Conversion Map
+
+Phase 2D에서 역할 처리는 두 종류를 절대 섞지 않는다.
+
+```text
+계정 권한 = profiles.role / profiles.is_master / profiles.admin_status
+소속 역할 = memberships.role
+```
+
+`profiles`는 "이 사용자가 앱/관리자 웹에서 어떤 화면을 볼 수 있는가"를 결정한다.
+`memberships`는 "이 사람이 어느 교회/부서/조에서 조장인지 조원인지"를 결정한다.
+
+| Area | Current source | Phase 2D target | Decision |
+| --- | --- | --- | --- |
+| Admin-web sidebar/header | `profiles.role`, `profiles.is_master`, `profiles.admin_status` | unchanged | 계정 권한이므로 person 구조로 바꾸지 않는다. |
+| Admin-web page authorization | `profiles.role`, `profiles.is_master`, `profiles.admin_status` | unchanged | 관리자 승인/마스터 여부는 profiles 기준 유지. |
+| Flutter onboarding/login/profile gate | `profiles` | unchanged | 로그인/휴대폰 인증/프로필 완료 여부는 계정 단위. |
+| Flutter role tabs/menu | `profiles` + `userGroupsProvider` | `profiles` + active `memberships.role` | 관리자 탭은 profiles, 조장/조원 탭은 memberships 기준. |
+| Flutter active group selector | `group_members.role_in_group` fallback | active `memberships.role` first | 완료. fallback 유지. |
+| Flutter leader/member screens | active group membership | active `memberships.role` first | read-only 배치에서 smoke 대상. |
+| Admin member list/detail affiliations | `member_directory/group_members` | `people/member_profiles/memberships` | 대부분 완료. |
+| Admin regrouping display | `member_directory` with Phase 2 overlay | active `memberships` display model | 표시/진단 완료, 저장은 legacy 유지. |
+| Admin/Flutter writes | `member_directory/group_members`, attendance/prayer legacy FK | unchanged in Phase 2D | Phase 3 전까지 직접 person write 금지. |
+| Edge Functions target roles | `group_members.role_in_group` | active `memberships.role` candidate | admin/Flutter read smoke 이후 진행. |
+
+## Phase 2D Read-Only Batch Checklist
+
+다음 작업은 화면별로 하나씩 끊지 않고 read-only 묶음으로 처리한다.
+
+| Batch | Files / Screens | Work |
+| --- | --- | --- |
+| Flutter prayer/search read | `prayer_list_screen.dart`, `saved_prayers_screen.dart`, `search_screen.dart`, repository prayer/search methods | 표시용 이름/조/사람 연결을 `person_id/member_profiles/memberships` 기준으로 보강하고 legacy join fallback 유지. |
+| Flutter attendance display read | `attendance_dashboard_screen.dart`, `attendance_prayer_screen.dart`, repository attendance methods | 조원 표시와 정렬은 active `memberships` 우선, 저장은 `directory_member_id` 유지. |
+| Flutter admin/member display read | `admin_member_detail_screen.dart`, `department_member_directory_screen.dart` | 성도 상세/명부 표시가 legacy row 하나에 묶이지 않도록 person affiliations를 표시. |
+| Flutter role/menu smoke | `data_providers.dart`, `user_role_provider.dart`, router role tabs | admin/leader/member/is_master 화면 분기에서 `profiles`와 `memberships.role` 책임 분리 유지. |
+| Admin residual read cleanup | `page.tsx`, debug panels | 운영 UI에 남길 정보와 dev-only 진단 UI 분리. |
+
+Read-only batch 완료 기준:
+
+- Flutter 앱에서 admin, leader, member 계정이 각각 올바른 탭/화면을 본다.
+- 한 사람이 여러 조/부서 소속이어도 조장 화면과 일반 화면이 active membership 기준으로 동작한다.
+- 기도/검색/저장한 기도에서 다른 교회 또는 다른 사람의 데이터가 섞이지 않는다.
+- 출석/기도 저장은 기존 legacy FK 방식 그대로 성공한다.
+- Admin-web Phase 2 진단 issue 0을 유지한다.
+
+2026-05-09 read-only batch implementation:
+
+- `lib/core/repositories/grace_note_repository.dart`
+  - 기도 히스토리 관련 directory row 확장을 legacy `profile_id/name/phone`보다 Phase 2 `member_profiles.person_id` 우선으로 변경.
+  - 기도 검색에서 이름 검색 시 같은 person의 모든 legacy directory row를 포함하도록 변경.
+  - 저장한 기도/부서 기도 목록/검색 결과에 Phase 2 member profile 정보를 덧씌우되, 기존 `directory_member_id` 저장 구조는 유지.
+- `lib/core/providers/data_providers.dart`
+  - `userGroupsProvider`가 legacy `group_members`, `member_directory`뿐 아니라 Phase 2 `memberships` 변경도 감지하도록 보강.
+  - 계정 권한은 계속 `profiles`, 조장/조원 소속 역할은 active `memberships.role` 우선.
+- `admin-web/src/app/page.tsx`
+  - 대시보드 최근 가입자/최근 성도 표시를 active `memberships -> people.display_name` 기준으로 전환.
+  - Phase 2 read 실패 시 기존 `member_directory` 최근 row fallback 유지.
+- `lib/features/home/presentation/screens/member_my_prayer_screen.dart`
+  - 앱 "나의 기도" 타임라인 날짜를 `yyyy. M. d.` 형식으로 정리.
+  - 같은 person의 과거/현재 조 기도제목에서 Phase 2로 보강된 조 이름이 보이도록 `member`/`member_directory` display alias 동기화.
+
+Verification:
+
+- `HOME=/private/tmp dart analyze lib/core/repositories/grace_note_repository.dart lib/core/providers/data_providers.dart`
+  - no errors.
+  - existing style-only infos remain in `grace_note_repository.dart`.
+- `HOME=/private/tmp dart analyze lib/core/repositories/grace_note_repository.dart lib/core/providers/data_providers.dart lib/features/home/presentation/screens/member_my_prayer_screen.dart`
+  - no syntax/type errors from this change.
+  - exits with existing warnings in `member_my_prayer_screen.dart` (`unused_field`, `unused_element`, deprecated style warnings).
+- `git diff --check`: passed.
+- `npm run lint -- src/app/page.tsx`: 0 errors, existing `<img>` warning only.
+
+Smoke to run:
+
+- 조장 계정으로 로그인 후 조장 탭/출석/기도 화면 진입.
+- 일반 조원 계정으로 로그인 후 내 기도/기도소식 화면 진입.
+- 관리자 계정으로 로그인 후 관리자 화면 진입.
+- 기도 검색에서 여러 조에 소속된 사람 이름 검색: 같은 사람의 다른 조 기도도 사람 기준으로 누락 없이 보이는지.
+- 저장한 기도에서 이름이 `알 수 없음`으로 깨지지 않는지.
+- 기도 히스토리에서 같은 person의 과거/현재 조 기도제목이 같이 보이되 다른 교회 사람이 섞이지 않는지.
+- 앱 "나의 기도" 타임라인에서 여러 조 소속 이력의 조 이름이 누락되지 않는지.
+- 앱 "나의 기도" 타임라인 날짜가 `2026. 5. 3.`처럼 날짜로만 보이는지.
+- 출석/기도 저장은 기존처럼 성공하는지.
+
+---
+
 ## Task 1: Flutter `userGroupsProvider` Read-Switch
 
 **Files:**

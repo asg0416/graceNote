@@ -38,6 +38,15 @@ interface RecentMember {
   role_in_group: string | null;
 }
 
+interface RecentMembershipRow {
+  person_id: string | null;
+  role: string | null;
+  created_at: string;
+  people: {
+    display_name: string | null;
+  } | null;
+}
+
 type StatColor = 'indigo' | 'emerald' | 'rose' | 'amber' | 'slate';
 
 interface StatsCardProps {
@@ -176,20 +185,51 @@ export default function DashboardPage() {
         unassignedMembers,
       });
 
-      // Recent Members
-      const memberQuery = supabase
-        .from('member_directory')
-        .select('full_name, created_at, role_in_group')
+      // Recent Members: Phase 2 person-centered read. Fallback to legacy
+      // member_directory only if memberships/people read is unavailable.
+      let recentMembershipQuery = supabase
+        .from('memberships')
+        .select('person_id, role, created_at, people(display_name)')
+        .eq('status', 'active')
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(20);
 
       if (!userProfile.is_master) {
-        memberQuery.eq('church_id', userProfile.church_id);
-        if (userProfile.department_id) memberQuery.eq('department_id', userProfile.department_id);
+        recentMembershipQuery = recentMembershipQuery.eq('church_id', userProfile.church_id);
+        if (userProfile.department_id) recentMembershipQuery = recentMembershipQuery.eq('department_id', userProfile.department_id);
       }
 
-      const { data: members } = await memberQuery;
-      setRecentMembers((members || []) as RecentMember[]);
+      const { data: recentMemberships, error: recentMembershipsError } = await recentMembershipQuery;
+      if (!recentMembershipsError) {
+        const seenPeople = new Set<string>();
+        const phase2RecentMembers = ((recentMemberships || []) as RecentMembershipRow[])
+          .filter((membership) => {
+            if (!membership.person_id || seenPeople.has(membership.person_id)) return false;
+            seenPeople.add(membership.person_id);
+            return true;
+          })
+          .slice(0, 5)
+          .map((membership) => ({
+            full_name: membership.people?.display_name || '이름 없음',
+            created_at: membership.created_at,
+            role_in_group: membership.role || 'member',
+          }));
+        setRecentMembers(phase2RecentMembers);
+      } else {
+        const memberQuery = supabase
+          .from('member_directory')
+          .select('full_name, created_at, role_in_group')
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (!userProfile.is_master) {
+          memberQuery.eq('church_id', userProfile.church_id);
+          if (userProfile.department_id) memberQuery.eq('department_id', userProfile.department_id);
+        }
+
+        const { data: members } = await memberQuery;
+        setRecentMembers((members || []) as RecentMember[]);
+      }
 
     } catch (err) {
       console.error('Dashboard Data Fetch Error:', err);
