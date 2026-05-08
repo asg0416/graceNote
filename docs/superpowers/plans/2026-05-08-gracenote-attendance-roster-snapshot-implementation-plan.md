@@ -45,7 +45,7 @@ Those helpers are temporary. Once snapshot reads are live, denominator logic sho
 - Create: `supabase/migrations/20260508000000_attendance_roster_snapshots.sql`
 - Create: `supabase/verify_attendance_roster_snapshots_dev_2026-05-08.sql`
 
-- [ ] **Step 1: Write migration table DDL**
+- [x] **Step 1: Write migration table DDL**
 
 Create `supabase/migrations/20260508000000_attendance_roster_snapshots.sql`:
 
@@ -123,7 +123,7 @@ create index if not exists idx_attendance_roster_snapshot_members_group
 commit;
 ```
 
-- [ ] **Step 2: Add RPC `ensure_attendance_roster_snapshot`**
+- [x] **Step 2: Add RPC `ensure_attendance_roster_snapshot`**
 
 Append to the same migration:
 
@@ -233,7 +233,7 @@ end;
 $$;
 ```
 
-- [ ] **Step 3: Add RPCs for admin edits**
+- [x] **Step 3: Add RPCs for admin edits**
 
 Append:
 
@@ -300,7 +300,7 @@ end;
 $$;
 ```
 
-- [ ] **Step 4: Add status update RPC**
+- [x] **Step 4: Add status update RPC**
 
 Append:
 
@@ -369,7 +369,7 @@ end;
 $$;
 ```
 
-- [ ] **Step 5: Write verification SQL**
+- [x] **Step 5: Write verification SQL**
 
 Create `supabase/verify_attendance_roster_snapshots_dev_2026-05-08.sql`:
 
@@ -413,12 +413,12 @@ where snapshot_id = :'snapshot_id'::uuid
 rollback;
 ```
 
-- [ ] **Step 6: Apply migration to dev**
+- [x] **Step 6: Apply migration to dev**
 
 Run:
 
 ```bash
-docker run --rm -v /Users/sujin/Documents/code_work/GraceNote/supabase:/work -e PGPASSWORD=DEV_DB_PASSWORD_PLACEHOLDER postgres:16 psql -h DEV_DB_POOLER_HOST_PLACEHOLDER -p 5432 -U DEV_DB_USER_PLACEHOLDER -d postgres -f /work/migrations/20260508000000_attendance_roster_snapshots.sql
+docker run --rm -v /ABS/PATH/GraceNote/supabase:/work -e PGPASSWORD='<DEV_DB_PASSWORD>' postgres:16 psql -h <DEV_DB_POOLER_HOST> -p 5432 -U <DEV_DB_USER> -d postgres -f /work/migrations/20260508000000_attendance_roster_snapshots.sql
 ```
 
 Expected: `CREATE TABLE`, `CREATE FUNCTION`, no errors.
@@ -428,7 +428,7 @@ Expected: `CREATE TABLE`, `CREATE FUNCTION`, no errors.
 Run:
 
 ```bash
-docker run --rm -v /Users/sujin/Documents/code_work/GraceNote/supabase:/work -e PGPASSWORD=DEV_DB_PASSWORD_PLACEHOLDER postgres:16 psql -h DEV_DB_POOLER_HOST_PLACEHOLDER -p 5432 -U DEV_DB_USER_PLACEHOLDER -d postgres -f /work/verify_attendance_roster_snapshots_dev_2026-05-08.sql
+docker run --rm -v /ABS/PATH/GraceNote/supabase:/work -e PGPASSWORD='<DEV_DB_PASSWORD>' postgres:16 psql -h <DEV_DB_POOLER_HOST> -p 5432 -U <DEV_DB_USER> -d postgres -f /work/verify_attendance_roster_snapshots_dev_2026-05-08.sql
 ```
 
 Expected:
