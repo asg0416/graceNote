@@ -80,6 +80,7 @@ attendance_roster_snapshot_members
 - role text null
 - display_name text not null
 - group_name text null
+- attendance_status text null
 - included boolean not null default true
 - source text not null default 'auto_membership'
 - reason text null
@@ -102,6 +103,17 @@ Source values:
 - `migration_backfill`: 과거 데이터 backfill 중 생성
 
 `included=false` row는 삭제하지 않는다. 관리자가 그 주차 대상에서 제외한 이력을 남기기 위해 사용한다.
+
+`attendance_status`는 그 주차 snapshot에서 관리자가 보는 출석 상태 캐시다. 실제 출석 저장은 기존 `attendance` 테이블과 호환되어야 하므로 초기에는 `attendance` row와 동기화해서 사용한다.
+
+허용 값:
+
+- `present`
+- `late`
+- `absent`
+- `unknown`
+
+`unknown`은 “그 조/사람의 출석 여부를 아직 모름”이다. 단, `included=true`라면 분모에는 들어간다.
 
 ### `attendance_roster_snapshot_events`
 
@@ -127,6 +139,7 @@ Event examples:
 - `member_restored`
 - `group_changed`
 - `role_changed`
+- `attendance_status_changed`
 - `snapshot_locked`
 - `snapshot_unlocked`
 
@@ -147,8 +160,10 @@ Snapshot은 다음 시점에 자동 생성한다.
 2. department_id가 같은 membership만 포함한다.
 3. person_id distinct 기준으로 1명 1row를 만든다.
 4. 같은 person이 여러 active group에 있으면 role/group 우선순위 기준으로 대표 row를 정한다.
-5. 같은 주차 출석 기록에 있지만 active membership에 없는 person은 attendance_snapshot source로 보강한다.
-6. active membership이 0명인데 출석 기록은 있는 과거 후입력 주차는 migration/backfill 후보로 표시한다.
+5. 같은 주차 출석 기록에 있지만 active membership에는 없는 person은 attendance_snapshot source로 보강한다.
+6. 출석 기록이 있는 사람은 기존 attendance status를 snapshot member에 반영한다.
+7. 출석 기록이 없는 사람은 `attendance_status='unknown'` 또는 `absent` 정책으로 표시한다.
+8. active membership이 0명인데 출석 기록은 있는 과거 후입력 주차는 migration/backfill 후보로 표시한다.
 ```
 
 대표 row 우선순위:
@@ -173,7 +188,7 @@ Phase 2 snapshot 적용 후 출석률은 다음 기준으로 계산한다.
 모임없는날 = 분모/분자 계산 제외
 ```
 
-출석 기록이 없는 사람은 자동 결석으로 본다.
+출석 기록이 없는 사람은 계산에서는 결석으로 본다. UI에서는 “미제출/미확인” 상태를 따로 보여줄 수 있다.
 
 조장이 출석을 제출하지 않은 조도 snapshot에 포함되어 있으면 분모에 들어간다. 이것이 snapshot 구조의 핵심이다.
 
@@ -206,6 +221,7 @@ Phase 2 snapshot 적용 후 출석률은 다음 기준으로 계산한다.
 - 대상 제외
 - 제외된 사람 보기
 - 조/역할 표시 수정
+- 출석 상태 수정
 - 수정 사유 입력
 - 변경 이력 보기
 
@@ -222,6 +238,60 @@ Phase 2 snapshot 적용 후 출석률은 다음 기준으로 계산한다.
 변경 이력
 2026-05-08 이수진: 김보영 추가 - 1월 출석 누락 보정
 ```
+
+### 조별 출석 현황 상세보기 inline edit
+
+현재 출석 현황 대시보드의 “전체 조별 출석 현황” 상세보기는 snapshot 수정의 주 UX가 된다.
+
+관리자는 조별 섹션에서 엑셀처럼 해당 주차 명단을 직접 다룰 수 있어야 한다.
+
+```text
+현권 영미 조
+[김용훈 ✓] [이지미 ✓] [김주용 ✕] [최애린 ✕] [+]
+
+정헌 진슬 조
+[강훈진 ?] [김동주 ?] [구정용 ✓] [+]
+
+RE-BORN(새가족부)
+[조명단 불러오기]
+```
+
+기능:
+
+- 사람 뱃지 삭제: 해당 주차 snapshot에서 `included=false` 처리한다. 실제 사람/소속/과거 기록은 삭제하지 않는다.
+- `+` 버튼: 같은 부서/교회 사람을 검색해서 해당 조의 그 주차 snapshot에 추가한다.
+- 조명단 불러오기: 출석 제출이 없던 조라도 현재 또는 선택 기준의 조 구성원을 불러와 그 주차 snapshot member로 생성한다.
+- 뱃지 클릭: 출석 상태를 `present/late/absent/unknown` 중 하나로 바꾼다.
+- 변경 사유: 과거 주차 수정은 사유 입력을 권장한다.
+
+중요한 원칙:
+
+```text
+구성 확정과 출석 제출은 다르다.
+출석 여부를 몰라도 그 주차 대상 명단은 확정할 수 있다.
+```
+
+예를 들어 1월에 정헌 진슬 조만 출석을 입력했고 다른 조는 제출하지 않았더라도, 관리자는 미제출 조의 당시 구성원을 불러와 분모를 확정할 수 있다. 이 경우 출석 상태는 unknown/absent로 남아도 분모에는 포함된다.
+
+### 조명단 불러오기
+
+조명단 불러오기는 과거 주차 분모 보정의 핵심 UX다.
+
+불러오기 후보:
+
+1. 해당 주차 날짜 기준 active memberships
+2. 같은 조의 현재 active memberships
+3. 출석 기록에 등장한 legacy directory member
+
+관리자에게는 후보 출처를 표시한다.
+
+```text
+김보영 - 현재 조 구성원
+이수진 - 출석 기록에 있음
+박민영 - 주차 기준 active
+```
+
+관리자는 후보를 선택해 snapshot에 추가하거나, 전체 조원 일괄 추가를 할 수 있다.
 
 ### 대상 변화 설명
 
@@ -299,14 +369,19 @@ DB verification:
 - snapshot member는 person당 1row만 생성된다.
 - active memberships 기준 생성 결과가 기대 person 수와 일치한다.
 - attendance-only person은 `attendance_snapshot` source로 보강된다.
+- 미제출 조에 대해 조명단 불러오기를 실행하면 included snapshot members가 생성된다.
 - manual exclude 후 분모에서 제외된다.
 - manual add 후 분모에 포함된다.
+- attendance status 수정 후 기존 attendance row 또는 snapshot status가 일관되게 반영된다.
 
 Admin smoke:
 
 - 출석 대시보드 진입 시 snapshot 자동 생성
 - 리포트 다운로드가 snapshot 분모를 사용
 - 대상 관리 모달에서 추가/제외/복원 가능
+- 조별 상세보기에서 뱃지 삭제/+추가 가능
+- 출석 미제출 조에서 조명단 불러오기 가능
+- 뱃지 클릭으로 출석 상태 수정 가능
 - 전주 대비 추가/제외 목록 표시
 - 조장이 출석 제출하지 않은 조도 분모에 포함
 
@@ -320,12 +395,15 @@ Regression:
 
 1. Dev schema migration: snapshot tables, indexes, RLS
 2. RPC: `ensure_attendance_roster_snapshot(department_id, week_id)`
-3. Admin read: attendance dashboard denominator uses snapshot
-4. Admin UI: snapshot status card and management modal
-5. Historical backfill script for dev
-6. Smoke with 장전제일교회 예닮부 2026년 1월~5월
-7. Flutter read compatibility check
-8. Prod-safe migration/verification plan
+3. RPC: add/remove/restore snapshot member
+4. RPC: load group roster into snapshot for unsubmitted groups
+5. Admin read: attendance dashboard denominator uses snapshot
+6. Admin UI: snapshot status card and management modal
+7. Admin UI: group detail inline edit badges
+8. Historical backfill script for dev
+9. Smoke with 장전제일교회 예닮부 2026년 1월~5월
+10. Flutter read compatibility check
+11. Prod-safe migration/verification plan
 
 ## Non-Goals
 
