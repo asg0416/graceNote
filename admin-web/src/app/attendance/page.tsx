@@ -38,8 +38,10 @@ import {
 } from '@/lib/attendanceMetrics';
 import {
     calculateSnapshotMetrics,
+    addSnapshotMember,
     ensureAttendanceRosterSnapshot,
     fetchAttendanceRosterSnapshotMembers,
+    loadGroupRosterIntoSnapshot,
     setSnapshotMemberIncluded,
     setSnapshotMemberStatus,
     type AttendanceRosterSnapshotMembersClient,
@@ -80,6 +82,17 @@ type AttendanceDashboardItem = {
     updatedAt: string | null;
     spouseName?: string | null;
     familyName?: string | null;
+};
+
+type AttendanceGroupRow = {
+    id: string;
+    name: string;
+};
+
+type SnapshotAddCandidate = {
+    personId: string;
+    name: string;
+    groupName?: string | null;
 };
 
 type Phase2AttendanceMembership = {
@@ -289,6 +302,34 @@ const formatSnapshotMemberNames = (
     return `${names.slice(0, limit).join(', ')} 외 ${names.length - limit}명`;
 };
 
+const getSnapshotMembersForWeek = async (
+    departmentId: string,
+    weekId: string
+) => {
+    const snapshotRpcClient = supabase as unknown as AttendanceRosterSnapshotRpcClient;
+    const snapshotMembersClient = supabase as unknown as AttendanceRosterSnapshotMembersClient;
+    const snapshotId = await ensureAttendanceRosterSnapshot(snapshotRpcClient, departmentId, weekId);
+    const snapshotMembers = await fetchAttendanceRosterSnapshotMembers(snapshotMembersClient, snapshotId);
+
+    const { data: attendance, error } = await supabase
+        .from('attendance')
+        .select(`
+            *,
+            groups!inner(id, name, department_id)
+        `)
+        .eq('week_id', weekId)
+        .eq('groups.department_id', departmentId);
+
+    if (error) throw error;
+
+    return {
+        snapshotId,
+        snapshotMembers,
+        snapshotMembersWithAttendance: applyAttendanceRowsToSnapshotMembers(snapshotMembers, (attendance || []) as AttendanceRow[]),
+        attendanceRows: (attendance || []) as AttendanceRow[],
+    };
+};
+
 export default function AttendancePage() {
     const [loading, setLoading] = useState(true);
     const [profile, setProfile] = useState<any>(null);
@@ -321,6 +362,7 @@ export default function AttendancePage() {
     const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
     const [weeklyTrendData, setWeeklyTrendData] = useState<any[]>([]);
     const [isTrendLoading, setIsTrendLoading] = useState(false);
+    const [attendanceSnapshotVersion, setAttendanceSnapshotVersion] = useState(0);
 
     // Insight Report Specific States (Independent)
     const [insightYear, setInsightYear] = useState<number>(new Date().getFullYear());
@@ -344,6 +386,12 @@ export default function AttendancePage() {
     const [endMonth, setEndMonth] = useState(new Date().getMonth() + 1);
     const [isExportLoading, setIsExportLoading] = useState(false);
     const [isInsightsLoading, setIsInsightsLoading] = useState(false);
+    const [currentSnapshotId, setCurrentSnapshotId] = useState<string | null>(null);
+    const [attendanceGroups, setAttendanceGroups] = useState<AttendanceGroupRow[]>([]);
+    const [isAddSnapshotMemberModalOpen, setIsAddSnapshotMemberModalOpen] = useState(false);
+    const [addSnapshotGroupId, setAddSnapshotGroupId] = useState<string | null>(null);
+    const [addSnapshotSearch, setAddSnapshotSearch] = useState('');
+    const [addSnapshotCandidates, setAddSnapshotCandidates] = useState<SnapshotAddCandidate[]>([]);
     const router = useRouter();
 
     useEffect(() => {
@@ -485,8 +533,6 @@ export default function AttendancePage() {
                     .lte('week_date', endOfMonth)
                     .order('week_date', { ascending: true });
 
-                // 안정적인 통계를 위해 주차 날짜 기준 Phase 2 active person 수 조회
-                const monthRoster = toMetricRoster(await fetchAttendanceRoster(selectedDeptId));
                 const { data: monthNoMeetingDays } = await supabase
                     .from('no_meeting_days')
                     .select('week_date')
@@ -499,20 +545,14 @@ export default function AttendancePage() {
 
                 if (trendWeeks && trendWeeks.length > 0) {
                     const trendData = await Promise.all(trendWeeks.map(async (w) => {
-                        // 스냅샷 방식: 해당 부서 내의 조들로 기록된 특정 주차의 데이터를 모두 조회
-                        const { data: weekAtt } = await supabase
-                            .from('attendance')
-                            .select('directory_member_id, status, groups!inner(department_id)')
-                            .eq('week_id', w.id)
-                            .eq('groups.department_id', selectedDeptId);
-
-                        const metrics = calculateWeekAttendanceMetrics({
-                            weekDate: w.week_date,
-                            roster: monthRoster,
-                            attendance: toMetricAttendance((weekAtt || []) as AttendanceRow[]),
-                            noMeetingDates: monthNoMeetingDateSet,
-                            backfillMode: 'current-active',
-                        });
+                        const isNoMeetingDay = monthNoMeetingDateSet.has(w.week_date);
+                        const { snapshotMembersWithAttendance } = await getSnapshotMembersForWeek(
+                            selectedDeptId,
+                            w.id
+                        );
+                        const metrics = isNoMeetingDay
+                            ? { totalPeople: 0, presentPeople: 0, absentPeople: 0, rate: null }
+                            : calculateSnapshotMetrics(snapshotMembersWithAttendance);
 
                         return {
                             id: w.id,
@@ -520,7 +560,7 @@ export default function AttendancePage() {
                             present: metrics.presentPeople,
                             total: metrics.totalPeople,
                             rate: metrics.rate,
-                            isNoMeetingDay: metrics.isNoMeetingDay,
+                            isNoMeetingDay,
                         };
                     }));
                     setWeeklyTrendData(trendData);
@@ -531,7 +571,7 @@ export default function AttendancePage() {
             };
             fetchTrendAndWeeks();
         }
-    }, [selectedChurchId, selectedDeptId, selectedYear, selectedMonth]);
+    }, [selectedChurchId, selectedDeptId, selectedYear, selectedMonth, attendanceSnapshotVersion]);
 
     const prevMonth = () => {
         if (selectedMonth === 1) {
@@ -574,28 +614,13 @@ export default function AttendancePage() {
             if (!selectedWeek) return;
 
             // 1. Ensure explicit week+department roster snapshot.
-            const snapshotRpcClient = supabase as unknown as AttendanceRosterSnapshotRpcClient;
-            const snapshotMembersClient = supabase as unknown as AttendanceRosterSnapshotMembersClient;
-            const snapshotId = await ensureAttendanceRosterSnapshot(
-                snapshotRpcClient,
-                selectedDeptId,
-                selectedWeekId
-            );
-            const snapshotMembers = await fetchAttendanceRosterSnapshotMembers(snapshotMembersClient, snapshotId);
-
-            // 2. Fetch Attendance + Groups for this week. Writes still use legacy attendance rows.
-            // 해당 부서의 조들에 속한 모든 출석 기록을 가져옴
-            const { data: attendance, error: aError } = await supabase
-                .from('attendance')
-                .select(`
-                    *,
-                    groups!inner(id, name, department_id)
-                `)
-                .eq('week_id', selectedWeekId)
-                .eq('groups.department_id', selectedDeptId);
-
-            if (aError) throw aError;
-            const attendanceRows = (attendance || []) as AttendanceRow[];
+            const {
+                snapshotId,
+                snapshotMembers,
+                snapshotMembersWithAttendance,
+                attendanceRows,
+            } = await getSnapshotMembersForWeek(selectedDeptId, selectedWeekId);
+            setCurrentSnapshotId(snapshotId);
 
             const { data: selectedNoMeetingDays } = await supabase
                 .from('no_meeting_days')
@@ -607,10 +632,6 @@ export default function AttendancePage() {
                 ((selectedNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
             );
 
-            const snapshotMembersWithAttendance = applyAttendanceRowsToSnapshotMembers(
-                snapshotMembers,
-                attendanceRows
-            );
             const isNoMeetingDay = selectedNoMeetingDateSet.has(selectedWeek.week_date);
             const metrics = isNoMeetingDay
                 ? {
@@ -642,14 +663,9 @@ export default function AttendancePage() {
                 .sort((a, b) => b.week_date.localeCompare(a.week_date))[0] as WeekRow | undefined;
 
             if (previousWeek) {
-                const previousSnapshotId = await ensureAttendanceRosterSnapshot(
-                    snapshotRpcClient,
+                const { snapshotMembers: previousSnapshotMembers } = await getSnapshotMembersForWeek(
                     selectedDeptId,
                     previousWeek.id
-                );
-                const previousSnapshotMembers = await fetchAttendanceRosterSnapshotMembers(
-                    snapshotMembersClient,
-                    previousSnapshotId
                 );
                 const previousTargetPersonIds = new Set(
                     previousSnapshotMembers
@@ -679,9 +695,10 @@ export default function AttendancePage() {
             // 부서 내 전체 조 목록 조회 (미제출 조 표시용)
             const { data: deptGroups } = await supabase
                 .from('groups')
-                .select('*')
+                .select('id, name')
                 .eq('department_id', selectedDeptId)
                 .eq('is_active', true);
+            setAttendanceGroups((deptGroups || []) as AttendanceGroupRow[]);
 
             const finalMerged = sortAttendanceItemsForDisplay(
                 snapshotMembersWithAttendance
@@ -738,6 +755,7 @@ export default function AttendancePage() {
                 status,
                 'admin attendance dashboard edit'
             );
+            setAttendanceSnapshotVersion((value) => value + 1);
             await fetchAttendance();
         } catch (err) {
             console.error('Snapshot status update error:', err);
@@ -760,12 +778,87 @@ export default function AttendancePage() {
                 false,
                 'admin attendance dashboard exclude'
             );
+            setAttendanceSnapshotVersion((value) => value + 1);
             await fetchAttendance();
         } catch (err) {
             console.error('Snapshot exclude error:', err);
             alert(err instanceof Error ? err.message : '출석 대상 제외 중 오류가 발생했습니다.');
         } finally {
             setSnapshotEditLoadingId(null);
+        }
+    };
+
+    const toggleSnapshotMemberAttendance = async (member: AttendanceDashboardItem) => {
+        if (!member.snapshotMemberId) return;
+        await updateSnapshotMemberStatus(
+            member.snapshotMemberId,
+            member.status === 'present' || member.status === 'late' ? 'absent' : 'present'
+        );
+    };
+
+    const openAddSnapshotMemberModal = async (groupId: string | null) => {
+        if (!selectedDeptId) return;
+        setAddSnapshotGroupId(groupId);
+        setAddSnapshotSearch('');
+
+        const roster = await fetchAttendanceRoster(selectedDeptId);
+        const seen = new Set<string>();
+        const candidates = roster
+            .filter((member) => member.person_id)
+            .filter((member) => {
+                if (!member.person_id || seen.has(member.person_id)) return false;
+                seen.add(member.person_id);
+                return true;
+            })
+            .map((member) => ({
+                personId: String(member.person_id),
+                name: member.full_name || '이름 없음',
+                groupName: member.group_name,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        setAddSnapshotCandidates(candidates);
+        setIsAddSnapshotMemberModalOpen(true);
+    };
+
+    const addPersonToCurrentSnapshot = async (candidate: SnapshotAddCandidate) => {
+        if (!currentSnapshotId) return;
+
+        try {
+            await addSnapshotMember(
+                supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                {
+                    snapshotId: currentSnapshotId,
+                    personId: candidate.personId,
+                    groupId: addSnapshotGroupId,
+                    reason: 'admin attendance dashboard add',
+                }
+            );
+            setAttendanceSnapshotVersion((value) => value + 1);
+            setIsAddSnapshotMemberModalOpen(false);
+            await fetchAttendance();
+        } catch (err) {
+            console.error('Snapshot add member error:', err);
+            alert(err instanceof Error ? err.message : '출석 대상 추가 중 오류가 발생했습니다.');
+        }
+    };
+
+    const loadGroupRoster = async (groupId: string, groupName: string) => {
+        if (!currentSnapshotId) return;
+        if (!confirm(`${groupName} 현재 조명단을 이 주차 snapshot에 불러올까요?`)) return;
+
+        try {
+            const count = await loadGroupRosterIntoSnapshot(
+                supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                currentSnapshotId,
+                groupId
+            );
+            setAttendanceSnapshotVersion((value) => value + 1);
+            await fetchAttendance();
+            alert(`${count}명의 조명단을 snapshot에 반영했습니다.`);
+        } catch (err) {
+            console.error('Load group roster error:', err);
+            alert(err instanceof Error ? err.message : '조명단 불러오기 중 오류가 발생했습니다.');
         }
     };
 
@@ -1398,10 +1491,12 @@ export default function AttendancePage() {
                                                         </div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {groupMembers.map(m => (
-                                                                <div
+                                                                <button
+                                                                    type="button"
                                                                     key={m.snapshotMemberId || m.id}
+                                                                    onClick={() => toggleSnapshotMemberAttendance(m)}
                                                                     className={cn(
-                                                                        "px-2 py-1.5 rounded-xl border flex items-center gap-1.5 transition-all text-[11px] font-bold",
+                                                                        "group/member relative px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition-all text-[11px] font-bold hover:-translate-y-0.5 hover:shadow-sm",
                                                                         m.status === 'present' || m.status === 'late'
                                                                             ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                                                                             : "bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-700/50 text-slate-400"
@@ -1412,47 +1507,56 @@ export default function AttendancePage() {
                                                                     ) : (
                                                                         <XCircle className="w-3 h-3" />
                                                                     )}
-                                                                    {m.name}
+                                                                    <span>{m.name}</span>
                                                                     {m.snapshotMemberId && (
-                                                                        <div className="ml-1 flex items-center gap-1 border-l border-current/10 pl-1">
-                                                                            <button
-                                                                                type="button"
-                                                                                disabled={snapshotEditLoadingId === m.snapshotMemberId}
-                                                                                onClick={() => updateSnapshotMemberStatus(m.snapshotMemberId!, 'present')}
-                                                                                className="rounded-md px-1.5 py-0.5 text-[9px] font-black hover:bg-emerald-100 disabled:opacity-40 dark:hover:bg-emerald-500/20"
-                                                                                title="이 주차 출석으로 표시"
-                                                                            >
-                                                                                출
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                disabled={snapshotEditLoadingId === m.snapshotMemberId}
-                                                                                onClick={() => updateSnapshotMemberStatus(m.snapshotMemberId!, 'absent')}
-                                                                                className="rounded-md px-1.5 py-0.5 text-[9px] font-black hover:bg-slate-200 disabled:opacity-40 dark:hover:bg-slate-700"
-                                                                                title="이 주차 결석으로 표시"
-                                                                            >
-                                                                                결
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                disabled={snapshotEditLoadingId === m.snapshotMemberId}
-                                                                                onClick={() => excludeSnapshotMember(m.snapshotMemberId!, m.name)}
-                                                                                className="rounded-md px-1.5 py-0.5 text-[9px] font-black text-rose-500 hover:bg-rose-50 disabled:opacity-40 dark:hover:bg-rose-500/10"
-                                                                                title="이 주차 출석 대상에서 제외"
-                                                                            >
-                                                                                제외
-                                                                            </button>
-                                                                        </div>
+                                                                        <span
+                                                                            role="button"
+                                                                            tabIndex={0}
+                                                                            onClick={(event) => {
+                                                                                event.stopPropagation();
+                                                                                excludeSnapshotMember(m.snapshotMemberId!, m.name);
+                                                                            }}
+                                                                            onKeyDown={(event) => {
+                                                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                                                    event.preventDefault();
+                                                                                    event.stopPropagation();
+                                                                                    excludeSnapshotMember(m.snapshotMemberId!, m.name);
+                                                                                }
+                                                                            }}
+                                                                            className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-black text-white shadow-sm group-hover/member:flex"
+                                                                            title="이 주차 출석 대상에서 제외"
+                                                                        >
+                                                                            ×
+                                                                        </span>
                                                                     )}
-                                                                </div>
+                                                                    {snapshotEditLoadingId === m.snapshotMemberId && (
+                                                                        <span className="absolute inset-0 rounded-xl bg-white/60 dark:bg-slate-900/60" />
+                                                                    )}
+                                                                </button>
                                                             ))}
                                                             <button
                                                                 type="button"
-                                                                onClick={() => alert('다음 단계에서 이 조의 snapshot에 성도를 추가하는 검색 UI를 연결합니다.')}
+                                                                onClick={() => {
+                                                                    const group = attendanceGroups.find((item) => item.name === gs.name);
+                                                                    openAddSnapshotMemberModal(group?.id || null);
+                                                                }}
                                                                 className="px-3 py-1.5 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 text-[11px] font-black text-indigo-600 hover:bg-indigo-50 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
                                                             >
                                                                 + 성도 추가
                                                             </button>
+                                                            {groupMembers.length === 0 && (() => {
+                                                                const group = attendanceGroups.find((item) => item.name === gs.name);
+                                                                if (!group) return null;
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => loadGroupRoster(group.id, group.name)}
+                                                                        className="px-3 py-1.5 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/40 text-[11px] font-black text-emerald-600 hover:bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                                                    >
+                                                                        조명단 불러오기
+                                                                    </button>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     </div>
                                                 );
@@ -1708,6 +1812,46 @@ export default function AttendancePage() {
                     </div>
                 </div>
             </div>
+
+            <Modal
+                isOpen={isAddSnapshotMemberModalOpen}
+                onClose={() => setIsAddSnapshotMemberModalOpen(false)}
+                title="이 주차 출석 대상 추가"
+                maxWidth="md"
+            >
+                <div className="space-y-5">
+                    <div className="space-y-2">
+                        <label className="text-xs font-black text-slate-400 uppercase tracking-widest">성도 검색</label>
+                        <input
+                            value={addSnapshotSearch}
+                            onChange={(event) => setAddSnapshotSearch(event.target.value)}
+                            placeholder="이름으로 검색"
+                            className="w-full rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 dark:bg-slate-800"
+                        />
+                    </div>
+                    <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                        {addSnapshotCandidates
+                            .filter((candidate) => candidate.name.toLowerCase().includes(addSnapshotSearch.toLowerCase()))
+                            .slice(0, 30)
+                            .map((candidate) => (
+                                <button
+                                    key={candidate.personId}
+                                    type="button"
+                                    onClick={() => addPersonToCurrentSnapshot(candidate)}
+                                    className="flex w-full items-center justify-between rounded-2xl border border-slate-100 bg-white px-4 py-3 text-left hover:border-indigo-200 hover:bg-indigo-50/50 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-500/30 dark:hover:bg-indigo-500/10"
+                                >
+                                    <span className="text-sm font-black text-slate-900 dark:text-white">{candidate.name}</span>
+                                    <span className="text-[11px] font-bold text-slate-400">{candidate.groupName || '미편성'}</span>
+                                </button>
+                            ))}
+                        {addSnapshotCandidates.length === 0 && (
+                            <p className="rounded-2xl border border-dashed border-slate-200 py-8 text-center text-xs font-bold text-slate-400 dark:border-slate-800">
+                                추가할 수 있는 성도를 찾지 못했습니다.
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </Modal>
 
             {/* Modal - Responsive */}
             <Modal

@@ -933,7 +933,7 @@ User checks:
 - Refresh preserves snapshot edit.
 - Actual member/person is not deleted from 성도명부.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add admin-web/src/app/attendance/page.tsx admin-web/src/lib/attendanceRosterSnapshots.ts
@@ -949,7 +949,7 @@ git commit -m "admin: edit attendance roster snapshot badges"
 - Modify: `admin-web/src/lib/attendanceRosterSnapshots.ts`
 - Modify: `admin-web/src/app/attendance/page.tsx`
 
-- [ ] **Step 1: Add RPC `add_attendance_roster_snapshot_member`**
+- [x] **Step 1: Add RPC `add_attendance_roster_snapshot_member`**
 
 Append migration correction or create a follow-up migration if Task 1 has already been applied:
 
@@ -1005,7 +1005,7 @@ end;
 $$;
 ```
 
-- [ ] **Step 2: Add helper and UI search**
+- [x] **Step 2: Add helper and UI search**
 
 Add helper:
 
@@ -1033,7 +1033,7 @@ export const addSnapshotMember = async ({
 
 For first UI iteration, add a minimal prompt by person name is not acceptable. Build a modal or reuse existing member search patterns from `MemberModal`. Search must be church/department scoped and person-deduped.
 
-- [ ] **Step 3: Add `조명단 불러오기` RPC**
+- [x] **Step 3: Add `조명단 불러오기` RPC**
 
 Create function `load_group_roster_into_attendance_snapshot(p_snapshot_id uuid, p_group_id uuid)` that inserts current active memberships for the group into snapshot with `source='auto_membership'`.
 
@@ -1046,7 +1046,7 @@ User checks:
 - Denominator changes immediately.
 - Added people survive refresh.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/migrations admin-web/src/lib/attendanceRosterSnapshots.ts admin-web/src/app/attendance/page.tsx

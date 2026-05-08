@@ -246,3 +246,46 @@ export const setSnapshotMemberStatus = async (
     throw new Error(error.message || '출석 상태를 수정하지 못했습니다.');
   }
 };
+
+export const addSnapshotMember = async (
+  client: RpcClientLike,
+  {
+    snapshotId,
+    personId,
+    groupId,
+    reason,
+  }: {
+    snapshotId: string;
+    personId: string;
+    groupId?: string | null;
+    reason?: string;
+  }
+) => {
+  const { error } = await client.rpc('add_attendance_roster_snapshot_member', {
+    p_snapshot_id: snapshotId,
+    p_person_id: personId,
+    p_group_id: groupId || null,
+    p_reason: reason || null,
+  });
+
+  if (error) {
+    throw new Error(error.message || '출석 대상에 성도를 추가하지 못했습니다.');
+  }
+};
+
+export const loadGroupRosterIntoSnapshot = async (
+  client: RpcClientLike,
+  snapshotId: string,
+  groupId: string
+) => {
+  const { data, error } = await client.rpc('load_group_roster_into_attendance_snapshot', {
+    p_snapshot_id: snapshotId,
+    p_group_id: groupId,
+  });
+
+  if (error) {
+    throw new Error(error.message || '조명단을 snapshot에 불러오지 못했습니다.');
+  }
+
+  return typeof data === 'number' ? data : 0;
+};
