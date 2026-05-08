@@ -29,16 +29,22 @@ import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
 import { Tooltip } from '@/components/Tooltip';
 import {
-    buildAttendanceTargetExplanation,
     calculateWeekAttendanceMetrics,
-    getCurrentActiveRoster,
     getActiveRosterForWeek,
-    getWeekAttendanceTargetDetails,
     sortRosterForDisplay,
     type AttendanceRecordForMetrics,
     type AttendanceRosterMember,
     type WeekAttendanceMetrics,
 } from '@/lib/attendanceMetrics';
+import {
+    calculateSnapshotMetrics,
+    ensureAttendanceRosterSnapshot,
+    fetchAttendanceRosterSnapshotMembers,
+    type AttendanceRosterSnapshotMembersClient,
+    type AttendanceRosterSnapshotRpcClient,
+    type AttendanceRosterSnapshotMember,
+    type SnapshotAttendanceMetrics,
+} from '@/lib/attendanceRosterSnapshots';
 import * as XLSX from 'xlsx';
 
 type AttendanceDirectoryMember = {
@@ -223,38 +229,6 @@ const toMetricAttendance = (attendance: AttendanceRow[]): AttendanceRecordForMet
     }));
 };
 
-const formatNames = (members: AttendanceRosterMember[], limit = 5) => {
-    const names = Array.from(new Set(members.map((member) => member.fullName))).filter(Boolean);
-    if (names.length <= limit) return names.join(', ');
-    return `${names.slice(0, limit).join(', ')} 외 ${names.length - limit}명`;
-};
-
-const formatPersonNamesByIds = (
-    roster: AttendanceRosterMember[],
-    personIds: Set<string>,
-    limit = 5
-) => {
-    return formatNames(
-        sortRosterForDisplay(roster.filter((member) => personIds.has(member.personId))),
-        limit
-    );
-};
-
-const getRetroactiveBackfillMembers = (
-    roster: AttendanceRosterMember[],
-    weekDate: string,
-    attendance: AttendanceRecordForMetrics[]
-) => {
-    const activePersonIds = new Set(getActiveRosterForWeek(roster, weekDate).map((member) => member.personId));
-    const directoryToPerson = new Map(roster.map((member) => [member.directoryMemberId, member.personId]));
-    attendance.forEach((record) => {
-        const personId = directoryToPerson.get(record.directoryMemberId);
-        if (personId) activePersonIds.add(personId);
-    });
-
-    return getCurrentActiveRoster(roster).filter((member) => !activePersonIds.has(member.personId));
-};
-
 const getAttendanceItemFamilyKey = (item: AttendanceDashboardItem) => {
     if (item.familyName) return `family:${item.familyName}`;
     if (item.spouseName) return `spouse:${[item.name, item.spouseName].sort().join('_')}`;
@@ -273,6 +247,42 @@ const sortAttendanceItemsForDisplay = (items: AttendanceDashboardItem[]) => {
     });
 };
 
+const applyAttendanceRowsToSnapshotMembers = (
+    snapshotMembers: AttendanceRosterSnapshotMember[],
+    attendanceRows: AttendanceRow[]
+) => {
+    const attendanceByDirectoryId = new Map(
+        attendanceRows.map((row) => [row.directory_member_id, row])
+    );
+
+    return snapshotMembers.map((member) => {
+        const attendance = member.legacyMemberDirectoryId
+            ? attendanceByDirectoryId.get(member.legacyMemberDirectoryId)
+            : undefined;
+
+        return {
+            ...member,
+            attendanceStatus: attendance?.status === 'present' || attendance?.status === 'late' || attendance?.status === 'absent'
+                ? attendance.status
+                : member.attendanceStatus,
+        };
+    });
+};
+
+const formatSnapshotMemberNames = (
+    members: AttendanceRosterSnapshotMember[],
+    personIds: Set<string>,
+    limit = 5
+) => {
+    const names = Array.from(new Set(members
+        .filter((member) => personIds.has(member.personId))
+        .map((member) => member.displayName)
+    )).filter(Boolean);
+
+    if (names.length <= limit) return names.join(', ');
+    return `${names.slice(0, limit).join(', ')} 외 ${names.length - limit}명`;
+};
+
 export default function AttendancePage() {
     const [loading, setLoading] = useState(true);
     const [profile, setProfile] = useState<any>(null);
@@ -288,7 +298,7 @@ export default function AttendancePage() {
     // Data States
     const [attendanceData, setAttendanceData] = useState<AttendanceDashboardItem[]>([]);
     const [groupStats, setGroupStats] = useState<any[]>([]);
-    const [selectedWeekMetrics, setSelectedWeekMetrics] = useState<WeekAttendanceMetrics | null>(null);
+    const [selectedWeekMetrics, setSelectedWeekMetrics] = useState<WeekAttendanceMetrics | SnapshotAttendanceMetrics | null>(null);
     const [targetExplanation, setTargetExplanation] = useState<string[]>([]);
 
     // Monthly/Weekly View States
@@ -556,13 +566,17 @@ export default function AttendancePage() {
             const selectedWeek = weeks.find((week) => week.id === selectedWeekId) as WeekRow | undefined;
             if (!selectedWeek) return;
 
-            // 1. Fetch members active on this week from Phase 2 memberships first.
-            const members = await fetchAttendanceRoster(selectedDeptId);
-            const metricRoster = toMetricRoster(members);
-            const activeMetricRoster = getActiveRosterForWeek(metricRoster, selectedWeek.week_date);
-            const activeDirectoryIds = new Set(activeMetricRoster.map((member) => member.directoryMemberId));
+            // 1. Ensure explicit week+department roster snapshot.
+            const snapshotRpcClient = supabase as unknown as AttendanceRosterSnapshotRpcClient;
+            const snapshotMembersClient = supabase as unknown as AttendanceRosterSnapshotMembersClient;
+            const snapshotId = await ensureAttendanceRosterSnapshot(
+                snapshotRpcClient,
+                selectedDeptId,
+                selectedWeekId
+            );
+            const snapshotMembers = await fetchAttendanceRosterSnapshotMembers(snapshotMembersClient, snapshotId);
 
-            // 2. Fetch Attendance + Groups (Snapshot) for this week
+            // 2. Fetch Attendance + Groups for this week. Writes still use legacy attendance rows.
             // 해당 부서의 조들에 속한 모든 출석 기록을 가져옴
             const { data: attendance, error: aError } = await supabase
                 .from('attendance')
@@ -586,75 +600,70 @@ export default function AttendancePage() {
                 ((selectedNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
             );
 
-            const metrics = calculateWeekAttendanceMetrics({
-                weekDate: selectedWeek.week_date,
-                roster: metricRoster,
-                attendance: toMetricAttendance(attendanceRows),
-                noMeetingDates: selectedNoMeetingDateSet,
-                backfillMode: 'current-active',
-            });
-            setSelectedWeekMetrics(metrics);
-            const explanation = buildAttendanceTargetExplanation(metrics);
-            const selectedTargetDetails = getWeekAttendanceTargetDetails({
-                weekDate: selectedWeek.week_date,
-                roster: metricRoster,
-                attendance: toMetricAttendance(attendanceRows),
-                noMeetingDates: selectedNoMeetingDateSet,
-                backfillMode: 'current-active',
-            });
-            if (metrics.usedRetroactiveBackfill) {
-                const backfilledMembers = getRetroactiveBackfillMembers(
-                    metricRoster,
-                    selectedWeek.week_date,
-                    toMetricAttendance(attendanceRows)
-                );
-                if (backfilledMembers.length > 0) {
-                    explanation.push(`보정 포함 대상: ${formatNames(backfilledMembers)}`);
+            const snapshotMembersWithAttendance = applyAttendanceRowsToSnapshotMembers(
+                snapshotMembers,
+                attendanceRows
+            );
+            const isNoMeetingDay = selectedNoMeetingDateSet.has(selectedWeek.week_date);
+            const metrics = isNoMeetingDay
+                ? {
+                    totalPeople: 0,
+                    presentPeople: 0,
+                    absentPeople: 0,
+                    rate: null,
                 }
-            }
+                : calculateSnapshotMetrics(snapshotMembersWithAttendance);
+            setSelectedWeekMetrics(metrics);
+            const selectedTargetPersonIds = new Set(
+                snapshotMembersWithAttendance
+                    .filter((member) => member.included)
+                    .map((member) => member.personId)
+            );
+            const matchedAttendanceCount = snapshotMembersWithAttendance
+                .filter((member) => member.included && member.legacyMemberDirectoryId)
+                .filter((member) => attendanceRows.some((row) => row.directory_member_id === member.legacyMemberDirectoryId))
+                .length;
+            const explanation = isNoMeetingDay
+                ? ['모임없는날로 출석률 계산에서 제외했습니다.']
+                : [
+                    `출석 대상 snapshot ${metrics.totalPeople}명`,
+                    `출석 기록 매칭 ${matchedAttendanceCount}명`,
+                ];
 
             const previousWeek = [...weeks]
                 .filter((week) => week.week_date < selectedWeek.week_date)
                 .sort((a, b) => b.week_date.localeCompare(a.week_date))[0] as WeekRow | undefined;
 
             if (previousWeek) {
-                const { data: previousAttendance } = await supabase
-                    .from('attendance')
-                    .select('directory_member_id, status, groups!inner(department_id)')
-                    .eq('week_id', previousWeek.id)
-                    .eq('groups.department_id', selectedDeptId);
-
-                const { data: previousNoMeetingDays } = await supabase
-                    .from('no_meeting_days')
-                    .select('week_date')
-                    .eq('department_id', selectedDeptId)
-                    .eq('week_date', previousWeek.week_date);
-
-                const previousNoMeetingDateSet = new Set<string>(
-                    ((previousNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
+                const previousSnapshotId = await ensureAttendanceRosterSnapshot(
+                    snapshotRpcClient,
+                    selectedDeptId,
+                    previousWeek.id
                 );
-                const previousTargetDetails = getWeekAttendanceTargetDetails({
-                    weekDate: previousWeek.week_date,
-                    roster: metricRoster,
-                    attendance: toMetricAttendance((previousAttendance || []) as AttendanceRow[]),
-                    noMeetingDates: previousNoMeetingDateSet,
-                    backfillMode: 'current-active',
-                });
+                const previousSnapshotMembers = await fetchAttendanceRosterSnapshotMembers(
+                    snapshotMembersClient,
+                    previousSnapshotId
+                );
+                const previousTargetPersonIds = new Set(
+                    previousSnapshotMembers
+                        .filter((member) => member.included)
+                        .map((member) => member.personId)
+                );
 
                 const addedPeople = new Set(
-                    Array.from(selectedTargetDetails.targetPersonIds)
-                        .filter((personId) => !previousTargetDetails.targetPersonIds.has(personId))
+                    Array.from(selectedTargetPersonIds)
+                        .filter((personId) => !previousTargetPersonIds.has(personId))
                 );
                 const removedPeople = new Set(
-                    Array.from(previousTargetDetails.targetPersonIds)
-                        .filter((personId) => !selectedTargetDetails.targetPersonIds.has(personId))
+                    Array.from(previousTargetPersonIds)
+                        .filter((personId) => !selectedTargetPersonIds.has(personId))
                 );
 
                 if (addedPeople.size > 0) {
-                    explanation.push(`전주 대비 추가 ${addedPeople.size}명: ${formatPersonNamesByIds(metricRoster, addedPeople)}`);
+                    explanation.push(`전주 대비 추가 ${addedPeople.size}명: ${formatSnapshotMemberNames(snapshotMembersWithAttendance, addedPeople)}`);
                 }
                 if (removedPeople.size > 0) {
-                    explanation.push(`전주 대비 제외 ${removedPeople.size}명: ${formatPersonNamesByIds(metricRoster, removedPeople)}`);
+                    explanation.push(`전주 대비 제외 ${removedPeople.size}명: ${formatSnapshotMemberNames(previousSnapshotMembers, removedPeople)}`);
                 }
             }
             setTargetExplanation(explanation);
@@ -667,52 +676,20 @@ export default function AttendancePage() {
                 .eq('department_id', selectedDeptId)
                 .eq('is_active', true);
 
-            // 실시간 명단(members) 기준이 아니라, 실제 기록(attendance) 기준으로 명단 재구성
-            // 단, 미제출된 성도는 members 명단에서 보충하되, "이미 제출된 조"는 건드리지 않음
-            const snapshotIds = new Set(attendanceRows.map(a => a.directory_member_id));
-            const submittedGroupIds = new Set(attendanceRows.map(a => a.group_id || a.groups?.id).filter(Boolean));
-            const submittedGroupNames = new Set(attendanceRows.map(a => a.groups?.name).filter(Boolean));
-
-            const mergedSnapshot = attendanceRows.map(att => {
-                const memberInfo = members.find(m => m.id === att.directory_member_id);
-                return {
-                    id: att.directory_member_id,
-                    personId: memberInfo?.person_id,
-                    name: memberInfo?.full_name || '이동/비활성 성도',
-                    department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
-                    group: att.groups?.name || '조 없음',
-                    role: memberInfo?.role_in_group || '성도',
-                    status: att.status || 'absent',
-                    updatedAt: att.updated_at || null,
-                    spouseName: memberInfo?.spouse_name,
-                    familyName: memberInfo?.family_name,
-                };
-            });
-
-            // 스냅샷에 없지만 현재 활성 상태인 멤버들 추가 (출석 미체크 조/멤버)
-            // 중요: 이미 출석이 '조별로' 제출된 조는 명단 보충에서 제외 (스냅샷 보호)
-            const missingMembers = members
-                .filter(m => {
-                    const isNotChecked = !snapshotIds.has(m.id);
-                    const isActiveOnWeek = activeDirectoryIds.has(m.id);
-                    // ID 또는 이름 기반으로 이미 제출된 조인지 확인
-                    const isNotSubmittedGroup = !submittedGroupIds.has(m.group_id) && !submittedGroupNames.has(m.group_name);
-                    return isNotChecked && isNotSubmittedGroup && isActiveOnWeek;
-                })
-                .map(m => ({
-                    id: m.id,
-                    personId: m.person_id,
-                    name: m.full_name || '이름 없음',
-                    department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
-                    group: m.group_name || '조 없음',
-                    role: m.role_in_group || '성도',
-                    status: 'absent',
-                    updatedAt: null,
-                    spouseName: m.spouse_name,
-                    familyName: m.family_name,
-                }));
-
-            const finalMerged = sortAttendanceItemsForDisplay([...mergedSnapshot, ...missingMembers]);
+            const finalMerged = sortAttendanceItemsForDisplay(
+                snapshotMembersWithAttendance
+                    .filter((member) => member.included)
+                    .map((member) => ({
+                        id: member.legacyMemberDirectoryId || member.id,
+                        personId: member.personId,
+                        name: member.displayName || '이름 없음',
+                        department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
+                        group: member.groupName || '미편성',
+                        role: member.role || 'member',
+                        status: member.attendanceStatus === 'unknown' ? 'absent' : member.attendanceStatus,
+                        updatedAt: null,
+                    }))
+            );
             setAttendanceData(finalMerged);
 
             // 4. Calculate Group Stats (All Groups in Dept)

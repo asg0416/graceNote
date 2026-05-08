@@ -4,6 +4,7 @@ export type AttendanceRosterSnapshotMember = {
   id: string;
   snapshotId: string;
   personId: string;
+  legacyMemberDirectoryId?: string | null;
   displayName: string;
   groupId?: string | null;
   groupName?: string | null;
@@ -61,10 +62,14 @@ type SnapshotMembersClientLike = {
   from: (table: 'attendance_roster_snapshot_members') => SnapshotMembersSelect;
 };
 
+export type AttendanceRosterSnapshotRpcClient = RpcClientLike;
+export type AttendanceRosterSnapshotMembersClient = SnapshotMembersClientLike;
+
 type AttendanceRosterSnapshotMemberRow = {
   id: string;
   snapshot_id: string;
   person_id: string;
+  legacy_member_directory_id?: string | null;
   display_name: string;
   group_id?: string | null;
   group_name?: string | null;
@@ -94,6 +99,7 @@ export const mapSnapshotMemberRow = (
   id: row.id,
   snapshotId: row.snapshot_id,
   personId: row.person_id,
+  legacyMemberDirectoryId: row.legacy_member_directory_id,
   displayName: row.display_name,
   groupId: row.group_id,
   groupName: row.group_name,
@@ -187,6 +193,7 @@ export const fetchAttendanceRosterSnapshotMembers = async (
       id,
       snapshot_id,
       person_id,
+      legacy_member_directory_id,
       display_name,
       group_id,
       group_name,

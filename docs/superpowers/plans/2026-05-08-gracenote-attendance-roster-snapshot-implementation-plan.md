@@ -656,7 +656,7 @@ git commit -m "admin: add attendance roster snapshot helpers"
 - Modify: `admin-web/src/lib/attendanceMetrics.ts`
 - Test: `admin-web/src/lib/attendanceRosterSnapshots.test.ts`
 
-- [ ] **Step 1: Replace selected week denominator source**
+- [x] **Step 1: Replace selected week denominator source**
 
 In `admin-web/src/app/attendance/page.tsx`, import:
 
@@ -670,7 +670,7 @@ import {
 } from '@/lib/attendanceRosterSnapshots';
 ```
 
-- [ ] **Step 2: Add selected snapshot state**
+- [x] **Step 2: Add selected snapshot state**
 
 Add near existing selected week state:
 
@@ -679,7 +679,7 @@ const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null
 const [snapshotMembers, setSnapshotMembers] = useState<AttendanceRosterSnapshotMember[]>([]);
 ```
 
-- [ ] **Step 3: Load snapshot in `fetchAttendance()`**
+- [x] **Step 3: Load snapshot in `fetchAttendance()`**
 
 At the start of `fetchAttendance()` after `selectedWeek` is found:
 
@@ -704,7 +704,7 @@ setSelectedWeekMetrics({
 
 Remove current selected-week metric calculation that uses `calculateWeekAttendanceMetrics()` for the dashboard cards.
 
-- [ ] **Step 4: Use snapshot group display for group stats**
+- [x] **Step 4: Use snapshot group display for group stats**
 
 Replace group stats construction with:
 
@@ -717,11 +717,11 @@ setGroupStats(snapshotGroups.map((group) => ({
 })));
 ```
 
-- [ ] **Step 5: Keep attendance row detail fallback**
+- [x] **Step 5: Keep attendance row detail fallback**
 
 For the first implementation, keep existing `attendanceData` list reconstruction. Do not remove attendance row display logic yet. The snapshot metrics can be correct even while row badges still render from existing `attendanceData`.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run:
 
