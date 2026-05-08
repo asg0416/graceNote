@@ -516,9 +516,14 @@ export default function AttendancePage() {
                     .lte('week_date', endOfMonth)
                     .order('week_date', { ascending: true });
 
-                setWeeks(monthWeeksList || []);
-                if (monthWeeksList && monthWeeksList.length > 0) {
-                    setSelectedWeekId(monthWeeksList[monthWeeksList.length - 1].id);
+                const monthWeeks = monthWeeksList || [];
+                setWeeks(monthWeeks);
+                if (monthWeeks.length > 0) {
+                    setSelectedWeekId((currentWeekId) => (
+                        currentWeekId && monthWeeks.some((week) => week.id === currentWeekId)
+                            ? currentWeekId
+                            : monthWeeks[monthWeeks.length - 1].id
+                    ));
                 } else {
                     setSelectedWeekId('');
                 }
@@ -1412,8 +1417,10 @@ export default function AttendancePage() {
                                                     <div
                                                         key={idx}
                                                         className={cn(
-                                                            "flex-1 flex flex-col items-center gap-3 group cursor-pointer transition-all",
-                                                            selectedWeekId === data.id ? "scale-105" : "hover:scale-105"
+                                                            "flex-1 flex flex-col items-center gap-3 group cursor-pointer transition-all rounded-2xl px-1 py-2",
+                                                            selectedWeekId === data.id
+                                                                ? "scale-110 bg-indigo-50/80 ring-2 ring-indigo-500/30 shadow-lg shadow-indigo-500/10 dark:bg-indigo-500/10 dark:ring-indigo-400/40"
+                                                                : "opacity-60 hover:opacity-100 hover:scale-105"
                                                         )}
                                                         onClick={() => setSelectedWeekId(data.id)}
                                                     >
@@ -1426,14 +1433,26 @@ export default function AttendancePage() {
                                                             {/* Bar Fill */}
                                                             <div
                                                                 className={cn(
-                                                                    "w-3 sm:w-5 rounded-full transition-all duration-1000 ease-out relative z-10",
-                                                                    selectedWeekId === data.id ? "bg-indigo-700 dark:bg-indigo-400 shadow-[0_0_15px_rgba(79,70,229,0.4)]" : "bg-indigo-600 dark:bg-indigo-500 group-hover:bg-indigo-700"
+                                                                    "rounded-full transition-all duration-1000 ease-out relative z-10",
+                                                                    selectedWeekId === data.id
+                                                                        ? "w-5 sm:w-7 bg-indigo-700 dark:bg-indigo-300 shadow-[0_0_22px_rgba(79,70,229,0.55)]"
+                                                                        : "w-3 sm:w-5 bg-indigo-400 dark:bg-indigo-600 group-hover:bg-indigo-600"
                                                                 )}
                                                                 style={{ height: `${(data.present / (data.total || 1)) * 100}%` }}
                                                             >
                                                                 <div className="absolute top-1.5 inset-x-0 h-1 bg-white/20 rounded-full mx-1" />
+                                                                {selectedWeekId === data.id && (
+                                                                    <div className="absolute -top-9 left-1/2 -translate-x-1/2 rounded-full bg-indigo-700 px-2.5 py-1 text-[9px] font-black text-white shadow-lg dark:bg-indigo-300 dark:text-indigo-950">
+                                                                        선택됨
+                                                                    </div>
+                                                                )}
                                                                 {/* Number Label */}
-                                                                <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-black text-indigo-600 dark:text-indigo-400">
+                                                                <div className={cn(
+                                                                    "absolute left-1/2 -translate-x-1/2 text-[10px] font-black",
+                                                                    selectedWeekId === data.id
+                                                                        ? "-top-5 text-indigo-900 dark:text-indigo-100"
+                                                                        : "-top-6 text-indigo-500 dark:text-indigo-400"
+                                                                )}>
                                                                     {data.present}
                                                                 </div>
                                                                 {/* Tooltip */}
@@ -1443,8 +1462,10 @@ export default function AttendancePage() {
                                                             </div>
                                                         </div>
                                                         <span className={cn(
-                                                            "text-[10px] font-black transition-colors shrink-0",
-                                                            selectedWeekId === data.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 group-hover:text-indigo-600"
+                                                            "rounded-full px-2 py-1 text-[10px] font-black transition-colors shrink-0",
+                                                            selectedWeekId === data.id
+                                                                ? "bg-indigo-700 text-white dark:bg-indigo-300 dark:text-indigo-950"
+                                                                : "text-slate-400 group-hover:text-indigo-600"
                                                         )}>
                                                             {data.date}
                                                         </span>
