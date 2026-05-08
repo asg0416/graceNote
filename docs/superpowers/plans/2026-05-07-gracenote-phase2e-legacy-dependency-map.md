@@ -48,10 +48,28 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 ## Recommended Next Order
 
 1. Admin dashboard recent members 표시를 유지할지 Phase 2 기준으로 바꿀지 결정한다.
-2. `attendance/page.tsx`를 분석해서 read-only count/list 표시만 Phase 2 person 기준으로 보강할 수 있는지 확인한다.
+2. 출석 대시보드는 단순 read-switch가 아니라 주차별 출석 대상 snapshot 설계를 먼저 적용한다.
 3. Flutter 앱의 `availableMembershipsProvider`와 권한/조 선택 흐름을 Phase 2 `memberships`로 바꿀 수 있는지 별도 smoke 계획을 만든다.
 4. Edge Functions 알림 대상 조회를 active `memberships` 기준으로 바꾸는 migration-free 코드 변경 후보를 만든다.
 5. 그 뒤에만 write-switch 또는 legacy table cleanup을 논의한다.
+
+## Attendance Snapshot Dependency
+
+출석 대시보드는 `memberships` 현재/과거 이력이나 `attendance` 제출 snapshot을 매번 조합해서 분모를 추론하면 계속 흔들린다.
+
+따라서 Phase 2E 중 attendance read cleanup은 다음 설계를 선행 조건으로 둔다.
+
+```text
+docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
+```
+
+핵심 결정:
+
+- 주차 + 부서별 출석 대상 snapshot을 자동 생성한다.
+- 관리자가 매주 확정하지 않는다.
+- 필요한 경우 부서 관리자 이상이 과거/특수 주차 대상만 수정한다.
+- 출석률 분모는 snapshot의 included person 수다.
+- 조장 출석 제출 여부와 무관하게 snapshot에 포함된 대상은 분모에 들어간다.
 
 ## Explicit Non-Goals
 

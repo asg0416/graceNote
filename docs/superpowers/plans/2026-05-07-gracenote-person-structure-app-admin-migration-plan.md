@@ -306,6 +306,11 @@ Decision:
   - This is needed for cases like January attendance that was entered after the service was introduced in February.
   - Without this, unsubmitted groups disappear from the denominator and the attendance rate looks artificially high.
   - The dashboard now shows a “선택 주차 대상 산정 기준” explanation so the target count change is visible instead of looking like a random bug.
+- 2026-05-08 correction:
+  - The first backfill rule was too broad. It backfilled current active roster whenever snapshot people exceeded active-window people.
+  - That incorrectly made normal weeks like 2026-02-01 jump to current active people count.
+  - Correct rule: normal weeks trust week-date active people. Current active roster backfill only applies when the selected week has attendance records but reconstructed active-window people is 0.
+  - The explanation panel now also shows week-over-week added/removed people so target count changes explain “who changed,” not just the formula.
 - Attendance numerator uses distinct people with `present` or `late`.
 - No-meeting days have no denominator/rate.
 - The UI label changed from `종합 출석률` to `선택 주차 출석률`.
@@ -314,7 +319,7 @@ Decision:
 - Export and detailed display sorting now use group first, then spouse/family-aware sort inside the group.
 
 Verification:
-- `node --test src/lib/attendanceMetrics.test.ts`: 6 tests passed.
+- `node --test src/lib/attendanceMetrics.test.ts`: 8 tests passed.
 - `npm run lint -- src/lib/attendanceMetrics.ts`: passed.
 - `npm run lint -- src/app/attendance/page.tsx`: still fails because of existing broad file lint debt (`any`, unused state/imports, hook dependency warnings). New helper-specific issues were removed.
 - `npx tsc --noEmit --pretty false`: no attendance/metrics errors. Existing unrelated `src/app/churches/page.tsx(253,81)` error remains.

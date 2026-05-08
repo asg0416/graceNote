@@ -33,6 +33,7 @@ import {
     calculateWeekAttendanceMetrics,
     getCurrentActiveRoster,
     getActiveRosterForWeek,
+    getWeekAttendanceTargetDetails,
     sortRosterForDisplay,
     type AttendanceRecordForMetrics,
     type AttendanceRosterMember,
@@ -74,6 +75,7 @@ type AttendanceDashboardItem = {
 type Phase2AttendanceMembership = {
     person_id: string | null;
     role: string | null;
+    status?: string | null;
     legacy_member_directory_id: string | null;
     legacy_group_member_id: string | null;
     starts_at?: string | null;
@@ -118,6 +120,7 @@ const fetchMembershipRoster = async (
             .select(`
                 person_id,
                 role,
+                status,
                 legacy_member_directory_id,
                 legacy_group_member_id,
                 starts_at,
@@ -166,6 +169,7 @@ const fetchMembershipRoster = async (
                     role_in_group: membership.role || directory.role_in_group,
                     group_member_id: membership.legacy_group_member_id,
                     person_id: membership.person_id,
+                    membership_status: membership.status,
                     starts_at: membership.starts_at,
                     ends_at: membership.ends_at,
                     phase2_membership_source: 'memberships'
@@ -208,6 +212,7 @@ const toMetricRoster = (members: AttendanceDirectoryMember[]): AttendanceRosterM
             familyName: member.family_name,
             startsAt: typeof member.starts_at === 'string' ? member.starts_at : null,
             endsAt: typeof member.ends_at === 'string' ? member.ends_at : null,
+            status: typeof member.membership_status === 'string' ? member.membership_status : null,
         }));
 };
 
@@ -222,6 +227,17 @@ const formatNames = (members: AttendanceRosterMember[], limit = 5) => {
     const names = Array.from(new Set(members.map((member) => member.fullName))).filter(Boolean);
     if (names.length <= limit) return names.join(', ');
     return `${names.slice(0, limit).join(', ')} 외 ${names.length - limit}명`;
+};
+
+const formatPersonNamesByIds = (
+    roster: AttendanceRosterMember[],
+    personIds: Set<string>,
+    limit = 5
+) => {
+    return formatNames(
+        sortRosterForDisplay(roster.filter((member) => personIds.has(member.personId))),
+        limit
+    );
 };
 
 const getRetroactiveBackfillMembers = (
@@ -579,6 +595,13 @@ export default function AttendancePage() {
             });
             setSelectedWeekMetrics(metrics);
             const explanation = buildAttendanceTargetExplanation(metrics);
+            const selectedTargetDetails = getWeekAttendanceTargetDetails({
+                weekDate: selectedWeek.week_date,
+                roster: metricRoster,
+                attendance: toMetricAttendance(attendanceRows),
+                noMeetingDates: selectedNoMeetingDateSet,
+                backfillMode: 'current-active',
+            });
             if (metrics.usedRetroactiveBackfill) {
                 const backfilledMembers = getRetroactiveBackfillMembers(
                     metricRoster,
@@ -587,6 +610,51 @@ export default function AttendancePage() {
                 );
                 if (backfilledMembers.length > 0) {
                     explanation.push(`보정 포함 대상: ${formatNames(backfilledMembers)}`);
+                }
+            }
+
+            const previousWeek = [...weeks]
+                .filter((week) => week.week_date < selectedWeek.week_date)
+                .sort((a, b) => b.week_date.localeCompare(a.week_date))[0] as WeekRow | undefined;
+
+            if (previousWeek) {
+                const { data: previousAttendance } = await supabase
+                    .from('attendance')
+                    .select('directory_member_id, status, groups!inner(department_id)')
+                    .eq('week_id', previousWeek.id)
+                    .eq('groups.department_id', selectedDeptId);
+
+                const { data: previousNoMeetingDays } = await supabase
+                    .from('no_meeting_days')
+                    .select('week_date')
+                    .eq('department_id', selectedDeptId)
+                    .eq('week_date', previousWeek.week_date);
+
+                const previousNoMeetingDateSet = new Set<string>(
+                    ((previousNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
+                );
+                const previousTargetDetails = getWeekAttendanceTargetDetails({
+                    weekDate: previousWeek.week_date,
+                    roster: metricRoster,
+                    attendance: toMetricAttendance((previousAttendance || []) as AttendanceRow[]),
+                    noMeetingDates: previousNoMeetingDateSet,
+                    backfillMode: 'current-active',
+                });
+
+                const addedPeople = new Set(
+                    Array.from(selectedTargetDetails.targetPersonIds)
+                        .filter((personId) => !previousTargetDetails.targetPersonIds.has(personId))
+                );
+                const removedPeople = new Set(
+                    Array.from(previousTargetDetails.targetPersonIds)
+                        .filter((personId) => !selectedTargetDetails.targetPersonIds.has(personId))
+                );
+
+                if (addedPeople.size > 0) {
+                    explanation.push(`전주 대비 추가 ${addedPeople.size}명: ${formatPersonNamesByIds(metricRoster, addedPeople)}`);
+                }
+                if (removedPeople.size > 0) {
+                    explanation.push(`전주 대비 제외 ${removedPeople.size}명: ${formatPersonNamesByIds(metricRoster, removedPeople)}`);
                 }
             }
             setTargetExplanation(explanation);
@@ -1137,7 +1205,7 @@ export default function AttendancePage() {
                             <div className="min-w-0">
                                 <p className="text-sm font-black text-slate-900 dark:text-white">선택 주차 대상 산정 기준</p>
                                 <p className="mt-1 text-xs font-bold leading-5 text-slate-500 dark:text-slate-400">
-                                    과거 출석을 나중에 입력한 주차는 당시 소속 이력이 부족할 수 있어, 현재 active roster를 함께 참고해 분모를 보정합니다.
+                                    일반 주차는 주차 기준 active person을 사용하고, 과거 후입력으로 active 이력이 없는 주차만 현재 active roster로 보정합니다.
                                 </p>
                                 <div className="mt-3 flex flex-wrap gap-2">
                                     {targetExplanation.map((item) => (
