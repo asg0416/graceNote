@@ -455,7 +455,7 @@ git commit -m "db: add attendance roster snapshots"
 - Create: `admin-web/src/lib/attendanceRosterSnapshots.ts`
 - Create: `admin-web/src/lib/attendanceRosterSnapshots.test.ts`
 
-- [ ] **Step 1: Write pure transformation test**
+- [x] **Step 1: Write pure transformation test**
 
 Create `admin-web/src/lib/attendanceRosterSnapshots.test.ts`:
 
@@ -492,7 +492,7 @@ test('group display keeps excluded members out of totals', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -503,7 +503,7 @@ node --test src/lib/attendanceRosterSnapshots.test.ts
 
 Expected: fail because module does not exist.
 
-- [ ] **Step 3: Create helper**
+- [x] **Step 3: Create helper**
 
 Create `admin-web/src/lib/attendanceRosterSnapshots.ts`:
 
@@ -564,7 +564,7 @@ export const groupSnapshotMembersForDisplay = (
 };
 ```
 
-- [ ] **Step 4: Run test to verify pass**
+- [x] **Step 4: Run test to verify pass**
 
 Run:
 
@@ -575,7 +575,7 @@ node --test src/lib/attendanceRosterSnapshots.test.ts
 
 Expected: 2 tests pass.
 
-- [ ] **Step 5: Add Supabase helper functions**
+- [x] **Step 5: Add Supabase helper functions**
 
 Append to `attendanceRosterSnapshots.ts`:
 
@@ -629,7 +629,7 @@ export const fetchAttendanceRosterSnapshotMembers = async (
 };
 ```
 
-- [ ] **Step 6: Targeted lint**
+- [x] **Step 6: Targeted lint**
 
 Run:
 
