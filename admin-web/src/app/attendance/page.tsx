@@ -40,9 +40,12 @@ import {
     calculateSnapshotMetrics,
     ensureAttendanceRosterSnapshot,
     fetchAttendanceRosterSnapshotMembers,
+    setSnapshotMemberIncluded,
+    setSnapshotMemberStatus,
     type AttendanceRosterSnapshotMembersClient,
     type AttendanceRosterSnapshotRpcClient,
     type AttendanceRosterSnapshotMember,
+    type SnapshotAttendanceStatus,
     type SnapshotAttendanceMetrics,
 } from '@/lib/attendanceRosterSnapshots';
 import * as XLSX from 'xlsx';
@@ -67,6 +70,7 @@ type AttendanceDirectoryMember = {
 
 type AttendanceDashboardItem = {
     id: string;
+    snapshotMemberId?: string | null;
     personId?: string | null;
     name: string;
     department: string;
@@ -262,7 +266,9 @@ const applyAttendanceRowsToSnapshotMembers = (
 
         return {
             ...member,
-            attendanceStatus: attendance?.status === 'present' || attendance?.status === 'late' || attendance?.status === 'absent'
+            attendanceStatus: member.attendanceStatus === 'unknown' && (
+                attendance?.status === 'present' || attendance?.status === 'late' || attendance?.status === 'absent'
+            )
                 ? attendance.status
                 : member.attendanceStatus,
         };
@@ -300,6 +306,7 @@ export default function AttendancePage() {
     const [groupStats, setGroupStats] = useState<any[]>([]);
     const [selectedWeekMetrics, setSelectedWeekMetrics] = useState<WeekAttendanceMetrics | SnapshotAttendanceMetrics | null>(null);
     const [targetExplanation, setTargetExplanation] = useState<string[]>([]);
+    const [snapshotEditLoadingId, setSnapshotEditLoadingId] = useState<string | null>(null);
 
     // Monthly/Weekly View States
     const [monthWeeks, setMonthWeeks] = useState<any[]>([]);
@@ -681,6 +688,7 @@ export default function AttendancePage() {
                     .filter((member) => member.included)
                     .map((member) => ({
                         id: member.legacyMemberDirectoryId || member.id,
+                        snapshotMemberId: member.id,
                         personId: member.personId,
                         name: member.displayName || '이름 없음',
                         department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
@@ -715,6 +723,49 @@ export default function AttendancePage() {
             fetchInsights();
         } catch (err) {
             console.error('Attendance Fetch Error:', err);
+        }
+    };
+
+    const updateSnapshotMemberStatus = async (
+        snapshotMemberId: string,
+        status: SnapshotAttendanceStatus
+    ) => {
+        try {
+            setSnapshotEditLoadingId(snapshotMemberId);
+            await setSnapshotMemberStatus(
+                supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                snapshotMemberId,
+                status,
+                'admin attendance dashboard edit'
+            );
+            await fetchAttendance();
+        } catch (err) {
+            console.error('Snapshot status update error:', err);
+            alert(err instanceof Error ? err.message : '출석 상태 수정 중 오류가 발생했습니다.');
+        } finally {
+            setSnapshotEditLoadingId(null);
+        }
+    };
+
+    const excludeSnapshotMember = async (snapshotMemberId: string, name: string) => {
+        if (!confirm(`${name} 성도를 이 주차 출석 대상에서 제외할까요? 성도 명부에서는 삭제되지 않습니다.`)) {
+            return;
+        }
+
+        try {
+            setSnapshotEditLoadingId(snapshotMemberId);
+            await setSnapshotMemberIncluded(
+                supabase as unknown as AttendanceRosterSnapshotRpcClient,
+                snapshotMemberId,
+                false,
+                'admin attendance dashboard exclude'
+            );
+            await fetchAttendance();
+        } catch (err) {
+            console.error('Snapshot exclude error:', err);
+            alert(err instanceof Error ? err.message : '출석 대상 제외 중 오류가 발생했습니다.');
+        } finally {
+            setSnapshotEditLoadingId(null);
         }
     };
 
@@ -1348,22 +1399,60 @@ export default function AttendancePage() {
                                                         <div className="flex flex-wrap gap-2">
                                                             {groupMembers.map(m => (
                                                                 <div
-                                                                    key={m.id}
+                                                                    key={m.snapshotMemberId || m.id}
                                                                     className={cn(
-                                                                        "px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition-all text-[11px] font-bold",
-                                                                        m.status === 'present'
+                                                                        "px-2 py-1.5 rounded-xl border flex items-center gap-1.5 transition-all text-[11px] font-bold",
+                                                                        m.status === 'present' || m.status === 'late'
                                                                             ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                                                                             : "bg-slate-50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-700/50 text-slate-400"
                                                                     )}
                                                                 >
-                                                                    {m.status === 'present' ? (
+                                                                    {m.status === 'present' || m.status === 'late' ? (
                                                                         <CheckCircle2 className="w-3 h-3" />
                                                                     ) : (
                                                                         <XCircle className="w-3 h-3" />
                                                                     )}
                                                                     {m.name}
+                                                                    {m.snapshotMemberId && (
+                                                                        <div className="ml-1 flex items-center gap-1 border-l border-current/10 pl-1">
+                                                                            <button
+                                                                                type="button"
+                                                                                disabled={snapshotEditLoadingId === m.snapshotMemberId}
+                                                                                onClick={() => updateSnapshotMemberStatus(m.snapshotMemberId!, 'present')}
+                                                                                className="rounded-md px-1.5 py-0.5 text-[9px] font-black hover:bg-emerald-100 disabled:opacity-40 dark:hover:bg-emerald-500/20"
+                                                                                title="이 주차 출석으로 표시"
+                                                                            >
+                                                                                출
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                disabled={snapshotEditLoadingId === m.snapshotMemberId}
+                                                                                onClick={() => updateSnapshotMemberStatus(m.snapshotMemberId!, 'absent')}
+                                                                                className="rounded-md px-1.5 py-0.5 text-[9px] font-black hover:bg-slate-200 disabled:opacity-40 dark:hover:bg-slate-700"
+                                                                                title="이 주차 결석으로 표시"
+                                                                            >
+                                                                                결
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                disabled={snapshotEditLoadingId === m.snapshotMemberId}
+                                                                                onClick={() => excludeSnapshotMember(m.snapshotMemberId!, m.name)}
+                                                                                className="rounded-md px-1.5 py-0.5 text-[9px] font-black text-rose-500 hover:bg-rose-50 disabled:opacity-40 dark:hover:bg-rose-500/10"
+                                                                                title="이 주차 출석 대상에서 제외"
+                                                                            >
+                                                                                제외
+                                                                            </button>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             ))}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => alert('다음 단계에서 이 조의 snapshot에 성도를 추가하는 검색 UI를 연결합니다.')}
+                                                                className="px-3 py-1.5 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 text-[11px] font-black text-indigo-600 hover:bg-indigo-50 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+                                                            >
+                                                                + 성도 추가
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 );

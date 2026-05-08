@@ -766,7 +766,7 @@ git commit -m "admin: read attendance metrics from roster snapshots"
 - Modify: `admin-web/src/app/attendance/page.tsx`
 - Modify: `admin-web/src/lib/attendanceRosterSnapshots.ts`
 
-- [ ] **Step 1: Add snapshot edit helper functions**
+- [x] **Step 1: Add snapshot edit helper functions**
 
 Append to `attendanceRosterSnapshots.ts`:
 
@@ -812,7 +812,7 @@ export const setSnapshotMemberStatus = async ({
 };
 ```
 
-- [ ] **Step 2: Render snapshot badge section**
+- [x] **Step 2: Render snapshot badge section**
 
 In `attendance/page.tsx`, replace the group detail badges with `groupSnapshotMembersForDisplay(snapshotMembers)`.
 
@@ -835,7 +835,7 @@ Badge behavior:
 </button>
 ```
 
-- [ ] **Step 3: Add delete/exclude button**
+- [x] **Step 3: Add delete/exclude button**
 
 For each badge, add small exclude control:
 
@@ -850,7 +850,7 @@ For each badge, add small exclude control:
 </button>
 ```
 
-- [ ] **Step 4: Add `+` placeholder button**
+- [x] **Step 4: Add `+` placeholder button**
 
 At end of each group:
 
@@ -870,7 +870,7 @@ Initial implementation may open an alert:
 alert('대상 추가 검색 모달은 다음 Task에서 구현합니다.');
 ```
 
-- [ ] **Step 5: Add status/exclude handlers**
+- [x] **Step 5: Add status/exclude handlers**
 
 Add:
 
@@ -912,7 +912,7 @@ const handleToggleSnapshotStatus = async (member: AttendanceRosterSnapshotMember
 };
 ```
 
-- [ ] **Step 6: Targeted lint/typecheck**
+- [x] **Step 6: Targeted lint/typecheck**
 
 Run:
 

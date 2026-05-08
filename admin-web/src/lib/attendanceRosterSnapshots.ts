@@ -212,3 +212,37 @@ export const fetchAttendanceRosterSnapshotMembers = async (
 
   return (data || []).map(mapSnapshotMemberRow);
 };
+
+export const setSnapshotMemberIncluded = async (
+  client: RpcClientLike,
+  snapshotMemberId: string,
+  included: boolean,
+  reason?: string
+) => {
+  const { error } = await client.rpc('set_attendance_roster_snapshot_member_included', {
+    p_snapshot_member_id: snapshotMemberId,
+    p_included: included,
+    p_reason: reason || null,
+  });
+
+  if (error) {
+    throw new Error(error.message || '출석 대상 포함 여부를 수정하지 못했습니다.');
+  }
+};
+
+export const setSnapshotMemberStatus = async (
+  client: RpcClientLike,
+  snapshotMemberId: string,
+  attendanceStatus: SnapshotAttendanceStatus,
+  reason?: string
+) => {
+  const { error } = await client.rpc('set_attendance_roster_snapshot_member_status', {
+    p_snapshot_member_id: snapshotMemberId,
+    p_attendance_status: attendanceStatus,
+    p_reason: reason || null,
+  });
+
+  if (error) {
+    throw new Error(error.message || '출석 상태를 수정하지 못했습니다.');
+  }
+};
