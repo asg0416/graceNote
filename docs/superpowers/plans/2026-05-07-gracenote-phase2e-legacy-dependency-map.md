@@ -44,14 +44,16 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 | Date | Change | Verification |
 | --- | --- | --- |
 | 2026-05-07 | 관리자 대시보드 성도 수/미편성 수를 active `memberships.person_id` 기준으로 전환. Phase 2 read 실패 시 legacy count fallback 유지 | `npm run lint -- src/app/page.tsx` 0 errors, consistency mismatch 0 |
+| 2026-05-09 | Edge Function 알림 대상 조회를 active `memberships` 우선으로 전환. `group_members`는 fallback으로 유지 | `supabase/verify_phase2d_edge_notification_targets_dev_2026-05-09.sql` 추가. 실제 dev deploy/dry-run smoke는 `SUPABASE_ACCESS_TOKEN` 필요 |
 
 ## Recommended Next Order
 
 1. Admin dashboard recent members 표시를 유지할지 Phase 2 기준으로 바꿀지 결정한다.
 2. 출석 대시보드는 단순 read-switch가 아니라 주차별 출석 대상 snapshot 설계를 먼저 적용한다.
 3. Flutter 앱의 `availableMembershipsProvider`와 권한/조 선택 흐름을 Phase 2 `memberships`로 바꿀 수 있는지 별도 smoke 계획을 만든다.
-4. Edge Functions 알림 대상 조회를 active `memberships` 기준으로 바꾸는 migration-free 코드 변경 후보를 만든다.
-5. 그 뒤에만 write-switch 또는 legacy table cleanup을 논의한다.
+4. Edge Functions 알림 대상 조회 dev deploy/dry-run smoke를 수행한다.
+5. Phase 3 write-switch 설계를 시작한다.
+6. 그 뒤에만 legacy table cleanup을 논의한다.
 
 ## Attendance Snapshot Dependency
 
@@ -86,3 +88,5 @@ docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
 | Admin members | 기존 Phase 2 진단 issue 0 유지 |
 | Admin regrouping | 조 이동/저장 후 Phase 2 진단 issue 0 유지 |
 | Flutter app | 출석/기도 저장 기존 smoke 통과 유지 |
+| Edge functions | `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql`의 모든 mismatch count 0 |
+| Edge functions | dev 함수 배포 또는 dry-run 로그에서 기도 알림/공지/리마인더/등반 알림 대상이 active memberships 기준으로 산출 |
