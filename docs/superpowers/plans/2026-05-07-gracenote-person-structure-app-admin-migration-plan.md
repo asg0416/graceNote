@@ -533,6 +533,29 @@ Next:
 2. Deploy/smoke Edge Functions in dev if deployment path is available.
 3. Start Phase 3 write-switch design for attendance/prayer/member writes.
 
+## Phase 3 Dev Migration Status
+
+2026-05-10 update:
+
+- Dev Supabase link was switched to `eftdfxmdiefdduksdpwg` for migration execution.
+- Remote dev migration history was behind local from `20260502000000` through `20260509000000`.
+- Ran `supabase db push --linked --yes` against dev only.
+- Applied pending dev migrations through `20260509000000_phase3_attendance_prayer_person_snapshot.sql`.
+- `edge_function_base_url not configured in app_config` warnings appeared during push. These are dev notification config warnings, not migration failures.
+
+Verification:
+
+- `verify_phase3_attendance_prayer_person_snapshot_dev_2026-05-09.sql`: all 8 issue counts were `0`.
+- `verify_attendance_roster_snapshots_dev_2026-05-08.sql`: passed with test snapshot rollback.
+- `verify_p0_hard_delete_guardrails_dev_2026-05-03.sql`: all issue counts were `0`.
+- `verify_p0_assignment_scope_and_phone_uniqueness_dev_2026-05-04.sql`: passed.
+- `verify_phase2_consistency_dev_2026-04-30.sql`: all mismatch/missing counts were `0` after updating the verification rule to accept `memberships.status='ended'` for inactive legacy group members whose group was soft-ended.
+
+Operational note:
+
+- The local Supabase project link now points to dev, not prod.
+- Before any prod operation, explicitly verify `supabase/.temp/project-ref` and avoid relying on implicit linked state.
+
 ## Self-Review
 
 Spec coverage:
