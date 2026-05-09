@@ -136,6 +136,11 @@ class GraceNoteRepository {
     }
   }
 
+  Future<List<Map<String, dynamic>>> _enrichAttendanceRowsWithPhase2MemberInfo(
+      List<Map<String, dynamic>> rows) {
+    return _enrichPrayerRowsWithPhase2MemberInfo(rows);
+  }
+
   // 특정 날짜의 Week ID 조회 또는 생성
   // 특정 날짜의 Week ID 조회 또는 생성
   Future<String?> getOrCreateWeek(String churchId, DateTime weekDate,
@@ -323,8 +328,9 @@ class GraceNoteRepository {
     }
 
     return {
-      'attendance': attendanceWithInfo,
-      'prayers': prayersWithInfo,
+      'attendance':
+          await _enrichAttendanceRowsWithPhase2MemberInfo(attendanceWithInfo),
+      'prayers': await _enrichPrayerRowsWithPhase2MemberInfo(prayersWithInfo),
     };
   }
 
