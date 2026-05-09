@@ -64,6 +64,7 @@ models_list.json
 
 # Supabase Temp & Dump Files
 supabase/.temp/
+supabase/.branches/
 supabase/*_dump.sql
 supabase/migration_list.*.txt
 supabase/*.sql
