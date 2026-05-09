@@ -9,6 +9,60 @@ const FIREBASE_PRIVATE_KEY = Deno.env.get("FIREBASE_PRIVATE_KEY");
 
 const APP_BASE_URL = "https://grace-note-app-pwa-asg0416.vercel.app";
 
+async function getLeaderProfileIdsByGroups(
+  supabase: ReturnType<typeof createClient>,
+  groupIds: string[],
+): Promise<string[]> {
+  if (groupIds.length === 0) return [];
+
+  const { data: phase2Leaders, error: phase2Error } = await supabase
+    .from("memberships")
+    .select("profile_id")
+    .in("group_id", groupIds)
+    .eq("role", "leader")
+    .eq("status", "active")
+    .not("profile_id", "is", null);
+
+  if (!phase2Error && (phase2Leaders || []).length > 0) {
+    return [...new Set((phase2Leaders || []).map((leader: any) => leader.profile_id).filter(Boolean))];
+  }
+
+  const { data: legacyLeaders } = await supabase
+    .from("group_members")
+    .select("profile_id")
+    .in("group_id", groupIds)
+    .eq("role_in_group", "leader")
+    .eq("is_active", true);
+
+  return [...new Set((legacyLeaders || []).map((leader: any) => leader.profile_id).filter(Boolean))];
+}
+
+async function getActiveProfileIdsByGroups(
+  supabase: ReturnType<typeof createClient>,
+  groupIds: string[],
+): Promise<string[]> {
+  if (groupIds.length === 0) return [];
+
+  const { data: phase2Members, error: phase2Error } = await supabase
+    .from("memberships")
+    .select("profile_id")
+    .in("group_id", groupIds)
+    .eq("status", "active")
+    .not("profile_id", "is", null);
+
+  if (!phase2Error && (phase2Members || []).length > 0) {
+    return [...new Set((phase2Members || []).map((member: any) => member.profile_id).filter(Boolean))];
+  }
+
+  const { data: legacyMembers } = await supabase
+    .from("group_members")
+    .select("profile_id")
+    .in("group_id", groupIds)
+    .eq("is_active", true);
+
+  return [...new Set((legacyMembers || []).map((member: any) => member.profile_id).filter(Boolean))];
+}
+
 async function getAccessToken(): Promise<string> {
   const privateKey = FIREBASE_PRIVATE_KEY!.replace(/\\n/g, "\n");
   const header = { alg: "RS256", typ: "JWT" };
@@ -155,13 +209,10 @@ Deno.serve(async (req: Request) => {
     const { data: deptGroups } = await supabase.from("groups").select("id").eq("department_id", departmentId);
     const deptGroupIds = (deptGroups || []).map(g => g.id);
 
-    // Get leaders from all groups in the department
-    const { data: leaders } = await supabase
-      .from("group_members")
-      .select("profile_id")
-      .in("group_id", deptGroupIds)
-      .eq("role_in_group", "leader")
-      .eq("is_active", true);
+    // Get leaders from all groups in the department.
+    // Phase 2 memberships is the canonical membership read; legacy group_members
+    // remains a fallback until write-switch removes legacy dependencies.
+    const leaderIds = await getLeaderProfileIdsByGroups(supabase, deptGroupIds);
 
     // Get department admins
     const { data: admins } = await supabase
@@ -173,7 +224,7 @@ Deno.serve(async (req: Request) => {
     // Exclude the author (prayer_entries uses author_id, not created_by)
     const authorId = record.author_id || record.created_by || record.user_id;
     targetUserIds = [...new Set([
-      ...(leaders || []).map(l => l.profile_id).filter(Boolean),
+      ...leaderIds,
       ...(admins || []).map(a => a.id).filter(Boolean)
     ])].filter(id => id !== authorId);
 
@@ -210,8 +261,7 @@ Deno.serve(async (req: Request) => {
       const { data: deptGroups } = await supabase.from("groups").select("id").in("department_id", tDeptIds);
       const groupIds = (deptGroups || []).map(g => g.id);
       if (groupIds.length > 0) {
-        const { data: deptMembers } = await supabase.from("group_members").select("profile_id").in("group_id", groupIds).eq("is_active", true);
-        targetUserIds = [...new Set((deptMembers || []).map(m => m.profile_id).filter(Boolean))];
+        targetUserIds = await getActiveProfileIdsByGroups(supabase, groupIds);
       }
     } else if (tChurchIds.length > 0) {
       // Multi-church target (no departments selected → all users in those churches)
@@ -221,8 +271,7 @@ Deno.serve(async (req: Request) => {
       // Legacy single department target
       const { data: deptGroups } = await supabase.from("groups").select("id").eq("department_id", record.department_id);
       const groupIds = (deptGroups || []).map(g => g.id);
-      const { data: deptMembers } = await supabase.from("group_members").select("profile_id").in("group_id", groupIds).eq("is_active", true);
-      targetUserIds = [...new Set((deptMembers || []).map(m => m.profile_id).filter(Boolean))];
+      targetUserIds = await getActiveProfileIdsByGroups(supabase, groupIds);
     } else if (record.church_id) {
       // Legacy single church target (no department)
       const { data: churchUsers } = await supabase.from("profiles").select("id").eq("church_id", record.church_id);

@@ -75,6 +75,67 @@ async function sendPush(accessToken: string, token: string, title: string, body:
   return res.ok;
 }
 
+async function getLeaderRowsByGroups(
+  supabase: ReturnType<typeof createClient>,
+  groupIds: string[],
+  includePushPreference = false,
+): Promise<any[]> {
+  if (groupIds.length === 0) return [];
+
+  const phase2Select = includePushPreference
+    ? "profile_id, group_id, profiles(push_reminder_enabled)"
+    : "profile_id, group_id";
+  const { data: phase2Leaders, error: phase2Error } = await supabase
+    .from("memberships")
+    .select(phase2Select)
+    .in("group_id", groupIds)
+    .eq("role", "leader")
+    .eq("status", "active")
+    .not("profile_id", "is", null);
+
+  if (!phase2Error && (phase2Leaders || []).length > 0) {
+    return phase2Leaders || [];
+  }
+
+  const legacySelect = includePushPreference
+    ? "profile_id, group_id, profiles(push_reminder_enabled)"
+    : "profile_id, group_id";
+  const { data: legacyLeaders } = await supabase
+    .from("group_members")
+    .select(legacySelect)
+    .in("group_id", groupIds)
+    .eq("role_in_group", "leader")
+    .eq("is_active", true);
+
+  return legacyLeaders || [];
+}
+
+async function getLeaderDirectoryIdsByGroup(
+  supabase: ReturnType<typeof createClient>,
+  groupId: string,
+): Promise<Set<string>> {
+  const { data: phase2Leaders, error: phase2Error } = await supabase
+    .from("memberships")
+    .select("legacy_member_directory_id")
+    .eq("group_id", groupId)
+    .eq("role", "leader")
+    .eq("status", "active")
+    .not("legacy_member_directory_id", "is", null);
+
+  if (!phase2Error && (phase2Leaders || []).length > 0) {
+    return new Set((phase2Leaders || []).map((leader: any) => leader.legacy_member_directory_id).filter(Boolean));
+  }
+
+  const { data: legacyLeaders } = await supabase
+    .from("group_members")
+    .select("member_directory_id")
+    .eq("group_id", groupId)
+    .eq("role_in_group", "leader")
+    .eq("is_active", true);
+
+  return new Set((legacyLeaders || []).map((leader: any) => leader.member_directory_id).filter(Boolean));
+}
+
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const task = url.searchParams.get("task");
@@ -153,12 +214,11 @@ Deno.serve(async (req: Request) => {
             });
           }
 
-          const { data: leaders } = await supabase
-            .from("group_members")
-            .select("profile_id, group_id, profiles(push_reminder_enabled)")
-            .in("group_id", incompleteGroups.map(g => g.id))
-            .eq("role_in_group", "leader")
-            .eq("is_active", true);
+          const leaders = await getLeaderRowsByGroups(
+            supabase,
+            incompleteGroups.map(g => g.id),
+            true,
+          );
 
           // Build map: leader profile_id → list of { groupName, missing info }
           const leaderGroupMap = new Map<string, { name: string; noAttendance: boolean; noPrayer: boolean; hasDraftOnly: boolean }[]>();
@@ -234,13 +294,7 @@ Deno.serve(async (req: Request) => {
         for (const group of groups) {
           if (!group.climbing_threshold) continue;
           // Get leader member_directory_ids to exclude from candidates
-          const { data: leaderMembers } = await supabase
-            .from("group_members")
-            .select("member_directory_id")
-            .eq("group_id", group.id)
-            .eq("role_in_group", "leader")
-            .eq("is_active", true);
-          const leaderDirIds = new Set((leaderMembers || []).map(l => l.member_directory_id).filter(Boolean));
+          const leaderDirIds = await getLeaderDirectoryIdsByGroup(supabase, group.id);
 
           const { data: attendance } = await supabase.from("attendance").select("directory_member_id").eq("group_id", group.id).eq("status", "present");
           const counts: Record<string, number> = {};
@@ -258,7 +312,7 @@ Deno.serve(async (req: Request) => {
           if (candidates.length > 0) {
             const { data: names } = await supabase.from("member_directory").select("full_name").in("id", candidates.map(c => c[0]));
             const memberNames = names?.map(n => n.full_name).join(", ");
-            const { data: leaders } = await supabase.from("group_members").select("profile_id").eq("group_id", group.id).eq("role_in_group", "leader").eq("is_active", true);
+            const leaders = await getLeaderRowsByGroups(supabase, [group.id]);
             const leaderIds = (leaders || []).map(l => l.profile_id).filter(Boolean);
 
             // Also notify department admins
