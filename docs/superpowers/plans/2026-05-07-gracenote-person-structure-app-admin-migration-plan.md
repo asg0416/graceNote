@@ -19,7 +19,7 @@
 | Admin regrouping | Display/count/export uses Phase 2 person/membership read model |
 | Admin dashboard | People count/unassigned count uses active `memberships.person_id` |
 | Flutter app | Still mostly reads `group_members/member_directory` |
-| Edge Functions | Still reads `group_members/member_directory` |
+| Edge Functions | Notification target reads now prefer `memberships`, with legacy fallback |
 | Writes | Still legacy writes + dual-write triggers |
 
 ## Non-Negotiable Rule
@@ -41,8 +41,8 @@ These FKs are still part of the current app behavior and historical records. The
 | 1 | Flutter membership/role read-switch | Done. Uses active memberships to decide available groups/roles with legacy fallback. |
 | 2 | Flutter group member list read fallback | Implemented. Attendance screens can display current members via Phase 2 but still save legacy IDs. |
 | 3 | Admin attendance read analysis | Admin attendance has real record impact, so analyze before changing. |
-| 4 | Edge Function notification target read-switch | No UI, but high operational impact. Needs SQL-equivalent verification. |
-| 5 | Prod-safe rollout manifest | Only after app/admin/edge read paths have gates. |
+| 4 | Edge Function notification target read-switch | Done in code. Needs deployed-function smoke before prod rollout. |
+| 5 | Prod-safe rollout manifest | Next. App/admin/edge read paths now need rollout gates. |
 | 6 | Phase 3 write-switch design | Person-centered writes and legacy cleanup. |
 
 ---
@@ -130,6 +130,23 @@ Smoke to run:
 - 앱 "나의 기도" 타임라인에서 여러 조 소속 이력의 조 이름이 누락되지 않는지.
 - 앱 "나의 기도" 타임라인 날짜가 `2026. 5. 3.`처럼 날짜로만 보이는지.
 - 출석/기도 저장은 기존처럼 성공하는지.
+
+2026-05-09 follow-up:
+
+- `lib/features/search/presentation/screens/search_screen.dart`
+  - 역할/소속 스코프가 바뀌면 검색 상태를 비우고 `/prayer` 기도소식 화면으로 복귀하도록 변경.
+  - 일반 조원은 현재 active membership 조 안에서만 검색하고, 관리자/조장은 넓은 검색을 유지.
+- `lib/features/prayer/presentation/screens/prayer_list_screen.dart`
+  - 관리자/조장 조별 탭은 선택 주차의 department weekly data를 사용.
+  - 기본은 현재 active 조를 계속 표시한다.
+  - 삭제/비활성 조는 그 조가 해당 주차에 실제 사용 중이었거나, 해당 주차 기도 기록이 있는 경우에만 표시한다.
+- `lib/core/repositories/grace_note_repository.dart`
+  - 기도/출석 weekly data에서 삭제/비활성 조의 생성일/종료일을 주차 기준으로 판단.
+  - active 조는 주차와 무관하게 기본 표시.
+- Smoke:
+  - 사용자 확인 완료. 역할 전환 검색 초기화, 삭제 조 생성 전 주차 숨김, 삭제 조 히스토리 노출, 출석 표시 모두 의도대로 동작.
+- Commit:
+  - `417bada phase2d: refine flutter prayer and attendance reads`
 
 ---
 
@@ -450,10 +467,29 @@ Verification:
 
 ### Steps
 
-- [ ] Map each function's current target-selection query.
-- [ ] For notification targets, design equivalent `memberships.status='active'` query.
-- [ ] Preserve payload shape.
-- [ ] Create dev verification SQL or dry-run script before editing production function code.
+- [x] Map each function's current target-selection query.
+- [x] For notification targets, design equivalent `memberships.status='active'` query.
+- [x] Preserve payload shape.
+- [x] Add legacy fallback so notification delivery does not depend exclusively on Phase 2 data during rollout.
+- [ ] Run deployed dev-function smoke or dry-run after deploy.
+
+Implementation:
+
+- `supabase/functions/notify-event/index.ts`
+  - Prayer notification department leaders now read from `memberships.role='leader' AND status='active'` first.
+  - Department notice targets now read active profile IDs from `memberships` first.
+  - `group_members` remains fallback only.
+- `supabase/functions/notify-scheduler/index.ts`
+  - Leader reminder targets now read from active `memberships` first.
+  - Climbing reminder leader exclusions and recipient leaders now read from active `memberships` first.
+  - `group_members` remains fallback only.
+
+Verification:
+
+- `git diff --check`: passed.
+- Secret scan for literal Supabase token/password patterns: passed.
+- `deno fmt/check`: not run locally because `deno` is not installed in the current environment.
+- Commit: `4095197 phase2d: read notification targets from memberships`
 
 ---
 
@@ -489,7 +525,13 @@ Verification:
 
 ## Current Next Action
 
-Start Task 1 now.
+Phase 2D read-switch code is now broadly complete for admin-web, Flutter display reads, and Edge Function notification target reads.
+
+Next:
+
+1. Update prod rollout manifest with exact gates for Phase 2D.
+2. Deploy/smoke Edge Functions in dev if deployment path is available.
+3. Start Phase 3 write-switch design for attendance/prayer/member writes.
 
 ## Self-Review
 
