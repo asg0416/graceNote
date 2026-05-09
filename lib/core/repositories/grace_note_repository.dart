@@ -6,6 +6,38 @@ import 'package:flutter/foundation.dart';
 class GraceNoteRepository {
   final _supabase = Supabase.instance.client;
 
+  Future<DateTime?> _getWeekDate(String weekId) async {
+    try {
+      final week = await _supabase
+          .from('weeks')
+          .select('week_date')
+          .eq('id', weekId)
+          .maybeSingle();
+      final rawDate = week?['week_date']?.toString();
+      if (rawDate == null || rawDate.isEmpty) return null;
+      return DateTime.tryParse(rawDate);
+    } catch (e) {
+      debugPrint('GraceNoteRepository: Failed to fetch week date: $e');
+      return null;
+    }
+  }
+
+  bool _groupWasInUseOnWeek(
+    Map<String, dynamic> group,
+    DateTime? weekDate,
+  ) {
+    if (weekDate == null) return group['is_active'] == true;
+
+    final weekStart = DateTime(weekDate.year, weekDate.month, weekDate.day);
+    final weekEnd = weekStart.add(const Duration(days: 1));
+    final createdAt = DateTime.tryParse(group['created_at']?.toString() ?? '');
+    final endedAt = DateTime.tryParse(group['ended_at']?.toString() ?? '');
+
+    if (createdAt != null && !createdAt.isBefore(weekEnd)) return false;
+    if (endedAt != null && endedAt.isBefore(weekStart)) return false;
+    return true;
+  }
+
   Future<Set<String>> _getRelatedDirectoryIdsByPhase2Person(
       String directoryMemberId) async {
     try {
@@ -268,7 +300,8 @@ class GraceNoteRepository {
         // 안전한 필드만 조회
         final missingResponse = await _supabase
             .from('member_directory')
-            .select('id, full_name, group_name') // profile_id 등 제거
+            .select(
+                'id, full_name, family_name, spouse_name, group_name, profile_id, person_id')
             .inFilter('id', missingMemberIds.toList());
 
         for (final m in missingResponse) {
@@ -339,15 +372,19 @@ class GraceNoteRepository {
       String departmentId, String weekId) async {
     if (departmentId.isEmpty || weekId.isEmpty)
       return {'groups': [], 'prayers': []};
-    // 1. 부서 내 모든 조 조회
+    final weekDate = await _getWeekDate(weekId);
+
+    // 1. 부서 내 조 조회: 현재 활성 조는 항상 포함하고, 비활성/삭제된 조도
+    // 해당 주차에 실제 기도 기록이 있으면 기록 보존을 위해 포함한다.
     final groupsResponse = await _supabase
         .from('groups')
-        .select('id, name, color_hex, is_new_member_group, climbing_threshold')
-        .eq('department_id', departmentId)
-        .eq('is_active', true);
+        .select(
+            'id, name, color_hex, is_new_member_group, climbing_threshold, is_active, created_at, ended_at')
+        .eq('department_id', departmentId);
 
-    final groups = List<Map<String, dynamic>>.from(groupsResponse);
-    final groupIds = groups.map((g) => g['id'] as String).toList();
+    final allGroups = List<Map<String, dynamic>>.from(groupsResponse);
+    final groupIds = allGroups.map((g) => g['id'] as String).toList();
+    if (groupIds.isEmpty) return {'groups': [], 'prayers': []};
 
     // 2. 모든 조의 기도제목 조회
     final prayersResponse = await _supabase
@@ -366,6 +403,16 @@ class GraceNoteRepository {
 
     final enrichedPrayers = await _enrichPrayerRowsWithPhase2MemberInfo(
         List<Map<String, dynamic>>.from(prayersResponse));
+    final prayerGroupIds = enrichedPrayers
+        .map((prayer) => prayer['group_id']?.toString())
+        .whereType<String>()
+        .toSet();
+    final groups = allGroups
+        .where((group) =>
+            group['is_active'] == true ||
+            _groupWasInUseOnWeek(group, weekDate) ||
+            prayerGroupIds.contains(group['id']?.toString()))
+        .toList();
 
     return {
       'groups': groups,
@@ -388,16 +435,18 @@ class GraceNoteRepository {
       String departmentId) async {
     final response = await _supabase
         .from('groups')
-        .select('id, name, color_hex, is_new_member_group, climbing_threshold')
+        .select(
+            'id, name, color_hex, is_new_member_group, climbing_threshold, is_active')
         .eq('department_id', departmentId)
         .eq('is_active', true)
         .order('name');
 
-    return (response as List)
+    return List<Map<String, dynamic>>.from(response)
         .map((e) => {
               'id': e['id'],
               'name': e['name'],
               'color_hex': e['color_hex'],
+              'is_active': e['is_active'],
               'is_new_member_group': e['is_new_member_group'] ?? false,
               'climbing_threshold':
                   e['climbing_threshold'], // [REFINED] Remove default value
@@ -955,15 +1004,15 @@ class GraceNoteRepository {
   Future<Map<String, dynamic>> getDepartmentWeeklyAttendanceDetails(
       String departmentId, String weekId) async {
     if (departmentId.isEmpty || weekId.isEmpty) return {'groups': []};
+    final weekDate = await _getWeekDate(weekId);
 
     // 1. 부서 내 모든 조 조회
     final groupsResponse = await _supabase
         .from('groups')
-        .select('id, name')
+        .select('id, name, is_active, created_at, ended_at')
         .eq('department_id', departmentId)
-        .eq('is_active', true)
         .order('name');
-    final groups = List<Map<String, dynamic>>.from(groupsResponse);
+    final allGroups = List<Map<String, dynamic>>.from(groupsResponse);
 
     // 2. 부서 내 모든 멤버 조회 (매칭용)
     final directoryResponse = await _supabase
@@ -1003,6 +1052,17 @@ class GraceNoteRepository {
             'GraceNoteRepository: Failed to fetch missing department members: $e');
       }
     }
+
+    final attendanceGroupIds = attendanceData
+        .map((row) => row['group_id']?.toString())
+        .whereType<String>()
+        .toSet();
+    final groups = allGroups
+        .where((group) =>
+            group['is_active'] == true ||
+            _groupWasInUseOnWeek(group, weekDate) ||
+            attendanceGroupIds.contains(group['id']?.toString()))
+        .toList();
 
     // 5. 데이터를 조별로 가공
     final resultGroups = groups.map((group) {
@@ -1257,7 +1317,7 @@ class GraceNoteRepository {
     dynamic query = _supabase.from('prayer_entries').select('''
           *,
           weeks(week_date),
-          member_directory!directory_member_id(full_name, family_name, group_name, profile_id)
+          member_directory!directory_member_id(full_name, family_name, spouse_name, person_id, group_name, profile_id)
         ''').eq('status', 'published');
 
     // 1. 날짜 필터 (선택된 경우만)

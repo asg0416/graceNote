@@ -389,12 +389,16 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
                           }
 
                           return ref
-                              .watch(departmentGroupsProvider(deptId))
+                              .watch(departmentWeeklyDataProvider(
+                                  '$deptId:${profile.churchId ?? ''}'))
                               .maybeWhen(
                                 skipLoadingOnRefresh: true,
                                 skipLoadingOnReload: true,
                                 skipError: true,
-                                data: (deptGroups) {
+                                data: (weeklyData) {
+                                  final deptGroups =
+                                      List<Map<String, dynamic>>.from(
+                                          weeklyData['groups'] ?? []);
                                   if (deptGroups.isEmpty)
                                     return _buildTabLayout(
                                         profile, userGroups, activeRole);
