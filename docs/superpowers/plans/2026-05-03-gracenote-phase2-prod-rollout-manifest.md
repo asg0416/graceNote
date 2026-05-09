@@ -35,7 +35,7 @@
 
 ## Current Work Position
 
-현재 실제 위치는 Phase 2D 2차 read-switch 진행 중이다.
+현재 실제 위치는 Phase 2D read-switch dev 코드 반영 완료 후 운영 게이트 정리 단계다.
 
 | Phase | Actual State | Meaning |
 | --- | --- | --- |
@@ -45,10 +45,10 @@
 | Phase 2B | Dev complete, prod not applied | 운영 복제 데이터 기준 backfill dev 검증 완료 |
 | Phase 2C | Dev gate complete | dual-write/write-flow DB 검증, Admin/Flutter/SmartBatch smoke 완료 |
 | P0 hard delete gate | Dev verified, prod not applied | 부서/조/주차/명부 hard-delete 차단 운영 후보 |
-| Phase 2D | Started | 1차 성도상세 read-switch 구현/검증 완료. 2차 성도명부 목록은 실제 사람 수 표시부터 전환 중. 조편성/앱 read-switch는 아직 미전환 |
-| Phase 2E | Not started | legacy 의존 제거 준비 전 |
+| Phase 2D | Dev code broadly complete | 성도상세/성도명부/조편성/관리자 대시보드/관리자 출석/Flutter 표시 read/Edge 알림 대상 read가 Phase 2 우선 + legacy fallback 구조로 전환됨 |
+| Phase 2E | Planning only | 실제 legacy 제거는 아직 시작하지 않음. write-flow와 FK 전환 전 의존성 제거 계획 필요 |
 
-**운영 반영 타이밍**: Phase 2A~E 전체 dev 검증(UI smoke 포함)이 완료된 후 단계적으로 적용한다. Phase 2C smoke 완료가 운영 반영 조건이 아니라 Phase 2E 완료가 운영 반영 검토 시점이다.
+**운영 반영 타이밍**: Phase 2A~E 전체 dev 검증(UI smoke 포함)이 완료된 후 단계적으로 적용한다. Phase 2D read-switch 완료는 운영 반영 검토의 중간 gate일 뿐이며, Phase 2E/Phase 3 write-switch 설계 전에는 legacy 테이블 제거를 진행하지 않는다.
 
 SmartBatch는 Phase 2C에 포함한다. 대량 등록은 여러 `member_directory` row와 Phase 2 `memberships`를 한 번에 만드는 write-flow이므로, Phase 2C 종료 전 DB rollback verify와 UI smoke를 모두 통과해야 한다.
 
@@ -280,6 +280,9 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 | G15 inactive member sync | inactive `member_directory` active membership query | 0 rows |
 | G16 assignment/phone scope | `verify_p0_assignment_scope_and_phone_uniqueness_dev_2026-05-04.sql`의 prod-safe 버전 | inactive row는 active assignment를 막지 않고, cross-church same phone insert는 허용 |
 | G17 church-scoped identity | `verify_phase2_church_scoped_identity_dev_2026-05-04.sql`의 prod-safe 버전 | 다른 교회 같은 이름/전화번호는 person_id 병합 안 됨, 다른 교회 profile link 차단 |
+| G18 Phase 2D admin read smoke | 성도상세/성도명부/조편성/대시보드/출석 현황 | Phase 2 우선 표시, legacy fallback 가능, diagnostics issue 0 또는 문서화된 예외 |
+| G19 Phase 2D Flutter read smoke | admin/leader/member/is_master 계정별 앱 진입, 기도/검색/출석/나의기도/저장기도 | 역할 화면 정상, 일반 조원 검색 범위 제한, 삭제 조 히스토리 주차별 노출, 출석/기도 저장 정상 |
+| G20 Phase 2D Edge notification smoke | dev Edge Function 또는 dry-run log | 기도 알림/공지/리마인더/등반 알림 대상이 active `memberships` 기준으로 산출되고 legacy fallback이 동작 |
 
 ## Known Good Dev Verification
 
@@ -341,6 +344,8 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-07 Admin attendance roster read cleanup | 관리자 출석 현황의 current roster를 active `memberships` 우선으로 읽고 legacy `member_directory` fallback 유지. 출석 기록 matching은 `attendance.directory_member_id` 그대로 유지. `npx tsc --noEmit --pretty false`: attendance page no errors, existing unrelated churches error remains. consistency gate all mismatches 0 |
 | 2026-05-08 Admin attendance dashboard metric cleanup | 출석률 기준을 보정. 일반 주차는 week-date active distinct people만 분모로 사용하고, active-window가 0명인 과거 후입력 주차만 current active roster backfill 적용. no-meeting day 제외, `선택 주차 출석률` 라벨, 대상 산정/전주 대비 추가·제외 설명 패널, spouse/family-aware sort 적용. `node --test src/lib/attendanceMetrics.test.ts`: 8 passed. consistency gate all mismatches 0 |
 | 2026-05-09 Admin attendance snapshot UI/export cleanup | 출석 대시보드 분모를 주차+부서 snapshot 기준으로 전환. 관리자가 조별 snapshot 구성원 추가/제외/출결 수정 가능. 미제출 조명단 일괄 불러오기 RPC 추가. 조장 제출본과 관리자 수정본 충돌 시 `덮어쓰기/병합하기/관리자 화면 유지`로 해결하며, 관리자 유지 선택은 snapshot member reason에 기록해 새로고침 후 재표시 방지. 리포트 export는 snapshot 기준, no-meeting 제외, 부부형 정렬, 같은 person 다중 조 출석 병합(`present` > `late` > `absent/unknown`) 적용. `node --test admin-web/src/lib/attendanceRosterSnapshots.test.ts`: 4 passed. `npx tsc --noEmit --pretty false`: attendance no errors, existing unrelated `churches/page.tsx:253` remains |
+| 2026-05-09 Flutter prayer/search/attendance read refinement | 일반 조원 검색은 active membership 조 범위로 제한. 역할/소속 전환 시 검색 화면에서 기도소식으로 복귀. 기도소식/출석의 삭제 조는 active였던 주차 또는 기록이 있는 주차에만 보이고, 현재 active 조는 기본 표시 유지. `HOME=/private/tmp dart analyze ...`: 새 type error 없음, 기존 warning/info만 남음. `git diff --check`: passed |
+| 2026-05-09 Edge Function notification target read-switch | `notify-event`, `notify-scheduler`의 조장/부서 대상 알림 조회를 active `memberships` 우선으로 전환하고 `group_members` fallback 유지. `git diff --check`: passed. secret literal scan passed. `deno` 미설치로 local deno check는 미실행 | Dev function deploy/dry-run smoke 필요 |
 
 ## Future Logging Protocol
 
