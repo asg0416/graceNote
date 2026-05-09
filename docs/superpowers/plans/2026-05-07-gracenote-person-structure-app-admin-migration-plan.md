@@ -530,8 +530,7 @@ Phase 2D read-switch code is now broadly complete for admin-web, Flutter display
 Next:
 
 1. Update prod rollout manifest with exact gates for Phase 2D.
-2. Deploy/smoke Edge Functions in dev if deployment path is available.
-3. Start Phase 3 write-switch design for attendance/prayer/member writes.
+2. Start Phase 3 write-switch design for attendance/prayer/member writes.
 
 ## Phase 3 Dev Migration Status
 
@@ -555,6 +554,27 @@ Operational note:
 
 - The local Supabase project link now points to dev, not prod.
 - Before any prod operation, explicitly verify `supabase/.temp/project-ref` and avoid relying on implicit linked state.
+
+## Phase 2D Edge Function Dev Smoke
+
+2026-05-10 update:
+
+- Deployed `notify-event` to dev project `eftdfxmdiefdduksdpwg`.
+- Deployed `notify-scheduler` to dev project `eftdfxmdiefdduksdpwg`.
+- Fixed a schema mismatch found during smoke: Edge Functions were assuming `memberships.profile_id`, but the real Phase 2 model resolves auth profiles through `memberships.person_id -> member_profiles.profile_id`.
+- `notify-event` now resolves notification profile targets from active memberships through `member_profiles`, with `group_members` fallback.
+- `notify-scheduler` now resolves leader rows from active memberships through `member_profiles`, with `group_members` fallback.
+- Stale legacy leader directory IDs whose `member_directory` row no longer exists are ignored in scheduler fallback.
+
+Verification:
+
+- `supabase functions list --project-ref eftdfxmdiefdduksdpwg`: `notify-event` active version `39`, `notify-scheduler` active version `29`.
+- `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql`: all mismatch counts were `0`.
+
+Result:
+
+- Phase 2D Edge Function read-switch dev smoke is complete.
+- Remaining Phase 2E work should focus on rollout gates and Phase 3 write-switch, not more read-only target discovery.
 
 ## Self-Review
 

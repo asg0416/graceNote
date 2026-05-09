@@ -15,16 +15,25 @@ async function getLeaderProfileIdsByGroups(
 ): Promise<string[]> {
   if (groupIds.length === 0) return [];
 
-  const { data: phase2Leaders, error: phase2Error } = await supabase
+  const { data: phase2Memberships, error: phase2Error } = await supabase
     .from("memberships")
-    .select("profile_id")
+    .select("person_id")
     .in("group_id", groupIds)
     .eq("role", "leader")
-    .eq("status", "active")
-    .not("profile_id", "is", null);
+    .eq("status", "active");
 
-  if (!phase2Error && (phase2Leaders || []).length > 0) {
-    return [...new Set((phase2Leaders || []).map((leader: any) => leader.profile_id).filter(Boolean))];
+  if (!phase2Error && (phase2Memberships || []).length > 0) {
+    const personIds = [...new Set((phase2Memberships || []).map((leader: any) => leader.person_id).filter(Boolean))];
+    const { data: memberProfiles, error: profileError } = await supabase
+      .from("member_profiles")
+      .select("profile_id")
+      .in("person_id", personIds)
+      .not("profile_id", "is", null);
+
+    const profileIds = [...new Set((memberProfiles || []).map((profile: any) => profile.profile_id).filter(Boolean))];
+    if (!profileError && profileIds.length > 0) {
+      return profileIds;
+    }
   }
 
   const { data: legacyLeaders } = await supabase
@@ -43,15 +52,24 @@ async function getActiveProfileIdsByGroups(
 ): Promise<string[]> {
   if (groupIds.length === 0) return [];
 
-  const { data: phase2Members, error: phase2Error } = await supabase
+  const { data: phase2Memberships, error: phase2Error } = await supabase
     .from("memberships")
-    .select("profile_id")
+    .select("person_id")
     .in("group_id", groupIds)
-    .eq("status", "active")
-    .not("profile_id", "is", null);
+    .eq("status", "active");
 
-  if (!phase2Error && (phase2Members || []).length > 0) {
-    return [...new Set((phase2Members || []).map((member: any) => member.profile_id).filter(Boolean))];
+  if (!phase2Error && (phase2Memberships || []).length > 0) {
+    const personIds = [...new Set((phase2Memberships || []).map((member: any) => member.person_id).filter(Boolean))];
+    const { data: memberProfiles, error: profileError } = await supabase
+      .from("member_profiles")
+      .select("profile_id")
+      .in("person_id", personIds)
+      .not("profile_id", "is", null);
+
+    const profileIds = [...new Set((memberProfiles || []).map((profile: any) => profile.profile_id).filter(Boolean))];
+    if (!profileError && profileIds.length > 0) {
+      return profileIds;
+    }
   }
 
   const { data: legacyMembers } = await supabase

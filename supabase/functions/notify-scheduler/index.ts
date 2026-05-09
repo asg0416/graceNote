@@ -82,19 +82,47 @@ async function getLeaderRowsByGroups(
 ): Promise<any[]> {
   if (groupIds.length === 0) return [];
 
-  const phase2Select = includePushPreference
-    ? "profile_id, group_id, profiles(push_reminder_enabled)"
-    : "profile_id, group_id";
-  const { data: phase2Leaders, error: phase2Error } = await supabase
+  const { data: phase2Memberships, error: phase2Error } = await supabase
     .from("memberships")
-    .select(phase2Select)
+    .select("person_id, group_id")
     .in("group_id", groupIds)
     .eq("role", "leader")
-    .eq("status", "active")
-    .not("profile_id", "is", null);
+    .eq("status", "active");
 
-  if (!phase2Error && (phase2Leaders || []).length > 0) {
-    return phase2Leaders || [];
+  if (!phase2Error && (phase2Memberships || []).length > 0) {
+    const personIds = [...new Set((phase2Memberships || []).map((leader: any) => leader.person_id).filter(Boolean))];
+    const memberProfileSelect = includePushPreference
+      ? "person_id, profile_id, profiles(push_reminder_enabled)"
+      : "person_id, profile_id";
+    const { data: memberProfiles, error: profileError } = await supabase
+      .from("member_profiles")
+      .select(memberProfileSelect)
+      .in("person_id", personIds)
+      .not("profile_id", "is", null);
+
+    if (!profileError && (memberProfiles || []).length > 0) {
+      const profilesByPerson = new Map<string, any[]>();
+      for (const profile of memberProfiles || []) {
+        const existing = profilesByPerson.get(profile.person_id) || [];
+        existing.push(profile);
+        profilesByPerson.set(profile.person_id, existing);
+      }
+
+      const rows: any[] = [];
+      for (const membership of phase2Memberships || []) {
+        for (const profile of profilesByPerson.get(membership.person_id) || []) {
+          rows.push({
+            profile_id: profile.profile_id,
+            group_id: membership.group_id,
+            profiles: profile.profiles,
+          });
+        }
+      }
+
+      if (rows.length > 0) {
+        return rows;
+      }
+    }
   }
 
   const legacySelect = includePushPreference
@@ -133,7 +161,17 @@ async function getLeaderDirectoryIdsByGroup(
     .eq("role_in_group", "leader")
     .eq("is_active", true);
 
-  return new Set((legacyLeaders || []).map((leader: any) => leader.member_directory_id).filter(Boolean));
+  const legacyDirectoryIds = [...new Set((legacyLeaders || []).map((leader: any) => leader.member_directory_id).filter(Boolean))];
+  if (legacyDirectoryIds.length === 0) {
+    return new Set();
+  }
+
+  const { data: existingDirectoryRows } = await supabase
+    .from("member_directory")
+    .select("id")
+    .in("id", legacyDirectoryIds);
+
+  return new Set((existingDirectoryRows || []).map((member: any) => member.id).filter(Boolean));
 }
 
 Deno.serve(async (req: Request) => {

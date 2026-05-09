@@ -22,11 +22,13 @@ with legacy_leader_profiles as (
 phase2_leader_profiles as (
   select distinct
     m.group_id,
-    m.profile_id
+    mp.profile_id
   from public.memberships m
+  join public.member_profiles mp
+    on mp.person_id = m.person_id
+   and mp.profile_id is not null
   where m.status = 'active'
     and m.role = 'leader'
-    and m.profile_id is not null
 ),
 legacy_active_profiles as (
   select distinct
@@ -39,16 +41,20 @@ legacy_active_profiles as (
 phase2_active_profiles as (
   select distinct
     m.group_id,
-    m.profile_id
+    mp.profile_id
   from public.memberships m
+  join public.member_profiles mp
+    on mp.person_id = m.person_id
+   and mp.profile_id is not null
   where m.status = 'active'
-    and m.profile_id is not null
 ),
 legacy_leader_directory_ids as (
   select distinct
     gm.group_id,
     gm.member_directory_id
   from public.group_members gm
+  join public.member_directory md
+    on md.id = gm.member_directory_id
   where gm.is_active = true
     and gm.role_in_group = 'leader'
     and gm.member_directory_id is not null
