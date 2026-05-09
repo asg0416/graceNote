@@ -19,9 +19,12 @@ class PrayerListScreen extends ConsumerStatefulWidget {
   ConsumerState<PrayerListScreen> createState() => _PrayerListScreenState();
 }
 
-class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with TickerProviderStateMixin {
+class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
+    with TickerProviderStateMixin {
   TabController? _tabController;
-  List<Map<String, dynamic>> _allGroups = [{'id': 'all', 'name': '전체'}];
+  List<Map<String, dynamic>> _allGroups = [
+    {'id': 'all', 'name': '전체'}
+  ];
   String _sortBy = 'name'; // 'name' 또는 'latest'
 
   @override
@@ -39,7 +42,7 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
   Future<void> _refreshData() async {
     ref.invalidate(userGroupsProvider);
     await ref.read(userGroupsProvider.future);
-    
+
     final profile = ref.read(userProfileProvider).value;
     if (profile != null && profile.churchId != null) {
       ref.invalidate(weekIdProvider(profile.churchId!));
@@ -66,7 +69,7 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     if (thisSunday.isAfter(latestDbDate)) {
       return [thisSunday, ...dbWeeks];
     }
-    
+
     return dbWeeks;
   }
 
@@ -76,21 +79,25 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     if (profile?.churchId == null) return;
 
     final weeksAsync = ref.read(availableWeeksProvider(profile!.churchId!));
-    
-    weeksAsync.whenData((dbWeeks) { // dbWeeks: 원본 데이터
+
+    weeksAsync.whenData((dbWeeks) {
+      // dbWeeks: 원본 데이터
       final weeks = _getDisplayWeeks(dbWeeks); // [FIX] 가상 주차 포함
       if (weeks.isEmpty) return;
 
       final current = ref.read(selectedWeekDateProvider);
       // week_date와 current가 시,분,초 차이로 다를 수 있으므로 날짜만 비교
-      final currentDateOnly = DateTime(current.year, current.month, current.day);
+      final currentDateOnly =
+          DateTime(current.year, current.month, current.day);
 
       // weeks는 내림차순(최신순) 정렬되어 있음 -> [2024-02-11, 2024-02-04, ...]
       // currentIndex 찾기
       int currentIndex = -1;
       for (int i = 0; i < weeks.length; i++) {
         final w = weeks[i];
-        if (w.year == currentDateOnly.year && w.month == currentDateOnly.month && w.day == currentDateOnly.day) {
+        if (w.year == currentDateOnly.year &&
+            w.month == currentDateOnly.month &&
+            w.day == currentDateOnly.day) {
           currentIndex = i;
           break;
         }
@@ -121,10 +128,10 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
   Widget _buildWeekNavigator(DateTime date) {
     final int weekNumber = ((date.day - 1) / 7).floor() + 1;
     final String weekStr = '${date.month}월 ${weekNumber}주차';
-    
+
     final profile = ref.watch(userProfileProvider).value;
-    final weeksAsync = profile?.churchId != null 
-        ? ref.watch(availableWeeksProvider(profile!.churchId!)) 
+    final weeksAsync = profile?.churchId != null
+        ? ref.watch(availableWeeksProvider(profile!.churchId!))
         : const AsyncValue.data(<DateTime>[]);
 
     return weeksAsync.maybeWhen(
@@ -136,13 +143,16 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         int currentIndex = -1;
         for (int i = 0; i < weeks.length; i++) {
           final w = weeks[i];
-          if (w.year == currentDateOnly.year && w.month == currentDateOnly.month && w.day == currentDateOnly.day) {
+          if (w.year == currentDateOnly.year &&
+              w.month == currentDateOnly.month &&
+              w.day == currentDateOnly.day) {
             currentIndex = i;
             break;
           }
         }
 
-        final bool canGoPrev = currentIndex != -1 && currentIndex < weeks.length - 1;
+        final bool canGoPrev =
+            currentIndex != -1 && currentIndex < weeks.length - 1;
         final bool canGoNext = currentIndex != -1 && currentIndex > 0;
 
         return _buildNavigatorUI(
@@ -178,56 +188,75 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
         children: [
           IconButton(
             onPressed: canGoPrev ? () => _moveWeek(-1) : null,
-            icon: Icon(lucide.LucideIcons.chevronLeft, color: canGoPrev ? AppTheme.textSub : AppTheme.border, size: 18),
+            icon: Icon(lucide.LucideIcons.chevronLeft,
+                color: canGoPrev ? AppTheme.textSub : AppTheme.border,
+                size: 18),
           ),
           const SizedBox(width: 4),
           InkWell(
-            onTap: weeks.isEmpty ? null : () {
-              showDialog(
-                context: context,
-                builder: (context) => Center(
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Container(
-                      width: 340,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Text('주차 선택 (일요일)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textMain, fontFamily: 'Pretendard')),
+            onTap: weeks.isEmpty
+                ? null
+                : () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => Center(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Container(
+                            width: 340,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
+                                BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 10))
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 8),
+                                  child: Text('주차 선택 (일요일)',
+                                      style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppTheme.textMain,
+                                          fontFamily: 'Pretendard')),
+                                ),
+                                const Divider(height: 24),
+                                shad.ShadCalendar(
+                                  key: ValueKey(date),
+                                  selected: date,
+                                  initialMonth:
+                                      DateTime(date.year, date.month, 1),
+                                  weekStartsOn: 7,
+                                  selectableDayPredicate: (d) {
+                                    return weeks.any((w) =>
+                                        w.year == d.year &&
+                                        w.month == d.month &&
+                                        w.day == d.day);
+                                  },
+                                  onChanged: (newDate) {
+                                    if (newDate != null) {
+                                      ref
+                                          .read(
+                                              selectedWeekDateProvider.notifier)
+                                          .state = newDate;
+                                      Navigator.pop(context);
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
-                          const Divider(height: 24),
-                          shad.ShadCalendar(
-                            key: ValueKey(date),
-                            selected: date,
-                            initialMonth: DateTime(date.year, date.month, 1),
-                            weekStartsOn: 7,
-                            selectableDayPredicate: (d) {
-                              return weeks.any((w) => 
-                                w.year == d.year && w.month == d.month && w.day == d.day
-                              );
-                            },
-                            onChanged: (newDate) {
-                              if (newDate != null) {
-                                ref.read(selectedWeekDateProvider.notifier).state = newDate;
-                                Navigator.pop(context);
-                              }
-                            },
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-              );
-            },
+                    );
+                  },
             borderRadius: BorderRadius.circular(24),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -250,22 +279,23 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           const SizedBox(width: 4),
           IconButton(
             onPressed: canGoNext ? () => _moveWeek(1) : null,
-            icon: Icon(lucide.LucideIcons.chevronRight, color: canGoNext ? AppTheme.textSub : AppTheme.border, size: 18),
+            icon: Icon(lucide.LucideIcons.chevronRight,
+                color: canGoNext ? AppTheme.textSub : AppTheme.border,
+                size: 18),
           ),
         ],
       ),
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     final userProfileAsync = ref.watch(userProfileProvider);
     final selectedDate = ref.watch(selectedWeekDateProvider);
     final activeRole = ref.watch(activeRoleProvider);
-    
+
     // userGroups variable removed because it's shadowed in .when() below
-    
+
     String appBarTitle = '기도소식';
 
     return Scaffold(
@@ -277,14 +307,16 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           children: [
             const SizedBox(width: 8),
             PopupMenuButton<String>(
-              icon: Icon(lucide.LucideIcons.listFilter, color: AppTheme.primaryViolet, size: 20),
+              icon: Icon(lucide.LucideIcons.listFilter,
+                  color: AppTheme.primaryViolet, size: 20),
               onSelected: (value) {
                 setState(() {
                   _sortBy = value;
                 });
               },
               offset: const Offset(0, 40),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               itemBuilder: (context) => [
                 const PopupMenuItem(
                   value: 'name',
@@ -310,14 +342,19 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
             ),
           ],
         ),
-        title: Text(appBarTitle, style: const TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 18)),
+        title: Text(appBarTitle,
+            style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textMain,
+                fontSize: 18)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
           IconButton(
             onPressed: () => context.push('/prayer/search'),
-            icon: Icon(lucide.LucideIcons.search, color: AppTheme.primaryViolet, size: 20),
+            icon: Icon(lucide.LucideIcons.search,
+                color: AppTheme.primaryViolet, size: 20),
           ),
           const SizedBox(width: 8),
         ],
@@ -331,47 +368,65 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
               skipLoadingOnReload: true,
               skipError: true,
               data: (profile) {
-                if (profile == null) return const Center(child: Text('로그인이 필요합니다.'));
+                if (profile == null)
+                  return const Center(child: Text('로그인이 필요합니다.'));
                 if (activeRole == null) return _buildSkeletonList();
-                
-                return ref.watch(userGroupsProvider).maybeWhen(
-                  skipLoadingOnRefresh: true,
-                  skipLoadingOnReload: true,
-                  skipError: true,
-                  data: (userGroups) {
-                    // ... (data handling)
-                    final bool isLeaderOrAdmin = activeRole == AppRole.admin || activeRole == AppRole.leader;
-                    
-                    if (isLeaderOrAdmin) {
-                      final deptId = profile.departmentId;
-                      if (deptId == null || deptId.isEmpty) {
-                        return const Center(child: Text('소속 부서 정보가 없습니다.'));
-                      }
 
-                      return ref.watch(departmentGroupsProvider(deptId)).maybeWhen(
-                        skipLoadingOnRefresh: true,
-                        skipLoadingOnReload: true,
-                        skipError: true,
-                        data: (deptGroups) {
-                          if (deptGroups.isEmpty) return _buildTabLayout(profile, userGroups, activeRole);
-                          return _buildTabLayout(profile, deptGroups, activeRole);
-                        },
-                        loading: () => _buildSkeletonList(),
-                        orElse: () => _buildSkeletonList(),
-                      );
-                    } else {
-                      final memberGroups = userGroups.where((g) => g['role_in_group'] == 'member').toList();
-                      final groupsToUse = memberGroups.isNotEmpty ? memberGroups : userGroups;
-                      
-                      if (groupsToUse.isEmpty) return const Center(child: Text('소속된 조가 없습니다.'));
-                      
-                      final firstGroupId = (groupsToUse.first['id'] ?? groupsToUse.first['group_id']).toString();
-                      return _buildPrayerListContainer(firstGroupId, profile.churchId ?? '', profile.departmentId ?? '');
-                    }
-                  },
-                  loading: () => _buildSkeletonList(),
-                  orElse: () => _buildSkeletonList(),
-                );
+                return ref.watch(userGroupsProvider).maybeWhen(
+                      skipLoadingOnRefresh: true,
+                      skipLoadingOnReload: true,
+                      skipError: true,
+                      data: (userGroups) {
+                        // ... (data handling)
+                        final bool isLeaderOrAdmin =
+                            activeRole == AppRole.admin ||
+                                activeRole == AppRole.leader;
+
+                        if (isLeaderOrAdmin) {
+                          final deptId = profile.departmentId;
+                          if (deptId == null || deptId.isEmpty) {
+                            return const Center(child: Text('소속 부서 정보가 없습니다.'));
+                          }
+
+                          return ref
+                              .watch(departmentGroupsProvider(deptId))
+                              .maybeWhen(
+                                skipLoadingOnRefresh: true,
+                                skipLoadingOnReload: true,
+                                skipError: true,
+                                data: (deptGroups) {
+                                  if (deptGroups.isEmpty)
+                                    return _buildTabLayout(
+                                        profile, userGroups, activeRole);
+                                  return _buildTabLayout(
+                                      profile, deptGroups, activeRole);
+                                },
+                                loading: () => _buildSkeletonList(),
+                                orElse: () => _buildSkeletonList(),
+                              );
+                        } else {
+                          final memberGroups = userGroups
+                              .where((g) => g['role_in_group'] == 'member')
+                              .toList();
+                          final groupsToUse = memberGroups.isNotEmpty
+                              ? memberGroups
+                              : userGroups;
+
+                          if (groupsToUse.isEmpty)
+                            return const Center(child: Text('소속된 조가 없습니다.'));
+
+                          final firstGroupId = (groupsToUse.first['id'] ??
+                                  groupsToUse.first['group_id'])
+                              .toString();
+                          return _buildPrayerListContainer(
+                              firstGroupId,
+                              profile.churchId ?? '',
+                              profile.departmentId ?? '');
+                        }
+                      },
+                      loading: () => _buildSkeletonList(),
+                      orElse: () => _buildSkeletonList(),
+                    );
               },
               loading: () => _buildSkeletonList(),
               orElse: () => _buildSkeletonList(),
@@ -382,24 +437,31 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     );
   }
 
-  Widget _buildTabLayout(ProfileModel profile, List<Map<String, dynamic>> groups, AppRole activeRole) {
+  Widget _buildTabLayout(ProfileModel profile,
+      List<Map<String, dynamic>> groups, AppRole activeRole) {
     final churchId = profile.churchId ?? '';
     final departmentId = profile.departmentId ?? '';
-    final bool isLeaderOrAdmin = activeRole == AppRole.admin || activeRole == AppRole.leader;
-    
-    final List<Map<String, dynamic>> unifiedGroups = groups.map((g) => {
-      'id': (g['id'] ?? g['group_id']).toString(),
-      'name': (g['name'] ?? g['group_name'] ?? '').toString(),
-      'color_hex': g['color_hex'], // [NEW] 색상 정보 전달
-      'role_in_group': g['role_in_group'],
-    }).toList();
+    final bool isLeaderOrAdmin =
+        activeRole == AppRole.admin || activeRole == AppRole.leader;
+
+    final List<Map<String, dynamic>> unifiedGroups = groups
+        .map((g) => {
+              'id': (g['id'] ?? g['group_id']).toString(),
+              'name': (g['name'] ?? g['group_name'] ?? '').toString(),
+              'color_hex': g['color_hex'], // [NEW] 색상 정보 전달
+              'role_in_group': g['role_in_group'],
+            })
+        .toList();
 
     if (isLeaderOrAdmin) {
-      _allGroups = [{'id': 'all', 'name': '전체'}, ...unifiedGroups];
+      _allGroups = [
+        {'id': 'all', 'name': '전체'},
+        ...unifiedGroups
+      ];
     } else {
       _allGroups = unifiedGroups;
     }
-    
+
     final tabCount = _allGroups.length;
 
     if (_tabController == null || _tabController!.length != tabCount) {
@@ -409,12 +471,12 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
 
     return Column(
       children: [
-        if (tabCount > 1) 
+        if (tabCount > 1)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 8), 
+            padding: const EdgeInsets.symmetric(vertical: 8),
             decoration: const BoxDecoration(
-              color: Colors.white, 
+              color: Colors.white,
               border: Border(
                 bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1),
               ),
@@ -427,34 +489,47 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                 borderRadius: BorderRadius.circular(12),
               ),
               indicatorSize: TabBarIndicatorSize.tab,
-              indicatorPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              indicatorPadding:
+                  const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               labelColor: const Color(0xFF7C3AED),
-              unselectedLabelColor: const Color(0xFF64748B), 
-              labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, fontFamily: 'Pretendard'),
-              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13, fontFamily: 'Pretendard'),
+              unselectedLabelColor: const Color(0xFF64748B),
+              labelStyle: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  fontFamily: 'Pretendard'),
+              unselectedLabelStyle: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 13,
+                  fontFamily: 'Pretendard'),
               padding: const EdgeInsets.symmetric(horizontal: 16),
               tabAlignment: TabAlignment.start,
               dividerColor: Colors.transparent,
-              tabs: _allGroups.map((g) => Tab(
-                height: 40, 
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text((g['name'] ?? '').toString()),
-                ),
-              )).toList(),
+              tabs: _allGroups
+                  .map((g) => Tab(
+                        height: 40,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text((g['name'] ?? '').toString()),
+                        ),
+                      ))
+                  .toList(),
             ),
           ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
-            children: _allGroups.map((g) => _buildPrayerListContainer(g['id'] as String, churchId, departmentId)).toList(),
+            children: _allGroups
+                .map((g) => _buildPrayerListContainer(
+                    g['id'] as String, churchId, departmentId))
+                .toList(),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildPrayerListContainer(String groupId, String churchId, String departmentId) {
+  Widget _buildPrayerListContainer(
+      String groupId, String churchId, String departmentId) {
     if (groupId == 'all') {
       return _buildAllTabExpandedView(departmentId, churchId);
     }
@@ -472,318 +547,356 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     }
     final activeRole = ref.watch(activeRoleProvider);
     final selectedDate = ref.watch(selectedWeekDateProvider);
-    final weekStr = '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+    final weekStr =
+        '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
     final noMeeting = departmentId.isNotEmpty
         ? ref.watch(noMeetingDayProvider('$departmentId:$weekStr')).value
         : null;
 
-    return ref.watch(departmentWeeklyDataProvider('$departmentId:$churchId')).when(
-      skipLoadingOnRefresh: true,
-      data: (data) {
-        final groups = List<Map<String, dynamic>>.from(data['groups']);
-        final allPrayers = List<Map<String, dynamic>>.from(data['prayers']);
+    return ref
+        .watch(departmentWeeklyDataProvider('$departmentId:$churchId'))
+        .when(
+          skipLoadingOnRefresh: true,
+          data: (data) {
+            final groups = List<Map<String, dynamic>>.from(data['groups']);
+            final allPrayers = List<Map<String, dynamic>>.from(data['prayers']);
 
-        if (allPrayers.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: _refreshData,
-            color: AppTheme.primaryViolet,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: [
-                const SizedBox(height: 24),
-                if (noMeeting != null)
-                  _buildNoMeetingCardInFeed(noMeeting, departmentId, selectedDate, showCancelButton: activeRole == AppRole.admin)
-                else if (activeRole == AppRole.admin && departmentId.isNotEmpty)
-                  _buildEmptyWithDesignateButton(departmentId, selectedDate)
-                else
-                  const Center(child: Text('등록된 기도제목이 없습니다.')),
-              ],
-            ),
-          );
-        }
-
-        // [SORT] 부부형이면 marriage key(부부묶음+가나다), 아니면 이름순
-        final userGroups = ref.read(userGroupsProvider).value ?? [];
-        final isCoupleMode = userGroups.isNotEmpty && userGroups.first['profile_mode'] == 'couple';
-
-        allPrayers.sort((a, b) {
-          final m1 = a['member_directory'] ?? {};
-          final m2 = b['member_directory'] ?? {};
-          final n1 = (m1['full_name'] as String?)?.trim() ?? '';
-          final n2 = (m2['full_name'] as String?)?.trim() ?? '';
-
-          if (!isCoupleMode) return n1.compareTo(n2);
-
-          String getMarriageKey(Map<String, dynamic> m) {
-            final name = (m['full_name'] as String?)?.trim() ?? '';
-            final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
-            if (spouse.isEmpty) return name;
-            final list = [name, spouse];
-            list.sort();
-            return list.join('_');
-          }
-
-          final k1 = getMarriageKey(m1);
-          final k2 = getMarriageKey(m2);
-          if (k1 != k2) return k1.compareTo(k2);
-          return n1.compareTo(n2);
-        });
-
-        // [SORT] 전체 부서의 조(Group) 목록 정렬
-        if (_sortBy == 'name') {
-          groups.sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
-        } else if (_sortBy == 'latest') {
-          groups.sort((a, b) {
-            final gIdA = (a['id'] ?? '').toString();
-            final gIdB = (b['id'] ?? '').toString();
-            
-            // 각 조별 가장 최신 기도제목의 시간 찾기
-            final latestA = allPrayers
-                .where((p) => p['group_id'] == gIdA)
-                .map((p) => DateTime.parse(p['created_at'] ?? '2000-01-01'))
-                .fold(DateTime(2000), (prev, curr) => curr.isAfter(prev) ? curr : prev);
-            
-            final latestB = allPrayers
-                .where((p) => p['group_id'] == gIdB)
-                .map((p) => DateTime.parse(p['created_at'] ?? '2000-01-01'))
-                .fold(DateTime(2000), (prev, curr) => curr.isAfter(prev) ? curr : prev);
-            
-            return latestB.compareTo(latestA); // 최신이 위로
-          });
-        }
-
-        // Separate groups into those with prayers and those without
-        final groupsWithPrayers = <Map<String, dynamic>>[];
-        final groupsWithoutPrayers = <Map<String, dynamic>>[];
-        for (final group in groups) {
-          final gId = (group['id'] ?? '').toString();
-          final hasPrayers = allPrayers.any((p) => p['group_id'] == gId);
-          if (hasPrayers) {
-            groupsWithPrayers.add(group);
-          } else {
-            groupsWithoutPrayers.add(group);
-          }
-        }
-        final totalGroups = groups.length;
-        final completedGroups = groupsWithPrayers.length;
-        final allComplete = completedGroups == totalGroups;
-
-        // itemCount: 1 (progress bar) + groupsWithPrayers + (empty section if needed)
-        final hasEmptySection = groupsWithoutPrayers.isNotEmpty;
-        final totalItems = 1 + groupsWithPrayers.length + (hasEmptySection ? 1 : 0);
-
-        return RefreshIndicator(
-          onRefresh: _refreshData,
-          color: AppTheme.primaryViolet,
-          child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.zero,
-            itemCount: totalItems,
-            itemBuilder: (context, index) {
-              // --- Item 0: Progress bar ---
-              if (index == 0) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border(
-                      bottom: BorderSide(color: AppTheme.divider.withOpacity(0.5), width: 1),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        allComplete ? Icons.check_circle_rounded : Icons.edit_note_rounded,
-                        size: 18,
-                        color: allComplete ? AppTheme.primaryViolet : const Color(0xFFF59E0B),
-                      ),
-                      const SizedBox(width: 8),
-                      Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text: '$completedGroups',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 14,
-                                color: allComplete ? AppTheme.primaryViolet : const Color(0xFFF59E0B),
-                                fontFamily: 'Pretendard',
-                              ),
-                            ),
-                            TextSpan(
-                              text: '/$totalGroups조 작성 완료',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                                color: AppTheme.textSub,
-                                fontFamily: 'Pretendard',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: totalGroups > 0 ? completedGroups / totalGroups : 0,
-                            minHeight: 6,
-                            backgroundColor: AppTheme.divider.withOpacity(0.4),
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              allComplete ? AppTheme.primaryViolet : const Color(0xFFF59E0B),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              // --- Groups with prayers ---
-              final groupIndex = index - 1;
-              if (groupIndex < groupsWithPrayers.length) {
-                final group = groupsWithPrayers[groupIndex];
-                final gId = (group['id'] ?? '').toString(); 
-                final gName = group['name'];
-                final gColor = _parseColor(group['color_hex']);
-                final groupPrayers = allPrayers.where((p) => p['group_id'] == gId).toList();
-
-                // [SORT] 조 내부 정렬 (Marriage Key Sort)
-                groupPrayers.sort((a, b) {
-                  final m1 = a['member_directory'] ?? {};
-                  final m2 = b['member_directory'] ?? {};
-                  
-                  String getMarriageKey(Map<String, dynamic> m) {
-                    final name = (m['full_name'] as String?)?.trim() ?? '';
-                    final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
-                    if (spouse.isEmpty) return name;
-                    final list = [name, spouse];
-                    list.sort(); 
-                    return list.join('_');
-                  }
-                  
-                  final k1 = getMarriageKey(m1);
-                  final k2 = getMarriageKey(m2);
-                  
-                  if (k1 != k2) return k1.compareTo(k2);
-                  
-                  final n1 = (m1['full_name'] as String?)?.trim() ?? '';
-                  final n2 = (m2['full_name'] as String?)?.trim() ?? '';
-                  return n1.compareTo(n2);
-                });
-
-                final isExpanded = _expandedStates[gId] ?? true;
-
-                return Padding(
-                  padding: groupIndex == 0 ? const EdgeInsets.only(top: 12) : EdgeInsets.zero,
-                  child: Theme(
-                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      key: PageStorageKey('group_expansion_$gId'),
-                      initiallyExpanded: isExpanded,
-                      onExpansionChanged: (expanded) {
-                        _expandedStates[gId] = expanded;
-                      },
-                      tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                      title: Text(
-                        '$gName (${groupPrayers.length})', 
-                        style: const TextStyle(fontWeight: FontWeight.w900, color: AppTheme.primaryViolet, fontSize: 16)
-                      ),
-                      childrenPadding: const EdgeInsets.symmetric(horizontal: 20),
-                      children: [
-                        const SizedBox(height: 12),
-                        ...groupPrayers.map((prayer) {
-                          return _buildPrayerItemInList(prayer, gId, churchId, gName, groupColor: gColor);
-                        }),
-                      ],
-                    ),
-                  ),
-                );
-              }
-
-              // --- Empty groups section (at the bottom) ---
-              return Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            if (allPrayers.isEmpty) {
+              return RefreshIndicator(
+                onRefresh: _refreshData,
+                color: AppTheme.primaryViolet,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    const SizedBox(height: 24),
+                    if (noMeeting != null)
+                      _buildNoMeetingCardInFeed(
+                          noMeeting, departmentId, selectedDate,
+                          showCancelButton: activeRole == AppRole.admin)
+                    else if (activeRole == AppRole.admin &&
+                        departmentId.isNotEmpty)
+                      _buildEmptyWithDesignateButton(departmentId, selectedDate)
+                    else
+                      const Center(child: Text('등록된 기도제목이 없습니다.')),
+                  ],
+                ),
+              );
+            }
+
+            // [SORT] 부부형이면 marriage key(부부묶음+가나다), 아니면 이름순
+            final userGroups = ref.read(userGroupsProvider).value ?? [];
+            final isCoupleMode = userGroups.isNotEmpty &&
+                userGroups.first['profile_mode'] == 'couple';
+
+            allPrayers.sort((a, b) {
+              final m1 = a['member_directory'] ?? {};
+              final m2 = b['member_directory'] ?? {};
+              final n1 = (m1['full_name'] as String?)?.trim() ?? '';
+              final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+
+              if (!isCoupleMode) return n1.compareTo(n2);
+
+              String getMarriageKey(Map<String, dynamic> m) {
+                final name = (m['full_name'] as String?)?.trim() ?? '';
+                final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+                if (spouse.isEmpty) return name;
+                final list = [name, spouse];
+                list.sort();
+                return list.join('_');
+              }
+
+              final k1 = getMarriageKey(m1);
+              final k2 = getMarriageKey(m2);
+              if (k1 != k2) return k1.compareTo(k2);
+              return n1.compareTo(n2);
+            });
+
+            // [SORT] 전체 부서의 조(Group) 목록 정렬
+            if (_sortBy == 'name') {
+              groups
+                  .sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
+            } else if (_sortBy == 'latest') {
+              groups.sort((a, b) {
+                final gIdA = (a['id'] ?? '').toString();
+                final gIdB = (b['id'] ?? '').toString();
+
+                // 각 조별 가장 최신 기도제목의 시간 찾기
+                final latestA = allPrayers
+                    .where((p) => p['group_id'] == gIdA)
+                    .map((p) => DateTime.parse(p['created_at'] ?? '2000-01-01'))
+                    .fold(DateTime(2000),
+                        (prev, curr) => curr.isAfter(prev) ? curr : prev);
+
+                final latestB = allPrayers
+                    .where((p) => p['group_id'] == gIdB)
+                    .map((p) => DateTime.parse(p['created_at'] ?? '2000-01-01'))
+                    .fold(DateTime(2000),
+                        (prev, curr) => curr.isAfter(prev) ? curr : prev);
+
+                return latestB.compareTo(latestA); // 최신이 위로
+              });
+            }
+
+            // Separate groups into those with prayers and those without
+            final groupsWithPrayers = <Map<String, dynamic>>[];
+            final groupsWithoutPrayers = <Map<String, dynamic>>[];
+            for (final group in groups) {
+              final gId = (group['id'] ?? '').toString();
+              final hasPrayers = allPrayers.any((p) => p['group_id'] == gId);
+              if (hasPrayers) {
+                groupsWithPrayers.add(group);
+              } else {
+                groupsWithoutPrayers.add(group);
+              }
+            }
+            final totalGroups = groups.length;
+            final completedGroups = groupsWithPrayers.length;
+            final allComplete = completedGroups == totalGroups;
+
+            // itemCount: 1 (progress bar) + groupsWithPrayers + (empty section if needed)
+            final hasEmptySection = groupsWithoutPrayers.isNotEmpty;
+            final totalItems =
+                1 + groupsWithPrayers.length + (hasEmptySection ? 1 : 0);
+
+            return RefreshIndicator(
+              onRefresh: _refreshData,
+              color: AppTheme.primaryViolet,
+              child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.zero,
+                itemCount: totalItems,
+                itemBuilder: (context, index) {
+                  // --- Item 0: Progress bar ---
+                  if (index == 0) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border(
+                          bottom: BorderSide(
+                              color: AppTheme.divider.withOpacity(0.5),
+                              width: 1),
+                        ),
+                      ),
                       child: Row(
                         children: [
-                          Container(
-                            width: 4,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              color: AppTheme.textSub.withOpacity(0.3),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
+                          Icon(
+                            allComplete
+                                ? Icons.check_circle_rounded
+                                : Icons.edit_note_rounded,
+                            size: 18,
+                            color: allComplete
+                                ? AppTheme.primaryViolet
+                                : const Color(0xFFF59E0B),
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            '미작성 (${groupsWithoutPrayers.length}조)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                              color: AppTheme.textSub.withOpacity(0.7),
-                              fontFamily: 'Pretendard',
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: '$completedGroups',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                    color: allComplete
+                                        ? AppTheme.primaryViolet
+                                        : const Color(0xFFF59E0B),
+                                    fontFamily: 'Pretendard',
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: '/$totalGroups조 작성 완료',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    color: AppTheme.textSub,
+                                    fontFamily: 'Pretendard',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: totalGroups > 0
+                                    ? completedGroups / totalGroups
+                                    : 0,
+                                minHeight: 6,
+                                backgroundColor:
+                                    AppTheme.divider.withOpacity(0.4),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  allComplete
+                                      ? AppTheme.primaryViolet
+                                      : const Color(0xFFF59E0B),
+                                ),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    ...groupsWithoutPrayers.map((group) {
-                      final gName = group['name'] ?? '';
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-                        child: ListTile(
-                          dense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          tileColor: AppTheme.divider.withOpacity(0.15),
-                          leading: Icon(
-                            Icons.hourglass_empty_rounded,
-                            size: 18,
-                            color: AppTheme.textSub.withOpacity(0.5),
-                          ),
-                          title: Text(
-                            gName,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                              color: AppTheme.textSub.withOpacity(0.7),
-                              fontFamily: 'Pretendard',
-                            ),
-                          ),
-                          trailing: Text(
-                            '대기중',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: AppTheme.textSub.withOpacity(0.5),
-                              fontFamily: 'Pretendard',
-                            ),
+                    );
+                  }
+
+                  // --- Groups with prayers ---
+                  final groupIndex = index - 1;
+                  if (groupIndex < groupsWithPrayers.length) {
+                    final group = groupsWithPrayers[groupIndex];
+                    final gId = (group['id'] ?? '').toString();
+                    final gName = group['name'];
+                    final gColor = _parseColor(group['color_hex']);
+                    final groupPrayers =
+                        allPrayers.where((p) => p['group_id'] == gId).toList();
+
+                    // [SORT] 조 내부 정렬 (Marriage Key Sort)
+                    groupPrayers.sort((a, b) {
+                      final m1 = a['member_directory'] ?? {};
+                      final m2 = b['member_directory'] ?? {};
+
+                      String getMarriageKey(Map<String, dynamic> m) {
+                        final name = (m['full_name'] as String?)?.trim() ?? '';
+                        final spouse =
+                            (m['spouse_name'] as String?)?.trim() ?? '';
+                        if (spouse.isEmpty) return name;
+                        final list = [name, spouse];
+                        list.sort();
+                        return list.join('_');
+                      }
+
+                      final k1 = getMarriageKey(m1);
+                      final k2 = getMarriageKey(m2);
+
+                      if (k1 != k2) return k1.compareTo(k2);
+
+                      final n1 = (m1['full_name'] as String?)?.trim() ?? '';
+                      final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+                      return n1.compareTo(n2);
+                    });
+
+                    final isExpanded = _expandedStates[gId] ?? true;
+
+                    return Padding(
+                      padding: groupIndex == 0
+                          ? const EdgeInsets.only(top: 12)
+                          : EdgeInsets.zero,
+                      child: Theme(
+                        data: Theme.of(context)
+                            .copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          key: PageStorageKey('group_expansion_$gId'),
+                          initiallyExpanded: isExpanded,
+                          onExpansionChanged: (expanded) {
+                            _expandedStates[gId] = expanded;
+                          },
+                          tilePadding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 8),
+                          title: Text('$gName (${groupPrayers.length})',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.primaryViolet,
+                                  fontSize: 16)),
+                          childrenPadding:
+                              const EdgeInsets.symmetric(horizontal: 20),
+                          children: [
+                            const SizedBox(height: 12),
+                            ...groupPrayers.map((prayer) {
+                              return _buildPrayerItemInList(
+                                  prayer, gId, churchId, gName,
+                                  groupColor: gColor);
+                            }),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  // --- Empty groups section (at the bottom) ---
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 12),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 4,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.textSub.withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '미작성 (${groupsWithoutPrayers.length}조)',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: AppTheme.textSub.withOpacity(0.7),
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      );
-                    }),
-                  ],
-                ),
-              );
-            },
-          ),
+                        ...groupsWithoutPrayers.map((group) {
+                          final gName = group['name'] ?? '';
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 2),
+                            child: ListTile(
+                              dense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 4),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              tileColor: AppTheme.divider.withOpacity(0.15),
+                              leading: Icon(
+                                Icons.hourglass_empty_rounded,
+                                size: 18,
+                                color: AppTheme.textSub.withOpacity(0.5),
+                              ),
+                              title: Text(
+                                gName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: AppTheme.textSub.withOpacity(0.7),
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                              trailing: Text(
+                                '대기중',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppTheme.textSub.withOpacity(0.5),
+                                  fontFamily: 'Pretendard',
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+          loading: () => _buildSkeletonList(),
+          error: (e, s) {
+            // [FIX] Transient 여부와 상관없이 모든 에러 상황에 스켈레톤 표시 (사용자 경험 개선)
+            return _buildSkeletonList();
+          },
         );
-      },
-      loading: () => _buildSkeletonList(),
-      error: (e, s) {
-        // [FIX] Transient 여부와 상관없이 모든 에러 상황에 스켈레톤 표시 (사용자 경험 개선)
-        return _buildSkeletonList();
-      },
-    );
   }
 
   Widget _buildSingleGroupView(String groupId, String churchId) {
@@ -791,81 +904,90 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     final profile = ref.watch(userProfileProvider).value;
     final deptId = profile?.departmentId ?? '';
     final selectedDate = ref.watch(selectedWeekDateProvider);
-    final weekStr = '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+    final weekStr =
+        '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
     final noMeeting = deptId.isNotEmpty
         ? ref.watch(noMeetingDayProvider('$deptId:$weekStr')).value
         : null;
 
     return ref.watch(weeklyDataProvider('$groupId:$churchId')).when(
-      skipLoadingOnRefresh: true,
-      data: (weeklyData) {
-        final prayers = List<Map<String, dynamic>>.from(weeklyData['prayers']);
-        final publishedPrayers = prayers.where((p) => p['status'] == 'published').toList();
+          skipLoadingOnRefresh: true,
+          data: (weeklyData) {
+            final prayers =
+                List<Map<String, dynamic>>.from(weeklyData['prayers']);
+            final publishedPrayers =
+                prayers.where((p) => p['status'] == 'published').toList();
 
-        if (publishedPrayers.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: _refreshData,
-            color: AppTheme.primaryViolet,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: [
-                const SizedBox(height: 24),
-                if (noMeeting != null)
-                  _buildNoMeetingCardInFeed(noMeeting, deptId, selectedDate, showCancelButton: activeRole == AppRole.admin)
-                else
-                  const Center(child: Text('아직 등록된 기도제목이 없습니다.')),
-              ],
-            ),
-          );
-        }
+            if (publishedPrayers.isEmpty) {
+              return RefreshIndicator(
+                onRefresh: _refreshData,
+                color: AppTheme.primaryViolet,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    const SizedBox(height: 24),
+                    if (noMeeting != null)
+                      _buildNoMeetingCardInFeed(noMeeting, deptId, selectedDate,
+                          showCancelButton: activeRole == AppRole.admin)
+                    else
+                      const Center(child: Text('아직 등록된 기도제목이 없습니다.')),
+                  ],
+                ),
+              );
+            }
 
-         // [SORT] 이름순(부부순) 정렬 (Marriage Key Sort)
-        publishedPrayers.sort((a, b) {
-          final m1 = a['member_directory'] ?? {};
-          final m2 = b['member_directory'] ?? {};
-          
-          String getMarriageKey(Map<String, dynamic> m) {
-            final name = (m['full_name'] as String?)?.trim() ?? '';
-            final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
-            if (spouse.isEmpty) return name;
-            final list = [name, spouse];
-            list.sort(); 
-            return list.join('_');
-          }
-          
-          final k1 = getMarriageKey(m1);
-          final k2 = getMarriageKey(m2);
-          
-          if (k1 != k2) return k1.compareTo(k2);
-          
-          final n1 = (m1['full_name'] as String?)?.trim() ?? '';
-          final n2 = (m2['full_name'] as String?)?.trim() ?? '';
-          return n1.compareTo(n2);
-        });
+            // [SORT] 이름순(부부순) 정렬 (Marriage Key Sort)
+            publishedPrayers.sort((a, b) {
+              final m1 = a['member_directory'] ?? {};
+              final m2 = b['member_directory'] ?? {};
 
-        final groupInfo = _allGroups.firstWhere((g) => (g['id'] ?? g['group_id']) == groupId, orElse: () => {});
-        final gName = groupInfo['name'] ?? groupInfo['group_name'] ?? '';
+              String getMarriageKey(Map<String, dynamic> m) {
+                final name = (m['full_name'] as String?)?.trim() ?? '';
+                final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
+                if (spouse.isEmpty) return name;
+                final list = [name, spouse];
+                list.sort();
+                return list.join('_');
+              }
 
-        return RefreshIndicator(
-          onRefresh: _refreshData,
-          color: AppTheme.primaryViolet,
-          child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-            itemCount: publishedPrayers.length,
-            itemBuilder: (context, index) {
-              final gColor = _parseColor(groupInfo['color_hex']); // [NEW] 단일 조 뷰에서도 색상 적용
-              return _buildPrayerItemInList(publishedPrayers[index], groupId, churchId, gName, groupColor: gColor);
-            },
-          ),
+              final k1 = getMarriageKey(m1);
+              final k2 = getMarriageKey(m2);
+
+              if (k1 != k2) return k1.compareTo(k2);
+
+              final n1 = (m1['full_name'] as String?)?.trim() ?? '';
+              final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+              return n1.compareTo(n2);
+            });
+
+            final groupInfo = _allGroups.firstWhere(
+                (g) => (g['id'] ?? g['group_id']) == groupId,
+                orElse: () => {});
+            final gName = groupInfo['name'] ?? groupInfo['group_name'] ?? '';
+
+            return RefreshIndicator(
+              onRefresh: _refreshData,
+              color: AppTheme.primaryViolet,
+              child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+                itemCount: publishedPrayers.length,
+                itemBuilder: (context, index) {
+                  final gColor = _parseColor(
+                      groupInfo['color_hex']); // [NEW] 단일 조 뷰에서도 색상 적용
+                  return _buildPrayerItemInList(
+                      publishedPrayers[index], groupId, churchId, gName,
+                      groupColor: gColor);
+                },
+              ),
+            );
+          },
+          loading: () => _buildSkeletonList(),
+          error: (e, s) {
+            // [FIX] 모든 에러 텍스트 표시 대신 스켈레톤
+            return _buildSkeletonList();
+          },
         );
-      },
-      loading: () => _buildSkeletonList(),
-      error: (e, s) {
-        // [FIX] 모든 에러 텍스트 표시 대신 스켈레톤
-        return _buildSkeletonList();
-      },
-    );
   }
 
   Color? _parseColor(String? hexString) {
@@ -880,35 +1002,42 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     }
   }
 
-  Widget _buildPrayerItemInList(Map<String, dynamic> prayer, String groupId, String churchId, String groupName, {Color? groupColor}) {
+  Widget _buildPrayerItemInList(Map<String, dynamic> prayer, String groupId,
+      String churchId, String groupName,
+      {Color? groupColor}) {
     return ref.watch(groupMembersProvider(groupId)).when(
-      data: (members) {
-        final dirId = prayer['directory_member_id'];
-        final memberInfo = members.firstWhere(
-          (m) => m['id'] == dirId,
-          orElse: () => {'full_name': '알 수 없음'}
-        );
-        final String memberName = memberInfo['full_name'] ?? '알 수 없음';
-        final String profileId = memberInfo['profile_id'] ?? '';
+          data: (members) {
+            final dirId = prayer['directory_member_id'];
+            final prayerMemberDirectory = Map<String, dynamic>.from(
+                (prayer['member_directory'] as Map?) ?? {});
+            final memberInfo = members.firstWhere((m) => m['id'] == dirId,
+                orElse: () => prayerMemberDirectory.isNotEmpty
+                    ? prayerMemberDirectory
+                    : {'full_name': '알 수 없음'});
+            final String memberName = memberInfo['full_name'] ?? '알 수 없음';
+            final String profileId = memberInfo['profile_id'] ?? '';
+            final String displayGroupName =
+                (prayerMemberDirectory['group_name'] ?? groupName).toString();
 
-        return PrayerCard(
-          key: ValueKey(prayer['id']?.toString() ?? 'unknown_${prayer.hashCode}'),
-          prayerId: (prayer['id'] ?? '').toString(),
-          profileId: profileId,
-          name: memberName,
-          groupName: groupName.toString(),
-          content: (prayer['content'] ?? '').toString(),
-          isDraft: prayer['status'] != 'published',
-          togetherCount: prayer['together_count'] ?? 0,
-          groupColor: groupColor, // [NEW] PrayerCard에 색상 전달
+            return PrayerCard(
+              key: ValueKey(
+                  prayer['id']?.toString() ?? 'unknown_${prayer.hashCode}'),
+              prayerId: (prayer['id'] ?? '').toString(),
+              profileId: profileId,
+              name: memberName,
+              groupName: displayGroupName,
+              content: (prayer['content'] ?? '').toString(),
+              isDraft: prayer['status'] != 'published',
+              togetherCount: prayer['together_count'] ?? 0,
+              groupColor: groupColor, // [NEW] PrayerCard에 색상 전달
+            );
+          },
+          loading: () => const PrayerCardSkeleton(),
+          error: (e, s) {
+            // [FIX] 에러 발생 시 카드 스켈레톤 유지
+            return const PrayerCardSkeleton();
+          },
         );
-      },
-      loading: () => const PrayerCardSkeleton(),
-      error: (e, s) {
-        // [FIX] 에러 발생 시 카드 스켈레톤 유지
-        return const PrayerCardSkeleton();
-      },
-    );
   }
 
   Widget _buildSkeletonList() {
@@ -933,7 +1062,8 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
               shape: BoxShape.circle,
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            child: const Icon(lucide.LucideIcons.bookOpen, size: 24, color: AppTheme.textSub),
+            child: const Icon(lucide.LucideIcons.bookOpen,
+                size: 24, color: AppTheme.textSub),
           ),
           const SizedBox(height: 12),
           const Text(
@@ -948,19 +1078,27 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
           const SizedBox(height: 6),
           const Text(
             '이번 주 모임이 없나요?',
-            style: TextStyle(fontSize: 13, color: AppTheme.textSub, fontFamily: 'Pretendard'),
+            style: TextStyle(
+                fontSize: 13,
+                color: AppTheme.textSub,
+                fontFamily: 'Pretendard'),
           ),
           const SizedBox(height: 20),
           OutlinedButton.icon(
             onPressed: () => _showNoMeetingDialog(deptId, selectedWeek),
-            icon: const Icon(Icons.event_busy_rounded, size: 16, color: Color(0xFFF97316)),
+            icon: const Icon(Icons.event_busy_rounded,
+                size: 16, color: Color(0xFFF97316)),
             label: const Text(
               '모임없는 날로 지정하기',
-              style: TextStyle(color: Color(0xFFF97316), fontWeight: FontWeight.w600, fontFamily: 'Pretendard'),
+              style: TextStyle(
+                  color: Color(0xFFF97316),
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Pretendard'),
             ),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Color(0xFFFB923C)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
           ),
@@ -970,7 +1108,9 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
   }
 
   // 빈 피드 안에 표시하는 모임없는 날 안내 카드 (이미 지정된 경우)
-  Widget _buildNoMeetingCardInFeed(NoMeetingDayModel noMeeting, String deptId, DateTime selectedWeek, {bool showCancelButton = false}) {
+  Widget _buildNoMeetingCardInFeed(
+      NoMeetingDayModel noMeeting, String deptId, DateTime selectedWeek,
+      {bool showCancelButton = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
@@ -997,7 +1137,8 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                 color: const Color(0xFFFFF7ED),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.event_busy_rounded, color: Color(0xFFF97316), size: 20),
+              child: const Icon(Icons.event_busy_rounded,
+                  color: Color(0xFFF97316), size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1039,11 +1180,13 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                   splashColor: const Color(0xFFF97316).withOpacity(0.12),
                   highlightColor: const Color(0xFFFFF7ED),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: const [
-                        Icon(Icons.close_rounded, color: Color(0xFFF97316), size: 14),
+                        Icon(Icons.close_rounded,
+                            color: Color(0xFFF97316), size: 14),
                         SizedBox(width: 4),
                         Text(
                           '취소',
@@ -1082,7 +1225,8 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(20)),
               ),
-              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 48),
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 48),
               child: SingleChildScrollView(
                 padding: EdgeInsets.only(bottom: keyboardInset),
                 child: Padding(
@@ -1100,7 +1244,8 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                               color: const Color(0xFFFFF7ED),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: const Icon(Icons.event_busy_rounded, size: 18, color: Color(0xFFF97316)),
+                            child: const Icon(Icons.event_busy_rounded,
+                                size: 18, color: Color(0xFFF97316)),
                           ),
                           const SizedBox(width: 12),
                           const Expanded(
@@ -1117,7 +1262,8 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                           ),
                           IconButton(
                             onPressed: () => Navigator.pop(ctx),
-                            icon: const Icon(lucide.LucideIcons.x, size: 18, color: AppTheme.textSub),
+                            icon: const Icon(lucide.LucideIcons.x,
+                                size: 18, color: AppTheme.textSub),
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                           ),
@@ -1126,17 +1272,27 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                       const SizedBox(height: 10),
                       const Text(
                         '이번 주 모임이 없는 사유를 입력해주세요.',
-                        style: TextStyle(fontSize: 13, color: AppTheme.textSub, fontFamily: 'Pretendard', height: 1.5),
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textSub,
+                            fontFamily: 'Pretendard',
+                            height: 1.5),
                       ),
                       const SizedBox(height: 16),
                       TextField(
                         controller: reasonController,
                         autofocus: true,
                         maxLength: 50,
-                        style: const TextStyle(fontSize: 14, fontFamily: 'Pretendard', color: AppTheme.textMain),
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontFamily: 'Pretendard',
+                            color: AppTheme.textMain),
                         decoration: const InputDecoration(
                           hintText: '예: 부활절 연합예배, 수련회 등',
-                          hintStyle: TextStyle(fontSize: 13, color: AppTheme.textSub, fontFamily: 'Pretendard'),
+                          hintStyle: TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.textSub,
+                              fontFamily: 'Pretendard'),
                           filled: true,
                           fillColor: AppTheme.secondaryBackground,
                           contentPadding: EdgeInsets.all(14),
@@ -1150,7 +1306,8 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.all(Radius.circular(12)),
-                            borderSide: BorderSide(color: Color(0xFFF97316), width: 1.5),
+                            borderSide: BorderSide(
+                                color: Color(0xFFF97316), width: 1.5),
                           ),
                         ),
                       ),
@@ -1158,9 +1315,15 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                         const SizedBox(height: 6),
                         Row(
                           children: [
-                            const Icon(lucide.LucideIcons.alertCircle, size: 13, color: AppTheme.error),
+                            const Icon(lucide.LucideIcons.alertCircle,
+                                size: 13, color: AppTheme.error),
                             const SizedBox(width: 5),
-                            Text(errorMsg!, style: const TextStyle(fontSize: 12, color: AppTheme.error, fontFamily: 'Pretendard', fontWeight: FontWeight.w600)),
+                            Text(errorMsg!,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.error,
+                                    fontFamily: 'Pretendard',
+                                    fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ],
@@ -1174,9 +1337,14 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                                 minimumSize: const Size(double.infinity, 48),
                                 foregroundColor: AppTheme.textSub,
                                 side: const BorderSide(color: AppTheme.border),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
-                              child: const Text('취소', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'Pretendard')),
+                              child: const Text('취소',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                      fontFamily: 'Pretendard')),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -1185,20 +1353,27 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                               onPressed: () async {
                                 final reason = reasonController.text.trim();
                                 if (reason.isEmpty) {
-                                  setDialogState(() => errorMsg = '사유를 입력해주세요.');
+                                  setDialogState(
+                                      () => errorMsg = '사유를 입력해주세요.');
                                   return;
                                 }
                                 Navigator.pop(ctx);
-                                await _designateNoMeetingDay(deptId, selectedWeek, reason);
+                                await _designateNoMeetingDay(
+                                    deptId, selectedWeek, reason);
                               },
                               style: ElevatedButton.styleFrom(
                                 minimumSize: const Size(double.infinity, 48),
                                 backgroundColor: const Color(0xFFF97316),
                                 foregroundColor: Colors.white,
                                 elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
-                              child: const Text('지정하기', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'Pretendard')),
+                              child: const Text('지정하기',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                      fontFamily: 'Pretendard')),
                             ),
                           ),
                         ],
@@ -1214,21 +1389,25 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     );
   }
 
-  Future<void> _designateNoMeetingDay(String deptId, DateTime selectedWeek, String reason) async {
+  Future<void> _designateNoMeetingDay(
+      String deptId, DateTime selectedWeek, String reason) async {
     final profile = ref.read(userProfileProvider).value;
     if (profile == null) return;
     try {
       await ref.read(repositoryProvider).setNoMeetingDay(
-        departmentId: deptId,
-        weekDate: selectedWeek,
-        reason: reason,
-        createdBy: profile.id,
-      );
+            departmentId: deptId,
+            weekDate: selectedWeek,
+            reason: reason,
+            createdBy: profile.id,
+          );
       ref.invalidate(noMeetingDayProvider);
       ref.invalidate(noMeetingDaysInMonthProvider);
-      if (mounted) SnackBarUtil.showSnackBar(context, message: '모임없는 날로 지정했습니다.');
+      if (mounted)
+        SnackBarUtil.showSnackBar(context, message: '모임없는 날로 지정했습니다.');
     } catch (e) {
-      if (mounted) SnackBarUtil.showSnackBar(context, message: '지정에 실패했습니다.', isError: true);
+      if (mounted)
+        SnackBarUtil.showSnackBar(context,
+            message: '지정에 실패했습니다.', isError: true);
     }
   }
 
@@ -1237,7 +1416,8 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(20))),
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(20))),
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 48),
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -1254,13 +1434,19 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                       color: const Color(0xFFFFF3CD),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(lucide.LucideIcons.alertTriangle, size: 18, color: Color(0xFFF59E0B)),
+                    child: const Icon(lucide.LucideIcons.alertTriangle,
+                        size: 18, color: Color(0xFFF59E0B)),
                   ),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
                       '지정 취소',
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain, fontFamily: 'Pretendard', letterSpacing: -0.5),
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                          color: AppTheme.textMain,
+                          fontFamily: 'Pretendard',
+                          letterSpacing: -0.5),
                     ),
                   ),
                 ],
@@ -1268,7 +1454,11 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
               const SizedBox(height: 16),
               const Text(
                 '모임없는 날 지정을 취소하시겠습니까?\n취소 후에는 다시 지정할 수 있습니다.',
-                style: TextStyle(fontSize: 14, color: AppTheme.textSub, fontFamily: 'Pretendard', height: 1.6),
+                style: TextStyle(
+                    fontSize: 14,
+                    color: AppTheme.textSub,
+                    fontFamily: 'Pretendard',
+                    height: 1.6),
               ),
               const SizedBox(height: 24),
               Row(
@@ -1280,9 +1470,14 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                         minimumSize: const Size(double.infinity, 48),
                         foregroundColor: AppTheme.textSub,
                         side: const BorderSide(color: AppTheme.border),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: const Text('아니오', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'Pretendard')),
+                      child: const Text('아니오',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              fontFamily: 'Pretendard')),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1294,9 +1489,14 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
                         backgroundColor: const Color(0xFFF97316),
                         foregroundColor: Colors.white,
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: const Text('취소하기', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'Pretendard')),
+                      child: const Text('취소하기',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              fontFamily: 'Pretendard')),
                     ),
                   ),
                 ],
@@ -1308,12 +1508,16 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen> with Ticker
     );
     if (confirmed != true) return;
     try {
-      await ref.read(repositoryProvider).cancelNoMeetingDay(deptId, selectedWeek);
+      await ref
+          .read(repositoryProvider)
+          .cancelNoMeetingDay(deptId, selectedWeek);
       ref.invalidate(noMeetingDayProvider);
       ref.invalidate(noMeetingDaysInMonthProvider);
       if (mounted) SnackBarUtil.showSnackBar(context, message: '지정이 취소되었습니다.');
     } catch (e) {
-      if (mounted) SnackBarUtil.showSnackBar(context, message: '취소에 실패했습니다.', isError: true);
+      if (mounted)
+        SnackBarUtil.showSnackBar(context,
+            message: '취소에 실패했습니다.', isError: true);
     }
   }
 }
@@ -1325,7 +1529,9 @@ class PrayerCardSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), // [FIX] Slightly reduced vertical padding
+      padding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 16), // [FIX] Slightly reduced vertical padding
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),

@@ -507,11 +507,50 @@ class GraceNoteRepository {
     final membersList = List<Map<String, dynamic>>.from(directoryResponse);
     if (membersList.isEmpty) return [];
 
-    // 3. 연동된 프로필 ID 목록 확보
+    // 3. Phase 2 member_profiles로 person/profile 연결을 보강한다.
+    // member_directory.profile_id가 비어 있어도 같은 person 구조에서는
+    // member_profiles.profile_id가 앱 계정 연결의 기준이 될 수 있다.
+    final directoryIds = membersList
+        .map((m) => m['id']?.toString())
+        .whereType<String>()
+        .toList();
+
+    final Map<String, Map<String, dynamic>> memberProfileByDirectoryId = {};
+    if (directoryIds.isNotEmpty) {
+      try {
+        final memberProfilesResponse = await _supabase
+            .from('member_profiles')
+            .select('member_directory_id, profile_id, person_id')
+            .inFilter('member_directory_id', directoryIds);
+
+        for (final profile
+            in List<Map<String, dynamic>>.from(memberProfilesResponse)) {
+          final directoryId = profile['member_directory_id']?.toString();
+          if (directoryId != null) {
+            memberProfileByDirectoryId[directoryId] = profile;
+          }
+        }
+      } catch (e) {
+        debugPrint(
+            'GraceNoteRepository: member_profiles group member enrichment failed: $e');
+      }
+    }
+
+    String? profileIdForMember(Map<String, dynamic> member) {
+      final legacyProfileId = member['profile_id']?.toString();
+      if (legacyProfileId != null && legacyProfileId.isNotEmpty) {
+        return legacyProfileId;
+      }
+
+      final directoryId = member['id']?.toString();
+      if (directoryId == null) return null;
+      return memberProfileByDirectoryId[directoryId]?['profile_id']?.toString();
+    }
+
     final profileIds = membersList
-        .map((m) => m['profile_id'])
-        .where((id) => id != null)
-        .cast<String>()
+        .map(profileIdForMember)
+        .whereType<String>()
+        .toSet()
         .toList();
 
     // 4. 해당 프로필들의 정보와 group_members 정보 가져오기
@@ -530,7 +569,7 @@ class GraceNoteRepository {
 
     // 이름으로만 존재하는 (미연동) 프로필들도 추가 조회 (안전장치)
     final missingNames = membersList
-        .where((m) => m['profile_id'] == null)
+        .where((m) => profileIdForMember(m) == null)
         .map((m) => m['full_name'] as String)
         .toList();
 
@@ -547,8 +586,11 @@ class GraceNoteRepository {
 
     // 5. 메모리에서 조인 수행
     return membersList.map<Map<String, dynamic>>((dir) {
-      final pId = dir['profile_id'];
+      final pId = profileIdForMember(dir);
       final name = dir['full_name'];
+      final directoryId = dir['id']?.toString();
+      final phase2Profile =
+          directoryId == null ? null : memberProfileByDirectoryId[directoryId];
 
       // 1순위: profile_id 매칭, 2순위: 이름 매칭
       Map<String, dynamic>? profile;
@@ -580,6 +622,8 @@ class GraceNoteRepository {
         ...dir,
         'profiles': profile,
         'profile_id': profile?['id'] ?? pId, // 프로필을 못 찾더라도 명부의 pId는 유지
+        if (phase2Profile?['person_id'] != null)
+          'person_id': phase2Profile!['person_id'],
         'group_member_id': dir['group_member_id'] ?? groupMemberId,
       };
     }).toList();
@@ -590,7 +634,8 @@ class GraceNoteRepository {
     try {
       final membershipsResponse = await _supabase
           .from('memberships')
-          .select('legacy_member_directory_id, legacy_group_member_id, role')
+          .select(
+              'person_id, legacy_member_directory_id, legacy_group_member_id, role')
           .eq('group_id', groupId)
           .eq('status', 'active')
           .not('legacy_member_directory_id', 'is', null);
@@ -623,6 +668,8 @@ class GraceNoteRepository {
         final membership = membershipByDirectoryId[dir['id']];
         return <String, dynamic>{
           ...dir,
+          if (membership?['person_id'] != null)
+            'person_id': membership!['person_id'],
           'group_member_id': membership?['legacy_group_member_id'],
           'role_in_group': membership?['role'] ?? dir['role_in_group'],
           'phase2_membership_source': 'memberships',

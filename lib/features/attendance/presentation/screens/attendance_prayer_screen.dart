@@ -60,7 +60,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       final repo = ref.read(repositoryProvider);
       final selectedDate = ref.read(attendanceSelectedWeekProvider);
       repo
-          .getOrCreateWeek(_currentChurchId!, selectedDate, createIfMissing: true)
+          .getOrCreateWeek(_currentChurchId!, selectedDate,
+              createIfMissing: true)
           .then((weekId) {
         if (weekId == null) return;
         final prayers = _members
@@ -109,7 +110,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   Future<void> _autoSave() async {
-    if (_isLoading || _currentChurchId == null || _currentGroupId == null) return;
+    if (_isLoading || _currentChurchId == null || _currentGroupId == null)
+      return;
 
     // 모임없는 날 스킵
     final profile = ref.read(userProfileProvider).value;
@@ -189,8 +191,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       final currentWeekForCheck = ref.read(attendanceSelectedWeekProvider);
       final weekStrForCheck =
           '${currentWeekForCheck.year}-${currentWeekForCheck.month.toString().padLeft(2, '0')}-${currentWeekForCheck.day.toString().padLeft(2, '0')}';
-      final noMeetingValue =
-          ref.read(noMeetingDayProvider('$departmentId:$weekStrForCheck')).value;
+      final noMeetingValue = ref
+          .read(noMeetingDayProvider('$departmentId:$weekStrForCheck'))
+          .value;
       if (noMeetingValue != null) return;
     }
 
@@ -524,7 +527,6 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
-
             // ── 입력 단계 ──
             if (phase == 'input') {
               // 키보드가 올라올 때 viewInsets를 반영해 버튼이 잘리지 않도록
@@ -536,155 +538,164 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                 child: SingleChildScrollView(
                   padding: EdgeInsets.only(bottom: keyboardInset),
                   child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 헤더
-                      Row(
-                        children: [
-                          Container(
-                            width: 36, height: 36,
-                            decoration: BoxDecoration(
-                              color: AppTheme.accentViolet,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(lucide.LucideIcons.clipboardPaste,
-                                size: 18, color: AppTheme.primaryViolet),
-                          ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Text('메모에서 불러오기',
-                                style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w900,
-                                    color: AppTheme.textMain,
-                                    fontFamily: 'Pretendard',
-                                    letterSpacing: -0.5)),
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            icon: const Icon(lucide.LucideIcons.x,
-                                size: 18, color: AppTheme.textSub),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            splashRadius: 20,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        '조원들의 기도제목이 담긴 메모를 붙여넣으세요.\nAI가 이름을 찾아 자동으로 채워드립니다.',
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: AppTheme.textSub,
-                            fontFamily: 'Pretendard',
-                            height: 1.5),
-                      ),
-                      const SizedBox(height: 16),
-                      // 입력창
-                      TextField(
-                        controller: memoController,
-                        maxLines: 8,
-                        minLines: 4,
-                        autofocus: true,
-                        style: const TextStyle(
-                            fontSize: 14,
-                            fontFamily: 'Pretendard',
-                            color: AppTheme.textMain,
-                            height: 1.6),
-                        decoration: const InputDecoration(
-                          hintText: '예) 김정헌: 직장 면접\n임진슬 어머니 건강...',
-                          hintStyle: TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.textSub,
-                              fontFamily: 'Pretendard'),
-                          filled: true,
-                          fillColor: AppTheme.secondaryBackground,
-                          contentPadding: EdgeInsets.all(14),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.all(Radius.circular(12)),
-                            borderSide: BorderSide(color: AppTheme.border),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.all(Radius.circular(12)),
-                            borderSide: BorderSide(color: AppTheme.border),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.all(Radius.circular(12)),
-                            borderSide: BorderSide(color: AppTheme.primaryViolet, width: 1.5),
-                          ),
-                        ),
-                      ),
-                      if (errorMsg != null) ...[
-                        const SizedBox(height: 8),
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 헤더
                         Row(
                           children: [
-                            const Icon(lucide.LucideIcons.alertCircle,
-                                size: 13, color: AppTheme.error),
-                            const SizedBox(width: 5),
-                            Text(errorMsg!,
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppTheme.error,
-                                    fontFamily: 'Pretendard',
-                                    fontWeight: FontWeight.w600)),
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: AppTheme.accentViolet,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                  lucide.LucideIcons.clipboardPaste,
+                                  size: 18,
+                                  color: AppTheme.primaryViolet),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text('메모에서 불러오기',
+                                  style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppTheme.textMain,
+                                      fontFamily: 'Pretendard',
+                                      letterSpacing: -0.5)),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              icon: const Icon(lucide.LucideIcons.x,
+                                  size: 18, color: AppTheme.textSub),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              splashRadius: 20,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          '조원들의 기도제목이 담긴 메모를 붙여넣으세요.\nAI가 이름을 찾아 자동으로 채워드립니다.',
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.textSub,
+                              fontFamily: 'Pretendard',
+                              height: 1.5),
+                        ),
+                        const SizedBox(height: 16),
+                        // 입력창
+                        TextField(
+                          controller: memoController,
+                          maxLines: 8,
+                          minLines: 4,
+                          autofocus: true,
+                          style: const TextStyle(
+                              fontSize: 14,
+                              fontFamily: 'Pretendard',
+                              color: AppTheme.textMain,
+                              height: 1.6),
+                          decoration: const InputDecoration(
+                            hintText: '예) 김정헌: 직장 면접\n임진슬 어머니 건강...',
+                            hintStyle: TextStyle(
+                                fontSize: 13,
+                                color: AppTheme.textSub,
+                                fontFamily: 'Pretendard'),
+                            filled: true,
+                            fillColor: AppTheme.secondaryBackground,
+                            contentPadding: EdgeInsets.all(14),
+                            border: OutlineInputBorder(
+                              borderRadius:
+                                  BorderRadius.all(Radius.circular(12)),
+                              borderSide: BorderSide(color: AppTheme.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius:
+                                  BorderRadius.all(Radius.circular(12)),
+                              borderSide: BorderSide(color: AppTheme.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius:
+                                  BorderRadius.all(Radius.circular(12)),
+                              borderSide: BorderSide(
+                                  color: AppTheme.primaryViolet, width: 1.5),
+                            ),
+                          ),
+                        ),
+                        if (errorMsg != null) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Icon(lucide.LucideIcons.alertCircle,
+                                  size: 13, color: AppTheme.error),
+                              const SizedBox(width: 5),
+                              Text(errorMsg!,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.error,
+                                      fontFamily: 'Pretendard',
+                                      fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        // 버튼
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => Navigator.pop(ctx),
+                                style: cancelStyle,
+                                child: const Text('취소', style: btnText),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ElevatedButton(
+                                style: primaryStyle,
+                                onPressed: () async {
+                                  final memo = memoController.text.trim();
+                                  if (memo.isEmpty) {
+                                    setDialogState(
+                                        () => errorMsg = '메모를 입력해주세요.');
+                                    return;
+                                  }
+                                  setDialogState(() {
+                                    phase = 'loading';
+                                    errorMsg = null;
+                                  });
+                                  final result = await AIService()
+                                      .parsePrayerMemo(memo, memberNames);
+                                  if (result.isEmpty) {
+                                    setDialogState(() {
+                                      phase = 'input';
+                                      errorMsg = '분석에 실패했습니다. 다시 시도해 주세요.';
+                                    });
+                                    return;
+                                  }
+                                  final initSelected = <String, bool>{};
+                                  for (final m in _members) {
+                                    final name = m['name'] as String;
+                                    initSelected[name] =
+                                        (result[name] ?? '').isNotEmpty;
+                                  }
+                                  setDialogState(() {
+                                    parsedResult = result;
+                                    selected = initSelected;
+                                    phase = 'preview';
+                                  });
+                                },
+                                child: const Text('분석하기', style: btnText),
+                              ),
+                            ),
                           ],
                         ),
                       ],
-                      const SizedBox(height: 20),
-                      // 버튼
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              style: cancelStyle,
-                              child: const Text('취소', style: btnText),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: ElevatedButton(
-                              style: primaryStyle,
-                              onPressed: () async {
-                                final memo = memoController.text.trim();
-                                if (memo.isEmpty) {
-                                  setDialogState(() => errorMsg = '메모를 입력해주세요.');
-                                  return;
-                                }
-                                setDialogState(() {
-                                  phase = 'loading';
-                                  errorMsg = null;
-                                });
-                                final result = await AIService()
-                                    .parsePrayerMemo(memo, memberNames);
-                                if (result.isEmpty) {
-                                  setDialogState(() {
-                                    phase = 'input';
-                                    errorMsg = '분석에 실패했습니다. 다시 시도해 주세요.';
-                                  });
-                                  return;
-                                }
-                                final initSelected = <String, bool>{};
-                                for (final m in _members) {
-                                  final name = m['name'] as String;
-                                  initSelected[name] = (result[name] ?? '').isNotEmpty;
-                                }
-                                setDialogState(() {
-                                  parsedResult = result;
-                                  selected = initSelected;
-                                  phase = 'preview';
-                                });
-                              },
-                              child: const Text('분석하기', style: btnText),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                    ),
                   ), // Padding
                 ), // SingleChildScrollView
               );
@@ -733,7 +744,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                     Row(
                       children: [
                         Container(
-                          width: 36, height: 36,
+                          width: 36,
+                          height: 36,
                           decoration: BoxDecoration(
                             color: AppTheme.accentViolet,
                             borderRadius: BorderRadius.circular(10),
@@ -782,8 +794,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                             final isSelected = selected[name] ?? false;
                             final existingNote =
                                 (m['prayerNote'] as String? ?? '').trim();
-                            final willOverwrite =
-                                hasMatch && isSelected && existingNote.isNotEmpty;
+                            final willOverwrite = hasMatch &&
+                                isSelected &&
+                                existingNote.isNotEmpty;
 
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 8),
@@ -811,14 +824,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                     ),
                                   ),
                                   child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Padding(
                                         padding: const EdgeInsets.only(top: 1),
                                         child: Icon(
                                           hasMatch
                                               ? (isSelected
-                                                  ? lucide.LucideIcons.checkCircle2
+                                                  ? lucide
+                                                      .LucideIcons.checkCircle2
                                                   : lucide.LucideIcons.circle)
                                               : lucide.LucideIcons.minusCircle,
                                           size: 16,
@@ -840,11 +855,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                                 Text(name,
                                                     style: TextStyle(
                                                         fontSize: 14,
-                                                        fontWeight: FontWeight.w700,
+                                                        fontWeight:
+                                                            FontWeight.w700,
                                                         color: hasMatch
                                                             ? AppTheme.textMain
-                                                            : AppTheme.borderMedium,
-                                                        fontFamily: 'Pretendard')),
+                                                            : AppTheme
+                                                                .borderMedium,
+                                                        fontFamily:
+                                                            'Pretendard')),
                                                 if (willOverwrite) ...[
                                                   const SizedBox(width: 6),
                                                   Container(
@@ -853,14 +871,17 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                                         horizontal: 6,
                                                         vertical: 1),
                                                     decoration: BoxDecoration(
-                                                      color: const Color(0xFFFFF7ED),
+                                                      color: const Color(
+                                                          0xFFFFF7ED),
                                                       borderRadius:
-                                                          BorderRadius.circular(5),
+                                                          BorderRadius.circular(
+                                                              5),
                                                     ),
                                                     child: const Text('덮어쓰기',
                                                         style: TextStyle(
                                                             fontSize: 10,
-                                                            color: AppTheme.warning,
+                                                            color: AppTheme
+                                                                .warning,
                                                             fontWeight:
                                                                 FontWeight.w700,
                                                             fontFamily:
@@ -876,27 +897,33 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                                       fontSize: 12,
                                                       color: isSelected
                                                           ? AppTheme.textSub
-                                                          : AppTheme.borderMedium,
+                                                          : AppTheme
+                                                              .borderMedium,
                                                       fontFamily: 'Pretendard',
                                                       height: 1.4)),
                                               if (willOverwrite) ...[
                                                 const SizedBox(height: 3),
                                                 Text('기존: $existingNote',
                                                     maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                     style: const TextStyle(
                                                         fontSize: 11,
                                                         color: AppTheme.warning,
-                                                        fontFamily: 'Pretendard',
-                                                        decoration: TextDecoration
-                                                            .lineThrough)),
+                                                        fontFamily:
+                                                            'Pretendard',
+                                                        decoration:
+                                                            TextDecoration
+                                                                .lineThrough)),
                                               ],
                                             ] else
                                               const Text('매칭 안됨',
                                                   style: TextStyle(
                                                       fontSize: 12,
-                                                      color: AppTheme.borderMedium,
-                                                      fontFamily: 'Pretendard')),
+                                                      color:
+                                                          AppTheme.borderMedium,
+                                                      fontFamily:
+                                                          'Pretendard')),
                                           ],
                                         ),
                                       ),
@@ -942,7 +969,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                   },
                             style: primaryStyle,
                             child: Text(
-                              matchedCount > 0 ? '$matchedCount명 적용하기' : '적용 불가',
+                              matchedCount > 0
+                                  ? '$matchedCount명 적용하기'
+                                  : '적용 불가',
                               style: btnText,
                             ),
                           ),
@@ -1029,10 +1058,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         final deptId = profile?.departmentId ?? '';
         if (deptId.isNotEmpty) {
           final currentWeek = ref.read(attendanceSelectedWeekProvider);
-          final weekStr = '${currentWeek.year}-${currentWeek.month.toString().padLeft(2, '0')}-${currentWeek.day.toString().padLeft(2, '0')}';
-          final noMeeting = ref.read(noMeetingDayProvider('$deptId:$weekStr')).value;
+          final weekStr =
+              '${currentWeek.year}-${currentWeek.month.toString().padLeft(2, '0')}-${currentWeek.day.toString().padLeft(2, '0')}';
+          final noMeeting =
+              ref.read(noMeetingDayProvider('$deptId:$weekStr')).value;
           if (noMeeting != null) {
-            if (mounted) SnackBarUtil.showSnackBar(context, message: '모임없는 날에는 출석체크를 할 수 없습니다.', isError: true);
+            if (mounted)
+              SnackBarUtil.showSnackBar(context,
+                  message: '모임없는 날에는 출석체크를 할 수 없습니다.', isError: true);
             return;
           }
         }
@@ -1158,7 +1191,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     final settings = ref.read(aiSettingsProvider);
     final selectedDate = ref.read(attendanceSelectedWeekProvider);
     final groups = ref.read(userGroupsProvider).value ?? [];
-    final groupName = groups.isNotEmpty ? groups.first['group_name'] : '우리 조';
+    final activeMembership = ref.read(activeMembershipProvider);
+    final groupName = activeMembership?.groupName ??
+        (groups.isNotEmpty ? groups.first['group_name'] : '우리 조');
     final StringBuffer buffer = StringBuffer();
     if (settings.showDateInShare)
       buffer.write('${DateFormat('M/d').format(selectedDate)} ');
@@ -1378,10 +1413,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         actions: [
           IconButton(
             icon: Icon(lucide.LucideIcons.clipboardPaste,
-                color: noMeeting != null ? AppTheme.border : AppTheme.primaryViolet, size: 20),
+                color: noMeeting != null
+                    ? AppTheme.border
+                    : AppTheme.primaryViolet,
+                size: 20),
             onPressed: () {
               if (noMeeting != null) {
-                SnackBarUtil.showSnackBar(context, message: '모임없는 날에는 메모를 입력할 수 없습니다.', isError: true);
+                SnackBarUtil.showSnackBar(context,
+                    message: '모임없는 날에는 메모를 입력할 수 없습니다.', isError: true);
                 return;
               }
               _showMemoPasteDialog();
@@ -1390,11 +1429,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           ),
           IconButton(
             icon: Icon(lucide.LucideIcons.userCheck,
-                color: noMeeting != null ? AppTheme.border : AppTheme.primaryViolet,
+                color: noMeeting != null
+                    ? AppTheme.border
+                    : AppTheme.primaryViolet,
                 size: 22),
             onPressed: () {
               if (noMeeting != null) {
-                SnackBarUtil.showSnackBar(context, message: '모임없는 날에는 출석체크를 할 수 없습니다.', isError: true);
+                SnackBarUtil.showSnackBar(context,
+                    message: '모임없는 날에는 출석체크를 할 수 없습니다.', isError: true);
                 return;
               }
               _launchAttendanceCheck();
@@ -1480,7 +1522,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                     return Container(
                       key: ValueKey(_members[index]['directoryMemberId']),
                       margin: const EdgeInsets.only(bottom: 16),
-                      child: _buildMemberCard(_members[index], index, noMeeting),
+                      child:
+                          _buildMemberCard(_members[index], index, noMeeting),
                     );
                   },
                 ),
@@ -1625,8 +1668,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             if (_isAutoSaving)
               RotationTransition(
                 turns: _animationController,
-                child: Icon(lucide.LucideIcons.loader,
-                    size: 10, color: textColor),
+                child:
+                    Icon(lucide.LucideIcons.loader, size: 10, color: textColor),
               )
             else
               Container(
@@ -1664,17 +1707,25 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       ),
       child: Row(
         children: [
-          const Icon(Icons.event_busy_rounded, color: Color(0xFFF97316), size: 20),
+          const Icon(Icons.event_busy_rounded,
+              color: Color(0xFFF97316), size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('이번 주는 모임이 없습니다',
-                    style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFEA580C), fontSize: 14, fontFamily: 'Pretendard')),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFEA580C),
+                        fontSize: 14,
+                        fontFamily: 'Pretendard')),
                 const SizedBox(height: 2),
                 Text(noMeeting.reason,
-                    style: const TextStyle(color: Color(0xFF9A3412), fontSize: 13, fontFamily: 'Pretendard')),
+                    style: const TextStyle(
+                        color: Color(0xFF9A3412),
+                        fontSize: 13,
+                        fontFamily: 'Pretendard')),
               ],
             ),
           ),
@@ -1754,7 +1805,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     );
   }
 
-  Widget _buildMemberCard(Map<String, dynamic> member, int index, NoMeetingDayModel? noMeeting) {
+  Widget _buildMemberCard(
+      Map<String, dynamic> member, int index, NoMeetingDayModel? noMeeting) {
     bool isPresent = member['isPresent'];
     return Container(
       decoration: BoxDecoration(
@@ -1860,7 +1912,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                   style: TextStyle(
                       fontSize: 14,
                       height: 1.5,
-                      color: noMeeting != null ? Colors.grey : const Color(0xFF475569),
+                      color: noMeeting != null
+                          ? Colors.grey
+                          : const Color(0xFF475569),
                       fontFamily: 'Pretendard',
                       letterSpacing: -0.5),
                   decoration: InputDecoration(
@@ -2004,12 +2058,17 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                         },
                   style: OutlinedButton.styleFrom(
                       minimumSize: const Size(0, 50),
-                      side: BorderSide(color: isDisabled ? const Color(0xFFE2E8F0) : const Color(0xFFE2E8F0)),
+                      side: BorderSide(
+                          color: isDisabled
+                              ? const Color(0xFFE2E8F0)
+                              : const Color(0xFFE2E8F0)),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12))),
                   child: Text('임시 저장',
                       style: TextStyle(
-                          color: isDisabled ? const Color(0xFFCBD5E1) : const Color(0xFF64748B),
+                          color: isDisabled
+                              ? const Color(0xFFCBD5E1)
+                              : const Color(0xFF64748B),
                           fontWeight: FontWeight.bold,
                           fontSize: 15,
                           fontFamily: 'Pretendard')))),
@@ -2024,19 +2083,24 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                           onPressed: isDisabled
                               ? () {
                                   SnackBarUtil.showSnackBar(context,
-                                      message: '모임없는 날에는 등록할 수 없습니다.', isError: true);
+                                      message: '모임없는 날에는 등록할 수 없습니다.',
+                                      isError: true);
                                 }
                               : () {
                                   _isDirty = false;
                                   _saveData(status: 'published');
                                 },
-                          backgroundColor: isDisabled ? const Color(0xFFE2E8F0) : const Color(0xFF8B5CF6),
+                          backgroundColor: isDisabled
+                              ? const Color(0xFFE2E8F0)
+                              : const Color(0xFF8B5CF6),
                           size: ShadButtonSize.lg,
                           child: Text('최종 등록하기',
                               style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
-                                  color: isDisabled ? const Color(0xFF94A3B8) : Colors.white,
+                                  color: isDisabled
+                                      ? const Color(0xFF94A3B8)
+                                      : Colors.white,
                                   fontFamily: 'Pretendard')))))),
         ],
       ),
