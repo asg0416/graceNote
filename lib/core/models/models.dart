@@ -61,6 +61,10 @@ class PrayerEntryModel {
   final String status; // 'draft', 'published'
   final bool isRefining;
   final DateTime? updatedAt;
+  final String? personId;
+  final String? membershipId;
+  final String? recordedGroupId;
+  final String? recordedDepartmentId;
 
   PrayerEntryModel({
     this.id,
@@ -74,6 +78,10 @@ class PrayerEntryModel {
     this.status = 'draft',
     this.isRefining = false,
     this.updatedAt,
+    this.personId,
+    this.membershipId,
+    this.recordedGroupId,
+    this.recordedDepartmentId,
   });
 
   factory PrayerEntryModel.fromJson(Map<String, dynamic> json) {
@@ -89,6 +97,10 @@ class PrayerEntryModel {
       status: json['status'] ?? 'draft',
       isRefining: json['is_refining'] ?? false,
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      personId: json['person_id'],
+      membershipId: json['membership_id'],
+      recordedGroupId: json['recorded_group_id'],
+      recordedDepartmentId: json['recorded_department_id'],
     );
   }
 
@@ -104,6 +116,11 @@ class PrayerEntryModel {
       'ai_refined_content': aiRefinedContent,
       'status': status,
       'is_refining': isRefining,
+      if (personId != null) 'person_id': personId,
+      if (membershipId != null) 'membership_id': membershipId,
+      if (recordedGroupId != null) 'recorded_group_id': recordedGroupId,
+      if (recordedDepartmentId != null)
+        'recorded_department_id': recordedDepartmentId,
     };
   }
 }

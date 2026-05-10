@@ -225,6 +225,101 @@ class GraceNoteRepository {
     return res?['id'];
   }
 
+  Future<Map<String, dynamic>?> _resolvePhase3SnapshotForDirectoryMember({
+    required String directoryMemberId,
+    required String groupId,
+  }) async {
+    try {
+      final memberships = await _supabase
+          .from('memberships')
+          .select('id, person_id, group_id, department_id, status')
+          .eq('legacy_member_directory_id', directoryMemberId)
+          .eq('group_id', groupId)
+          .order('updated_at', ascending: false);
+
+      final membershipRows = List<Map<String, dynamic>>.from(memberships);
+      Map<String, dynamic>? membership;
+      if (membershipRows.isNotEmpty) {
+        membership = membershipRows.firstWhere(
+          (row) => row['status'] == 'active',
+          orElse: () => membershipRows.first,
+        );
+      }
+
+      if (membership != null && membership['person_id'] != null) {
+        return {
+          'person_id': membership['person_id'],
+          'membership_id': membership['id'],
+          'recorded_group_id': membership['group_id'] ?? groupId,
+          if (membership['department_id'] != null)
+            'recorded_department_id': membership['department_id'],
+        };
+      }
+
+      final memberProfile = await _supabase
+          .from('member_profiles')
+          .select('person_id')
+          .eq('member_directory_id', directoryMemberId)
+          .maybeSingle();
+
+      final group = await _supabase
+          .from('groups')
+          .select('id, department_id')
+          .eq('id', groupId)
+          .maybeSingle();
+
+      return {
+        if (memberProfile?['person_id'] != null)
+          'person_id': memberProfile!['person_id'],
+        'recorded_group_id': groupId,
+        if (group?['department_id'] != null)
+          'recorded_department_id': group!['department_id'],
+      };
+    } catch (e) {
+      debugPrint(
+          'GraceNoteRepository: Phase 3 snapshot lookup failed for prayer save: $e');
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _buildPhase3PrayerPayloads(
+      List<PrayerEntryModel> prayerList) async {
+    final payloads = <Map<String, dynamic>>[];
+    final snapshotCache = <String, Future<Map<String, dynamic>?>>{};
+
+    for (final prayer in prayerList) {
+      final payload = prayer.toJson();
+      final cacheKey = '${prayer.groupId}:${prayer.directoryMemberId}';
+      final snapshot = await snapshotCache.putIfAbsent(
+        cacheKey,
+        () => _resolvePhase3SnapshotForDirectoryMember(
+          directoryMemberId: prayer.directoryMemberId,
+          groupId: prayer.groupId,
+        ),
+      );
+
+      if (snapshot != null) {
+        payload.addAll({
+          if (payload['person_id'] == null && snapshot['person_id'] != null)
+            'person_id': snapshot['person_id'],
+          if (payload['membership_id'] == null &&
+              snapshot['membership_id'] != null)
+            'membership_id': snapshot['membership_id'],
+          if (payload['recorded_group_id'] == null &&
+              snapshot['recorded_group_id'] != null)
+            'recorded_group_id': snapshot['recorded_group_id'],
+          if (payload['recorded_department_id'] == null &&
+              snapshot['recorded_department_id'] != null)
+            'recorded_department_id': snapshot['recorded_department_id'],
+        });
+      }
+
+      payloads.add(payload);
+    }
+
+    return payloads;
+  }
+
   Future<void> saveAttendanceAndPrayers({
     required List<AttendanceModel> attendanceList,
     required List<PrayerEntryModel> prayerList,
@@ -240,8 +335,9 @@ class GraceNoteRepository {
 
     // 2. Prayer Entries Upsert (directory_member_id 기반)
     if (prayerList.isNotEmpty) {
+      final prayerPayloads = await _buildPhase3PrayerPayloads(prayerList);
       await _supabase.from('prayer_entries').upsert(
-            prayerList.map((e) => e.toJson()).toList(),
+            prayerPayloads,
             onConflict: 'week_id,directory_member_id',
           );
     }
