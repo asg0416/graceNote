@@ -624,6 +624,52 @@ Next Phase 3 write-switch target:
 - Flutter attendance save should receive the same explicit snapshot treatment.
 - After Flutter prayer/attendance writes are both explicit, move to admin-web attendance/manual snapshot writes, then member/regrouping writes.
 
+## Phase 3 Attendance Write-Switch Start
+
+2026-05-10 update:
+
+- Second Phase 3 write-switch target is Flutter attendance save.
+- `AttendanceModel` now supports optional Phase 3 snapshot fields:
+  - `person_id`
+  - `membership_id`
+  - `recorded_group_id`
+  - `recorded_department_id`
+- `GraceNoteRepository.saveAttendanceAndPrayers()` now enriches attendance payloads before `attendance.upsert`.
+- The enrichment uses the same resolver as prayer save:
+  - `memberships.legacy_member_directory_id`
+  - selected `group_id`
+  - fallback `member_profiles.member_directory_id`
+  - fallback `groups.department_id`
+- Existing legacy write keys are preserved:
+  - `week_id`
+  - `directory_member_id`
+  - `group_member_id`
+  - `group_id`
+
+Why this matters:
+
+```text
+Before:
+출석 저장 = legacy directory/group_member/group 기준만 명시
+DB trigger가 person snapshot을 보정
+
+After:
+출석 저장 = 앱 payload가 person/membership/당시 조/부서를 직접 명시
+DB trigger는 안전망으로 계속 유지
+```
+
+Verification:
+
+- RED confirmed first: `AttendanceModel serializes phase3 snapshot fields when present` failed because `AttendanceModel` had no `personId` parameter.
+- GREEN confirmed after implementation: `flutter test test/core/models/phase3_snapshot_payload_test.dart` passed.
+- `dart analyze lib/core/repositories/grace_note_repository.dart lib/core/models/models.dart test/core/models/phase3_snapshot_payload_test.dart` returned no errors; existing style-only infos remain in `grace_note_repository.dart`.
+- `verify_phase3_attendance_prayer_person_snapshot_dev_2026-05-09.sql`: all issue counts were `0`.
+
+Next Phase 3 write-switch target:
+
+- Admin-web attendance/manual roster snapshot writes.
+- Then admin member/regrouping writes.
+
 ## Self-Review
 
 Spec coverage:

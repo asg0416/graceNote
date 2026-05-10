@@ -320,6 +320,51 @@ class GraceNoteRepository {
     return payloads;
   }
 
+  Future<List<Map<String, dynamic>>> _buildPhase3AttendancePayloads(
+      List<AttendanceModel> attendanceList) async {
+    final payloads = <Map<String, dynamic>>[];
+    final snapshotCache = <String, Future<Map<String, dynamic>?>>{};
+
+    for (final attendance in attendanceList) {
+      final payload = attendance.toJson();
+      final groupId = attendance.groupId;
+
+      if (groupId == null || groupId.isEmpty) {
+        payloads.add(payload);
+        continue;
+      }
+
+      final cacheKey = '$groupId:${attendance.directoryMemberId}';
+      final snapshot = await snapshotCache.putIfAbsent(
+        cacheKey,
+        () => _resolvePhase3SnapshotForDirectoryMember(
+          directoryMemberId: attendance.directoryMemberId,
+          groupId: groupId,
+        ),
+      );
+
+      if (snapshot != null) {
+        payload.addAll({
+          if (payload['person_id'] == null && snapshot['person_id'] != null)
+            'person_id': snapshot['person_id'],
+          if (payload['membership_id'] == null &&
+              snapshot['membership_id'] != null)
+            'membership_id': snapshot['membership_id'],
+          if (payload['recorded_group_id'] == null &&
+              snapshot['recorded_group_id'] != null)
+            'recorded_group_id': snapshot['recorded_group_id'],
+          if (payload['recorded_department_id'] == null &&
+              snapshot['recorded_department_id'] != null)
+            'recorded_department_id': snapshot['recorded_department_id'],
+        });
+      }
+
+      payloads.add(payload);
+    }
+
+    return payloads;
+  }
+
   Future<void> saveAttendanceAndPrayers({
     required List<AttendanceModel> attendanceList,
     required List<PrayerEntryModel> prayerList,
@@ -327,8 +372,10 @@ class GraceNoteRepository {
     // 1. Attendance Upsert (directory_member_id 기반)
     if (attendanceList.isNotEmpty) {
       // 팁: attendanceList의 각 항목에는 저장 시점의 groupId가 이미 포함되어 있어야 함
+      final attendancePayloads =
+          await _buildPhase3AttendancePayloads(attendanceList);
       await _supabase.from('attendance').upsert(
-            attendanceList.map((e) => e.toJson()).toList(),
+            attendancePayloads,
             onConflict: 'week_id,directory_member_id',
           );
     }
