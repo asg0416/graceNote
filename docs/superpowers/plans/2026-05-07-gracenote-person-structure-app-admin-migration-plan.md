@@ -670,6 +670,31 @@ Next Phase 3 write-switch target:
 - Admin-web attendance/manual roster snapshot writes.
 - Then admin member/regrouping writes.
 
+## Phase 2/3 Write-Flow Gate
+
+2026-05-10 update:
+
+- Added `supabase/verify_phase2_consistency_summary_dev_2026-05-10.sql`.
+- Purpose:
+  - The older Phase 2 verification file is useful in `psql`, but `supabase db query` only prints the last result set.
+  - This summary gate returns one table with `check_name` and `issue_count`, so it can be used quickly before/after admin-web member/regrouping writes.
+- Current dev result:
+  - All `issue_count` values were `0`.
+
+What this means:
+
+```text
+성도 추가/수정/조편성 저장은 아직 legacy 테이블에 쓰지만,
+그 결과가 people/member_profiles/memberships로 정상 동기화되는지
+한 번에 확인할 수 있는 운영 전용 gate를 추가했다.
+```
+
+Use this before production rollout:
+
+```bash
+supabase db query --linked -f supabase/verify_phase2_consistency_summary_dev_2026-05-10.sql -o table
+```
+
 ## Self-Review
 
 Spec coverage:
