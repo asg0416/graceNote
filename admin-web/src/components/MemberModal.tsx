@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Modal } from '@/components/Modal';
 import RichTextEditor from '@/components/RichTextEditor';
+import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 
 export interface MemberProfile {
     id: string;
@@ -164,6 +165,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                     .select()
                     .single();
                 if (error) throw error;
+                await assertPhase2MemberDirectorySync(supabase, [data.id], '성도 수정');
                 result = data;
             } else {
                 let duplicatePersonQuery = supabase
@@ -200,6 +202,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                     .single();
 
                 if (error) throw error;
+                await assertPhase2MemberDirectorySync(supabase, [data.id], '성도 추가');
                 result = data;
             }
 

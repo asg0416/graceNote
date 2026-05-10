@@ -695,6 +695,42 @@ Use this before production rollout:
 supabase db query --linked -f supabase/verify_phase2_consistency_summary_dev_2026-05-10.sql -o table
 ```
 
+## Admin-Web Phase 2 Write Guard
+
+2026-05-10 update:
+
+- Added `admin-web/src/lib/phase2WriteGuards.ts`.
+- Applied the guard after these legacy writes:
+  - `MemberModal`: single member add/edit
+  - `SmartBatchModal`: AI/bulk member registration
+  - `members/page.tsx`: move, archive, undo, group rename directory sync
+  - `regrouping/page.tsx`: regrouping save, duplicate deactivation, copied member insert
+
+Why this matters:
+
+```text
+현재 성도/조편성 저장은 아직 member_directory/group_members에 쓴다.
+DB trigger가 people/member_profiles/memberships를 동기화한다.
+
+문제는 trigger 누락이 생기면 화면상 저장은 성공처럼 보일 수 있다는 점이다.
+이 guard는 저장 직후 member_profiles/memberships가 만들어졌는지 확인해서
+누락이면 사용자에게 바로 오류를 보여준다.
+```
+
+This is not the final write-switch yet.
+
+- It does not remove legacy writes.
+- It makes the current legacy-write + Phase-2-sync bridge safer.
+- Final source-of-truth switch still belongs to the next Phase 3 member/regrouping write-switch batch.
+
+Verification:
+
+- `npm run lint -- src/lib/phase2WriteGuards.ts src/components/MemberModal.tsx src/components/SmartBatchModal.tsx src/app/regrouping/page.tsx src/app/members/page.tsx`
+  - 0 errors.
+  - Existing warnings remain in `members/page.tsx`, `regrouping/page.tsx`, `MemberModal.tsx`.
+- `git diff --check`: passed.
+- `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all issue counts were `0`.
+
 ## Self-Review
 
 Spec coverage:

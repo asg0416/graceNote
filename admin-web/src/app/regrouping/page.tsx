@@ -31,6 +31,7 @@ import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { MemberModal } from '@/components/MemberModal';
 import { Modal } from '@/components/Modal';
 import { Tooltip } from '@/components/Tooltip';
+import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 
 const getRegroupingIdentityKey = (member: any) => {
     const normalizedPhone = (member.phone || '').replace(/[^0-9]/g, '');
@@ -1043,6 +1044,8 @@ function RegroupingPageInner() {
                 throw new Error(`같은 조에 같은 이름/전화번호의 성도가 중복 편성되어 있습니다: ${Array.from(new Set(duplicateAssignmentNames)).join(', ')}`);
             }
 
+            const phase2SyncTargetIds = new Set<string>();
+
             // CRITICAL: Identify members that were REMOVED from the view (duplicate cards that were deleted)
             const removedMembers = members.filter(orig => !localMembers.find(lm => lm.id === orig.id));
 
@@ -1084,6 +1087,7 @@ function RegroupingPageInner() {
                     .update({ is_active: false, left_at: new Date().toISOString() })
                     .in('id', idsToDelete);
                 if (delError) throw delError;
+                idsToDelete.forEach(id => phase2SyncTargetIds.add(id));
             }
 
             const groupedChanges = existingMemberUpdates.reduce((acc, m) => {
@@ -1128,6 +1132,7 @@ function RegroupingPageInner() {
                             .update({ role_in_group: localMember.role_in_group })
                             .eq('id', mid);
                         if (roleError) throw roleError;
+                        phase2SyncTargetIds.add(mid);
                     }
                 }
 
@@ -1136,6 +1141,7 @@ function RegroupingPageInner() {
                     p_target_group_id: targetId
                 });
                 if (error) throw error;
+                (memberIds as string[]).forEach(id => phase2SyncTargetIds.add(id));
             }
 
             // For new/copied members (temp IDs)
@@ -1144,7 +1150,7 @@ function RegroupingPageInner() {
                 const mappedGroupId = m.group_id ? (groupIdMap[m.group_id] || m.group_id) : null;
                 const targetGroup = upsertedGroups.find(ug => ug.id === mappedGroupId);
 
-                const { error: insError } = await supabase.from('member_directory').insert({
+                const { data: insertedMember, error: insError } = await supabase.from('member_directory').insert({
                     church_id: currentChurchId!,
                     department_id: selectedDeptId,
                     group_name: targetGroup?.name || null,
@@ -1158,11 +1164,18 @@ function RegroupingPageInner() {
                     notes: m.notes,
                     person_id: m.person_id || null,
                     profile_id: m.profile_id || null
-                });
+                }).select('id').single();
                 if (insError) throw insError;
+                if (insertedMember?.id) phase2SyncTargetIds.add(insertedMember.id);
                 // group_members sync is handled automatically by the 
                 // sync_directory_to_group_members DB trigger on member_directory INSERT
             }
+
+            await assertPhase2MemberDirectorySync(
+                supabase,
+                Array.from(phase2SyncTargetIds),
+                '조편성 저장'
+            );
 
             // 3. Refresh State
             await fetchData();

@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Modal } from '@/components/Modal';
+import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 import {
     Upload,
     Loader2,
@@ -669,14 +670,21 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
 
             // 2. Bulk insert into member_directory
             console.log('Sending bulk upsert to member_directory...');
-            const { error: insertError } = await supabase
+            const { data: insertedMembers, error: insertError } = await supabase
                 .from('member_directory')
-                .upsert(cleanParsedData, { onConflict: 'church_id,department_id,group_name,full_name,phone' });
+                .upsert(cleanParsedData, { onConflict: 'church_id,department_id,group_name,full_name,phone' })
+                .select('id');
 
             if (insertError) {
                 console.error('Member Insert Error:', insertError);
                 throw insertError;
             }
+
+            await assertPhase2MemberDirectorySync(
+                supabase,
+                (insertedMembers || []).map(member => member.id),
+                'AI 일괄 등록'
+            );
 
             console.log('Upload successful!');
             onSuccess();

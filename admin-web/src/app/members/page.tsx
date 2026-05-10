@@ -37,6 +37,7 @@ import SmartBatchModal from '@/components/SmartBatchModal';
 import RichTextEditor from '@/components/RichTextEditor';
 import { MemberModal, MemberProfile } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
+import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 
 interface Church {
     id: string;
@@ -650,15 +651,21 @@ function MembersPageInner() {
 
         setLoading(true);
         try {
-            const { error } = await supabase
+            const { data: movedMembers, error } = await supabase
                 .from('member_directory')
                 .update({
                     group_name: selectedGroup.name,
                     department_id: targetDeptIdForMove
                 })
-                .in('id', selectedMemberIds);
+                .in('id', selectedMemberIds)
+                .select('id');
 
             if (error) throw error;
+            await assertPhase2MemberDirectorySync(
+                supabase,
+                (movedMembers || []).map(member => member.id),
+                '성도 이동'
+            );
             setIsMoveModalOpen(false);
             setLastAction({ type: 'move', data: previousStates as MemberProfile[] });
             setShowUndo(true);
@@ -684,19 +691,32 @@ function MembersPageInner() {
                 // For simplicity, we can do multiple updates or a smarter mapping if needed
                 // But since it's just a few members usually, we can loop or use a custom RPC if it grows
                 for (const item of lastAction.data) {
-                    await supabase
+                    const { data, error } = await supabase
                         .from('member_directory')
                         .update({ group_name: item.group_name, department_id: item.department_id })
-                        .eq('id', item.id);
+                        .eq('id', item.id)
+                        .select('id');
+                    if (error) throw error;
+                    await assertPhase2MemberDirectorySync(
+                        supabase,
+                        (data || []).map(member => member.id),
+                        '성도 이동 되돌리기'
+                    );
                 }
             } else if (lastAction.type === 'archive') {
                 // Restore archived members.
                 const ids = lastAction.data.map((item) => item.id);
-                const { error } = await supabase
+                const { data, error } = await supabase
                     .from('member_directory')
                     .update({ is_active: true })
-                    .in('id', ids);
+                    .in('id', ids)
+                    .select('id');
                 if (error) throw error;
+                await assertPhase2MemberDirectorySync(
+                    supabase,
+                    (data || []).map(member => member.id),
+                    '성도 비활성화 되돌리기'
+                );
             }
 
             setLastAction(null);
@@ -839,8 +859,17 @@ function MembersPageInner() {
     const handleDeleteMember = async (id: string) => {
         if (!confirm('이 성도를 비활성화하시겠습니까? 출석/기도 기록은 보존됩니다.')) return;
         try {
-            const { error } = await supabase.from('member_directory').update({ is_active: false }).eq('id', id);
+            const { data, error } = await supabase
+                .from('member_directory')
+                .update({ is_active: false })
+                .eq('id', id)
+                .select('id');
             if (error) throw error;
+            await assertPhase2MemberDirectorySync(
+                supabase,
+                (data || []).map(member => member.id),
+                '성도 비활성화'
+            );
             if (currentChurchId) fetchMembers(currentChurchId, selectedDeptId);
         } catch (err) {
             alert('비활성화 중 오류가 발생했습니다.');
@@ -860,13 +889,19 @@ function MembersPageInner() {
             if (error) throw error;
 
             // Sync with member_directory: 조 이름이 명부에도 저장되어 있으므로 함께 업데이트
-            const { error: syncError } = await supabase
+            const { data: renamedMembers, error: syncError } = await supabase
                 .from('member_directory')
                 .update({ group_name: newName.trim() })
                 .eq('church_id', currentChurchId)
-                .eq('group_name', currentName.trim());
+                .eq('group_name', currentName.trim())
+                .select('id');
 
             if (syncError) throw syncError;
+            await assertPhase2MemberDirectorySync(
+                supabase,
+                (renamedMembers || []).map(member => member.id),
+                '조 이름 변경'
+            );
 
             // Update local member data to reflect change immediately if current view uses this group
             setMembers(prev => prev.map(m => m.group_name === currentName ? { ...m, group_name: newName } : m));
@@ -1421,8 +1456,17 @@ function MembersPageInner() {
                                         if (!confirm(`${selectedMemberIds.length}명을 일괄 비활성화하시겠습니까? 출석/기도 기록은 보존됩니다.`)) return;
                                         const archivedMembers = members.filter(m => selectedMemberIds.includes(m.id));
                                         try {
-                                            const { error } = await supabase.from('member_directory').update({ is_active: false }).in('id', selectedMemberIds);
+                                            const { data, error } = await supabase
+                                                .from('member_directory')
+                                                .update({ is_active: false })
+                                                .in('id', selectedMemberIds)
+                                                .select('id');
                                             if (error) throw error;
+                                            await assertPhase2MemberDirectorySync(
+                                                supabase,
+                                                (data || []).map(member => member.id),
+                                                '성도 일괄 비활성화'
+                                            );
                                             setLastAction({ type: 'archive', data: archivedMembers });
                                             setShowUndo(true);
                                             setSelectedMemberIds([]);
