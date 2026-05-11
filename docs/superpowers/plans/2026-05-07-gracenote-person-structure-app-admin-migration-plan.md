@@ -731,6 +731,31 @@ Verification:
 - `git diff --check`: passed.
 - `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all issue counts were `0`.
 
+## Flutter Phase 2 Write Guard
+
+2026-05-10 update:
+
+- Added the same post-write Phase 2 sync guard to Flutter repository member writes:
+  - `addDirectoryMember`
+  - `updateDirectoryMember`
+  - `toggleMemberActivation`
+  - `deleteDirectoryMember`
+
+Why this matters:
+
+```text
+Flutter 관리자/명부 화면에서도 아직 member_directory에 쓴다.
+저장 직후 member_profiles/memberships 생성 여부를 확인해서
+Phase 2 person 구조가 누락된 채로 넘어가지 않게 한다.
+```
+
+Verification:
+
+- `dart analyze lib/core/repositories/grace_note_repository.dart`
+  - no errors.
+  - existing style-only infos remain in `grace_note_repository.dart`.
+- `git diff --check`: passed.
+
 ## Self-Review
 
 Spec coverage:

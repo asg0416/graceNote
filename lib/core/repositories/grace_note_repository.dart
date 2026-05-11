@@ -968,29 +968,147 @@ class GraceNoteRepository {
     }
   }
 
+  String _formatPhase2SyncNames(
+      List<Map<String, dynamic>> directories, Set<String> ids) {
+    final names = directories
+        .where((row) => ids.contains(row['id']?.toString()))
+        .map((row) => row['full_name']?.toString() ?? row['id'].toString())
+        .toList();
+
+    if (names.length <= 5) return names.join(', ');
+    return '${names.take(5).join(', ')} 외 ${names.length - 5}명';
+  }
+
+  Future<void> _assertPhase2MemberDirectorySync(
+    List<String> memberDirectoryIds,
+    String contextLabel,
+  ) async {
+    final ids = memberDirectoryIds.where((id) => id.isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return;
+
+    final directoryResponse = await _supabase
+        .from('member_directory')
+        .select('id, full_name, group_name, is_active')
+        .inFilter('id', ids);
+    final directories = List<Map<String, dynamic>>.from(directoryResponse);
+    final existingDirectoryIds =
+        directories.map((row) => row['id']?.toString()).whereType<String>().toSet();
+    final missingDirectoryIds =
+        ids.where((id) => !existingDirectoryIds.contains(id)).toList();
+
+    if (missingDirectoryIds.isNotEmpty) {
+      throw Exception(
+          '$contextLabel 후 legacy 명부 row를 다시 확인하지 못했습니다: ${missingDirectoryIds.join(', ')}');
+    }
+
+    final profileResponse = await _supabase
+        .from('member_profiles')
+        .select('member_directory_id, person_id')
+        .inFilter('member_directory_id', ids);
+    final profileRows = List<Map<String, dynamic>>.from(profileResponse);
+    final profileDirectoryIds = profileRows
+        .where((row) => row['member_directory_id'] != null && row['person_id'] != null)
+        .map((row) => row['member_directory_id'].toString())
+        .toSet();
+
+    final missingProfileIds = directories
+        .where((row) => !profileDirectoryIds.contains(row['id']?.toString()))
+        .map((row) => row['id'].toString())
+        .toSet();
+
+    final membershipExpectedIds = directories
+        .where((row) => row['is_active'] != false)
+        .where((row) => (row['group_name']?.toString().trim() ?? '').isNotEmpty)
+        .map((row) => row['id'].toString())
+        .toList();
+
+    final membershipDirectoryIds = <String>{};
+    if (membershipExpectedIds.isNotEmpty) {
+      final membershipResponse = await _supabase
+          .from('memberships')
+          .select('legacy_member_directory_id')
+          .inFilter('legacy_member_directory_id', membershipExpectedIds)
+          .inFilter('status', ['active', 'inactive', 'ended']);
+      membershipDirectoryIds.addAll(
+        List<Map<String, dynamic>>.from(membershipResponse)
+            .map((row) => row['legacy_member_directory_id']?.toString())
+            .whereType<String>(),
+      );
+    }
+
+    final missingMembershipIds = membershipExpectedIds
+        .where((id) => !membershipDirectoryIds.contains(id))
+        .toSet();
+
+    if (missingProfileIds.isEmpty && missingMembershipIds.isEmpty) return;
+
+    final messages = [
+      if (missingProfileIds.isNotEmpty)
+        'member_profiles 누락: ${_formatPhase2SyncNames(directories, missingProfileIds)}',
+      if (missingMembershipIds.isNotEmpty)
+        'memberships 누락: ${_formatPhase2SyncNames(directories, missingMembershipIds)}',
+    ];
+
+    throw Exception(
+        '$contextLabel 후 Phase 2 person 동기화가 완료되지 않았습니다. ${messages.join(' / ')}');
+  }
+
   // 명부에 새 멤버 추가
   Future<void> addDirectoryMember(Map<String, dynamic> data) async {
-    await _supabase.from('member_directory').insert(data);
+    final inserted = await _supabase
+        .from('member_directory')
+        .insert(data)
+        .select('id')
+        .single();
+    await _assertPhase2MemberDirectorySync(
+      [inserted['id']?.toString() ?? ''],
+      '성도 추가',
+    );
   }
 
   // 명부 멤버 정보 수정
   Future<void> updateDirectoryMember(
       String id, Map<String, dynamic> data) async {
-    await _supabase.from('member_directory').update(data).eq('id', id);
+    final updated = await _supabase
+        .from('member_directory')
+        .update(data)
+        .eq('id', id)
+        .select('id');
+    await _assertPhase2MemberDirectorySync(
+      List<Map<String, dynamic>>.from(updated)
+          .map((row) => row['id']?.toString())
+          .whereType<String>()
+          .toList(),
+      '성도 수정',
+    );
   }
 
   // 명부 멤버 활성화/비활성화 토글
   Future<void> toggleMemberActivation(String id, bool isActive) async {
-    await _supabase
+    final updated = await _supabase
         .from('member_directory')
-        .update({'is_active': isActive}).eq('id', id);
+        .update({'is_active': isActive}).eq('id', id).select('id');
+    await _assertPhase2MemberDirectorySync(
+      List<Map<String, dynamic>>.from(updated)
+          .map((row) => row['id']?.toString())
+          .whereType<String>()
+          .toList(),
+      isActive ? '성도 활성화' : '성도 비활성화',
+    );
   }
 
   // 명부 멤버 제거
   Future<void> deleteDirectoryMember(String id) async {
-    await _supabase
+    final updated = await _supabase
         .from('member_directory')
-        .update({'is_active': false}).eq('id', id);
+        .update({'is_active': false}).eq('id', id).select('id');
+    await _assertPhase2MemberDirectorySync(
+      List<Map<String, dynamic>>.from(updated)
+          .map((row) => row['id']?.toString())
+          .whereType<String>()
+          .toList(),
+      '성도 비활성화',
+    );
   }
 
   // 특정 조의 주차별 출석 히스토리 및 통계 가져오기 (년/월 필터링 추가)
