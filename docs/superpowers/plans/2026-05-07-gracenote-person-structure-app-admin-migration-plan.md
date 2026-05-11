@@ -797,6 +797,39 @@ Verification status:
 - Phase 2 summary gate: all issue counts `0`.
 - Phase 3 attendance/prayer snapshot gate: all issue counts `0`.
 
+## Phase 3 Member Lifecycle RPC
+
+2026-05-11 update:
+
+- Added `set_member_directory_active_status(...)`.
+- Switched these active/inactive write paths to the lifecycle RPC:
+  - `admin-web/src/app/members/page.tsx`: single inactive, bulk inactive, undo restore
+  - `admin-web/src/app/members/[id]/page.tsx`: active/inactive toggle
+  - `lib/core/repositories/grace_note_repository.dart`: `toggleMemberActivation`, `deleteDirectoryMember`
+- Also routed member detail profile/family edits through the existing member write RPC.
+
+Meaning in plain terms:
+
+```text
+성도 추가/수정뿐 아니라 "활성/비활성" 상태 변경도 이제 DB RPC가 담당한다.
+화면은 여전히 member_directory id로 요청하지만, DB 안에서는 memberships 상태와
+기존 출석/기도 기록 보존 원칙을 함께 맞춘다.
+```
+
+Still deferred:
+
+- Regrouping save source-of-truth conversion.
+- Group lifecycle source-of-truth RPC.
+- Final removal of legacy `member_directory` / `group_members`.
+
+Verification:
+
+- Dev DB migration apply: passed on dev project `eftdfxmdiefdduksdpwg`.
+- Phase 2 summary gate: all issue counts `0`.
+- Phase 3 attendance/prayer snapshot gate: all issue counts `0`.
+- Admin-web targeted lint: 0 errors; existing warnings remain in `members/page.tsx`.
+- Flutter repository analyze: 0 errors; existing style-only infos remain.
+
 ## Self-Review
 
 Spec coverage:

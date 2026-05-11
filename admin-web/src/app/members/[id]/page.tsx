@@ -24,6 +24,10 @@ import {
     GitBranch
 } from 'lucide-react';
 import RichTextEditor from '@/components/RichTextEditor';
+import {
+    setMemberDirectoryActiveStatus,
+    upsertMemberPersonMembership,
+} from '@/lib/memberWriteRpc';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -400,13 +404,12 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 updateData.children_info = editingMember.children_info;
             }
 
-            const { error } = await supabase
-                .from('member_directory')
-                .update(updateData)
-                .eq('id', id);
-
-            if (error) throw error;
-            setMember({ ...member, ...updateData });
+            const updatedMember = await upsertMemberPersonMembership(supabase, {
+                ...member,
+                ...updateData,
+                id,
+            });
+            setMember({ ...member, ...updatedMember });
             if (section === 'profile') setIsEditingProfile(false);
             if (section === 'family') setIsEditingFamily(false);
             alert('정보가 수정되었습니다.');
@@ -424,12 +427,8 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
 
         setIsSaving(true);
         try {
-            const { error } = await supabase
-                .from('member_directory')
-                .update({ is_active: newStatus })
-                .eq('id', id);
-            if (error) throw error;
-            setMember({ ...member, is_active: newStatus });
+            const updatedMember = await setMemberDirectoryActiveStatus(supabase, id, newStatus);
+            setMember({ ...member, ...updatedMember });
             alert(`${newStatus ? '활성화' : '비활성화'} 되었습니다.`);
         } catch {
             alert('오류 발생');

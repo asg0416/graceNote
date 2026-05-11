@@ -38,6 +38,7 @@ import RichTextEditor from '@/components/RichTextEditor';
 import { MemberModal, MemberProfile } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
+import { setMemberDirectoryActiveStatus } from '@/lib/memberWriteRpc';
 
 interface Church {
     id: string;
@@ -706,15 +707,14 @@ function MembersPageInner() {
             } else if (lastAction.type === 'archive') {
                 // Restore archived members.
                 const ids = lastAction.data.map((item) => item.id);
-                const { data, error } = await supabase
-                    .from('member_directory')
-                    .update({ is_active: true })
-                    .in('id', ids)
-                    .select('id');
-                if (error) throw error;
+                const restoredIds = [];
+                for (const id of ids) {
+                    const restoredMember = await setMemberDirectoryActiveStatus(supabase, id, true);
+                    restoredIds.push(restoredMember.id);
+                }
                 await assertPhase2MemberDirectorySync(
                     supabase,
-                    (data || []).map(member => member.id),
+                    restoredIds,
                     '성도 비활성화 되돌리기'
                 );
             }
@@ -859,15 +859,10 @@ function MembersPageInner() {
     const handleDeleteMember = async (id: string) => {
         if (!confirm('이 성도를 비활성화하시겠습니까? 출석/기도 기록은 보존됩니다.')) return;
         try {
-            const { data, error } = await supabase
-                .from('member_directory')
-                .update({ is_active: false })
-                .eq('id', id)
-                .select('id');
-            if (error) throw error;
+            const data = await setMemberDirectoryActiveStatus(supabase, id, false);
             await assertPhase2MemberDirectorySync(
                 supabase,
-                (data || []).map(member => member.id),
+                [data.id],
                 '성도 비활성화'
             );
             if (currentChurchId) fetchMembers(currentChurchId, selectedDeptId);
@@ -1456,15 +1451,14 @@ function MembersPageInner() {
                                         if (!confirm(`${selectedMemberIds.length}명을 일괄 비활성화하시겠습니까? 출석/기도 기록은 보존됩니다.`)) return;
                                         const archivedMembers = members.filter(m => selectedMemberIds.includes(m.id));
                                         try {
-                                            const { data, error } = await supabase
-                                                .from('member_directory')
-                                                .update({ is_active: false })
-                                                .in('id', selectedMemberIds)
-                                                .select('id');
-                                            if (error) throw error;
+                                            const archivedIds = [];
+                                            for (const id of selectedMemberIds) {
+                                                const archivedMember = await setMemberDirectoryActiveStatus(supabase, id, false);
+                                                archivedIds.push(archivedMember.id);
+                                            }
                                             await assertPhase2MemberDirectorySync(
                                                 supabase,
-                                                (data || []).map(member => member.id),
+                                                archivedIds,
                                                 '성도 일괄 비활성화'
                                             );
                                             setLastAction({ type: 'archive', data: archivedMembers });

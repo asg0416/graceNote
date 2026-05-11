@@ -1129,30 +1129,43 @@ class GraceNoteRepository {
 
   // 명부 멤버 활성화/비활성화 토글
   Future<void> toggleMemberActivation(String id, bool isActive) async {
-    final updated = await _supabase
-        .from('member_directory')
-        .update({'is_active': isActive}).eq('id', id).select('id');
+    final updated = await _setMemberDirectoryActiveStatus(id, isActive);
     await _assertPhase2MemberDirectorySync(
-      List<Map<String, dynamic>>.from(updated)
-          .map((row) => row['id']?.toString())
-          .whereType<String>()
-          .toList(),
+      [updated['id']?.toString() ?? id],
       isActive ? '성도 활성화' : '성도 비활성화',
     );
   }
 
   // 명부 멤버 제거
   Future<void> deleteDirectoryMember(String id) async {
-    final updated = await _supabase
-        .from('member_directory')
-        .update({'is_active': false}).eq('id', id).select('id');
+    final updated = await _setMemberDirectoryActiveStatus(id, false);
     await _assertPhase2MemberDirectorySync(
-      List<Map<String, dynamic>>.from(updated)
-          .map((row) => row['id']?.toString())
-          .whereType<String>()
-          .toList(),
+      [updated['id']?.toString() ?? id],
       '성도 비활성화',
     );
+  }
+
+  Future<Map<String, dynamic>> _setMemberDirectoryActiveStatus(
+    String id,
+    bool isActive,
+  ) async {
+    final result = await _supabase.rpc(
+      'set_member_directory_active_status',
+      params: {
+        'p_member_directory_id': id,
+        'p_is_active': isActive,
+      },
+    );
+
+    if (result is Map) {
+      return Map<String, dynamic>.from(result);
+    }
+
+    if (result is List && result.isNotEmpty && result.first is Map) {
+      return Map<String, dynamic>.from(result.first as Map);
+    }
+
+    throw Exception('성도 활성 상태 변경 RPC가 저장된 성도 정보를 반환하지 않았습니다.');
   }
 
   // 특정 조의 주차별 출석 히스토리 및 통계 가져오기 (년/월 필터링 추가)

@@ -61,3 +61,24 @@ export const upsertMemberPersonMembership = async (
 
     return data;
 };
+
+export const setMemberDirectoryActiveStatus = async (
+    supabase: RpcClientLike,
+    memberDirectoryId: string,
+    isActive: boolean
+) => {
+    const { data, error } = await supabase.rpc('set_member_directory_active_status', {
+        p_member_directory_id: memberDirectoryId,
+        p_is_active: isActive,
+    });
+
+    if (error) {
+        throw new Error(error.message || '성도 활성 상태 변경 RPC 실행에 실패했습니다.');
+    }
+
+    if (!data?.id) {
+        throw new Error('성도 활성 상태 변경 RPC가 저장된 성도 ID를 반환하지 않았습니다.');
+    }
+
+    return data;
+};
