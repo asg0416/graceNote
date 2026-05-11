@@ -756,6 +756,47 @@ Verification:
   - existing style-only infos remain in `grace_note_repository.dart`.
 - `git diff --check`: passed.
 
+## Phase 3 Member Write RPC
+
+2026-05-11 update:
+
+- Added a person-centered member write RPC:
+  - `supabase/migrations/20260511000000_phase3_member_write_rpc.sql`
+  - `supabase/migrations/20260511001000_phase3_member_write_rpc_upsert_fix.sql`
+- Switched these member add/edit paths to call the RPC:
+  - `admin-web/src/components/MemberModal.tsx`
+  - `admin-web/src/components/SmartBatchModal.tsx`
+  - `lib/core/repositories/grace_note_repository.dart`
+- Added admin-web RPC wrapper:
+  - `admin-web/src/lib/memberWriteRpc.ts`
+
+Meaning in plain terms:
+
+```text
+이전: 화면이 member_directory에 직접 저장하고, DB trigger가 사람 구조를 따라잡는다.
+이제: 화면이 "이 사람/이 소속을 저장해줘"라고 RPC에 요청한다.
+RPC가 people/person/member_directory 호환 row를 한 번에 맞춘다.
+
+member_directory는 아직 사라진 것이 아니다.
+출석/기도/기존 화면 호환을 위해 당분간 같이 저장되는 compatibility row다.
+```
+
+Scope decision:
+
+- Single member add/edit and SmartBatch add/edit are included.
+- Flutter member add/edit is included.
+- Regrouping save is not included yet because it changes many rows and group lifecycle together.
+- Activation/deactivation lifecycle RPC is the next member write batch.
+
+Verification status:
+
+- Admin-web targeted lint: 0 errors, existing `MemberModal.tsx` warning remains.
+- Flutter repository analyze: 0 errors, existing style-only infos remain.
+- `git diff --check`: passed.
+- Dev DB migration apply: passed on dev project `eftdfxmdiefdduksdpwg`.
+- Phase 2 summary gate: all issue counts `0`.
+- Phase 3 attendance/prayer snapshot gate: all issue counts `0`.
+
 ## Self-Review
 
 Spec coverage:

@@ -1055,11 +1055,7 @@ class GraceNoteRepository {
 
   // 명부에 새 멤버 추가
   Future<void> addDirectoryMember(Map<String, dynamic> data) async {
-    final inserted = await _supabase
-        .from('member_directory')
-        .insert(data)
-        .select('id')
-        .single();
+    final inserted = await _upsertMemberPersonMembership(data);
     await _assertPhase2MemberDirectorySync(
       [inserted['id']?.toString() ?? ''],
       '성도 추가',
@@ -1069,18 +1065,66 @@ class GraceNoteRepository {
   // 명부 멤버 정보 수정
   Future<void> updateDirectoryMember(
       String id, Map<String, dynamic> data) async {
-    final updated = await _supabase
+    final existing = await _supabase
         .from('member_directory')
-        .update(data)
+        .select()
         .eq('id', id)
-        .select('id');
+        .maybeSingle();
+    final merged = {
+      if (existing != null) ...Map<String, dynamic>.from(existing),
+      ...data,
+    };
+    final updated = await _upsertMemberPersonMembership(
+      merged,
+      memberDirectoryId: id,
+    );
     await _assertPhase2MemberDirectorySync(
-      List<Map<String, dynamic>>.from(updated)
-          .map((row) => row['id']?.toString())
-          .whereType<String>()
-          .toList(),
+      [updated['id']?.toString() ?? id],
       '성도 수정',
     );
+  }
+
+  Future<Map<String, dynamic>> _upsertMemberPersonMembership(
+    Map<String, dynamic> data, {
+    String? memberDirectoryId,
+  }) async {
+    dynamic dateParam(dynamic value) {
+      if (value is DateTime) return value.toIso8601String().split('T').first;
+      return value;
+    }
+
+    final result = await _supabase.rpc(
+      'upsert_member_person_membership',
+      params: {
+        'p_member_directory_id': memberDirectoryId ?? data['id'],
+        'p_church_id': data['church_id'],
+        'p_department_id': data['department_id'],
+        'p_full_name': data['full_name'],
+        'p_phone': data['phone'],
+        'p_group_name': data['group_name'],
+        'p_role_in_group': data['role_in_group'] ?? 'member',
+        'p_family_name': data['family_name'],
+        'p_spouse_name': data['spouse_name'],
+        'p_children_info': data['children_info'],
+        'p_birth_date': dateParam(data['birth_date']),
+        'p_wedding_anniversary': dateParam(data['wedding_anniversary']),
+        'p_notes': data['notes'],
+        'p_avatar_url': data['avatar_url'],
+        'p_profile_id': data['profile_id'],
+        'p_person_id': data['person_id'],
+        'p_is_active': data['is_active'] != false,
+      },
+    );
+
+    if (result is Map) {
+      return Map<String, dynamic>.from(result);
+    }
+
+    if (result is List && result.isNotEmpty && result.first is Map) {
+      return Map<String, dynamic>.from(result.first as Map);
+    }
+
+    throw Exception('성도 저장 RPC가 저장된 성도 정보를 반환하지 않았습니다.');
   }
 
   // 명부 멤버 활성화/비활성화 토글

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Modal } from '@/components/Modal';
 import RichTextEditor from '@/components/RichTextEditor';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
+import { upsertMemberPersonMembership } from '@/lib/memberWriteRpc';
 
 export interface MemberProfile {
     id: string;
@@ -158,13 +159,10 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 };
             } else if (member?.id && !member.id.startsWith('temp-')) {
                 // Real update
-                const { data, error } = await supabase
-                    .from('member_directory')
-                    .update(dataToSave)
-                    .eq('id', member.id)
-                    .select()
-                    .single();
-                if (error) throw error;
+                const data = await upsertMemberPersonMembership(supabase, {
+                    ...dataToSave,
+                    id: member.id,
+                });
                 await assertPhase2MemberDirectorySync(supabase, [data.id], '성도 수정');
                 result = data;
             } else {
@@ -195,13 +193,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
                 }
 
                 // Insert for new member
-                const { data, error } = await supabase
-                    .from('member_directory')
-                    .insert([dataToSave])
-                    .select()
-                    .single();
-
-                if (error) throw error;
+                const data = await upsertMemberPersonMembership(supabase, dataToSave);
                 await assertPhase2MemberDirectorySync(supabase, [data.id], '성도 추가');
                 result = data;
             }

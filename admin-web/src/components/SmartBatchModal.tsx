@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Modal } from '@/components/Modal';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
+import { upsertMemberPersonMembership } from '@/lib/memberWriteRpc';
 import {
     Upload,
     Loader2,
@@ -668,16 +669,12 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 }
             }
 
-            // 2. Bulk insert into member_directory
-            console.log('Sending bulk upsert to member_directory...');
-            const { data: insertedMembers, error: insertError } = await supabase
-                .from('member_directory')
-                .upsert(cleanParsedData, { onConflict: 'church_id,department_id,group_name,full_name,phone' })
-                .select('id');
-
-            if (insertError) {
-                console.error('Member Insert Error:', insertError);
-                throw insertError;
+            // 2. Bulk write through person-centered RPC.
+            console.log('Sending bulk upsert to member write RPC...');
+            const insertedMembers = [];
+            for (const item of cleanParsedData) {
+                const savedMember = await upsertMemberPersonMembership(supabase, item);
+                insertedMembers.push(savedMember);
             }
 
             await assertPhase2MemberDirectorySync(
