@@ -185,12 +185,19 @@ export default function ArchivePage() {
                     .select('person_id, department_id, group_id, status')
                     .in('person_id', personIds)
                     .in('department_id', departmentIds)
-                    .in('status', ['inactive', 'ended']);
+                    .in('status', ['active', 'inactive', 'ended']);
 
                 if (membershipLinkError) throw membershipLinkError;
 
+                const activeAffiliationKeys = new Set(
+                    ((membershipLinks || []) as ArchivedMembershipLink[])
+                        .filter(link => link.status === 'active' && link.person_id && link.department_id)
+                        .map(link => `${link.person_id}:${link.department_id}`)
+                );
+
                 const groupIds = Array.from(new Set(
                     ((membershipLinks || []) as ArchivedMembershipLink[])
+                        .filter(link => link.status !== 'active')
                         .map(link => link.group_id)
                         .filter(Boolean)
                 )) as string[];
@@ -211,6 +218,7 @@ export default function ArchivePage() {
 
                 const archivedGroupsByAffiliation = new Map<string, Set<string>>();
                 ((membershipLinks || []) as ArchivedMembershipLink[]).forEach(link => {
+                    if (link.status === 'active') return;
                     if (!link.person_id || !link.department_id || !link.group_id) return;
                     const groupName = groupNames.get(link.group_id);
                     if (!groupName) return;
@@ -225,6 +233,14 @@ export default function ArchivePage() {
                     const names = archivedGroupsByAffiliation.get(`${member.person_id}:${member.department_id}`);
                     member.archived_group_names = names ? Array.from(names).sort((a, b) => a.localeCompare(b, 'ko')) : [];
                 });
+
+                for (let index = archivedMembers.length - 1; index >= 0; index -= 1) {
+                    const member = archivedMembers[index];
+                    if (!member.person_id || !member.department_id) continue;
+                    if (activeAffiliationKeys.has(`${member.person_id}:${member.department_id}`)) {
+                        archivedMembers.splice(index, 1);
+                    }
+                }
             }
 
             setMembers(archivedMembers);
