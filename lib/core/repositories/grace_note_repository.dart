@@ -1132,7 +1132,7 @@ class GraceNoteRepository {
     final updated = await _setMemberDirectoryActiveStatus(id, isActive);
     await _assertPhase2MemberDirectorySync(
       [updated['id']?.toString() ?? id],
-      isActive ? '성도 활성화' : '성도 비활성화',
+      isActive ? '성도 소속 활성화' : '성도 소속 비활성화',
     );
   }
 
@@ -1141,7 +1141,7 @@ class GraceNoteRepository {
     final updated = await _setMemberDirectoryActiveStatus(id, false);
     await _assertPhase2MemberDirectorySync(
       [updated['id']?.toString() ?? id],
-      '성도 비활성화',
+      '성도 소속 비활성화',
     );
   }
 

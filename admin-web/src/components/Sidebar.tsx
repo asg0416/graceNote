@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
+
 import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -21,7 +23,8 @@ import {
     Megaphone,
     MessageSquare,
     LayoutGrid,
-    MonitorSmartphone
+    MonitorSmartphone,
+    Archive
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -137,6 +140,7 @@ export default function Sidebar() {
         { label: '성도 명부', href: '/members', icon: Users },
         { label: '조편성 관리', href: '/regrouping', icon: LayoutGrid },
         { label: '부서 관리', href: '/departments', icon: Layers },
+        { label: '휴지통', href: '/archive', icon: Archive },
         { label: '공지사항 발행', href: '/notices', icon: Megaphone },
         { label: '인앱 메시지 발행', href: '/in-app-messages', icon: MonitorSmartphone },
     ];

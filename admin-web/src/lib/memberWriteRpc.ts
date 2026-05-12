@@ -82,3 +82,28 @@ export const setMemberDirectoryActiveStatus = async (
 
     return data;
 };
+
+export const setPersonDepartmentActiveStatus = async (
+    supabase: RpcClientLike,
+    payload: {
+        personId: string;
+        churchId: string;
+        departmentId: string;
+        isActive: boolean;
+    }
+) => {
+    const { data, error } = await supabase.rpc('set_person_department_active_status', {
+        p_person_id: payload.personId,
+        p_church_id: payload.churchId,
+        p_department_id: payload.departmentId,
+        p_is_active: payload.isActive,
+    });
+
+    if (error) {
+        throw new Error(error.message || '부서 소속 활성 상태 변경 RPC 실행에 실패했습니다.');
+    }
+
+    return Array.isArray(data)
+        ? data.map((row) => row.member_directory_id).filter(Boolean)
+        : [];
+};

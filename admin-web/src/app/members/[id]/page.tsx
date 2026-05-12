@@ -26,6 +26,7 @@ import {
 import RichTextEditor from '@/components/RichTextEditor';
 import {
     setMemberDirectoryActiveStatus,
+    setPersonDepartmentActiveStatus,
     upsertMemberPersonMembership,
 } from '@/lib/memberWriteRpc';
 import { clsx, type ClassValue } from 'clsx';
@@ -423,13 +424,34 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
 
     const handleToggleActive = async () => {
         const newStatus = member.is_active === false;
-        if (!confirm(`이 성도를 ${newStatus ? '활성화' : '비활성화'} 하시겠습니까?`)) return;
+        if (!confirm(`이 성도의 현재 소속을 ${newStatus ? '활성화' : '비활성화'} 하시겠습니까?`)) return;
 
         setIsSaving(true);
         try {
-            const updatedMember = await setMemberDirectoryActiveStatus(supabase, id, newStatus);
-            setMember({ ...member, ...updatedMember });
-            alert(`${newStatus ? '활성화' : '비활성화'} 되었습니다.`);
+            if (phase2Data?.person?.id && member.church_id && member.department_id) {
+                await setPersonDepartmentActiveStatus(supabase, {
+                    personId: phase2Data.person.id,
+                    churchId: member.church_id,
+                    departmentId: member.department_id,
+                    isActive: newStatus,
+                });
+            } else {
+                await setMemberDirectoryActiveStatus(supabase, id, newStatus);
+            }
+
+            const { data: refreshedMember, error: refreshError } = await supabase
+                .from('member_directory')
+                .select(`
+                    *,
+                    departments!department_id (name, color_hex)
+                `)
+                .eq('id', id)
+                .single();
+            if (refreshError) throw refreshError;
+
+            setMember(refreshedMember);
+            alert(`현재 부서 소속이 ${newStatus ? '활성화' : '비활성화'} 되었습니다.`);
+            window.location.reload();
         } catch {
             alert('오류 발생');
         } finally {
@@ -486,7 +508,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                             disabled={isSaving}
                             className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black rounded-2xl hover:bg-emerald-500 transition-all uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-emerald-600/20"
                         >
-                            <CheckCircle2 className="w-3.5 h-3.5" /> 다시 활성화
+                            <CheckCircle2 className="w-3.5 h-3.5" /> 소속 다시 활성화
                         </button>
                     ) : (
                         <button
@@ -494,7 +516,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                             disabled={isSaving}
                             className="px-4 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-black rounded-2xl border border-rose-100 dark:border-rose-500/20 hover:bg-rose-100 transition-all uppercase tracking-widest flex items-center gap-2 shadow-sm"
                         >
-                            <Users className="w-3.5 h-3.5" /> 비활성화
+                            <Users className="w-3.5 h-3.5" /> 소속 비활성화
                         </button>
                     )}
                     <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-1" />

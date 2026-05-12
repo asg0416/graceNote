@@ -38,7 +38,10 @@ import RichTextEditor from '@/components/RichTextEditor';
 import { MemberModal, MemberProfile } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
-import { setMemberDirectoryActiveStatus } from '@/lib/memberWriteRpc';
+import {
+    setMemberDirectoryActiveStatus,
+    setPersonDepartmentActiveStatus,
+} from '@/lib/memberWriteRpc';
 
 interface Church {
     id: string;
@@ -706,16 +709,19 @@ function MembersPageInner() {
                 }
             } else if (lastAction.type === 'archive') {
                 // Restore archived members.
-                const ids = lastAction.data.map((item) => item.id);
                 const restoredIds = [];
-                for (const id of ids) {
-                    const restoredMember = await setMemberDirectoryActiveStatus(supabase, id, true);
-                    restoredIds.push(restoredMember.id);
+                const restoredKeys = new Set<string>();
+                for (const item of lastAction.data) {
+                    const key = `${getRosterPersonKey(item)}:${item.church_id}:${item.department_id}`;
+                    if (restoredKeys.has(key)) continue;
+                    restoredKeys.add(key);
+                    const affectedIds = await setMemberDepartmentActive(item, true);
+                    restoredIds.push(...affectedIds);
                 }
                 await assertPhase2MemberDirectorySync(
                     supabase,
                     restoredIds,
-                    '성도 비활성화 되돌리기'
+                    '성도 부서 소속 비활성화 되돌리기'
                 );
             }
 
@@ -856,14 +862,30 @@ function MembersPageInner() {
         }
     };
 
+    const setMemberDepartmentActive = async (member: RosterMember, isActive: boolean) => {
+        if (member.phase2_person_id && member.church_id && member.department_id) {
+            return setPersonDepartmentActiveStatus(supabase, {
+                personId: member.phase2_person_id,
+                churchId: member.church_id,
+                departmentId: member.department_id,
+                isActive,
+            });
+        }
+
+        const savedMember = await setMemberDirectoryActiveStatus(supabase, member.id, isActive);
+        return [savedMember.id];
+    };
+
     const handleDeleteMember = async (id: string) => {
-        if (!confirm('이 성도를 비활성화하시겠습니까? 출석/기도 기록은 보존됩니다.')) return;
+        const targetMember = members.find(member => member.id === id);
+        if (!targetMember) return;
+        if (!confirm('이 사람의 현재 부서 소속 전체를 비활성화하시겠습니까? 여러 조 소속이 있으면 함께 비활성화되고, 출석/기도 기록은 보존됩니다.')) return;
         try {
-            const data = await setMemberDirectoryActiveStatus(supabase, id, false);
+            const affectedIds = await setMemberDepartmentActive(targetMember, false);
             await assertPhase2MemberDirectorySync(
                 supabase,
-                [data.id],
-                '성도 비활성화'
+                affectedIds,
+                '성도 부서 소속 비활성화'
             );
             if (currentChurchId) fetchMembers(currentChurchId, selectedDeptId);
         } catch (err) {
@@ -1448,18 +1470,22 @@ function MembersPageInner() {
                                 </button>
                                 <button
                                     onClick={async () => {
-                                        if (!confirm(`${selectedMemberIds.length}명을 일괄 비활성화하시겠습니까? 출석/기도 기록은 보존됩니다.`)) return;
+                                        if (!confirm('선택한 성도의 현재 부서 소속을 일괄 비활성화하시겠습니까? 같은 사람이 여러 조에 있으면 해당 부서 소속 전체가 함께 비활성화됩니다.')) return;
                                         const archivedMembers = members.filter(m => selectedMemberIds.includes(m.id));
                                         try {
                                             const archivedIds = [];
-                                            for (const id of selectedMemberIds) {
-                                                const archivedMember = await setMemberDirectoryActiveStatus(supabase, id, false);
-                                                archivedIds.push(archivedMember.id);
+                                            const archivedKeys = new Set<string>();
+                                            for (const member of archivedMembers) {
+                                                const key = `${getRosterPersonKey(member)}:${member.church_id}:${member.department_id}`;
+                                                if (archivedKeys.has(key)) continue;
+                                                archivedKeys.add(key);
+                                                const affectedIds = await setMemberDepartmentActive(member, false);
+                                                archivedIds.push(...affectedIds);
                                             }
                                             await assertPhase2MemberDirectorySync(
                                                 supabase,
                                                 archivedIds,
-                                                '성도 일괄 비활성화'
+                                                '성도 부서 소속 일괄 비활성화'
                                             );
                                             setLastAction({ type: 'archive', data: archivedMembers });
                                             setShowUndo(true);

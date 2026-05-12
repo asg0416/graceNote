@@ -830,6 +830,31 @@ Verification:
 - Admin-web targeted lint: 0 errors; existing warnings remain in `members/page.tsx`.
 - Flutter repository analyze: 0 errors; existing style-only infos remain.
 
+2026-05-12 update:
+
+- Corrected the lifecycle model from single `member_directory` row activation to person-in-department activation.
+- Added `set_person_department_active_status(...)`.
+- Added a follow-up RPC fix so department-only/unassigned memberships can also be restored, not only group-linked rows.
+- Admin-web member list/detail inactive/restore actions now target a person within a department:
+  - If the same person belongs to multiple groups in that department, all active group memberships are archived together.
+  - Restore reactivates the latest archived membership set for that person in that department.
+  - Memberships in other departments/churches are not touched.
+- Added admin-web `/archive` page under the church operations menu:
+  - inactive member department affiliations
+  - inactive departments
+  - inactive groups
+  - restore actions for each category
+- Archive member restore also falls back through `member_profiles` when older `member_directory.person_id` is empty.
+
+Verification:
+
+- Dev DB migration apply: first lifecycle migration applied; follow-up RPC fix is pending because Supabase pooler temp-role auth circuit breaker is blocking new DB connections.
+- Phase 2 summary gate: all issue counts `0`.
+- Phase 3 attendance/prayer snapshot gate: blocked by Supabase temp-role pooler auth circuit breaker, not by SQL/code output.
+- Admin-web targeted lint: 0 errors; existing warnings remain in `members/page.tsx` and `Sidebar.tsx`.
+- Flutter repository analyze: 0 errors; existing style-only infos remain.
+- Token temp file was removed after DB work.
+
 ## Self-Review
 
 Spec coverage:
