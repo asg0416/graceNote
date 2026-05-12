@@ -96,6 +96,48 @@ const isSameRegroupingPerson = (left: any, right: any) => {
     return getRegroupingIdentityKey(left) === getRegroupingIdentityKey(right);
 };
 
+const getRegroupingGroupKey = (member: any) => {
+    return member.group_id || (member.group_name || '').trim() || null;
+};
+
+const expandCoupleMovesBeforeSave = (draftMembers: any[], originalMembers: any[]) => {
+    const nextMembers = draftMembers.map(member => ({ ...member }));
+    const originalById = new Map(originalMembers.map(member => [member.id, member]));
+
+    nextMembers.forEach(member => {
+        if (!member.spouse_name) return;
+
+        const originalMember = originalById.get(member.id);
+        if (!originalMember) return;
+
+        const originalGroupKey = getRegroupingGroupKey(originalMember);
+        const draftGroupKey = getRegroupingGroupKey(member);
+        if (originalGroupKey === draftGroupKey) return;
+
+        const spouse = nextMembers.find(candidate => {
+            const originalSpouse = originalById.get(candidate.id);
+            return candidate.full_name === member.spouse_name &&
+                candidate.spouse_name === member.full_name &&
+                originalSpouse &&
+                getRegroupingGroupKey(originalSpouse) === originalGroupKey;
+        });
+
+        if (!spouse) return;
+
+        const spouseOriginal = originalById.get(spouse.id);
+        if (!spouseOriginal) return;
+
+        const spouseWasIndependentlyMoved =
+            getRegroupingGroupKey(spouse) !== getRegroupingGroupKey(spouseOriginal);
+        if (spouseWasIndependentlyMoved) return;
+
+        spouse.group_id = member.group_id || null;
+        spouse.group_name = member.group_name || null;
+    });
+
+    return nextMembers;
+};
+
 const applyCanonicalFamilyInfo = (sourceMembers: any[]) => {
     const rowsByPerson = new Map<string, any[]>();
     sourceMembers.forEach((member) => {
@@ -987,6 +1029,10 @@ function RegroupingPageInner() {
                 throw new Error(`같은 조에 같은 이름/전화번호의 성도가 중복 편성되어 있습니다: ${Array.from(new Set(duplicateAssignmentNames)).join(', ')}`);
             }
 
+            const membersToSave = autoMoveCouples
+                ? expandCoupleMovesBeforeSave(localMembers, members)
+                : localMembers;
+
             const savedDirectoryIds = await saveRegroupingMemberships(supabase, {
                 churchId: currentChurchId,
                 departmentId: selectedDeptId,
@@ -995,7 +1041,7 @@ function RegroupingPageInner() {
                     name: group.name,
                     color_hex: group.color_hex,
                 })),
-                assignments: localMembers.map(member => ({
+                assignments: membersToSave.map(member => ({
                     id: member.id,
                     full_name: member.full_name,
                     phone: member.phone || '',
