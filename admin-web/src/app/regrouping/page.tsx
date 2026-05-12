@@ -50,7 +50,13 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
 
     const visibleRows: any[] = [];
     rowsByPerson.forEach((rows) => {
+        const draftRows = rows.filter(row => String(row.id || '').startsWith('temp-') || row.is_new);
+        if (draftRows.length > 0) {
+            visibleRows.push(...draftRows);
+        }
+
         const activeMembershipRows = rows.filter(row =>
+            !draftRows.includes(row) &&
             Boolean(row.phase2_person_id) &&
             Boolean(row.phase2_membership_id) &&
             Boolean(row.group_id) &&
@@ -62,6 +68,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
         }
 
         const assignedLegacyRows = rows.filter(row =>
+            !draftRows.includes(row) &&
             Boolean(row.group_id) &&
             row.is_active !== false
         );
@@ -75,6 +82,18 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
     });
 
     return visibleRows;
+};
+
+const isSameRegroupingGroup = (left: any, right: any) => {
+    if (!left || !right) return false;
+    if (left.group_id && right.group_id && left.group_id === right.group_id) return true;
+    const leftGroupName = (left.group_name || '').trim();
+    const rightGroupName = (right.group_name || '').trim();
+    return Boolean(leftGroupName) && leftGroupName === rightGroupName;
+};
+
+const isSameRegroupingPerson = (left: any, right: any) => {
+    return getRegroupingIdentityKey(left) === getRegroupingIdentityKey(right);
 };
 
 const applyCanonicalFamilyInfo = (sourceMembers: any[]) => {
@@ -509,12 +528,9 @@ function RegroupingPageInner() {
                 const memberToMove = localMembers.find(m => m.id === id);
                 if (!memberToMove || ids.includes(memberToMove.id) && memberToMove.group_id === targetGroupId) return false;
 
-                const normalizedPhone = (memberToMove.phone || '').replace(/[^0-9]/g, '');
                 return targetGroupMembers.some(tm =>
-                    !ids.includes(tm.id) && (
-                        (tm.person_id && tm.person_id === memberToMove.person_id) ||
-                        (tm.full_name === memberToMove.full_name && (tm.phone || '').replace(/[^0-9]/g, '') === normalizedPhone)
-                    )
+                    !ids.includes(tm.id) &&
+                    isSameRegroupingPerson(tm, memberToMove)
                 );
             });
 
@@ -552,7 +568,7 @@ function RegroupingPageInner() {
                     const spouse = localMembers.find(m =>
                         m.full_name === member.spouse_name &&
                         m.spouse_name === member.full_name &&
-                        m.group_id === member.group_id
+                        isSameRegroupingGroup(m, member)
                     );
                     if (spouse && !finalIdsToMove.includes(spouse.id)) {
                         spousesToInclude.push(spouse.id);
@@ -587,10 +603,8 @@ function RegroupingPageInner() {
 
                 // Check if someone with same identity already exists in the target group (excluding the ones being moved)
                 return targetGroupMembers.some(tm =>
-                    !idsBeingMoved.has(tm.id) && (
-                        (tm.person_id && tm.person_id === memberToMove.person_id) ||
-                        (tm.full_name === memberToMove.full_name && (tm.phone || '').replace(/[^0-9]/g, '') === (memberToMove.phone || '').replace(/[^0-9]/g, ''))
-                    )
+                    !idsBeingMoved.has(tm.id) &&
+                    isSameRegroupingPerson(tm, memberToMove)
                 );
             });
 
@@ -714,7 +728,7 @@ function RegroupingPageInner() {
             const spouse = localMembers.find(s =>
                 s.full_name === member.spouse_name &&
                 s.spouse_name === member.full_name &&
-                s.group_id === member.group_id
+                isSameRegroupingGroup(s, member)
             );
             if (spouse) {
                 idsToToggle.push(spouse.id);
@@ -892,10 +906,11 @@ function RegroupingPageInner() {
             // Add new - Check for duplicates in the target group first
             const targetGroupId = targetGroupForNewMember?.id || null;
             const isDuplicate = localMembers.some(m =>
-                m.group_id === targetGroupId && (
-                    (m.person_id && memberData.person_id && m.person_id === memberData.person_id) ||
-                    (m.full_name === memberData.full_name && (m.phone || '').replace(/[^0-9]/g, '') === normalizedNewPhone)
-                )
+                m.group_id === targetGroupId &&
+                isSameRegroupingPerson(m, {
+                    ...memberData,
+                    phone: normalizedNewPhone,
+                })
             );
 
             if (isDuplicate) {
