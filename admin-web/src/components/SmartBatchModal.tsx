@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Modal } from '@/components/Modal';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
@@ -48,6 +48,7 @@ interface DBMatch {
     phone: string | null;
     person_id: string | null;
     profile_id: string | null;
+    department_id: string | null;
     group_name: string | null;
     department_name?: string;
 }
@@ -58,10 +59,16 @@ interface SmartBatchMatchRow {
     phone: string | null;
     person_id: string | null;
     profile_id: string | null;
+    department_id: string | null;
     group_name: string | null;
     department?: {
         name?: string | null;
     } | null;
+}
+
+interface GroupOption {
+    id: string;
+    name: string;
 }
 
 interface SmartBatchModalProps {
@@ -86,9 +93,37 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [dbMatches, setDbMatches] = useState<Record<string, DBMatch[]>>({});
+    const [departmentGroups, setDepartmentGroups] = useState<GroupOption[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const selectedProfileMode = departments.find(department => department.id === selectedDeptId)?.profile_mode || 'individual';
     const isCoupleProfileMode = selectedProfileMode === 'couple';
+
+    useEffect(() => {
+        const fetchDepartmentGroups = async () => {
+            if (!churchId || !selectedDeptId) {
+                setDepartmentGroups([]);
+                return;
+            }
+
+            const { data, error: groupError } = await supabase
+                .from('groups')
+                .select('id, name')
+                .eq('church_id', churchId)
+                .eq('department_id', selectedDeptId)
+                .eq('is_active', true)
+                .order('name', { ascending: true });
+
+            if (groupError) {
+                console.error('Error fetching department groups:', groupError);
+                setDepartmentGroups([]);
+                return;
+            }
+
+            setDepartmentGroups((data || []) as GroupOption[]);
+        };
+
+        fetchDepartmentGroups();
+    }, [churchId, selectedDeptId]);
 
     const handleUpdateRow = (index: number, updates: Partial<MemberData>) => {
         const newData = [...parsedData];
@@ -224,6 +259,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                     phone, 
                     person_id, 
                     profile_id, 
+                    department_id,
                     group_name,
                     is_active,
                     department:departments!department_id(name)
@@ -243,6 +279,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                     phone: m.phone,
                     person_id: m.person_id,
                     profile_id: m.profile_id,
+                    department_id: m.department_id,
                     group_name: m.group_name,
                     department_name: m.department?.name ?? undefined
                 });
@@ -566,13 +603,14 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 }
             }
 
-            // Check: DB-linked person (person_id set) is already registered in this department
-            // — whether targeting the same group OR a different group, block with a clear message.
-            // Same group → upsert UPDATE would work but is a no-op; guide to editing.
-            // Different group → would try to INSERT second active row → unique constraint violation.
+            // Check only the selected department. The same person may already
+            // belong to another department in this church and still be added here.
             if (item.person_id) {
                 const existingRows = dbMatches[item.full_name?.trim() || ''] || [];
-                const matchedExistingRow = existingRows.find(match => match.person_id === item.person_id);
+                const matchedExistingRow = existingRows.find(match =>
+                    match.person_id === item.person_id &&
+                    match.department_id === selectedDeptId
+                );
                 if (matchedExistingRow) {
                     const targetGroup = item.group_name?.trim() || '미정';
                     const currentGroup = matchedExistingRow.group_name || '미정';
@@ -1056,13 +1094,27 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                                                         </select>
                                                     </td>
                                                     <td className="px-6 py-4 align-top">
-                                                        <input
-                                                            type="text"
-                                                            value={item.group_name || ''}
-                                                            onChange={(e) => handleUpdateRow(idx, { group_name: e.target.value })}
-                                                            className="w-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg text-[11px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-500/20 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
-                                                            placeholder="조 이름 (미정)"
-                                                        />
+                                                        <div className="flex flex-col gap-1.5 min-w-40">
+                                                            <select
+                                                                value={departmentGroups.some(group => group.name === item.group_name) ? item.group_name || '' : ''}
+                                                                onChange={(e) => handleUpdateRow(idx, { group_name: e.target.value })}
+                                                                className="w-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 rounded-lg text-[10px] font-black border border-slate-200 dark:border-slate-700 px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                                                            >
+                                                                <option value="">기존 조 선택</option>
+                                                                {departmentGroups.map(group => (
+                                                                    <option key={group.id} value={group.name}>
+                                                                        {group.name}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                            <input
+                                                                type="text"
+                                                                value={item.group_name || ''}
+                                                                onChange={(e) => handleUpdateRow(idx, { group_name: e.target.value })}
+                                                                className="w-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg text-[11px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-500/20 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
+                                                                placeholder="직접 입력 또는 미정"
+                                                            />
+                                                        </div>
                                                     </td>
                                                     <td className="px-6 py-4 align-top text-center">
                                                         <button
