@@ -855,6 +855,26 @@ Verification:
 - Flutter repository analyze: 0 errors; existing style-only infos remain.
 - Token temp file was removed after DB work.
 
+2026-05-12 restore debugging update:
+
+- 김보영 복구 실패로 person-in-department restore RPC를 실제 데이터 기준으로 재진단했다.
+- Root cause:
+  - Restore branch에서 `member_directory.is_active=false`를 다시 업데이트하면서 기존 legacy sync trigger가 실행됐다.
+  - 그 trigger가 방금 `active`로 바꾼 `memberships`를 다시 `inactive`로 되돌렸다.
+  - 이후 재호출에서는 같은 조 duplicate membership 중 방금 업데이트된 오래된 row가 canonical로 선택되어 legacy unique assignment 충돌이 났다.
+- Final restore rule:
+  - Phase 2 `memberships`가 소속의 기준이다.
+  - 같은 person+department 안에서 서로 다른 active group은 모두 복구한다.
+  - 같은 person+department+group 중복 active membership은 하나만 남긴다.
+  - 이미 active인 legacy `member_directory` row를 우선 canonical로 선택한다.
+  - inactive duplicate legacy row는 이력으로 남기되 휴지통에는 active affiliation이 있으면 표시하지 않는다.
+- Dev DB verification:
+  - 김보영 예닮부 복구 후 active memberships: `Re-born(새가족부)❤️`, `동준 상희 조`
+  - duplicate Re-born membership 1건은 inactive history로 보존
+  - active group_members: 2
+  - active legacy directory rows: 2
+  - Phase 2 summary gate: all issue counts `0`
+
 ## Self-Review
 
 Spec coverage:
