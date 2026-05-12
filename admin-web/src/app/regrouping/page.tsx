@@ -122,30 +122,17 @@ const expandCoupleMovesBeforeSave = (draftMembers: any[], originalMembers: any[]
                 getRegroupingGroupKey(originalSpouse) === originalGroupKey;
         });
 
-        const spouseAlreadyInTargetGroup = nextMembers.some(candidate =>
-            candidate.full_name === member.spouse_name &&
-            candidate.spouse_name === member.full_name &&
-            getRegroupingGroupKey(candidate) === draftGroupKey
-        );
-        if (spouseAlreadyInTargetGroup) return;
+        if (!spouse) return;
 
-        const spouseFallback = spouse || nextMembers.find(candidate =>
-            candidate.full_name === member.spouse_name &&
-            candidate.spouse_name === member.full_name &&
-            candidate.is_active !== false
-        );
-
-        if (!spouseFallback) return;
-
-        const spouseOriginal = originalById.get(spouseFallback.id);
+        const spouseOriginal = originalById.get(spouse.id);
         if (!spouseOriginal) return;
 
         const spouseWasIndependentlyMoved =
-            getRegroupingGroupKey(spouseFallback) !== getRegroupingGroupKey(spouseOriginal);
+            getRegroupingGroupKey(spouse) !== getRegroupingGroupKey(spouseOriginal);
         if (spouseWasIndependentlyMoved) return;
 
-        spouseFallback.group_id = member.group_id || null;
-        spouseFallback.group_name = member.group_name || null;
+        spouse.group_id = member.group_id || null;
+        spouse.group_name = member.group_name || null;
     });
 
     return nextMembers;
