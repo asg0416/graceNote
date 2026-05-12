@@ -38,6 +38,7 @@ type ArchivedMember = {
     left_at: string | null;
     departments?: { name?: string | null; color_hex?: string | null } | null;
     archived_group_names?: string[];
+    archived_group_candidates?: ArchivedGroupCandidate[];
 };
 
 type ArchivedDepartment = {
@@ -66,11 +67,27 @@ type ArchivedMembershipLink = {
     department_id: string | null;
     group_id: string | null;
     status: string | null;
+    ends_at: string | null;
+    archived_by_event_id: string | null;
 };
 
 type GroupNameRow = {
     id: string;
     name: string | null;
+};
+
+type ArchiveEventRow = {
+    id: string;
+    person_id: string;
+    department_id: string;
+    occurred_at: string;
+};
+
+type ArchivedGroupCandidate = {
+    group_id: string;
+    group_name: string;
+    ends_at: string | null;
+    archived_by_event_id: string | null;
 };
 
 type ArchivedMemberAffiliation = {
@@ -83,6 +100,7 @@ type ArchivedMemberAffiliation = {
     left_at: string | null;
     departments?: { name?: string | null; color_hex?: string | null } | null;
     archived_group_names: string[];
+    archived_group_candidates: ArchivedGroupCandidate[];
     rows: ArchivedMember[];
 };
 
@@ -103,6 +121,7 @@ export default function ArchivePage() {
     const [members, setMembers] = useState<ArchivedMember[]>([]);
     const [departments, setDepartments] = useState<ArchivedDepartment[]>([]);
     const [groups, setGroups] = useState<ArchivedGroup[]>([]);
+    const [restoreGroupSelections, setRestoreGroupSelections] = useState<Record<string, string[]>>({});
 
     const fetchArchive = async (userProfile: Profile) => {
         setLoading(true);
@@ -182,12 +201,21 @@ export default function ArchivePage() {
             if (personIds.length > 0 && departmentIds.length > 0) {
                 const { data: membershipLinks, error: membershipLinkError } = await supabase
                     .from('memberships')
-                    .select('person_id, department_id, group_id, status')
+                    .select('person_id, department_id, group_id, status, ends_at, archived_by_event_id')
                     .in('person_id', personIds)
                     .in('department_id', departmentIds)
                     .in('status', ['active', 'inactive', 'ended']);
 
                 if (membershipLinkError) throw membershipLinkError;
+
+                const { data: archiveEvents, error: archiveEventsError } = await supabase
+                    .from('person_department_lifecycle_events')
+                    .select('id, person_id, department_id, occurred_at')
+                    .eq('action', 'archive')
+                    .in('person_id', personIds)
+                    .in('department_id', departmentIds);
+
+                if (archiveEventsError) throw archiveEventsError;
 
                 const activeAffiliationKeys = new Set(
                     ((membershipLinks || []) as ArchivedMembershipLink[])
@@ -217,21 +245,68 @@ export default function ArchivePage() {
                 }
 
                 const archivedGroupsByAffiliation = new Map<string, Set<string>>();
+                const archivedCandidatesByAffiliation = new Map<string, ArchivedGroupCandidate[]>();
+                const latestEventByAffiliation = new Map<string, ArchiveEventRow>();
+                const latestEndsAtByAffiliation = new Map<string, number>();
+
+                ((archiveEvents || []) as ArchiveEventRow[]).forEach(event => {
+                    if (!event.person_id || !event.department_id) return;
+                    const key = `${event.person_id}:${event.department_id}`;
+                    const existing = latestEventByAffiliation.get(key);
+                    if (!existing || event.occurred_at > existing.occurred_at) {
+                        latestEventByAffiliation.set(key, event);
+                    }
+                });
+
+                ((membershipLinks || []) as ArchivedMembershipLink[]).forEach(link => {
+                    if (link.status === 'active') return;
+                    if (!link.person_id || !link.department_id || !link.ends_at) return;
+                    const key = `${link.person_id}:${link.department_id}`;
+                    const timestamp = new Date(link.ends_at).getTime();
+                    const existing = latestEndsAtByAffiliation.get(key);
+                    if (!existing || timestamp > existing) {
+                        latestEndsAtByAffiliation.set(key, timestamp);
+                    }
+                });
+
                 ((membershipLinks || []) as ArchivedMembershipLink[]).forEach(link => {
                     if (link.status === 'active') return;
                     if (!link.person_id || !link.department_id || !link.group_id) return;
                     const groupName = groupNames.get(link.group_id);
                     if (!groupName) return;
                     const key = `${link.person_id}:${link.department_id}`;
+                    const latestEvent = latestEventByAffiliation.get(key);
+                    const latestEndsAt = latestEndsAtByAffiliation.get(key);
+                    const isLatestArchiveCandidate = latestEvent
+                        ? link.archived_by_event_id === latestEvent.id
+                        : !latestEndsAt || !link.ends_at || new Date(link.ends_at).getTime() >= latestEndsAt - 5000;
                     const names = archivedGroupsByAffiliation.get(key) || new Set<string>();
                     names.add(groupName);
                     archivedGroupsByAffiliation.set(key, names);
+
+                    if (!isLatestArchiveCandidate) return;
+
+                    const candidates = archivedCandidatesByAffiliation.get(key) || [];
+                    if (!candidates.some(candidate => candidate.group_id === link.group_id)) {
+                        candidates.push({
+                            group_id: link.group_id,
+                            group_name: groupName,
+                            ends_at: link.ends_at,
+                            archived_by_event_id: link.archived_by_event_id,
+                        });
+                    }
+                    archivedCandidatesByAffiliation.set(key, candidates);
                 });
 
                 archivedMembers.forEach(member => {
                     if (!member.person_id || !member.department_id) return;
-                    const names = archivedGroupsByAffiliation.get(`${member.person_id}:${member.department_id}`);
+                    const key = `${member.person_id}:${member.department_id}`;
+                    const names = archivedGroupsByAffiliation.get(key);
+                    const candidates = archivedCandidatesByAffiliation.get(key);
                     member.archived_group_names = names ? Array.from(names).sort((a, b) => a.localeCompare(b, 'ko')) : [];
+                    member.archived_group_candidates = candidates
+                        ? [...candidates].sort((a, b) => a.group_name.localeCompare(b.group_name, 'ko'))
+                        : [];
                 });
 
                 for (let index = archivedMembers.length - 1; index >= 0; index -= 1) {
@@ -298,6 +373,7 @@ export default function ArchivePage() {
                     left_at: member.left_at,
                     departments: member.departments,
                     archived_group_names: member.archived_group_names || [],
+                    archived_group_candidates: member.archived_group_candidates || [],
                     rows: [member],
                 });
                 return;
@@ -308,6 +384,12 @@ export default function ArchivePage() {
                 ...existing.archived_group_names,
                 ...(member.archived_group_names || []),
             ])).sort((a, b) => a.localeCompare(b, 'ko'));
+            existing.archived_group_candidates = [
+                ...existing.archived_group_candidates,
+                ...(member.archived_group_candidates || []),
+            ].filter((candidate, index, candidates) =>
+                candidates.findIndex(item => item.group_id === candidate.group_id) === index
+            ).sort((a, b) => a.group_name.localeCompare(b.group_name, 'ko'));
 
             if (member.left_at && (!existing.left_at || member.left_at > existing.left_at)) {
                 existing.left_at = member.left_at;
@@ -332,6 +414,24 @@ export default function ArchivePage() {
         );
     }, [memberAffiliations, query]);
 
+    useEffect(() => {
+        setRestoreGroupSelections(previous => {
+            const next = { ...previous };
+            const validKeys = new Set(memberAffiliations.map(member => member.key));
+
+            Object.keys(next).forEach(key => {
+                if (!validKeys.has(key)) delete next[key];
+            });
+
+            memberAffiliations.forEach(member => {
+                if (next[member.key]) return;
+                next[member.key] = member.archived_group_candidates.map(candidate => candidate.group_id);
+            });
+
+            return next;
+        });
+    }, [memberAffiliations]);
+
     const filteredDepartments = useMemo(() => {
         const keyword = query.trim().toLowerCase();
         if (!keyword) return departments;
@@ -351,13 +451,34 @@ export default function ArchivePage() {
         if (profile) await fetchArchive(profile);
     };
 
+    const toggleRestoreGroup = (memberKey: string, groupId: string) => {
+        setRestoreGroupSelections(previous => {
+            const current = previous[memberKey] || [];
+            const next = current.includes(groupId)
+                ? current.filter(id => id !== groupId)
+                : [...current, groupId];
+
+            return {
+                ...previous,
+                [memberKey]: next,
+            };
+        });
+    };
+
     const restoreMember = async (member: ArchivedMemberAffiliation) => {
         if (!member.department_id) {
             alert('부서 정보가 없어 복구할 수 없습니다.');
             return;
         }
 
-        if (!confirm(`${member.full_name}님의 ${member.departments?.name || '부서'} 소속을 복구하시겠습니까?`)) return;
+        const selectedGroupIds = restoreGroupSelections[member.key] || [];
+        const restoreLabel = member.archived_group_candidates.length > 0
+            ? selectedGroupIds.length > 0
+                ? `${selectedGroupIds.length}개 조`
+                : '조 없이 부서 소속만'
+            : '부서 소속';
+
+        if (!confirm(`${member.full_name}님의 ${member.departments?.name || '부서'} 소속을 ${restoreLabel}으로 복구하시겠습니까?`)) return;
 
         setRestoringId(member.key);
         try {
@@ -367,6 +488,7 @@ export default function ArchivePage() {
                     churchId: member.church_id,
                     departmentId: member.department_id,
                     isActive: true,
+                    restoreGroupIds: selectedGroupIds,
                 });
             } else {
                 await setMemberDirectoryActiveStatus(supabase, member.rows[0].id, true);
@@ -506,14 +628,53 @@ export default function ArchivePage() {
                                     </span>
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] font-black text-slate-600 dark:text-slate-300">
                                         <Users className="w-3 h-3" />
-                                        {member.archived_group_names.length > 0
-                                            ? member.archived_group_names.join(', ')
-                                            : '조 없음'}
+                                        {member.archived_group_candidates.length > 0
+                                            ? '복구할 조 선택'
+                                            : member.archived_group_names.length > 0
+                                                ? `과거 조: ${member.archived_group_names.join(', ')}`
+                                                : '조 없음'}
                                     </span>
                                     <span className="px-2.5 py-1 rounded-lg bg-slate-200/70 dark:bg-slate-800 text-[10px] font-black text-slate-500 dark:text-slate-400">
                                         {formatDate(member.left_at)}
                                     </span>
                                 </div>
+                                {member.archived_group_candidates.length > 0 && (
+                                    <div className="space-y-2">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                            복구할 조
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {member.archived_group_candidates.map(candidate => {
+                                                const selectedGroupIds = restoreGroupSelections[member.key] || [];
+                                                const isSelected = selectedGroupIds.includes(candidate.group_id);
+
+                                                return (
+                                                    <button
+                                                        key={candidate.group_id}
+                                                        type="button"
+                                                        onClick={() => toggleRestoreGroup(member.key, candidate.group_id)}
+                                                        className={cn(
+                                                            'px-3 py-1.5 rounded-xl border text-[11px] font-black transition-all',
+                                                            isSelected
+                                                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-300'
+                                                                : 'bg-white border-slate-200 text-slate-400 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-500'
+                                                        )}
+                                                    >
+                                                        {isSelected ? '복구 ' : '제외 '}
+                                                        {candidate.group_name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        {member.archived_group_names.length > member.archived_group_candidates.length && (
+                                            <p className="text-[10px] font-bold text-slate-400">
+                                                오래된 이력: {member.archived_group_names
+                                                    .filter(name => !member.archived_group_candidates.some(candidate => candidate.group_name === name))
+                                                    .join(', ')}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                             </article>
                         ))}
                         {filteredMembers.length === 0 && (

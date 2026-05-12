@@ -873,7 +873,29 @@ Verification:
   - duplicate Re-born membership 1건은 inactive history로 보존
   - active group_members: 2
   - active legacy directory rows: 2
-  - Phase 2 summary gate: all issue counts `0`
+ - Phase 2 summary gate: all issue counts `0`
+
+2026-05-12 selected restore update:
+
+- Person-in-department restore no longer means “turn every historical membership back on.”
+- Added `person_department_lifecycle_events`:
+  - `archive` event records the exact person/church/department deactivation batch.
+  - archived `memberships` now point to `archived_by_event_id`.
+  - restore events record selected group ids and point back to the latest archive event when available.
+- Added selected restore RPC:
+  - `restore_person_department_affiliation(person_id, church_id, department_id, group_ids)`
+  - If `group_ids` is provided, only those groups are restored.
+  - If `group_ids` is empty, the person is restored as department-only/unassigned.
+  - Old restore behavior is kept only as fallback for callers that do not pass group ids.
+- Archive UI now shows restore group chips:
+  - default selection is the latest archived batch, not all historical groups.
+  - admin can uncheck groups before restore.
+  - old group history remains inactive/ended and is not lost.
+- Verification:
+  - Targeted admin-web lint: passed for `archive/page.tsx` and `memberWriteRpc.ts`.
+  - Dev DB migration apply: passed.
+  - Transactional selected-restore test: archived a multi-group person, restored one selected group, verified only one active group returned, then rolled back.
+  - Phase 2 summary gate: all issue counts `0`.
 
 ## Self-Review
 

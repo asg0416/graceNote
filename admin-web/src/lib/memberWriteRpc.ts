@@ -90,14 +90,22 @@ export const setPersonDepartmentActiveStatus = async (
         churchId: string;
         departmentId: string;
         isActive: boolean;
+        restoreGroupIds?: string[];
     }
 ) => {
-    const { data, error } = await supabase.rpc('set_person_department_active_status', {
-        p_person_id: payload.personId,
-        p_church_id: payload.churchId,
-        p_department_id: payload.departmentId,
-        p_is_active: payload.isActive,
-    });
+    const { data, error } = payload.isActive && payload.restoreGroupIds
+        ? await supabase.rpc('restore_person_department_affiliation', {
+            p_person_id: payload.personId,
+            p_church_id: payload.churchId,
+            p_department_id: payload.departmentId,
+            p_group_ids: payload.restoreGroupIds,
+        })
+        : await supabase.rpc('set_person_department_active_status', {
+            p_person_id: payload.personId,
+            p_church_id: payload.churchId,
+            p_department_id: payload.departmentId,
+            p_is_active: payload.isActive,
+        });
 
     if (error) {
         throw new Error(error.message || '부서 소속 활성 상태 변경 RPC 실행에 실패했습니다.');
