@@ -37,6 +37,7 @@ type ArchivedMember = {
     group_name: string | null;
     left_at: string | null;
     departments?: { name?: string | null; color_hex?: string | null } | null;
+    archived_group_names?: string[];
 };
 
 type ArchivedDepartment = {
@@ -58,6 +59,31 @@ type ArchivedGroup = {
 type MemberProfilePersonLink = {
     member_directory_id: string | null;
     person_id: string | null;
+};
+
+type ArchivedMembershipLink = {
+    person_id: string | null;
+    department_id: string | null;
+    group_id: string | null;
+    status: string | null;
+};
+
+type GroupNameRow = {
+    id: string;
+    name: string | null;
+};
+
+type ArchivedMemberAffiliation = {
+    key: string;
+    person_id: string | null;
+    church_id: string;
+    department_id: string | null;
+    full_name: string;
+    phone: string | null;
+    left_at: string | null;
+    departments?: { name?: string | null; color_hex?: string | null } | null;
+    archived_group_names: string[];
+    rows: ArchivedMember[];
 };
 
 type ArchiveTab = 'members' | 'departments' | 'groups';
@@ -150,6 +176,57 @@ export default function ArchivePage() {
                 });
             }
 
+            const personIds = Array.from(new Set(archivedMembers.map(member => member.person_id).filter(Boolean))) as string[];
+            const departmentIds = Array.from(new Set(archivedMembers.map(member => member.department_id).filter(Boolean))) as string[];
+
+            if (personIds.length > 0 && departmentIds.length > 0) {
+                const { data: membershipLinks, error: membershipLinkError } = await supabase
+                    .from('memberships')
+                    .select('person_id, department_id, group_id, status')
+                    .in('person_id', personIds)
+                    .in('department_id', departmentIds)
+                    .in('status', ['inactive', 'ended']);
+
+                if (membershipLinkError) throw membershipLinkError;
+
+                const groupIds = Array.from(new Set(
+                    ((membershipLinks || []) as ArchivedMembershipLink[])
+                        .map(link => link.group_id)
+                        .filter(Boolean)
+                )) as string[];
+
+                const groupNames = new Map<string, string>();
+                if (groupIds.length > 0) {
+                    const { data: groupRows, error: groupRowsError } = await supabase
+                        .from('groups')
+                        .select('id, name')
+                        .in('id', groupIds);
+
+                    if (groupRowsError) throw groupRowsError;
+
+                    ((groupRows || []) as GroupNameRow[]).forEach(group => {
+                        if (group.id && group.name) groupNames.set(group.id, group.name);
+                    });
+                }
+
+                const archivedGroupsByAffiliation = new Map<string, Set<string>>();
+                ((membershipLinks || []) as ArchivedMembershipLink[]).forEach(link => {
+                    if (!link.person_id || !link.department_id || !link.group_id) return;
+                    const groupName = groupNames.get(link.group_id);
+                    if (!groupName) return;
+                    const key = `${link.person_id}:${link.department_id}`;
+                    const names = archivedGroupsByAffiliation.get(key) || new Set<string>();
+                    names.add(groupName);
+                    archivedGroupsByAffiliation.set(key, names);
+                });
+
+                archivedMembers.forEach(member => {
+                    if (!member.person_id || !member.department_id) return;
+                    const names = archivedGroupsByAffiliation.get(`${member.person_id}:${member.department_id}`);
+                    member.archived_group_names = names ? Array.from(names).sort((a, b) => a.localeCompare(b, 'ko')) : [];
+                });
+            }
+
             setMembers(archivedMembers);
             setDepartments((departmentResult.data || []) as ArchivedDepartment[]);
             setGroups((groupResult.data || []) as unknown as ArchivedGroup[]);
@@ -185,15 +262,59 @@ export default function ArchivePage() {
         init();
     }, [router]);
 
+    const memberAffiliations = useMemo(() => {
+        const groupsByKey = new Map<string, ArchivedMemberAffiliation>();
+
+        members.forEach(member => {
+            const key = member.person_id && member.department_id
+                ? `${member.person_id}:${member.department_id}`
+                : member.id;
+            const existing = groupsByKey.get(key);
+
+            if (!existing) {
+                groupsByKey.set(key, {
+                    key,
+                    person_id: member.person_id,
+                    church_id: member.church_id,
+                    department_id: member.department_id,
+                    full_name: member.full_name,
+                    phone: member.phone,
+                    left_at: member.left_at,
+                    departments: member.departments,
+                    archived_group_names: member.archived_group_names || [],
+                    rows: [member],
+                });
+                return;
+            }
+
+            existing.rows.push(member);
+            existing.archived_group_names = Array.from(new Set([
+                ...existing.archived_group_names,
+                ...(member.archived_group_names || []),
+            ])).sort((a, b) => a.localeCompare(b, 'ko'));
+
+            if (member.left_at && (!existing.left_at || member.left_at > existing.left_at)) {
+                existing.left_at = member.left_at;
+            }
+        });
+
+        return Array.from(groupsByKey.values()).sort((a, b) => {
+            const leftCompare = (b.left_at || '').localeCompare(a.left_at || '');
+            if (leftCompare !== 0) return leftCompare;
+            return a.full_name.localeCompare(b.full_name, 'ko');
+        });
+    }, [members]);
+
     const filteredMembers = useMemo(() => {
         const keyword = query.trim().toLowerCase();
-        if (!keyword) return members;
-        return members.filter(member =>
+        if (!keyword) return memberAffiliations;
+        return memberAffiliations.filter(member =>
             member.full_name.toLowerCase().includes(keyword) ||
             member.phone?.includes(keyword) ||
-            member.departments?.name?.toLowerCase().includes(keyword)
+            member.departments?.name?.toLowerCase().includes(keyword) ||
+            member.archived_group_names.some(groupName => groupName.toLowerCase().includes(keyword))
         );
-    }, [members, query]);
+    }, [memberAffiliations, query]);
 
     const filteredDepartments = useMemo(() => {
         const keyword = query.trim().toLowerCase();
@@ -214,7 +335,7 @@ export default function ArchivePage() {
         if (profile) await fetchArchive(profile);
     };
 
-    const restoreMember = async (member: ArchivedMember) => {
+    const restoreMember = async (member: ArchivedMemberAffiliation) => {
         if (!member.department_id) {
             alert('부서 정보가 없어 복구할 수 없습니다.');
             return;
@@ -222,7 +343,7 @@ export default function ArchivePage() {
 
         if (!confirm(`${member.full_name}님의 ${member.departments?.name || '부서'} 소속을 복구하시겠습니까?`)) return;
 
-        setRestoringId(member.id);
+        setRestoringId(member.key);
         try {
             if (member.person_id) {
                 await setPersonDepartmentActiveStatus(supabase, {
@@ -232,7 +353,7 @@ export default function ArchivePage() {
                     isActive: true,
                 });
             } else {
-                await setMemberDirectoryActiveStatus(supabase, member.id, true);
+                await setMemberDirectoryActiveStatus(supabase, member.rows[0].id, true);
             }
             await refresh();
         } catch (error) {
@@ -312,7 +433,7 @@ export default function ArchivePage() {
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
                     <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => setActiveTab('members')} className={tabClass('members')}>
-                            성도 소속 {members.length}
+                            성도 소속 {memberAffiliations.length}
                         </button>
                         <button type="button" onClick={() => setActiveTab('departments')} className={tabClass('departments')}>
                             부서 {departments.length}
@@ -339,7 +460,7 @@ export default function ArchivePage() {
                 ) : activeTab === 'members' ? (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         {filteredMembers.map(member => (
-                            <article key={member.id} className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/30 space-y-4">
+                            <article key={member.key} className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/30 space-y-4">
                                 <div className="flex items-start justify-between gap-4">
                                     <div className="flex items-start gap-3">
                                         <div className="w-11 h-11 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black">
@@ -347,15 +468,18 @@ export default function ArchivePage() {
                                         </div>
                                         <div>
                                             <h3 className="text-lg font-black text-slate-900 dark:text-white">{member.full_name}</h3>
-                                            <p className="text-xs font-bold text-slate-400">{member.phone || '전화번호 없음'}</p>
+                                            <p className="text-xs font-bold text-slate-400">
+                                                {member.phone || '전화번호 없음'}
+                                                {member.rows.length > 1 ? ` / 보관 row ${member.rows.length}개` : ''}
+                                            </p>
                                         </div>
                                     </div>
                                     <button
                                         onClick={() => restoreMember(member)}
-                                        disabled={restoringId === member.id}
+                                        disabled={restoringId === member.key}
                                         className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black hover:bg-emerald-500 transition-all disabled:opacity-50"
                                     >
-                                        {restoringId === member.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                                        {restoringId === member.key ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
                                         복구
                                     </button>
                                 </div>
@@ -366,7 +490,9 @@ export default function ArchivePage() {
                                     </span>
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] font-black text-slate-600 dark:text-slate-300">
                                         <Users className="w-3 h-3" />
-                                        {member.group_name || '조 없음'}
+                                        {member.archived_group_names.length > 0
+                                            ? member.archived_group_names.join(', ')
+                                            : '조 없음'}
                                     </span>
                                     <span className="px-2.5 py-1 rounded-lg bg-slate-200/70 dark:bg-slate-800 text-[10px] font-black text-slate-500 dark:text-slate-400">
                                         {formatDate(member.left_at)}
