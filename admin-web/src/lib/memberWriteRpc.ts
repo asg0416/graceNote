@@ -115,3 +115,28 @@ export const setPersonDepartmentActiveStatus = async (
         ? data.map((row) => row.member_directory_id).filter(Boolean)
         : [];
 };
+
+export const saveRegroupingMemberships = async (
+    supabase: RpcClientLike,
+    payload: {
+        churchId: string;
+        departmentId: string;
+        groups: Array<Record<string, unknown>>;
+        assignments: Array<Record<string, unknown>>;
+    }
+) => {
+    const { data, error } = await supabase.rpc('save_regrouping_memberships', {
+        p_church_id: payload.churchId,
+        p_department_id: payload.departmentId,
+        p_groups: payload.groups,
+        p_assignments: payload.assignments,
+    });
+
+    if (error) {
+        throw new Error(error.message || '조편성 저장 RPC 실행에 실패했습니다.');
+    }
+
+    return Array.isArray(data)
+        ? data.map((row) => row.member_directory_id).filter(Boolean)
+        : [];
+};

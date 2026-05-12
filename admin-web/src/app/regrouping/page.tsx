@@ -32,6 +32,7 @@ import { MemberModal } from '@/components/MemberModal';
 import { Modal } from '@/components/Modal';
 import { Tooltip } from '@/components/Tooltip';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
+import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
 
 const getRegroupingIdentityKey = (member: any) => {
     const normalizedPhone = (member.phone || '').replace(/[^0-9]/g, '');
@@ -945,82 +946,9 @@ function RegroupingPageInner() {
         setSaving(true);
 
         try {
-            // 1. Sync Groups (Add / Rename / Delete)
-            // For simplicity, we'll fetch existing groups and compare
-            const { data: remoteGroups, error: groupsError } = await supabase
-                .from('groups')
-                .select('*')
-                .eq('department_id', selectedDeptId)
-                .eq('is_active', true);
-
-            if (groupsError) throw groupsError;
-
-            // Delete groups that are not in local state
-            const groupsToDelete = remoteGroups.filter(rg => !groups.find(lg => lg.id === rg.id));
-            if (groupsToDelete.length > 0) {
-                const { error: delError } = await supabase
-                    .from('groups')
-                    .update({ is_active: false })
-                    .in('id', groupsToDelete.map(g => g.id));
-                if (delError) throw delError;
-            }
-
-            // Upsert remaining groups (Add new / Rename existing)
-            const existingGroupsToUpdate = groups.filter(g => !g.id.startsWith('temp-')).map(g => ({
-                id: g.id,
-                name: g.name,
-                color_hex: g.color_hex,
-                department_id: selectedDeptId,
-                church_id: currentChurchId,
-                is_active: true
-            }));
-
-            const newGroupsToInsert = groups.filter(g => g.id.startsWith('temp-')).map(g => ({
-                name: g.name,
-                color_hex: g.color_hex,
-                department_id: selectedDeptId,
-                church_id: currentChurchId,
-                is_active: true
-            }));
-
-            let upsertedGroups: any[] = [];
-
-            if (existingGroupsToUpdate.length > 0) {
-                const { data: updated, error: updateError } = await supabase
-                    .from('groups')
-                    .upsert(existingGroupsToUpdate, { onConflict: 'id' })
-                    .select();
-                if (updateError) throw updateError;
-                if (updated) upsertedGroups = [...upsertedGroups, ...updated];
-            }
-
-            if (newGroupsToInsert.length > 0) {
-                const { data: inserted, error: insertError } = await supabase
-                    .from('groups')
-                    .upsert(newGroupsToInsert, { onConflict: 'church_id,department_id,name' })
-                    .select();
-                if (insertError) throw insertError;
-                if (inserted) upsertedGroups = [...upsertedGroups, ...inserted];
-            }
-
-            // Map temp group IDs to real ones for member updates
-            const groupIdMap: Record<string, string> = {};
-            groups.forEach((lg) => {
-                if (lg.id.startsWith('temp-')) {
-                    const matched = upsertedGroups.find(ug => ug.name === lg.name);
-                    if (matched) groupIdMap[lg.id] = matched.id;
-                } else {
-                    groupIdMap[lg.id] = lg.id;
-                }
-            });
-
-            // 2. Process Member Changes
-            // Identify new members, moved members, and renamed groups
-            const existingMemberUpdates = localMembers.filter(m => !m.id.startsWith('temp-'));
             const duplicateAssignments = new Map<string, string[]>();
             localMembers.forEach(member => {
-                const mappedGroupId = member.group_id ? (groupIdMap[member.group_id] || member.group_id) : null;
-                const targetGroup = mappedGroupId ? upsertedGroups.find(group => group.id === mappedGroupId) : null;
+                const targetGroup = member.group_id ? groups.find(group => group.id === member.group_id) : null;
                 const targetGroupName = targetGroup?.name || null;
                 if (!targetGroupName) return;
 
@@ -1044,136 +972,36 @@ function RegroupingPageInner() {
                 throw new Error(`같은 조에 같은 이름/전화번호의 성도가 중복 편성되어 있습니다: ${Array.from(new Set(duplicateAssignmentNames)).join(', ')}`);
             }
 
-            const phase2SyncTargetIds = new Set<string>();
-
-            // CRITICAL: Identify members that were REMOVED from the view (duplicate cards that were deleted)
-            const removedMembers = members.filter(orig => !localMembers.find(lm => lm.id === orig.id));
-
-            const idsToUnassign: string[] = [];
-            const idsToDelete: string[] = [];
-
-            removedMembers.forEach(rm => {
-                const normalizedPhone = (rm.phone || '').replace(/[^0-9]/g, '');
-                // Check if this person still exists in any group in the local state
-                const stillExists = localMembers.some(lm =>
-                    (rm.person_id && lm.person_id === rm.person_id) ||
-                    (lm.full_name === rm.full_name && (lm.phone || '').replace(/[^0-9]/g, '') === normalizedPhone)
-                );
-
-                if (stillExists) {
-                    // It's a redundant duplicate being removed - physically delete to avoid "Unassigned" clutter
-                    idsToDelete.push(rm.id);
-                } else {
-                    // It's the last/only record - move to unassigned
-                    idsToUnassign.push(rm.id);
-                }
+            const savedDirectoryIds = await saveRegroupingMemberships(supabase, {
+                churchId: currentChurchId,
+                departmentId: selectedDeptId,
+                groups: groups.map(group => ({
+                    id: group.id,
+                    name: group.name,
+                    color_hex: group.color_hex,
+                })),
+                assignments: localMembers.map(member => ({
+                    id: member.id,
+                    full_name: member.full_name,
+                    phone: member.phone || '',
+                    group_id: member.group_id || null,
+                    role_in_group: member.role_in_group || 'member',
+                    family_name: member.family_name || null,
+                    spouse_name: member.spouse_name || null,
+                    children_info: member.children_info || null,
+                    birth_date: member.birth_date || null,
+                    wedding_anniversary: member.wedding_anniversary || null,
+                    notes: member.notes || null,
+                    avatar_url: member.avatar_url || null,
+                    person_id: member.person_id || null,
+                    phase2_person_id: member.phase2_person_id || null,
+                    profile_id: member.profile_id || null,
+                })),
             });
-
-            if (idsToDelete.length > 0) {
-                // Before deleting, deactivate their specific group memberships if linked to a profile
-                for (const rid of idsToDelete) {
-                    const m = removedMembers.find(rm => rm.id === rid);
-                    if (m?.profile_id && m.group_id) {
-                        await supabase
-                            .from('group_members')
-                            .update({ is_active: false })
-                            .eq('profile_id', m.profile_id)
-                            .eq('group_id', m.group_id);
-                    }
-                }
-
-                const { error: delError } = await supabase
-                    .from('member_directory')
-                    .update({ is_active: false, left_at: new Date().toISOString() })
-                    .in('id', idsToDelete);
-                if (delError) throw delError;
-                idsToDelete.forEach(id => phase2SyncTargetIds.add(id));
-            }
-
-            const groupedChanges = existingMemberUpdates.reduce((acc, m) => {
-                const original = members.find(orig => orig.id === m.id);
-                const mappedGroupId = m.group_id ? (groupIdMap[m.group_id] || m.group_id) : null;
-
-                const originalGroup = remoteGroups.find(rg => rg.id === original?.group_id);
-                const currentGroup = groups.find(lg => lg.id === m.group_id);
-
-                // Trigger update if:
-                // 1. Group assignment changed (moved)
-                // 2. Current group was renamed (group_name in member_directory needs update)
-                // 3. Role changed (leader <-> member)
-                const isMoved = original?.group_id !== mappedGroupId;
-                const isGroupRenamed = currentGroup && originalGroup && currentGroup.name !== originalGroup.name;
-                const isRoleChanged = original?.role_in_group !== m.role_in_group;
-
-                if (isMoved || isGroupRenamed || isRoleChanged) {
-                    const key = mappedGroupId || 'unassigned';
-                    if (!acc[key]) acc[key] = [];
-                    acc[key].push(m.id);
-                }
-                return acc;
-            }, {} as Record<string, string[]>);
-
-            // Add members to be unassigned (the ones that are not redundant deletes)
-            if (idsToUnassign.length > 0) {
-                if (!groupedChanges['unassigned']) groupedChanges['unassigned'] = [];
-                groupedChanges['unassigned'] = [...new Set([...groupedChanges['unassigned'], ...idsToUnassign])];
-            }
-
-            for (const [groupId, memberIds] of Object.entries(groupedChanges)) {
-                const targetId = groupId === 'unassigned' ? null : groupId;
-
-                // For each group, we update their group_id and their individual roles
-                // We'll update the roles individually for members in this group who changed
-                for (const mid of (memberIds as string[])) {
-                    const localMember = localMembers.find(lm => lm.id === mid);
-                    if (localMember) {
-                        const { error: roleError } = await supabase
-                            .from('member_directory')
-                            .update({ role_in_group: localMember.role_in_group })
-                            .eq('id', mid);
-                        if (roleError) throw roleError;
-                        phase2SyncTargetIds.add(mid);
-                    }
-                }
-
-                const { error } = await supabase.rpc('regroup_members', {
-                    p_member_ids: memberIds,
-                    p_target_group_id: targetId
-                });
-                if (error) throw error;
-                (memberIds as string[]).forEach(id => phase2SyncTargetIds.add(id));
-            }
-
-            // For new/copied members (temp IDs)
-            const tempMembers = localMembers.filter(m => m.id.startsWith('temp-'));
-            for (const m of tempMembers) {
-                const mappedGroupId = m.group_id ? (groupIdMap[m.group_id] || m.group_id) : null;
-                const targetGroup = upsertedGroups.find(ug => ug.id === mappedGroupId);
-
-                const { data: insertedMember, error: insError } = await supabase.from('member_directory').insert({
-                    church_id: currentChurchId!,
-                    department_id: selectedDeptId,
-                    group_name: targetGroup?.name || null,
-                    full_name: m.full_name,
-                    phone: m.phone || '',
-                    spouse_name: m.spouse_name,
-                    children_info: m.children_info,
-                    role_in_group: m.role_in_group || 'member',
-                    birth_date: m.birth_date,
-                    wedding_anniversary: m.wedding_anniversary,
-                    notes: m.notes,
-                    person_id: m.person_id || null,
-                    profile_id: m.profile_id || null
-                }).select('id').single();
-                if (insError) throw insError;
-                if (insertedMember?.id) phase2SyncTargetIds.add(insertedMember.id);
-                // group_members sync is handled automatically by the 
-                // sync_directory_to_group_members DB trigger on member_directory INSERT
-            }
 
             await assertPhase2MemberDirectorySync(
                 supabase,
-                Array.from(phase2SyncTargetIds),
+                savedDirectoryIds,
                 '조편성 저장'
             );
 

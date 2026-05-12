@@ -20,7 +20,7 @@
 | Admin dashboard | People count/unassigned count uses active `memberships.person_id` |
 | Flutter app | Still mostly reads `group_members/member_directory` |
 | Edge Functions | Notification target reads now prefer `memberships`, with legacy fallback |
-| Writes | Still legacy writes + dual-write triggers |
+| Writes | Member detail/archive/restore and SmartBatch writes use Phase 3 RPCs. Regrouping save RPC is being introduced next. Attendance/prayer saves still use legacy FK paths. |
 
 ## Non-Negotiable Rule
 
@@ -147,6 +147,37 @@ Smoke to run:
   - 사용자 확인 완료. 역할 전환 검색 초기화, 삭제 조 생성 전 주차 숨김, 삭제 조 히스토리 노출, 출석 표시 모두 의도대로 동작.
 - Commit:
   - `417bada phase2d: refine flutter prayer and attendance reads`
+
+2026-05-12 Phase 3 write-source batch:
+
+- `admin-web/src/app/regrouping/page.tsx`
+  - 조편성 저장 화면이 더 이상 groups/member_directory/group_members를 여러 단계로 직접 수정하지 않는다.
+  - 저장 payload를 한 번에 `save_regrouping_memberships` RPC로 넘기고, 저장 후 Phase 2 consistency guard만 실행한다.
+- `admin-web/src/lib/memberWriteRpc.ts`
+  - `saveRegroupingMemberships` RPC wrapper 추가.
+- `supabase/migrations/20260512010000_phase3_regrouping_save_rpc.sql`
+  - `save_regrouping_memberships` 추가.
+  - 기존 `member_directory` row는 사람 정보가 아니라 조편성 필드만 갱신한다.
+  - temp 신규 row는 기존 `upsert_member_person_membership`를 사용해 people/member_profiles/memberships와 legacy 호환 row를 같이 만든다.
+  - legacy `sync_directory_to_group_members`를 member_directory row 단위로 좁혀, 한 사람이 여러 조에 있을 때 profile 전체 group_members를 꺼버리는 위험을 줄였다.
+
+Verification:
+
+- `save_regrouping_memberships` no-op save rollback test: passed.
+- `save_regrouping_memberships` move-one-member rollback test: passed.
+- `save_regrouping_memberships` temp-member rollback test: passed.
+- `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all 11 checks issue 0.
+- `npm run lint -- src/app/regrouping/page.tsx src/lib/memberWriteRpc.ts`: 0 errors, existing regrouping warnings only.
+- `git diff --check`: passed.
+
+Smoke to run:
+
+- 조편성에서 기존 성도 1명을 다른 조로 이동 후 저장.
+- 신규 조 생성 후 성도 이동/저장.
+- 같은 person을 다른 조에 복사 추가 후 저장.
+- 같은 person을 같은 조에 중복 배치하면 저장 전 또는 저장 시 차단되는지 확인.
+- 조 삭제 후 저장했을 때 해당 조 성도들이 의도대로 비활성/미편성 처리되는지 확인.
+- 저장 후 조편성/성도명부 Phase 2 진단 issue 0 유지.
 
 ---
 
