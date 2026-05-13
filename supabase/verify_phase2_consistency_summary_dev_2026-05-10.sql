@@ -150,6 +150,37 @@ checks as (
   union all
 
   select
+    'active_directory_group_member_group_mismatches' as check_name,
+    count(*)::bigint as issue_count
+  from public.member_directory md
+  left join public.group_members gm
+    on gm.member_directory_id = md.id
+   and gm.is_active = true
+  left join public.groups g on g.id = gm.group_id
+  where md.is_active is not false
+    and nullif(btrim(md.group_name), '') is not null
+    and coalesce(g.name, '') <> coalesce(md.group_name, '')
+
+  union all
+
+  select
+    'active_membership_legacy_group_mismatches' as check_name,
+    count(*)::bigint as issue_count
+  from public.memberships m
+  left join public.member_directory md on md.id = m.legacy_member_directory_id
+  left join public.group_members gm on gm.id = m.legacy_group_member_id
+  left join public.groups membership_group on membership_group.id = m.group_id
+  left join public.groups legacy_group on legacy_group.id = gm.group_id
+  where m.status = 'active'
+    and m.legacy_member_directory_id is not null
+    and (
+      coalesce(membership_group.name, '') <> coalesce(md.group_name, '')
+      or coalesce(membership_group.name, '') <> coalesce(legacy_group.name, '')
+    )
+
+  union all
+
+  select
     'memberships_missing_people' as check_name,
     count(*)::bigint as issue_count
   from public.memberships m
