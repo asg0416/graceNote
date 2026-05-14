@@ -22,8 +22,7 @@ import {
     Heading2,
     Heading3,
     Undo,
-    Redo,
-    Type
+    Redo
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -116,14 +115,16 @@ export default function RichTextEditor({ content, onChange, editable = true, pla
         if (editor && content !== editor.getHTML()) {
             // Only update if content is different to avoid cursor flickering
             // And especially if it's the first load or external update
-            editor.commands.setContent(content);
+            editor.commands.setContent(content, { emitUpdate: false });
         }
     }, [content, editor]);
 
     // Important: Update editor editable state when prop changes
-    if (editor && editor.isEditable !== editable) {
-        editor.setEditable(editable);
-    }
+    useEffect(() => {
+        if (editor && editor.isEditable !== editable) {
+            editor.setEditable(editable);
+        }
+    }, [editable, editor]);
 
     if (!editor) {
         return null;
