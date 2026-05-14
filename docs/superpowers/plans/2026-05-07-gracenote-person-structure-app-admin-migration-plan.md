@@ -966,6 +966,28 @@ Next Phase 3 write-switch boundary:
   - make `person_id`, `membership_id`, `group_id`, and display snapshots explicit,
   - define backfill and report behavior before changing app save semantics.
 
+2026-05-15 Admin attendance snapshot integrity gate:
+
+- Admin attendance dashboard uses `attendance_roster_snapshots` and `attendance_roster_snapshot_members` as the administrator-confirmed attendance roster source.
+- This is intentionally separate from leader-submitted `attendance` rows:
+  - leader app submissions keep writing `attendance` with legacy FK columns plus Phase 3 snapshot fields,
+  - admin dashboard corrections update roster snapshot members,
+  - reports use snapshot members as the denominator/source of confirmed roster truth.
+- Added `supabase/verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`.
+- The gate checks:
+  - every snapshot member points to an existing `people` row,
+  - person church matches snapshot church,
+  - membership person/church/department matches the snapshot member,
+  - group church/department matches the snapshot,
+  - legacy directory row does not point to a different person or department,
+  - included members have display names,
+  - snapshot/person duplicates do not exist.
+- Dev result:
+  - all 9 checks returned `issue_count = 0`.
+- Next write-switch boundary:
+  - Do not merge admin snapshot edits into leader-submitted `attendance` rows automatically.
+  - Before changing that policy, design explicit conflict semantics for "admin confirmed roster" vs "leader submitted attendance".
+
 ## Self-Review
 
 Spec coverage:
