@@ -1002,3 +1002,28 @@ Placeholder scan:
 
 Risk:
 - Flutter app screens still expect legacy IDs. Task 1 and Task 2 preserve output shape and save path to avoid breaking attendance/prayer.
+
+## 2026-05-15 Fresh Migration Dry-Run
+
+Context:
+- Local `dev` was aligned to `origin/dev` after integrating the person-structure branch on top of remote UI/autosave changes.
+- Safety branch: `backup/dev-before-origin-merge-20260515`.
+
+Result:
+- `supabase db reset` on local fresh DB completed successfully.
+- Migrations applied through `20260515000000_phase3_group_rename_assignment_rpc.sql`.
+- This validates that the current migration chain can build a new database from scratch without relying on manual dev DB drift.
+
+Fresh local gates:
+- `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all issue counts `0`.
+- `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`: all issue counts `0`.
+- `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all issue counts `0`.
+
+Verification cleanup:
+- `verify_phase3_attendance_prayer_person_snapshot_dev_2026-05-09.sql` still contains optional diagnostic SELECTs, so `supabase db query --file` can fail with multiple-command prepared statement errors.
+- Added single-statement summary gate: `supabase/verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`.
+- Phase 2 schema verify still uses psql meta commands and needs a prod-safe single-statement version before final production execution.
+
+Security note:
+- Supabase CLI advisory reports `public.app_config` with RLS disabled.
+- This is not a person migration failure, but it is now tracked as a pre-prod security cleanup item.

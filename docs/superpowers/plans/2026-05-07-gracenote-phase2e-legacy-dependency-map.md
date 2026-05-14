@@ -106,7 +106,9 @@ docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
 | Item | Why It Remains | Required Action |
 | --- | --- | --- |
 | Prod-safe migration order refresh | manifest의 migration list가 Phase 3 최신 파일까지 확장됨 | 운영 적용 직전 파일 존재/순서 재확인 |
-| Fresh migration dry-run | dev DB는 수동 적용 이력이 있어 migration history만 믿으면 위험 | 로컬 fresh 또는 운영 복제 DB에 migration order대로 적용 |
+| Fresh migration dry-run | dev DB는 수동 적용 이력이 있어 migration history만 믿으면 위험 | 2026-05-15 local fresh `supabase db reset` 통과. 운영 적용 직전 운영 복제 DB에서 재실행 |
+| Query-compatible verification SQL | 일부 dev verify 파일은 psql meta command 또는 여러 SELECT 때문에 `supabase db query --file`과 호환되지 않음 | Phase 3 attendance/prayer는 `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`로 대체. Phase 2 schema gate도 운영 전 prod-safe 단일 SELECT 버전 필요 |
+| Pre-prod security lint | Supabase CLI가 `public.app_config` RLS disabled advisory를 출력 | person migration 실패는 아니지만 운영 전 RLS/policy 의사결정 필요 |
 | Edge function smoke | 알림 대상 read-switch는 코드/SQL gate만 있고 실제 함수 dry-run은 별도 | dev deploy 또는 dry-run log 확인 |
 | Role-based app/admin smoke | 권한별 메뉴가 다르므로 한 계정 smoke만으로 부족 | master/admin/leader/member 체크리스트 수행 |
 | Legacy cleanup decision | legacy 테이블 삭제는 아직 위험 | 운영 1차에서는 삭제 금지. 이후 Phase 4에서 FK/backfill/report 영향 재설계 |

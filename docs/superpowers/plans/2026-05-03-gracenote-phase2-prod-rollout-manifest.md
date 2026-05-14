@@ -311,8 +311,9 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 | G22 Phase 3 lifecycle/archive | 성도 비활성, person+department 복구, 선택 조 복구, 부서/조 비활성 관리 | active 소속 세트가 의도대로 복구되고 duplicate assignment error 없음 |
 | G23 Phase 3 regrouping save RPC | 조 이동/복사/부부 이동/신규 조/성도 추가/조 삭제 저장 | 성도명부와 조편성 화면이 같은 active memberships를 표시, profile-less mismatch 0 |
 | G24 attendance snapshot | 관리자 출석 현황에서 snapshot 생성/명단 불러오기/추가/제외/출결 수정/리포트 추출 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql` all 0, 리포트 분모는 snapshot 기준 |
-| G25 attendance/prayer snapshot fields | Flutter 출석/기도 저장 후 `person_id`, `membership_id`, `recorded_group_id`, `recorded_department_id` | `verify_phase3_attendance_prayer_person_snapshot_dev_2026-05-09.sql` all 0 |
-| G26 fresh migration dry-run | 운영 복제본 또는 fresh DB에 Order 1~42 순서 적용 | migration conflict 없음. dev-only 보정 SQL 미포함 |
+| G25 attendance/prayer snapshot fields | Flutter 출석/기도 저장 후 `person_id`, `membership_id`, `recorded_group_id`, `recorded_department_id` | `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql` all 0 |
+| G26 fresh migration dry-run | 운영 복제본 또는 fresh DB에 Order 1~42 순서 적용 | 2026-05-15 local fresh `supabase db reset` 통과. migration conflict 없음. dev-only 보정 SQL 미포함 |
+| G27 pre-prod security lint | Supabase CLI advisory / RLS scan | `public.app_config` RLS disabled advisory를 운영 전 보안 정리 항목으로 추적 |
 
 ## Known Good Dev Verification
 
@@ -378,6 +379,7 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-09 Edge Function notification target read-switch | `notify-event`, `notify-scheduler`의 조장/부서 대상 알림 조회를 active `memberships` 우선으로 전환하고 `group_members` fallback 유지. `git diff --check`: passed. secret literal scan passed. `deno` 미설치로 local deno check는 미실행 | Dev function deploy/dry-run smoke 필요 |
 | 2026-05-13 Phase 3 regrouping profile-less sync gate | `profile_id = null`인 directory-only 성도도 조편성 저장 후 `member_directory`, active `group_members`, active `memberships`가 같은 조를 보도록 `sync_directory_to_group_members()`를 보정. 김보영 케이스 재현 후 dev DB에 migration 적용. `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all checks 0, `active_directory_group_member_group_mismatches = 0`, `active_membership_legacy_group_mismatches = 0` | 운영 Phase 3 조편성 RPC 적용 직후 같은 gate를 반드시 실행 |
 | 2026-05-15 Phase 3 group rename compatibility RPC | 부서관리에서 조 이름 변경 시 generic member upsert RPC가 성도 `profile_id`까지 다시 검증해 stale cross-church profile row에서 `Linked profile belongs to another church` 오류 발생. 조 이름 변경은 계정 연동 변경이 아니므로 `rename_member_directory_group_assignments()` 전용 RPC를 추가해 `group_name`만 갱신하도록 분리. dev DB에 남은 mismatch 1건 repair | `npm run lint -- src/app/departments/page.tsx src/lib/memberWriteRpc.ts`: 0 errors, existing hook warning only. `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all checks 0. 운영 적용 시 조 이름 변경 전용 RPC migration 포함 필수 |
+| 2026-05-15 Fresh local migration dry-run | 원격 `dev`에 origin UI/autosave 변경 + person migration 변경을 통합한 뒤, 로컬 fresh Supabase DB에 전체 migration을 처음부터 적용 | `supabase db reset`: migrations through `20260515000000_phase3_group_rename_assignment_rpc.sql` applied successfully. `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all 0. `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`: all 0. `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all 0. Supabase advisory: `public.app_config` RLS disabled, 운영 전 보안 정리 필요 |
 
 ## Future Logging Protocol
 
