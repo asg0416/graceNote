@@ -41,6 +41,7 @@ import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 import {
     setMemberDirectoryActiveStatus,
     setPersonDepartmentActiveStatus,
+    upsertMemberPersonMembership,
 } from '@/lib/memberWriteRpc';
 
 interface Church {
@@ -651,20 +652,19 @@ function MembersPageInner() {
         // Save for undo
         const previousStates = members
             .filter(m => selectedMemberIds.includes(m.id))
-            .map(m => ({ id: m.id, group_name: m.group_name, department_id: m.department_id }));
+            .map(m => ({ ...m }));
 
         setLoading(true);
         try {
-            const { data: movedMembers, error } = await supabase
-                .from('member_directory')
-                .update({
+            const movedMembers = [];
+            for (const member of previousStates) {
+                const savedMember = await upsertMemberPersonMembership(supabase, {
+                    ...member,
                     group_name: selectedGroup.name,
-                    department_id: targetDeptIdForMove
-                })
-                .in('id', selectedMemberIds)
-                .select('id');
-
-            if (error) throw error;
+                    department_id: targetDeptIdForMove,
+                });
+                movedMembers.push(savedMember);
+            }
             await assertPhase2MemberDirectorySync(
                 supabase,
                 (movedMembers || []).map(member => member.id),
@@ -695,15 +695,15 @@ function MembersPageInner() {
                 // For simplicity, we can do multiple updates or a smarter mapping if needed
                 // But since it's just a few members usually, we can loop or use a custom RPC if it grows
                 for (const item of lastAction.data) {
-                    const { data, error } = await supabase
-                        .from('member_directory')
-                        .update({ group_name: item.group_name, department_id: item.department_id })
-                        .eq('id', item.id)
-                        .select('id');
-                    if (error) throw error;
+                    const data = await upsertMemberPersonMembership(supabase, {
+                        ...item,
+                        id: item.id,
+                        group_name: item.group_name,
+                        department_id: item.department_id,
+                    });
                     await assertPhase2MemberDirectorySync(
                         supabase,
-                        (data || []).map(member => member.id),
+                        [data.id],
                         '성도 이동 되돌리기'
                     );
                 }
@@ -905,15 +905,29 @@ function MembersPageInner() {
 
             if (error) throw error;
 
-            // Sync with member_directory: 조 이름이 명부에도 저장되어 있으므로 함께 업데이트
-            const { data: renamedMembers, error: syncError } = await supabase
+            const renamedGroup = groups.find(group => group.id === groupId);
+            let syncQuery = supabase
                 .from('member_directory')
-                .update({ group_name: newName.trim() })
+                .select('*')
                 .eq('church_id', currentChurchId)
-                .eq('group_name', currentName.trim())
-                .select('id');
+                .eq('group_name', currentName.trim());
 
+            if (renamedGroup?.department_id) {
+                syncQuery = syncQuery.eq('department_id', renamedGroup.department_id);
+            }
+
+            const { data: membersToRename, error: syncError } = await syncQuery;
             if (syncError) throw syncError;
+
+            const renamedMembers = [];
+            for (const member of membersToRename || []) {
+                const savedMember = await upsertMemberPersonMembership(supabase, {
+                    ...member,
+                    group_name: newName.trim(),
+                });
+                renamedMembers.push(savedMember);
+            }
+
             await assertPhase2MemberDirectorySync(
                 supabase,
                 (renamedMembers || []).map(member => member.id),

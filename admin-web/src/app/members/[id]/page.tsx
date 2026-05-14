@@ -356,13 +356,12 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
     const handleSaveDetail = async (field: string, value: any) => {
         setIsSaving(true);
         try {
-            const { error } = await supabase
-                .from('member_directory')
-                .update({ [field]: value })
-                .eq('id', id);
-
-            if (error) throw error;
-            setMember({ ...member, [field]: value });
+            const updatedMember = await upsertMemberPersonMembership(supabase, {
+                ...member,
+                id,
+                [field]: value,
+            });
+            setMember({ ...member, ...updatedMember });
         } catch (err: any) {
             console.error('Error saving detail:', err);
             alert('정보 저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
@@ -375,13 +374,12 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
         if (!member || !profile) return;
         setIsSaving(true);
         try {
-            const { error } = await supabase
-                .from('member_directory')
-                .update({ is_linked: true, profile_id: profile.id })
-                .eq('id', member.id);
-
-            if (error) throw error;
-            setMember({ ...member, is_linked: true, profile_id: profile.id });
+            const updatedMember = await upsertMemberPersonMembership(supabase, {
+                ...member,
+                id: member.id,
+                profile_id: profile.id,
+            });
+            setMember({ ...member, ...updatedMember });
             alert('계정 연동이 성공적으로 완료되었습니다.');
         } catch (err: any) {
             console.error('Error linking account:', err);
