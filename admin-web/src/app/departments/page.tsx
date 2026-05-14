@@ -21,7 +21,7 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
-import { upsertMemberPersonMembership } from '@/lib/memberWriteRpc';
+import { renameMemberDirectoryGroupAssignments } from '@/lib/memberWriteRpc';
 
 type ChurchOption = {
     id: string;
@@ -209,23 +209,12 @@ export default function DepartmentsPage() {
                 // 2. Cascade update to members (Sync)
                 // We only need to sync if the name actually changed
                 if (editingGroup.name !== groupName) {
-                    const { data: affectedMembers, error: fetchMembersError } = await supabase
-                        .from('member_directory')
-                        .select('*')
-                        .eq('church_id', currentChurchId)
-                        .eq('department_id', editingGroup.department_id)
-                        .eq('group_name', editingGroup.name);
-
-                    if (fetchMembersError) {
-                        throw fetchMembersError;
-                    }
-
-                    for (const member of affectedMembers || []) {
-                        await upsertMemberPersonMembership(supabase, {
-                            ...member,
-                            group_name: groupName,
-                        });
-                    }
+                    await renameMemberDirectoryGroupAssignments(supabase, {
+                        churchId: currentChurchId,
+                        departmentId: editingGroup.department_id,
+                        oldGroupName: editingGroup.name,
+                        newGroupName: groupName,
+                    });
                 }
             } else {
                 const { error } = await supabase

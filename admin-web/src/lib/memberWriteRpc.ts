@@ -140,3 +140,26 @@ export const saveRegroupingMemberships = async (
         ? data.map((row) => row.member_directory_id).filter(Boolean)
         : [];
 };
+
+export const renameMemberDirectoryGroupAssignments = async (
+    supabase: RpcClientLike,
+    payload: {
+        churchId: string;
+        departmentId: string;
+        oldGroupName: string;
+        newGroupName: string;
+    }
+) => {
+    const { data, error } = await supabase.rpc('rename_member_directory_group_assignments', {
+        p_church_id: payload.churchId,
+        p_department_id: payload.departmentId,
+        p_old_group_name: payload.oldGroupName,
+        p_new_group_name: payload.newGroupName,
+    });
+
+    if (error) {
+        throw new Error(error.message || '조 이름 변경 동기화 RPC 실행에 실패했습니다.');
+    }
+
+    return typeof data === 'number' ? data : 0;
+};
