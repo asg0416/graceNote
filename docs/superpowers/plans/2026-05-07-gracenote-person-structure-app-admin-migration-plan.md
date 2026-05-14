@@ -518,7 +518,7 @@ Implementation:
 Verification:
 
 - `git diff --check`: passed.
-- Secret scan for literal Supabase token/password patterns: passed.
+- Secret scan for literal Supabase credential patterns: passed.
 - `deno fmt/check`: not run locally because `deno` is not installed in the current environment.
 - Commit: `4095197 phase2d: read notification targets from memberships`
 
@@ -927,6 +927,44 @@ Verification:
   - Dev DB migration apply: passed.
   - Transactional selected-restore test: archived a multi-group person, restored one selected group, verified only one active group returned, then rolled back.
   - Phase 2 summary gate: all issue counts `0`.
+
+2026-05-14 Phase 3 member write cleanup:
+
+- Admin-web 성도 write 경로 중 직접 `member_directory`를 수정하던 잔여 경로를 RPC 경유로 전환했다.
+- Converted paths:
+  - `admin-web/src/app/members/page.tsx`
+    - bulk move
+    - bulk move undo
+    - group rename compatibility sync
+  - `admin-web/src/app/members/[id]/page.tsx`
+    - detail memo/profile field save
+    - account link save
+  - `admin-web/src/app/departments/page.tsx`
+    - group rename compatibility sync
+- Flutter 조장 성도 추가/수정/삭제 경로는 이미 `GraceNoteRepository`의 `upsert_member_person_membership` / active-status RPC를 사용하고 있음을 확인했다.
+- Direct legacy member write scan:
+  - no remaining direct `member_directory.update`
+  - no remaining direct `group_members.insert/update/delete`
+- Remaining intentional legacy-FK write paths:
+  - `attendance` save/upsert still uses `directory_member_id` / `group_member_id`.
+  - `prayer_entries` save/update still uses legacy member FK fields plus Phase 3 snapshot fields.
+  - `profiles` writes remain account/permission writes, not person membership writes.
+  - `groups` / `departments` writes remain organization lifecycle writes; member compatibility effects must go through RPC where they touch member affiliation.
+- Verification:
+  - `npm run lint -- src/app/members/page.tsx 'src/app/members/[id]/page.tsx'`: 0 errors, existing warnings in `members/page.tsx`.
+  - `npm run lint -- src/components/RichTextEditor.tsx`: 0 errors.
+  - `npm run lint -- src/app/departments/page.tsx`: 0 errors, existing hook dependency warning.
+  - Flutter targeted `dart analyze` on member write/read files: no new type errors; existing style warnings remain.
+  - Phase 2 consistency summary gate: all checks `0`.
+  - changed-file secret scan: no matches.
+
+Next Phase 3 write-switch boundary:
+
+- Do not remove legacy FK columns yet.
+- Next schema-level work should be attendance/prayer write model design:
+  - keep legacy IDs for historical compatibility,
+  - make `person_id`, `membership_id`, `group_id`, and display snapshots explicit,
+  - define backfill and report behavior before changing app save semantics.
 
 ## Self-Review
 
