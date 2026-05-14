@@ -1015,6 +1015,7 @@ Result:
 - This validates that the current migration chain can build a new database from scratch without relying on manual dev DB drift.
 
 Fresh local gates:
+- `verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql`: all issue counts `0`.
 - `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all issue counts `0`.
 - `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`: all issue counts `0`.
 - `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all issue counts `0`.
@@ -1022,7 +1023,8 @@ Fresh local gates:
 Verification cleanup:
 - `verify_phase3_attendance_prayer_person_snapshot_dev_2026-05-09.sql` still contains optional diagnostic SELECTs, so `supabase db query --file` can fail with multiple-command prepared statement errors.
 - Added single-statement summary gate: `supabase/verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`.
-- Phase 2 schema verify still uses psql meta commands and needs a prod-safe single-statement version before final production execution.
+- `verify_phase2_people_memberships_schema_dev_2026-04-30.sql` still uses psql meta commands.
+- Added single-statement summary gate: `supabase/verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql`.
 
 Security note:
 - Supabase CLI advisory reports `public.app_config` with RLS disabled.
