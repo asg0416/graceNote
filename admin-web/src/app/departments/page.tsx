@@ -21,11 +21,34 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
+import { upsertMemberPersonMembership } from '@/lib/memberWriteRpc';
+
+type ChurchOption = {
+    id: string;
+    name: string;
+};
+
+type GroupRecord = {
+    id: string;
+    name: string;
+    department_id: string;
+    color_hex?: string | null;
+    is_active?: boolean | null;
+    is_new_member_group?: boolean | null;
+    climbing_threshold?: number | null;
+};
+
+type DepartmentRecord = {
+    id: string;
+    name: string;
+    color_hex?: string | null;
+    groups?: GroupRecord[];
+};
 
 export default function DepartmentsPage() {
     const [loading, setLoading] = useState(true);
-    const [departments, setDepartments] = useState<any[]>([]);
-    const [churches, setChurches] = useState<any[]>([]);
+    const [departments, setDepartments] = useState<DepartmentRecord[]>([]);
+    const [churches, setChurches] = useState<ChurchOption[]>([]);
     const [isMaster, setIsMaster] = useState(false);
     const [currentChurchId, setCurrentChurchId] = useState<string | null>(null);
     const [currentChurchName, setCurrentChurchName] = useState<string>('');
@@ -39,7 +62,7 @@ export default function DepartmentsPage() {
     const [climbingThreshold, setClimbingThreshold] = useState(4);
 
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
-    const [editingGroup, setEditingGroup] = useState<any>(null);
+    const [editingGroup, setEditingGroup] = useState<GroupRecord | null>(null);
     const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
 
     // 부서 삭제 확인 모달
@@ -186,16 +209,22 @@ export default function DepartmentsPage() {
                 // 2. Cascade update to members (Sync)
                 // We only need to sync if the name actually changed
                 if (editingGroup.name !== groupName) {
-                    const { error: syncError } = await supabase
+                    const { data: affectedMembers, error: fetchMembersError } = await supabase
                         .from('member_directory')
-                        .update({ group_name: groupName })
+                        .select('*')
                         .eq('church_id', currentChurchId)
                         .eq('department_id', editingGroup.department_id)
                         .eq('group_name', editingGroup.name);
 
-                    if (syncError) {
-                        console.error('Cascading update failed:', syncError);
-                        // We don't block the whole process, but alert might be helpful
+                    if (fetchMembersError) {
+                        throw fetchMembersError;
+                    }
+
+                    for (const member of affectedMembers || []) {
+                        await upsertMemberPersonMembership(supabase, {
+                            ...member,
+                            group_name: groupName,
+                        });
                     }
                 }
             } else {
@@ -216,9 +245,9 @@ export default function DepartmentsPage() {
             setGroupName('');
             setGroupColor('#4f46e5');
             fetchData(currentChurchId);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Group Submit Error:', err);
-            alert('오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
+            alert('오류가 발생했습니다: ' + (err instanceof Error ? err.message : '알 수 없는 오류'));
         }
     };
 
@@ -241,7 +270,7 @@ export default function DepartmentsPage() {
             if (error) throw error;
             fetchData(currentChurchId!);
             setDeleteTarget(null);
-        } catch (err) {
+        } catch {
             alert('부서 종료 중 오류가 발생했습니다.');
         } finally {
             setDeleting(false);
@@ -259,7 +288,7 @@ export default function DepartmentsPage() {
                 .eq('id', id);
             if (error) throw error;
             fetchData(currentChurchId!);
-        } catch (err) {
+        } catch {
             alert('조 종료 중 오류가 발생했습니다.');
         }
     };
@@ -429,7 +458,7 @@ export default function DepartmentsPage() {
                                     </button>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 max-h-[400px] sm:max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
-                                    {dept.groups?.map((group: any) => (
+                                    {dept.groups?.map((group) => (
                                         <div key={group.id} className="flex items-center justify-between p-3.5 sm:p-4 bg-slate-50 dark:bg-slate-800/20 border border-slate-200 dark:border-slate-800 rounded-2xl group/item hover:bg-white dark:hover:bg-slate-800/40 transition-all border-l-4" style={{ borderLeftColor: group.color_hex || dept.color_hex || '#4f46e5' }}>
                                             <div className="flex items-center gap-3">
                                                 <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: group.color_hex || dept.color_hex || '#4f46e5' }} />
