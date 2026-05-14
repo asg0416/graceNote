@@ -4,7 +4,7 @@
 
 ## Current Position
 
-Phase 2D에서 관리자 웹의 핵심 read model은 사람 중심으로 상당 부분 전환했다.
+Phase 2D read-switch와 Phase 3 member write cleanup 이후, 관리자 웹과 Flutter의 핵심 성도/소속 화면은 `people` / `member_profiles` / `memberships`를 우선 사용한다. `member_directory`와 `group_members`는 아직 삭제 대상이 아니라 운영 호환 계층이다.
 
 | Area | Current State |
 | --- | --- |
@@ -12,7 +12,10 @@ Phase 2D에서 관리자 웹의 핵심 read model은 사람 중심으로 상당 
 | 성도명부 | 실제 사람 수와 소속 칩을 Phase 2 기준으로 표시 |
 | 조편성 | Kanban 표시/통계/내보내기를 Phase 2 person/membership 기준으로 보강 |
 | 대시보드 | 성도 수/미편성 수를 active `memberships.person_id` 기준으로 표시 |
-| write-flow | 아직 legacy `member_directory/group_members` + dual-write trigger 유지 |
+| 성도 추가/수정/비활성/복구 | Admin-web과 Flutter 모두 RPC 경유. RPC가 Phase 2를 기준으로 legacy 호환 row를 맞춤 |
+| 조편성 저장 | `save_regrouping_memberships` RPC 경유. profile-less directory-only row도 `group_members`/`memberships` 동기화 |
+| 출석/기도 저장 | legacy FK를 유지하되 `person_id`, `membership_id`, recorded group/department snapshot을 같이 저장 |
+| 관리자 출석 현황 | `attendance_roster_snapshots`가 관리자 확정 분모 source-of-truth |
 
 ## Phase 2E Rule
 
@@ -30,14 +33,16 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 
 | Bucket | Files / Area | Current Dependency | Phase 2E Direction | Risk |
 | --- | --- | --- | --- | --- |
-| Admin dashboard | `admin-web/src/app/page.tsx` | recent members는 아직 `member_directory` 기준 | 최근 가입자도 `member_profiles`/`memberships` 기준으로 전환 검토 | Low |
-| Admin member write | `MemberModal`, `SmartBatchModal`, `members/page.tsx`, `members/[id]/page.tsx` | 성도 추가/수정/비활성화는 `member_directory` write | Phase 2E에서는 유지. write-switch는 Phase 3 후보 | High |
-| Admin regrouping write | `admin-web/src/app/regrouping/page.tsx`, `regroup_members()` | 조 이동/복사/삭제 저장은 legacy RPC/write | Phase 2E에서는 dual-write 검증 강화. direct memberships write는 보류 | High |
-| Attendance admin | `admin-web/src/app/attendance/page.tsx` | 출석 대상/조회가 `member_directory` 중심 | read만 Phase 2 person 기준으로 보강 가능 | High |
-| Flutter group/user state | `lib/core/providers/data_providers.dart`, `user_role_provider.dart` | 현재 권한/조 선택이 `group_members/member_directory` 기준 | 앱 smoke 범위 넓힌 뒤 memberships 기반 available roles 검토 | High |
-| Flutter attendance/prayer | `grace_note_repository.dart`, prayer/attendance screens | 저장 FK가 legacy id를 사용 | Phase 2E에서는 FK 보존, read 표시만 보강 | High |
-| Edge functions | `notify-event`, `notify-scheduler`, `verify-sms` | 알림 대상 조회가 `group_members/member_directory` 기준 | active `memberships` 기준 대상 계산으로 전환 후보 | Medium |
-| Search/saved prayers | Flutter search/prayer saved screens | join display가 `member_directory` 기준 | person/member_profile 표시 fallback 추가 | Medium |
+| Admin dashboard | `admin-web/src/app/page.tsx` | recent members display 일부는 legacy row fallback 가능 | 운영 전 smoke로 표시 문제만 확인. source-of-truth 문제는 낮음 | Low |
+| Admin member write | `MemberModal`, `SmartBatchModal`, `members/page.tsx`, `members/[id]/page.tsx` | 직접 legacy write 제거. RPC가 Phase 2 기준으로 legacy 호환 저장 | 운영 후보. `member_directory/group_members`는 삭제하지 않음 | Medium |
+| Admin regrouping write | `admin-web/src/app/regrouping/page.tsx` | 직접 legacy write 제거. `save_regrouping_memberships` RPC 경유 | 운영 후보. profile-less sync gate 필수 | High |
+| Admin archive/lifecycle | `admin-web/src/app/archive/page.tsx` | person+department 단위 비활성/복구 RPC 경유 | 운영 후보. selected restore smoke 필수 | High |
+| Attendance admin | `admin-web/src/app/attendance/page.tsx` | 관리자 확정 분모는 snapshot 테이블. leader submission은 `attendance` row 유지 | 운영 후보. snapshot integrity gate 필수 | High |
+| Flutter group/user state | `lib/core/providers/data_providers.dart`, `user_role_provider.dart` | active memberships 우선, legacy fallback | 운영 후보. role별 smoke 필수 | Medium |
+| Flutter member write | `grace_note_repository.dart` | 조장 성도 추가/수정/비활성은 RPC 경유 | 운영 후보. 앱 smoke 필수 | Medium |
+| Flutter attendance/prayer | `grace_note_repository.dart`, prayer/attendance screens | 저장 FK가 legacy id를 유지하지만 Phase 3 snapshot fields도 저장 | 운영 후보. FK 제거는 다음 단계 | High |
+| Edge functions | `notify-event`, `notify-scheduler`, `verify-sms` | 알림 대상은 memberships 우선 + legacy fallback. SMS verification은 phone/directory compatibility 유지 | 운영 후보. function deploy/dry-run smoke 필요 | Medium |
+| Search/saved prayers | Flutter search/prayer screens | 일반 조원 범위 제한, 삭제 조 기록 표시 보정 완료 | 운영 후보. role switch smoke 필수 | Medium |
 
 ## Completed in Phase 2E Start
 
@@ -45,15 +50,19 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 | --- | --- | --- |
 | 2026-05-07 | 관리자 대시보드 성도 수/미편성 수를 active `memberships.person_id` 기준으로 전환. Phase 2 read 실패 시 legacy count fallback 유지 | `npm run lint -- src/app/page.tsx` 0 errors, consistency mismatch 0 |
 | 2026-05-09 | Edge Function 알림 대상 조회를 active `memberships` 우선으로 전환. `group_members`는 fallback으로 유지 | `supabase/verify_phase2d_edge_notification_targets_dev_2026-05-09.sql` 추가. 실제 dev deploy/dry-run smoke는 `SUPABASE_ACCESS_TOKEN` 필요 |
+| 2026-05-11 | Admin-web 성도 추가/수정/비활성화와 Flutter 조장 성도 write를 `upsert_member_person_membership` / lifecycle RPC 중심으로 전환 | Phase 2 summary gate 0, targeted lint/analyze 통과 |
+| 2026-05-12 | person+department 단위 archive/restore와 church operations 휴지통 추가. restore는 선택한 group만 복구 가능 | selected restore transaction test, Phase 2 summary gate 0 |
+| 2026-05-13 | 조편성 저장 RPC와 profile-less group sync 보정. directory-only 성도도 성도명부/조편성/Phase 2 진단이 같은 조를 보도록 수정 | 김보영 케이스 smoke 통과, consistency summary 0 |
+| 2026-05-15 | 조 이름 변경 compatibility RPC 분리. generic person upsert가 stale profile을 재검증하지 않도록 조명 변경은 별도 RPC로 처리 | group rename smoke 통과, consistency summary 0 |
+| 2026-05-15 | 관리자 출석 snapshot integrity gate 추가 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all issue counts 0 |
 
 ## Recommended Next Order
 
-1. Admin dashboard recent members 표시를 유지할지 Phase 2 기준으로 바꿀지 결정한다.
-2. 출석 대시보드는 단순 read-switch가 아니라 주차별 출석 대상 snapshot 설계를 먼저 적용한다.
-3. Flutter 앱의 `availableMembershipsProvider`와 권한/조 선택 흐름을 Phase 2 `memberships`로 바꿀 수 있는지 별도 smoke 계획을 만든다.
-4. Edge Functions 알림 대상 조회 dev deploy/dry-run smoke를 수행한다.
-5. Phase 3 write-switch 설계를 시작한다.
-6. 그 뒤에만 legacy table cleanup을 논의한다.
+1. 운영용 prod-safe migration order를 최신 Phase 3 파일까지 확정한다.
+2. fresh DB 또는 운영 복제본에서 migration 전체 dry-run을 실행한다.
+3. 운영 전 필수 gate를 한 번에 실행한다: Phase 2 summary, attendance/prayer snapshot, attendance roster snapshot integrity, edge notification targets.
+4. role별 smoke를 실행한다: master/admin/leader/member, admin-web/Flutter, 성도 추가/수정/비활성/복구, 조편성 저장, 출석/기도 저장.
+5. legacy FK 제거 계획은 별도 Phase 4로 둔다. 지금 운영 후보는 “person source-of-truth + legacy compatibility” 구조다.
 
 ## Attendance Snapshot Dependency
 
@@ -75,9 +84,10 @@ docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
 
 ## Explicit Non-Goals
 
-- Phase 2E에서 `member_directory`, `group_members`를 삭제하지 않는다.
-- Phase 2E에서 출석/기도 저장 FK를 바로 `person_id`로 바꾸지 않는다.
+- 운영 1차 반영에서 `member_directory`, `group_members`를 삭제하지 않는다.
+- 운영 1차 반영에서 출석/기도 legacy FK를 제거하지 않는다.
 - Phase 2E에서 운영 DB에 직접 SQL을 적용하지 않는다.
+- 운영 반영은 migration files + prod-safe verification SQL 기준으로만 한다.
 
 ## Smoke Checklist
 
@@ -90,3 +100,13 @@ docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
 | Flutter app | 출석/기도 저장 기존 smoke 통과 유지 |
 | Edge functions | `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql`의 모든 mismatch count 0 |
 | Edge functions | dev 함수 배포 또는 dry-run 로그에서 기도 알림/공지/리마인더/등반 알림 대상이 active memberships 기준으로 산출 |
+
+## Current Remaining Before Prod Prep
+
+| Item | Why It Remains | Required Action |
+| --- | --- | --- |
+| Prod-safe migration order refresh | manifest의 migration list가 Phase 3 최신 파일까지 확장됨 | 운영 적용 직전 파일 존재/순서 재확인 |
+| Fresh migration dry-run | dev DB는 수동 적용 이력이 있어 migration history만 믿으면 위험 | 로컬 fresh 또는 운영 복제 DB에 migration order대로 적용 |
+| Edge function smoke | 알림 대상 read-switch는 코드/SQL gate만 있고 실제 함수 dry-run은 별도 | dev deploy 또는 dry-run log 확인 |
+| Role-based app/admin smoke | 권한별 메뉴가 다르므로 한 계정 smoke만으로 부족 | master/admin/leader/member 체크리스트 수행 |
+| Legacy cleanup decision | legacy 테이블 삭제는 아직 위험 | 운영 1차에서는 삭제 금지. 이후 Phase 4에서 FK/backfill/report 영향 재설계 |

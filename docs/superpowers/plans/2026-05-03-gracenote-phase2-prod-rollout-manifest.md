@@ -114,6 +114,29 @@ UI/app smoke checklist: `docs/superpowers/plans/2026-05-04-gracenote-phase2c-ui-
 | 19 | `supabase/migrations/20260504000000_p0_member_directory_inactive_sync_fix.sql` | 성도 비활성화 시 linked `group_members`와 `memberships`까지 inactive/ended 처리 | inactive `member_directory` with active `memberships` = 0 |
 | 20 | `supabase/migrations/20260504001000_p0_member_directory_assignment_scope_fix.sql` | inactive 명부 row가 active assignment unique를 막지 않게 하고, 전화번호 중복 차단을 같은 교회 active 성도 기준으로 제한 | inactive assignment release + cross-church same phone verify 통과 |
 | 21 | `supabase/migrations/20260504002000_phase2_church_scoped_identity_guardrails.sql` | `person_id` 자동 병합과 `profile_id` 연결을 같은 교회 범위로 제한 | cross-church same name/phone person 분리, cross-church profile link 차단 |
+| 22 | `supabase/migrations/20260508000000_attendance_roster_snapshots.sql` | 주차+부서별 관리자 확정 출석 대상 snapshot 테이블 추가 | snapshot schema/object verify |
+| 23 | `supabase/migrations/20260508001000_attendance_snapshot_attendance_seed.sql` | 기존 출석 기록 기반 snapshot seed | snapshot seed 후 duplicate/missing person gate |
+| 24 | `supabase/migrations/20260508002000_attendance_snapshot_member_management.sql` | snapshot 구성원 포함/제외/출결 수정 RPC 추가 | snapshot member management smoke |
+| 25 | `supabase/migrations/20260508003000_attendance_snapshot_bulk_roster_load.sql` | 미제출 조 명단 일괄 불러오기 RPC 추가 | bulk roster load smoke |
+| 26 | `supabase/migrations/20260509000000_phase3_attendance_prayer_person_snapshot.sql` | 출석/기도 row에 person/membership/group/department snapshot 필드 보강 | `verify_phase3_attendance_prayer_person_snapshot_dev_2026-05-09.sql` all 0 |
+| 27 | `supabase/migrations/20260511000000_phase3_member_write_rpc.sql` | 성도 추가/수정 write RPC 추가 | member write smoke + consistency summary all 0 |
+| 28 | `supabase/migrations/20260511001000_phase3_member_write_rpc_upsert_fix.sql` | member write RPC upsert edge 보정 | SmartBatch/개별등록 smoke |
+| 29 | `supabase/migrations/20260511002000_phase3_member_lifecycle_rpc.sql` | 성도 활성/비활성 lifecycle RPC 추가 | inactive/restore smoke |
+| 30 | `supabase/migrations/20260512000000_phase3_person_department_lifecycle_rpc.sql` | person+department 단위 archive/restore 모델 도입 | 다중 소속 비활성/복구 smoke |
+| 31 | `supabase/migrations/20260512001000_phase3_person_department_lifecycle_rpc_group_optional_fix.sql` | group optional restore 보정 | department-only restore smoke |
+| 32 | `supabase/migrations/20260512002000_phase3_person_department_lifecycle_legacy_canonical_fix.sql` | restore 시 canonical legacy row 선택 보정 | duplicate assignment conflict 0 |
+| 33 | `supabase/migrations/20260512003000_phase3_person_department_lifecycle_restore_directory_resolution.sql` | 복구 시 directory resolution 보강 | inactive person restore smoke |
+| 34 | `supabase/migrations/20260512004000_phase3_person_department_restore_no_rearchive.sql` | restore 중 trigger가 다시 archive하지 않도록 보정 | restore 후 active memberships 유지 |
+| 35 | `supabase/migrations/20260512005000_phase3_person_department_restore_dedupe_groups.sql` | 같은 group 중복 restore 방지 | duplicate active membership 0 |
+| 36 | `supabase/migrations/20260512006000_phase3_person_department_restore_dedupe_group_members.sql` | legacy `group_members` 중복 restore 방지 | duplicate active group_members 0 |
+| 37 | `supabase/migrations/20260512007000_phase3_person_department_restore_prefer_active_legacy.sql` | 이미 active인 legacy row 우선 사용 | active legacy duplicate conflict 0 |
+| 38 | `supabase/migrations/20260512008000_phase3_person_department_restore_prefer_active_legacy_alias_fix.sql` | active legacy preference alias fix | restore smoke 유지 |
+| 39 | `supabase/migrations/20260512009000_phase3_person_department_archive_events_selected_restore.sql` | archive event와 selected group restore 도입 | 선택한 조만 복구되는지 smoke |
+| 40 | `supabase/migrations/20260512010000_phase3_regrouping_save_rpc.sql` | 조편성 저장을 RPC 중심으로 전환 | regrouping save smoke + consistency summary all 0 |
+| 41 | `supabase/migrations/20260513000000_phase3_regrouping_profileless_group_sync.sql` | `profile_id=null` directory-only 성도의 group sync 보정 | 김보영/profile-less sync gate all 0 |
+| 42 | `supabase/migrations/20260515000000_phase3_group_rename_assignment_rpc.sql` | 조명 변경 compatibility sync를 전용 RPC로 분리 | group rename smoke + consistency summary all 0 |
+
+주의: 22~42는 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다.
 
 ## Hard Delete Gate
 
@@ -284,6 +307,12 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 | G18 Phase 2D admin read smoke | 성도상세/성도명부/조편성/대시보드/출석 현황 | Phase 2 우선 표시, legacy fallback 가능, diagnostics issue 0 또는 문서화된 예외 |
 | G19 Phase 2D Flutter read smoke | admin/leader/member/is_master 계정별 앱 진입, 기도/검색/출석/나의기도/저장기도 | 역할 화면 정상, 일반 조원 검색 범위 제한, 삭제 조 히스토리 주차별 노출, 출석/기도 저장 정상 |
 | G20 Phase 2D Edge notification smoke | dev Edge Function 또는 dry-run log | 기도 알림/공지/리마인더/등반 알림 대상이 active `memberships` 기준으로 산출되고 legacy fallback이 동작 |
+| G21 Phase 3 member write RPC | 성도 개별등록, AI 일괄등록, 상세 수정, 메모, 계정 연결, 조장 성도 추가/수정 | 직접 legacy write 없이 RPC 경유. Phase 2 summary all 0 |
+| G22 Phase 3 lifecycle/archive | 성도 비활성, person+department 복구, 선택 조 복구, 부서/조 비활성 관리 | active 소속 세트가 의도대로 복구되고 duplicate assignment error 없음 |
+| G23 Phase 3 regrouping save RPC | 조 이동/복사/부부 이동/신규 조/성도 추가/조 삭제 저장 | 성도명부와 조편성 화면이 같은 active memberships를 표시, profile-less mismatch 0 |
+| G24 attendance snapshot | 관리자 출석 현황에서 snapshot 생성/명단 불러오기/추가/제외/출결 수정/리포트 추출 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql` all 0, 리포트 분모는 snapshot 기준 |
+| G25 attendance/prayer snapshot fields | Flutter 출석/기도 저장 후 `person_id`, `membership_id`, `recorded_group_id`, `recorded_department_id` | `verify_phase3_attendance_prayer_person_snapshot_dev_2026-05-09.sql` all 0 |
+| G26 fresh migration dry-run | 운영 복제본 또는 fresh DB에 Order 1~42 순서 적용 | migration conflict 없음. dev-only 보정 SQL 미포함 |
 
 ## Known Good Dev Verification
 
