@@ -1011,7 +1011,7 @@ Context:
 
 Result:
 - `supabase db reset` on local fresh DB completed successfully.
-- Migrations applied through `20260515000000_phase3_group_rename_assignment_rpc.sql`.
+- Migrations applied through `20260515001000_app_config_rls.sql`.
 - This validates that the current migration chain can build a new database from scratch without relying on manual dev DB drift.
 
 Fresh local gates:
@@ -1019,6 +1019,7 @@ Fresh local gates:
 - `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all issue counts `0`.
 - `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`: all issue counts `0`.
 - `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all issue counts `0`.
+- `verify_app_config_rls_dev_2026-05-15.sql`: all issue counts `0`.
 
 Verification cleanup:
 - `verify_phase3_attendance_prayer_person_snapshot_dev_2026-05-09.sql` still contains optional diagnostic SELECTs, so `supabase db query --file` can fail with multiple-command prepared statement errors.
@@ -1027,5 +1028,6 @@ Verification cleanup:
 - Added single-statement summary gate: `supabase/verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql`.
 
 Security note:
-- Supabase CLI advisory reports `public.app_config` with RLS disabled.
-- This is not a person migration failure, but it is now tracked as a pre-prod security cleanup item.
+- Supabase CLI advisory previously reported `public.app_config` with RLS disabled.
+- Added `20260515001000_app_config_rls.sql`.
+- Policy shape: service_role full access; anon/authenticated can only read `edge_function_base_url`.
