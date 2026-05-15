@@ -54,6 +54,8 @@ SmartBatch는 Phase 2C에 포함한다. 대량 등록은 여러 `member_director
 
 UI/app smoke checklist: `docs/superpowers/plans/2026-05-04-gracenote-phase2c-ui-app-smoke-checklist.md`
 
+Prod dry-run runbook: `docs/superpowers/plans/2026-05-15-gracenote-prod-dry-run-runbook.md`
+
 2026-05-06 resync: 다른 AI 작업 이후 현재 상태를 재검증했다. 이후 Flutter 앱 smoke와 SmartBatch 브라우저 smoke까지 통과했고, 최종 DB rollback/consistency gate도 통과했다. Phase 2C는 dev 기준 완료로 본다.
 
 | SmartBatch Gate | Required Result |
