@@ -99,7 +99,7 @@ supabase db query --db-url "$GRACENOTE_VERIFY_DB_URL" --file supabase/preprod_ma
 | 성도명부 통계 카드 | 운영 화면은 실제 성도 수 중심으로 단순화 |
 | 성도상세 소속/이력 | 현재 소속과 과거 이력을 사용자 언어로 정리 |
 | 조편성 진단 | issue가 있을 때만 노출 |
-| 휴지통 | 복구 대상 조 선택 UX 개선 |
+| 비활성 관리 | person+department 단위 복구, 복구 대상 조 선택 UX 개선 |
 | 출석 snapshot | 충돌 해결과 명단 편집 UI 단순화 |
 | SmartBatch | 분석/연동/조배정/저장 단계를 분리 |
 

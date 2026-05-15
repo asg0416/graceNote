@@ -35,7 +35,7 @@
 
 ## Current Work Position
 
-현재 실제 위치는 Phase 2D read-switch dev 코드 반영 완료 후 운영 게이트 정리 단계다.
+현재 실제 위치는 Phase 2D read-switch, Phase 2E/Phase 3 write compatibility, admin UI polish를 dev에서 통합 검증한 뒤 운영 복제본 dry-run/data audit 준비 단계다.
 
 | Phase | Actual State | Meaning |
 | --- | --- | --- |
@@ -46,9 +46,10 @@
 | Phase 2C | Dev gate complete | dual-write/write-flow DB 검증, Admin/Flutter/SmartBatch smoke 완료 |
 | P0 hard delete gate | Dev verified, prod not applied | 부서/조/주차/명부 hard-delete 차단 운영 후보 |
 | Phase 2D | Dev code broadly complete | 성도상세/성도명부/조편성/관리자 대시보드/관리자 출석/Flutter 표시 read/Edge 알림 대상 read가 Phase 2 우선 + legacy fallback 구조로 전환됨 |
-| Phase 2E | Planning only | 실제 legacy 제거는 아직 시작하지 않음. write-flow와 FK 전환 전 의존성 제거 계획 필요 |
+| Phase 2E | Dev code broadly complete, prod not applied | 성도 추가/수정/비활성/복구, 조편성 저장, 부서/조명 변경, Flutter 조장 성도 추가가 RPC 중심으로 전환됨. legacy 테이블은 호환 계층으로 유지 |
+| Phase 3 write compatibility | Dev code broadly complete, prod not applied | 출석/기도는 person snapshot 필드를 저장/조회하지만 `attendance`/`prayer_entries`의 legacy FK 제거는 운영 안정화 이후 별도 단계로 연기 |
 
-**운영 반영 타이밍**: Phase 2A~E 전체 dev 검증(UI smoke 포함)이 완료된 후 단계적으로 적용한다. Phase 2D read-switch 완료는 운영 반영 검토의 중간 gate일 뿐이며, Phase 2E/Phase 3 write-switch 설계 전에는 legacy 테이블 제거를 진행하지 않는다.
+**운영 반영 타이밍**: 운영 1차는 “person source-of-truth + legacy compatibility”로 간다. 운영 적용 전에는 fresh/staging DB dry-run, preprod data audit, role별 smoke를 통과해야 한다. `member_directory` / `group_members` / 출석/기도 legacy FK 삭제는 이번 운영 1차 범위가 아니라 Phase 4 cleanup이다.
 
 SmartBatch는 Phase 2C에 포함한다. 대량 등록은 여러 `member_directory` row와 Phase 2 `memberships`를 한 번에 만드는 write-flow이므로, Phase 2C 종료 전 DB rollback verify와 UI smoke를 모두 통과해야 한다.
 
@@ -176,11 +177,13 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 
 | Category | Files | Prod Rule |
 | --- | --- | --- |
-| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260504002000_*` | 운영 적용 후보. 순서와 gate를 통과해야 함 |
+| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260515001000_*` | 운영 적용 후보. 순서와 gate를 통과해야 함 |
 | DB already prod-applied candidates | `20260429000000_phase1_fk_guardrails.sql`, `20260430000000_phase1_5_directory_member_guardrails.sql` | 운영 적용 완료 상태와 실제 schema 재확인 후 중복 적용 금지 |
-| Admin UI prod candidates | `admin-web/src/app/churches/page.tsx`, `admin-web/src/app/departments/page.tsx`, `admin-web/src/app/regrouping/page.tsx`, `admin-web/src/app/members/page.tsx`, `admin-web/src/app/members/[id]/page.tsx`, `admin-web/src/components/MemberModal.tsx`, `admin-web/src/components/SmartBatchModal.tsx` | Phase 2 diagnostics/P0 soft-delete/후보검색 보정. 운영 배포 전 UI smoke 필요 |
-| Admin active-filter candidates | `admin-web/src/app/attendance/page.tsx`, `admin-web/src/app/page.tsx`, `admin-web/src/app/in-app-messages/IamForm.tsx`, `admin-web/src/app/notices/NoticeForm.tsx` | inactive 부서/조 노출 방지. 기존 화면 회귀 확인 필요 |
-| Flutter prod candidates | `lib/core/repositories/grace_note_repository.dart`, `lib/core/providers/data_providers.dart` | 주차 soft-disable 및 active filter. 앱 회귀 확인 필요 |
+| Admin UI prod candidates | `admin-web/src/app/churches/page.tsx`, `admin-web/src/app/departments/page.tsx`, `admin-web/src/app/regrouping/page.tsx`, `admin-web/src/app/members/page.tsx`, `admin-web/src/app/members/[id]/page.tsx`, `admin-web/src/app/archive/page.tsx`, `admin-web/src/app/attendance/page.tsx`, `admin-web/src/app/page.tsx`, `admin-web/src/components/MemberModal.tsx`, `admin-web/src/components/SmartBatchModal.tsx`, `admin-web/src/components/Sidebar.tsx`, `admin-web/src/components/MemberBadge.tsx`, `admin-web/src/components/kanban/KanbanColumn.tsx`, `admin-web/src/components/RichTextEditor.tsx` | person 구조 read/write, 비활성 관리, 조편성, 출석 snapshot, UI polish 운영 후보. 운영 배포 전 role별 UI smoke 필요 |
+| Admin active-filter candidates | `admin-web/src/app/in-app-messages/IamForm.tsx`, `admin-web/src/app/notices/NoticeForm.tsx` | inactive 부서/조 노출 방지. 기존 화면 회귀 확인 필요 |
+| Flutter prod candidates | `lib/core/repositories/grace_note_repository.dart`, `lib/core/providers/data_providers.dart`, `lib/core/providers/user_role_provider.dart`, Flutter 출석/기도/검색/저장된 기도/관리자 상세 관련 화면 | person 구조 read, 조장 성도 추가 RPC, 출석/기도 snapshot 저장. master/admin/leader/member role별 앱 smoke 필요 |
+| Edge function candidates | `supabase/functions/notify-event`, `supabase/functions/notify-scheduler`, `supabase/functions/verify-sms` | memberships 우선 알림 대상과 dev/prod SMS auth 환경 확인. 운영 전 env vars, `verify_jwt=false`, scheduler trigger 재확인 |
+| Preprod verification/audit gates | `scripts/preprod-*.mjs`, `supabase/preprod_*_2026-05-15.sql`, query-compatible `verify_*summary*_2026-05-15.sql` | 운영 복제본/fresh DB에서만 실행. prod 직접 mutation 금지 |
 | Snapshot/dev reference | `supabase/migration_list.*.txt` | 운영 적용 금지. drift 비교용 |
 | Local docs | `docs/superpowers/plans/*` | 운영 적용 판단 기준. 코드 배포 대상은 아님 |
 
@@ -199,6 +202,9 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 | `supabase/dev_align_to_prod_baseline_2026-04-29.sql` | DEV alignment | dev를 prod 기준선에 맞춘 파일. 운영 적용 금지 |
 | `supabase/schema_dump.*.sql` | Snapshot | 비교/감사용. 운영 적용 금지 |
 | `supabase/migration_list.*.txt` | Snapshot | 비교/감사용. 운영 적용 금지 |
+| `supabase/cleanup_future_data.sql`, `supabase/prevent_future_inserts.sql`, `supabase/seed_test_accounts.sql` | Local/dev utility | 운영 적용 금지. 필요 시 별도 prod-safe migration으로 재작성 |
+| `supabase/fix_data_integrity.sql`, `supabase/fix_leader_access_secure.sql`, `supabase/fix_missing_emails.sql`, `supabase/fix_person_id_mismatch.sql`, `supabase/fix_schema_schema_cache.sql` | Historical local fix files | 현재 운영 실행표 기준 적용 대상 아님. 운영에서 같은 문제가 발견되면 preprod audit 결과를 근거로 새 correction migration 작성 |
+| `supabase/migration_11_inactivation.sql` ~ `supabase/migration_19_auth_cleanup.sql`, `supabase/migration_registration_overhaul.sql`, `supabase/sync_trigger.sql` | Historical root migration files | `supabase/migrations/`의 timestamp migration이 운영 기준이다. root SQL 직접 적용 금지 |
 
 ## Direct Dev SQL Log
 
