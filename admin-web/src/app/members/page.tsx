@@ -1381,8 +1381,8 @@ function MembersPageInner() {
                 )
             }
             {/* Members List Table */}
-            <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800/80 overflow-hidden shadow-xl">
-                <div className="overflow-x-auto">
+            <div className="relative z-0 bg-white dark:bg-[#111827]/60 backdrop-blur-xl rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800/80 shadow-xl">
+                <div className="overflow-visible">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800/60">
@@ -1765,7 +1765,7 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                                 {extraAffiliations.length > 0 && (
                                     <span className="relative group/aff-more px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300 cursor-default">
                                         외 {extraAffiliations.length}
-                                        <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-72 -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-slate-900/15 group-hover/aff-more:block dark:border-slate-700 dark:bg-slate-900">
+                                        <span className="pointer-events-none absolute left-1/2 top-full z-[9999] mt-2 hidden w-72 -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-slate-900/15 group-hover/aff-more:block dark:border-slate-700 dark:bg-slate-900">
                                             <span className="block border-b border-slate-100 bg-slate-50 px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
                                                 추가 소속 {extraAffiliations.length}개
                                             </span>

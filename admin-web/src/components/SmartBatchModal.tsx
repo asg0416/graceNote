@@ -89,18 +89,21 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
     const [step, setStep] = useState<'upload' | 'preview' | 'syncing'>('upload');
     const [rawText, setRawText] = useState('');
     const [parsedData, setParsedData] = useState<Partial<MemberData>[]>([]);
-    const [selectedDeptId, setSelectedDeptId] = useState(initialDeptId || '');
+    const [selectedDeptId, setSelectedDeptId] = useState(() => (
+        initialDeptId && departments.some(department => department.id === initialDeptId) ? initialDeptId : ''
+    ));
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [dbMatches, setDbMatches] = useState<Record<string, DBMatch[]>>({});
     const [departmentGroups, setDepartmentGroups] = useState<GroupOption[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const selectedProfileMode = departments.find(department => department.id === selectedDeptId)?.profile_mode || 'individual';
+    const selectedDepartment = departments.find(department => department.id === selectedDeptId) || null;
+    const selectedProfileMode = selectedDepartment?.profile_mode || 'individual';
     const isCoupleProfileMode = selectedProfileMode === 'couple';
 
     useEffect(() => {
         const fetchDepartmentGroups = async () => {
-            if (!churchId || !selectedDeptId) {
+            if (!churchId || !selectedDepartment) {
                 setDepartmentGroups([]);
                 return;
             }
@@ -114,7 +117,6 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 .order('name', { ascending: true });
 
             if (groupError) {
-                console.error('Error fetching department groups:', groupError);
                 setDepartmentGroups([]);
                 return;
             }
@@ -123,7 +125,7 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
         };
 
         fetchDepartmentGroups();
-    }, [churchId, selectedDeptId]);
+    }, [churchId, selectedDeptId, selectedDepartment]);
 
     const handleUpdateRow = (index: number, updates: Partial<MemberData>) => {
         const newData = [...parsedData];
