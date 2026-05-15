@@ -41,6 +41,16 @@ unset GRACENOTE_VERIFY_DB_URL
 node scripts/preprod-verify-gates.mjs --db-url-file /private/tmp/gracenote_verify_db_url
 ```
 
+그 다음 운영 복제본 데이터 감사 SQL을 실행한다. 이 단계는 기존 운영 데이터의 꼬임을 적용 전에 분류하기 위한 read-only 점검이다.
+
+```bash
+supabase db query --db-url "$GRACENOTE_VERIFY_DB_URL" --file supabase/preprod_data_audit_summary_2026-05-15.sql --output table
+supabase db query --db-url "$GRACENOTE_VERIFY_DB_URL" --file supabase/preprod_auto_repair_candidates_2026-05-15.sql --output table
+supabase db query --db-url "$GRACENOTE_VERIFY_DB_URL" --file supabase/preprod_manual_review_candidates_2026-05-15.sql --output table
+```
+
+임시 파일을 사용할 때는 `--db-url "$(cat /private/tmp/gracenote_verify_db_url)"`로 실행한다. 이 파일들은 read-only이며 운영 DB에 직접 실행하지 않는다.
+
 ## Gate List
 
 | Gate | Expected |
@@ -52,6 +62,21 @@ node scripts/preprod-verify-gates.mjs --db-url-file /private/tmp/gracenote_verif
 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql` | all `issue_count = 0` |
 | `verify_app_config_rls_dev_2026-05-15.sql` | all `issue_count = 0` |
 | `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql` | all `mismatch_count = 0` |
+
+## Preprod Data Audit
+
+| SQL | Expected | Action |
+| --- | --- | --- |
+| `preprod_data_audit_summary_2026-05-15.sql` | `blocking_gate = 0` | nonzero면 운영 반영 중단 |
+| `preprod_data_audit_summary_2026-05-15.sql` | `auto_repair_candidate`는 0이 아니어도 가능 | 운영 복제본에서 repair SQL을 작성/검증하고 승인된 항목만 prod 적용 |
+| `preprod_data_audit_summary_2026-05-15.sql` | `manual_review`는 0이 아니어도 가능 | 자동 병합 금지. 운영자 확인 목록으로 관리 |
+| `preprod_auto_repair_candidates_2026-05-15.sql` | 자동 보정 후보 상세 | 실제 UPDATE SQL이 아니라 보정 설계 입력 |
+| `preprod_manual_review_candidates_2026-05-15.sql` | 전화번호/이름/profile church mismatch 후보 상세 | 자동 수정 금지 |
+
+2026-05-15 local syntax check:
+- `preprod_data_audit_summary_2026-05-15.sql`: executed on local DB, all counts `0`.
+- `preprod_auto_repair_candidates_2026-05-15.sql`: executed on local DB, 0 rows.
+- `preprod_manual_review_candidates_2026-05-15.sql`: executed on local DB, 0 rows.
 
 ## Manual Smoke After DB Gates
 

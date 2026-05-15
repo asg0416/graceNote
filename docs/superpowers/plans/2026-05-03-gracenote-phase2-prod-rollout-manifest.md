@@ -56,6 +56,19 @@ UI/app smoke checklist: `docs/superpowers/plans/2026-05-04-gracenote-phase2c-ui-
 
 Prod dry-run runbook: `docs/superpowers/plans/2026-05-15-gracenote-prod-dry-run-runbook.md`
 
+Preprod data audit package:
+- `supabase/preprod_data_audit_summary_2026-05-15.sql`
+- `supabase/preprod_auto_repair_candidates_2026-05-15.sql`
+- `supabase/preprod_manual_review_candidates_2026-05-15.sql`
+
+운영 복제본/staging에는 migration dry-run 직후 위 3개 SQL을 실행한다. 목적은 dev에서 이미 발견한 김보영/유성열류 legacy drift를 운영에서 다시 재현하는 것이 아니라, 같은 패턴을 적용 전 숫자와 후보 목록으로 잡아 자동 보정/수동 검토로 분류하는 것이다.
+
+| Audit Output | Meaning | Prod Rule |
+| --- | --- | --- |
+| `blocking_gate` issue | people/membership/snapshot FK 또는 snapshot source-of-truth integrity 문제 | 운영 반영 전 0이어야 함 |
+| `auto_repair_candidate` issue | inactive/ended 상태 불일치, legacy 호환 row drift처럼 규칙 기반 보정 가능성이 높은 문제 | 운영 복제본에서 보정 SQL 작성/검증 후 승인된 항목만 prod 적용 |
+| `manual_review` issue | 같은 교회 전화번호 중복, 같은 이름 다중 person, cross-church same phone 등 자동 병합 위험 후보 | 자동 수정 금지. 운영자 확인 리포트로 관리 |
+
 2026-05-06 resync: 다른 AI 작업 이후 현재 상태를 재검증했다. 이후 Flutter 앱 smoke와 SmartBatch 브라우저 smoke까지 통과했고, 최종 DB rollback/consistency gate도 통과했다. Phase 2C는 dev 기준 완료로 본다.
 
 | SmartBatch Gate | Required Result |
