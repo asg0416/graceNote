@@ -1688,6 +1688,7 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
     const affiliationSummary = phase2Affiliations
         .map((affiliation) => `${affiliation.departmentName || '부서 미정'} · ${affiliation.groupName || '미정'}${affiliation.role === 'leader' ? ' · 조장' : ''}`)
         .join('\n');
+    const isLeader = m.role_in_group === 'leader' || phase2Affiliations.some((affiliation) => affiliation.role === 'leader');
 
     return (
         <tr className={cn("hover:bg-slate-50/80 dark:hover:bg-indigo-500/[0.02] transition-colors group", isSelected && "bg-indigo-50/50 dark:bg-indigo-500/[0.05]")}>
@@ -1709,6 +1710,11 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                             >
                                 {m.full_name}
                             </Link>
+                            {isLeader && (
+                                <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300 text-[9px] font-black border border-amber-100 dark:border-amber-500/20">
+                                    조장
+                                </span>
+                            )}
                             {m.is_active === false && (
                                 <span className="px-1.5 py-0.5 bg-slate-200 text-slate-500 text-[8px] sm:text-[9px] font-black rounded-md uppercase tracking-widest border border-slate-300">
                                     비활성
@@ -1745,11 +1751,6 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                                 <span className="text-[11px] sm:text-xs font-black text-slate-700 dark:text-slate-200 truncate">
                                     {primaryAffiliation.departmentName || '부서 미정'}
                                 </span>
-                                {primaryAffiliation.role === 'leader' && (
-                                    <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300 text-[8px] font-black shrink-0">
-                                        조장
-                                    </span>
-                                )}
                             </div>
                             <div className="mt-1.5 flex items-center gap-1.5">
                                 <span
@@ -1764,16 +1765,26 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                                 {extraAffiliations.length > 0 && (
                                     <span className="relative group/aff-more px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300 cursor-default">
                                         외 {extraAffiliations.length}
-                                        <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-64 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-2xl shadow-slate-900/10 group-hover/aff-more:block dark:border-slate-700 dark:bg-slate-900">
-                                            <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">추가 소속</span>
-                                            <span className="mt-2 block space-y-1.5">
+                                        <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-72 -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-slate-900/15 group-hover/aff-more:block dark:border-slate-700 dark:bg-slate-900">
+                                            <span className="block border-b border-slate-100 bg-slate-50 px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
+                                                추가 소속 {extraAffiliations.length}개
+                                            </span>
+                                            <span className="block space-y-2 p-3">
                                                 {extraAffiliations.map((affiliation) => (
                                                     <span
                                                         key={affiliation.id}
-                                                        className="block rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                                        className="flex items-start gap-2 rounded-xl bg-white px-3 py-2.5 text-[10px] font-black text-slate-700 ring-1 ring-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700"
                                                     >
-                                                        {affiliation.departmentName || '부서 미정'} · {affiliation.groupName || '미정'}
-                                                        {affiliation.role === 'leader' ? ' · 조장' : ''}
+                                                        <span
+                                                            className="mt-1 h-2 w-2 shrink-0 rounded-full"
+                                                            style={{ backgroundColor: affiliation.departmentColor || affiliation.groupColor || '#94a3b8' }}
+                                                        />
+                                                        <span className="min-w-0">
+                                                            <span className="block truncate text-slate-900 dark:text-white">{affiliation.departmentName || '부서 미정'}</span>
+                                                            <span className="mt-0.5 block truncate text-[9px] font-bold text-slate-500 dark:text-slate-400">
+                                                                {affiliation.groupName || '미정'}{affiliation.role === 'leader' ? ' · 조장' : ''}
+                                                            </span>
+                                                        </span>
                                                     </span>
                                                 ))}
                                             </span>

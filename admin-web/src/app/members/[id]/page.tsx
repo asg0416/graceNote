@@ -665,7 +665,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                     </div>
 
                     {/* Family Info Card */}
-                    <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6 group/family">
+                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 space-y-6 shadow-xl shadow-slate-900/[0.03] group/family">
                         <div className="flex items-center justify-between px-2">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
                                 <Heart className="w-4 h-4 text-rose-500" /> 가족 정보
@@ -732,8 +732,12 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                     phase2ActiveAffiliations.map((membership: any) => (
                                         <div
                                             key={membership.id}
-                                            className="p-4 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60 group/aff"
+                                            className="relative overflow-hidden p-4 bg-slate-50/70 dark:bg-slate-900/35 rounded-2xl border border-slate-100 dark:border-slate-800/60 group/aff"
                                         >
+                                            <div
+                                                className="absolute inset-y-0 left-0 w-1.5"
+                                                style={{ backgroundColor: membership.departments?.color_hex || '#4f46e5' }}
+                                            />
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="flex items-start gap-3 min-w-0">
                                                     <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
