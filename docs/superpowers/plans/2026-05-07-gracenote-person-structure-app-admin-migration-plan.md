@@ -1031,3 +1031,51 @@ Security note:
 - Supabase CLI advisory previously reported `public.app_config` with RLS disabled.
 - Added `20260515001000_app_config_rls.sql`.
 - Policy shape: service_role full access; anon/authenticated can only read `edge_function_base_url`.
+
+## 2026-05-15 Admin UI Rollout Polish
+
+Scope:
+- This batch is UI/operational polish on top of the person-structure migration.
+- It does not change the core Phase 2/3 database source-of-truth rule.
+
+Changes:
+- 성도 상세:
+  - 현재 소속, 소속 이력, 가족 정보를 운영자가 보기 쉬운 카드 구조로 정리.
+  - 긴 소속 이력은 화면을 과도하게 밀지 않도록 축약/스크롤 형태로 정리.
+- 성도 명부:
+  - 소속 정보 칩을 과하게 펼치지 않고 대표 소속 + 추가 소속 hover card로 정리.
+  - 이름 옆 role 표시와 소속 칩의 조장 표시가 중복되지 않도록 정리.
+- 조편성 관리:
+  - Phase 2 조편성 진단은 정상 상태에서 운영 UI를 과하게 차지하지 않도록 정리.
+  - profile-less/directory-only 케이스도 조편성 화면과 성도명부가 같은 active 소속을 보도록 보정.
+- 비활성 관리:
+  - “휴지통” 표현을 사용자 친화적인 비활성 관리 메뉴로 변경.
+  - person+department 단위 비활성/복구 흐름을 유지하고, 복구 시 사용자가 되살릴 조를 선택할 수 있게 함.
+- 출석 현황:
+  - `주차별 출석`과 `인사이트 리포트`를 탭으로 분리.
+  - 주차별 탭에는 교회/부서/연월/주차 필터를 유지.
+  - 인사이트 탭에서는 상단 주차 필터바를 숨기고, 화면 안에 현재 분석 대상 교회/부서/기간을 명시.
+  - 리포트 추출, 지난 주와 달라진 출석 대상, 모임없는 날 UI를 사이드 액션으로 정리.
+  - 출석 기록이 있는 주차는 모임없는 날 지정 버튼을 비활성화.
+
+Insight calculation decision:
+- 사람별 출석률:
+  - 선택 기간의 공통 모임 주차 수를 분모로 사용한다.
+  - 출석/지각은 출석으로 인정한다.
+  - 모임없는 날은 분모에서 제외한다.
+- 조별 출석 순위:
+  - 분자: 선택 기간 동안 해당 조에서 출석/지각 처리된 person-week 누적 수.
+  - 분모: 선택 기간 동안 해당 조 snapshot에 포함된 person-week 누적 수.
+  - UI의 주요 표시는 공통 모임 주차 기준 평균 출석 인원 / 평균 대상 인원으로 보여준다.
+  - 기간 누적값은 보조 정보로만 표시한다.
+  - 특정 조가 일부 주차에만 snapshot 데이터가 있으면 `n주 데이터`로 보조 표시한다.
+
+Verification:
+- User smoke confirmed no blocking issues after UI polish.
+- `git diff --check`: passed.
+- `npx eslint src/app/attendance/page.tsx`: 0 errors; existing hook dependency warnings remain.
+
+Operational note:
+- Attendance insights are report-style summaries, not authoritative accounting tables.
+- The authoritative denominator for admin reports remains `attendance_roster_snapshots` / `attendance_roster_snapshot_members`.
+- Any future change that merges admin snapshots into leader-submitted `attendance` rows needs a separate conflict policy.
