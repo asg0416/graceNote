@@ -196,6 +196,17 @@ type InsightGroupRanking = {
     averageTarget: number;
 };
 
+type InsightSubmissionRiskGroup = {
+    id: string;
+    name: string;
+    expectedWeeks: number;
+    submittedWeeks: number;
+    missedWeeks: number;
+    missedWeekLabels: string[];
+    averageTarget: number;
+    riskRate: number;
+};
+
 type SupabaseErrorLike = {
     message?: string;
     code?: string;
@@ -412,6 +423,11 @@ const formatSnapshotMemberNames = (
     return `${names.slice(0, limit).join(', ')} 외 ${names.length - limit}명`;
 };
 
+const formatShortWeekDate = (date: string) => {
+    const [, month, day] = date.split('-');
+    return month && day ? `${Number(month)}/${Number(day)}` : date;
+};
+
 const getSnapshotMembersForWeek = async (
     departmentId: string,
     weekId: string
@@ -495,6 +511,7 @@ export default function AttendancePage() {
     const [insightYear, setInsightYear] = useState<number>(new Date().getFullYear());
     const [insightQuarter, setInsightQuarter] = useState<number>(Math.floor(new Date().getMonth() / 3) + 1);
     const [groupRankings, setGroupRankings] = useState<InsightGroupRanking[]>([]);
+    const [submissionRiskGroups, setSubmissionRiskGroups] = useState<InsightSubmissionRiskGroup[]>([]);
 
     // Hall of Fame & Care List Filter Settings
     const [hallOfFameTarget] = useState<'rate' | 'count'>('rate');
@@ -1400,6 +1417,7 @@ export default function AttendancePage() {
                 setHallOfFame([]);
                 setCareList([]);
                 setGroupRankings([]);
+                setSubmissionRiskGroups([]);
                 return;
             }
 
@@ -1421,6 +1439,14 @@ export default function AttendancePage() {
 
             const reportByPerson = new Map<string, InsightPersonReport>();
             const groupTotals = new Map<string, { name: string; presentSum: number; totalAttCount: number; weekIds: Set<string> }>();
+            const submissionRiskByGroup = new Map<string, {
+                id: string;
+                name: string;
+                expectedWeeks: number;
+                submittedWeeks: number;
+                missedWeekLabels: string[];
+                targetPeopleSum: number;
+            }>();
 
             const ensurePersonReport = (member: AttendanceRosterSnapshotMember) => {
                 const existing = reportByPerson.get(member.personId);
@@ -1451,10 +1477,20 @@ export default function AttendancePage() {
             };
 
             for (const week of meetingWeeks) {
-                const { snapshotMembersWithAttendance } = await getSnapshotMembersForWeek(selectedDeptId, week.id);
+                const { snapshotMembersWithAttendance, attendanceRows } = await getSnapshotMembersForWeek(selectedDeptId, week.id);
                 const includedMembers = snapshotMembersWithAttendance.filter((member) => member.included);
                 const weekMembersByPerson = new Map<string, AttendanceRosterSnapshotMember[]>();
                 const weekMembersByGroupAndPerson = new Map<string, AttendanceRosterSnapshotMember[]>();
+                const submittedGroupIds = new Set(
+                    attendanceRows
+                        .map((row) => row.group_id)
+                        .filter((groupId): groupId is string => Boolean(groupId))
+                );
+                const targetPeopleByGroup = new Map<string, {
+                    id: string;
+                    name: string;
+                    personIds: Set<string>;
+                }>();
 
                 includedMembers.forEach((member) => {
                     if (!member.personId) return;
@@ -1466,6 +1502,35 @@ export default function AttendancePage() {
                         ...(weekMembersByGroupAndPerson.get(groupPersonKey) || []),
                         member,
                     ]);
+
+                    if (member.groupId && groupName && groupName !== '조 없음') {
+                        const groupTarget = targetPeopleByGroup.get(member.groupId) || {
+                            id: member.groupId,
+                            name: groupName,
+                            personIds: new Set<string>(),
+                        };
+                        groupTarget.personIds.add(member.personId);
+                        targetPeopleByGroup.set(member.groupId, groupTarget);
+                    }
+                });
+
+                targetPeopleByGroup.forEach((groupTarget) => {
+                    const existing = submissionRiskByGroup.get(groupTarget.id) || {
+                        id: groupTarget.id,
+                        name: groupTarget.name,
+                        expectedWeeks: 0,
+                        submittedWeeks: 0,
+                        missedWeekLabels: [],
+                        targetPeopleSum: 0,
+                    };
+                    existing.expectedWeeks += 1;
+                    existing.targetPeopleSum += groupTarget.personIds.size;
+                    if (submittedGroupIds.has(groupTarget.id)) {
+                        existing.submittedWeeks += 1;
+                    } else {
+                        existing.missedWeekLabels.push(formatShortWeekDate(week.week_date));
+                    }
+                    submissionRiskByGroup.set(groupTarget.id, existing);
                 });
 
                 weekMembersByPerson.forEach((membersForPerson) => {
@@ -1545,12 +1610,33 @@ export default function AttendancePage() {
                 .sort((a, b) => b.rate - a.rate);
 
             setGroupRankings(rankings);
+            setSubmissionRiskGroups(Array.from(submissionRiskByGroup.values())
+                .map((group) => {
+                    const missedWeeks = group.expectedWeeks - group.submittedWeeks;
+                    return {
+                        id: group.id,
+                        name: group.name,
+                        expectedWeeks: group.expectedWeeks,
+                        submittedWeeks: group.submittedWeeks,
+                        missedWeeks,
+                        missedWeekLabels: group.missedWeekLabels,
+                        averageTarget: group.expectedWeeks > 0 ? group.targetPeopleSum / group.expectedWeeks : 0,
+                        riskRate: group.expectedWeeks > 0 ? (missedWeeks / group.expectedWeeks) * 100 : 0,
+                    };
+                })
+                .filter((group) => group.expectedWeeks >= 2 && group.missedWeeks >= 2)
+                .sort((a, b) => {
+                    const missedDiff = b.missedWeeks - a.missedWeeks;
+                    if (missedDiff !== 0) return missedDiff;
+                    return b.riskRate - a.riskRate;
+                }));
 
         } catch (err) {
             console.error('Insights Error:', err);
             setHallOfFame([]);
             setCareList([]);
             setGroupRankings([]);
+            setSubmissionRiskGroups([]);
         } finally {
             setIsInsightsLoading(false);
         }
@@ -2533,7 +2619,7 @@ export default function AttendancePage() {
                             </div>
                         </div>
 
-                        <div className="relative mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <div className="relative mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                             <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
                                 <div className="flex items-center justify-between">
                                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">출석 우수</p>
@@ -2560,11 +2646,19 @@ export default function AttendancePage() {
                                 <p className="mt-3 text-3xl font-black text-slate-900 dark:text-white">{careList.length}</p>
                                 <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">최근 3회 연속 미출석 성도</p>
                             </div>
+                            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">제출 점검</p>
+                                    <AlertCircle className="h-4 w-4 text-orange-500" />
+                                </div>
+                                <p className="mt-3 text-3xl font-black text-slate-900 dark:text-white">{submissionRiskGroups.length}</p>
+                                <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">반복 미제출 조</p>
+                            </div>
                         </div>
 
                         <div className={cn(
                             "relative gap-6",
-                            attendanceView === 'insights' ? "grid grid-cols-1 xl:grid-cols-3" : "space-y-8"
+                            attendanceView === 'insights' ? "grid grid-cols-1 xl:grid-cols-2" : "space-y-8"
                         )}>
                             {/* Hall of Fame - Compact */}
                             <div className="space-y-5 rounded-[2rem] border border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-950/30">
@@ -2676,6 +2770,59 @@ export default function AttendancePage() {
                                     ) : (
                                         <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
                                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">출석 데이터가 없습니다.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className={cn("h-px bg-slate-100 dark:bg-slate-800", attendanceView === 'insights' && "hidden")} />
+
+                            {/* Submission Risk Groups */}
+                            <div className="space-y-5 rounded-[2rem] border border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-950/30">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-9 h-9 rounded-2xl bg-orange-500/10 flex items-center justify-center">
+                                        <AlertCircle className="w-3.5 h-3.5 text-orange-500" />
+                                    </div>
+                                    <div>
+                                        <span className="text-sm font-black text-slate-900 dark:text-white">출석 제출 점검 조</span>
+                                        <p className="text-[10px] font-bold text-slate-400">출석 대상이 있었지만 제출이 반복 누락된 조</p>
+                                    </div>
+                                </div>
+                                <div className="max-h-[460px] space-y-3 overflow-y-auto pr-1">
+                                    {submissionRiskGroups.length > 0 ? (
+                                        submissionRiskGroups.map((group) => (
+                                            <div key={group.id} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-orange-100 dark:bg-slate-900/70 dark:ring-orange-500/20">
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div>
+                                                        <p className="text-xs font-black text-slate-900 dark:text-white">{group.name}</p>
+                                                        <p className="mt-1 text-[10px] font-bold text-orange-500/70">
+                                                            {group.missedWeeks}/{group.expectedWeeks}주 미제출 · 평균 대상 {group.averageTarget.toFixed(1)}명
+                                                        </p>
+                                                    </div>
+                                                    <span className="rounded-2xl bg-orange-50 px-3 py-1 text-[10px] font-black text-orange-600 ring-1 ring-orange-100 dark:bg-orange-500/10 dark:text-orange-200 dark:ring-orange-500/20">
+                                                        {Math.round(group.riskRate)}%
+                                                    </span>
+                                                </div>
+                                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                                    {group.missedWeekLabels.slice(0, 8).map((label) => (
+                                                        <span
+                                                            key={`${group.id}-${label}`}
+                                                            className="rounded-xl bg-slate-50 px-2.5 py-1 text-[9px] font-black text-slate-500 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:text-slate-300 dark:ring-slate-800"
+                                                        >
+                                                            {label}
+                                                        </span>
+                                                    ))}
+                                                    {group.missedWeekLabels.length > 8 && (
+                                                        <span className="rounded-xl bg-slate-100 px-2.5 py-1 text-[9px] font-black text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                                                            외 {group.missedWeekLabels.length - 8}주
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="py-8 text-center bg-orange-50/30 dark:bg-orange-900/10 rounded-2xl border border-dashed border-orange-200/50 dark:border-orange-900/30">
+                                            <p className="text-[10px] font-bold text-orange-400 uppercase tracking-tight">반복적으로 제출이 누락된 조가 없습니다.</p>
                                         </div>
                                     )}
                                 </div>
