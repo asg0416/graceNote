@@ -205,7 +205,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                 .order('created_at', { ascending: true }),
                             supabase
                                 .from('memberships')
-                                .select('id, role, status, starts_at, ends_at, legacy_group_member_id, legacy_member_directory_id, departments!department_id(name, color_hex), groups!group_id(name)')
+                                .select('id, role, status, starts_at, ends_at, legacy_group_member_id, legacy_member_directory_id, departments!department_id(name, color_hex), groups!group_id(name, color_hex)')
                                 .eq('person_id', personId)
                                 .eq('church_id', memberData.church_id)
                                 .order('starts_at', { ascending: false })
@@ -736,7 +736,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                         >
                                             <div
                                                 className="absolute inset-y-0 left-0 w-1.5"
-                                                style={{ backgroundColor: membership.departments?.color_hex || '#4f46e5' }}
+                                                style={{ backgroundColor: membership.groups?.color_hex || membership.departments?.color_hex || '#4f46e5' }}
                                             />
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="flex items-start gap-3 min-w-0">

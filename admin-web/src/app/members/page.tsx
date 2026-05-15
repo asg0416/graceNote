@@ -1679,6 +1679,12 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
     const groupInfo = groupedGroups.find((g) => g.name === m.group_name);
     const groupColor = getGroupColor(m.group_name || '', groupInfo?.color_hex);
     const phase2Affiliations = m.phase2_affiliations || [];
+    const [hoverCard, setHoverCard] = useState<{
+        placement: 'top' | 'bottom';
+        left: number;
+        top: number;
+        items: RosterAffiliation[];
+    } | null>(null);
     const primaryAffiliation = phase2Affiliations.find((affiliation) => affiliation.groupName === m.group_name)
         || phase2Affiliations[0]
         || null;
@@ -1689,6 +1695,19 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
         .map((affiliation) => `${affiliation.departmentName || '부서 미정'} · ${affiliation.groupName || '미정'}${affiliation.role === 'leader' ? ' · 조장' : ''}`)
         .join('\n');
     const isLeader = m.role_in_group === 'leader' || phase2Affiliations.some((affiliation) => affiliation.role === 'leader');
+    const handleMoreAffiliationEnter = (event: React.MouseEvent<HTMLElement>) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const placement = rect.top < window.innerHeight / 2 ? 'bottom' : 'top';
+        const cardWidth = 288;
+        const left = Math.min(Math.max(rect.left + rect.width / 2, cardWidth / 2 + 12), window.innerWidth - cardWidth / 2 - 12);
+
+        setHoverCard({
+            placement,
+            left,
+            top: placement === 'bottom' ? rect.bottom + 8 : rect.top - 8,
+            items: extraAffiliations,
+        });
+    };
 
     return (
         <tr className={cn("hover:bg-slate-50/80 dark:hover:bg-indigo-500/[0.02] transition-colors group", isSelected && "bg-indigo-50/50 dark:bg-indigo-500/[0.05]")}>
@@ -1763,35 +1782,48 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                                     {primaryAffiliation.groupName || '미정'}
                                 </span>
                                 {extraAffiliations.length > 0 && (
-                                    <span className="relative group/aff-more px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300 cursor-default">
+                                    <span
+                                        onMouseEnter={handleMoreAffiliationEnter}
+                                        onMouseLeave={() => setHoverCard(null)}
+                                        className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300 cursor-default"
+                                    >
                                         외 {extraAffiliations.length}
-                                        <span className="pointer-events-none absolute bottom-full left-1/2 z-[9999] mb-2 hidden w-72 -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-slate-900/15 group-hover/aff-more:block dark:border-slate-700 dark:bg-slate-900">
-                                            <span className="block border-b border-slate-100 bg-slate-50 px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
-                                                추가 소속 {extraAffiliations.length}개
-                                            </span>
-                                            <span className="block space-y-2 p-3">
-                                                {extraAffiliations.map((affiliation) => (
-                                                    <span
-                                                        key={affiliation.id}
-                                                        className="flex items-start gap-2 rounded-xl bg-white px-3 py-2.5 text-[10px] font-black text-slate-700 ring-1 ring-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700"
-                                                    >
-                                                        <span
-                                                            className="mt-1 h-2 w-2 shrink-0 rounded-full"
-                                                            style={{ backgroundColor: affiliation.departmentColor || affiliation.groupColor || '#94a3b8' }}
-                                                        />
-                                                        <span className="min-w-0">
-                                                            <span className="block truncate text-slate-900 dark:text-white">{affiliation.departmentName || '부서 미정'}</span>
-                                                            <span className="mt-0.5 block truncate text-[9px] font-bold text-slate-500 dark:text-slate-400">
-                                                                {affiliation.groupName || '미정'}{affiliation.role === 'leader' ? ' · 조장' : ''}
-                                                            </span>
-                                                        </span>
-                                                    </span>
-                                                ))}
-                                            </span>
-                                        </span>
                                     </span>
                                 )}
                             </div>
+                            {hoverCard && (
+                                <div
+                                    className="pointer-events-none fixed z-[9999] w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-slate-900/15 dark:border-slate-700 dark:bg-slate-900"
+                                    style={{
+                                        left: hoverCard.left,
+                                        top: hoverCard.top,
+                                        transform: hoverCard.placement === 'top' ? 'translate(-50%, -100%)' : 'translate(-50%, 0)',
+                                    }}
+                                >
+                                    <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
+                                        추가 소속 {hoverCard.items.length}개
+                                    </div>
+                                    <div className="space-y-2 p-3">
+                                        {hoverCard.items.map((affiliation) => (
+                                            <div
+                                                key={affiliation.id}
+                                                className="flex items-start gap-2 rounded-xl bg-white px-3 py-2.5 text-[10px] font-black text-slate-700 ring-1 ring-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700"
+                                            >
+                                                <span
+                                                    className="mt-1 h-2 w-2 shrink-0 rounded-full"
+                                                    style={{ backgroundColor: affiliation.groupColor || affiliation.departmentColor || '#94a3b8' }}
+                                                />
+                                                <span className="min-w-0">
+                                                    <span className="block truncate text-slate-900 dark:text-white">{affiliation.departmentName || '부서 미정'}</span>
+                                                    <span className="mt-0.5 block truncate text-[9px] font-bold text-slate-500 dark:text-slate-400">
+                                                        {affiliation.groupName || '미정'}{affiliation.role === 'leader' ? ' · 조장' : ''}
+                                                    </span>
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <>
