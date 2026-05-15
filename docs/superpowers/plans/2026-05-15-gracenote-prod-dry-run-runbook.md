@@ -11,6 +11,14 @@
 
 ## Current Gate Script
 
+먼저 migration 파일과 manifest 실행표가 일치하는지 확인한다.
+
+```bash
+node scripts/preprod-check-migration-inventory.mjs
+```
+
+그 다음 DB verification gate를 실행한다.
+
 ```bash
 node scripts/preprod-verify-gates.mjs --local
 ```
@@ -37,6 +45,7 @@ node scripts/preprod-verify-gates.mjs --db-url-file /private/tmp/gracenote_verif
 
 | Gate | Expected |
 | --- | --- |
+| `scripts/preprod-check-migration-inventory.mjs` | manifest의 prod candidate migration 파일이 실제 파일과 일치 |
 | `verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql` | all `issue_count = 0` |
 | `verify_phase2_consistency_summary_dev_2026-05-10.sql` | all `issue_count = 0` |
 | `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql` | all `issue_count = 0` |
