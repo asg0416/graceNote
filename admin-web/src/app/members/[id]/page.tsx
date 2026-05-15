@@ -664,8 +664,62 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                         </div>
                     </div>
 
+                    {/* Family Info Card */}
+                    <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6 group/family">
+                        <div className="flex items-center justify-between px-2">
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
+                                <Heart className="w-4 h-4 text-rose-500" /> 가족 정보
+                            </h3>
+                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Family Info</p>
+                            {!isEditingFamily ? (
+                                <button
+                                    onClick={() => {
+                                        setEditingMember({ ...member });
+                                        setIsEditingFamily(true);
+                                    }}
+                                    className="px-3 py-1 bg-white dark:bg-slate-800 text-[10px] font-black text-slate-400 rounded-lg opacity-0 group-hover/family:opacity-100 transition-all hover:text-rose-500 cursor-pointer"
+                                >
+                                    수정
+                                </button>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <button onClick={() => setIsEditingFamily(false)} className="px-2 py-1 text-[10px] font-black text-slate-400">취소</button>
+                                    <button onClick={() => handleUpdateMember('family')} className="px-2 py-1 text-[10px] font-black bg-indigo-600 text-white rounded-lg">저장</button>
+                                </div>
+                            )}
+                        </div>
+                        <div className="space-y-4 px-2">
+                            <div className="space-y-1">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">배우자</p>
+                                {isEditingFamily ? (
+                                    <input
+                                        type="text"
+                                        value={editingMember?.spouse_name || ''}
+                                        onChange={e => setEditingMember({ ...editingMember, spouse_name: e.target.value })}
+                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-sm font-bold"
+                                    />
+                                ) : (
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{member.spouse_name || '정보 없음'}</p>
+                                )}
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">자녀</p>
+                                {isEditingFamily ? (
+                                    <textarea
+                                        value={editingMember?.children_info || ''}
+                                        onChange={e => setEditingMember({ ...editingMember, children_info: e.target.value })}
+                                        rows={2}
+                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-sm font-bold leading-relaxed"
+                                    />
+                                ) : (
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">{member.children_info || '정보 없음'}</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Current Affiliations */}
-                    <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6">
+                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 space-y-6 shadow-xl shadow-slate-900/[0.03]">
                         <div className="flex items-center justify-between px-2">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
                                 <Layers className="w-4 h-4 text-indigo-600" /> 현재 소속
@@ -772,7 +826,10 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                 </div>
 
                                 {phase2HistoricalAffiliations.length > 0 ? (
-                                    <div className="space-y-2">
+                                    <div className={cn(
+                                        "space-y-2",
+                                        phase2HistoricalAffiliations.length > 3 && "max-h-[360px] overflow-y-auto pr-2"
+                                    )}>
                                         {phase2HistoricalAffiliations.map((membership: any) => {
                                             const startDate = formatShortDate(membership.starts_at);
                                             const endDate = formatShortDate(membership.ends_at);
@@ -800,6 +857,11 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                                 </div>
                                             );
                                         })}
+                                        {phase2HistoricalAffiliations.length > 3 && (
+                                            <p className="px-1 pt-1 text-[10px] font-bold text-slate-400">
+                                                스크롤해서 나머지 이력을 확인할 수 있습니다.
+                                            </p>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
@@ -814,59 +876,6 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                         )}
                     </div>
 
-                    {/* Family Info Card */}
-                    <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6 group/family">
-                        <div className="flex items-center justify-between px-2">
-                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
-                                <Heart className="w-4 h-4 text-rose-500" /> 가족 정보
-                            </h3>
-                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Family Info</p>
-                            {!isEditingFamily ? (
-                                <button
-                                    onClick={() => {
-                                        setEditingMember({ ...member });
-                                        setIsEditingFamily(true);
-                                    }}
-                                    className="px-3 py-1 bg-white dark:bg-slate-800 text-[10px] font-black text-slate-400 rounded-lg opacity-0 group-hover/family:opacity-100 transition-all hover:text-rose-500 cursor-pointer"
-                                >
-                                    수정
-                                </button>
-                            ) : (
-                                <div className="flex gap-2">
-                                    <button onClick={() => setIsEditingFamily(false)} className="px-2 py-1 text-[10px] font-black text-slate-400">취소</button>
-                                    <button onClick={() => handleUpdateMember('family')} className="px-2 py-1 text-[10px] font-black bg-indigo-600 text-white rounded-lg">저장</button>
-                                </div>
-                            )}
-                        </div>
-                        <div className="space-y-4 px-2">
-                            <div className="space-y-1">
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">배우자</p>
-                                {isEditingFamily ? (
-                                    <input
-                                        type="text"
-                                        value={editingMember?.spouse_name || ''}
-                                        onChange={e => setEditingMember({ ...editingMember, spouse_name: e.target.value })}
-                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-sm font-bold"
-                                    />
-                                ) : (
-                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{member.spouse_name || '정보 없음'}</p>
-                                )}
-                            </div>
-                            <div className="space-y-1">
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">자녀</p>
-                                {isEditingFamily ? (
-                                    <textarea
-                                        value={editingMember?.children_info || ''}
-                                        onChange={e => setEditingMember({ ...editingMember, children_info: e.target.value })}
-                                        rows={2}
-                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-sm font-bold leading-relaxed"
-                                    />
-                                ) : (
-                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">{member.children_info || '정보 없음'}</p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 {/* Right Column: Detailed Info & Timeline */}

@@ -1714,11 +1714,6 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                                     비활성
                                 </span>
                             )}
-                            {m.role_in_group === 'leader' && (
-                                <span className="px-1.5 py-0.5 bg-amber-500 text-white text-[8px] sm:text-[9px] font-black rounded-md uppercase tracking-widest shadow-lg shadow-amber-500/20">
-                                    Leader
-                                </span>
-                            )}
                         </div>
                         <p className="text-[9px] sm:text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1 leading-none">{m.phone || 'No Contact'}</p>
                     </div>
@@ -1767,8 +1762,22 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                                     {primaryAffiliation.groupName || '미정'}
                                 </span>
                                 {extraAffiliations.length > 0 && (
-                                    <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300">
+                                    <span className="relative group/aff-more px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300 cursor-default">
                                         외 {extraAffiliations.length}
+                                        <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-64 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-2xl shadow-slate-900/10 group-hover/aff-more:block dark:border-slate-700 dark:bg-slate-900">
+                                            <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">추가 소속</span>
+                                            <span className="mt-2 block space-y-1.5">
+                                                {extraAffiliations.map((affiliation) => (
+                                                    <span
+                                                        key={affiliation.id}
+                                                        className="block rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                                    >
+                                                        {affiliation.departmentName || '부서 미정'} · {affiliation.groupName || '미정'}
+                                                        {affiliation.role === 'leader' ? ' · 조장' : ''}
+                                                    </span>
+                                                ))}
+                                            </span>
+                                        </span>
                                     </span>
                                 )}
                             </div>
