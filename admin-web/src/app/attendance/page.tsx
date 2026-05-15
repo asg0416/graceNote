@@ -7,7 +7,6 @@ import {
     Loader2,
     Calendar,
     Download,
-    Search,
     ChevronDown,
     CheckCircle2,
     XCircle,
@@ -22,20 +21,10 @@ import {
     ChevronRight,
     Filter,
     BarChart3,
-    PieChart,
     CalendarDays
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
-import { Tooltip } from '@/components/Tooltip';
-import {
-    calculateWeekAttendanceMetrics,
-    getActiveRosterForWeek,
-    sortRosterForDisplay,
-    type AttendanceRecordForMetrics,
-    type AttendanceRosterMember,
-    type WeekAttendanceMetrics,
-} from '@/lib/attendanceMetrics';
 import {
     calculateSnapshotMetrics,
     addSnapshotMember,
@@ -141,15 +130,89 @@ type AttendanceRow = AttendanceStatusRow & {
     } | null;
 };
 
-type PeriodAttendanceRow = {
-    directory_member_id: string;
-    status?: string | null;
-    week_id: string;
-};
-
 type WeekRow = {
     id: string;
     week_date: string;
+};
+
+type ProfileRow = {
+    id: string;
+    full_name?: string | null;
+    role?: string | null;
+    admin_status?: string | null;
+    is_master?: boolean | null;
+    church_id?: string | null;
+    department_id?: string | null;
+};
+
+type ChurchRow = {
+    id: string;
+    name: string;
+};
+
+type DepartmentRow = {
+    id: string;
+    name: string;
+    church_id?: string | null;
+};
+
+type GroupStat = {
+    name: string;
+    present: number;
+    total: number;
+};
+
+type WeeklyTrendDatum = {
+    id: string;
+    date: string;
+    present: number;
+    total: number;
+    rate: number | null;
+    isNoMeetingDay: boolean;
+    hasError?: boolean;
+};
+
+type InsightPersonReport = {
+    id: string;
+    directoryMemberId?: string | null;
+    full_name: string;
+    group_name: string;
+    presentWeekIds: Set<string>;
+    totalWeekIds: Set<string>;
+    rate: number;
+    presentCount: number;
+    consecutiveAbsences: boolean;
+    totalWeeks: number;
+};
+
+type InsightGroupRanking = {
+    name: string;
+    presentSum: number;
+    totalAttCount: number;
+    rate: number;
+    weekCount: number;
+    dataWeekCount: number;
+    averagePresent: number;
+    averageTarget: number;
+};
+
+type SupabaseErrorLike = {
+    message?: string;
+    code?: string;
+    details?: string;
+    hint?: string;
+};
+
+const buildQueryError = (label: string, error: unknown) => {
+    const supabaseError = error as SupabaseErrorLike | null | undefined;
+    const parts = [
+        supabaseError?.message,
+        supabaseError?.code ? `code=${supabaseError.code}` : null,
+        supabaseError?.details ? `details=${supabaseError.details}` : null,
+        supabaseError?.hint ? `hint=${supabaseError.hint}` : null,
+    ].filter(Boolean);
+
+    return new Error(`${label}: ${parts.join(' / ') || 'unknown error'}`);
 };
 
 const fetchMembershipRoster = async (
@@ -173,7 +236,7 @@ const fetchMembershipRoster = async (
 
         const { data: memberships, error: membershipError } = await membershipQuery;
 
-        if (membershipError) throw membershipError;
+        if (membershipError) throw buildQueryError('memberships roster query failed', membershipError);
         if (!memberships || memberships.length === 0) return [];
 
         const typedMemberships = memberships as Phase2AttendanceMembership[];
@@ -191,7 +254,7 @@ const fetchMembershipRoster = async (
             .in('id', directoryIds)
             .eq('is_active', true);
 
-        if (directoryError) throw directoryError;
+        if (directoryError) throw buildQueryError('member_directory roster query failed', directoryError);
 
         const directoryById = new Map<string, AttendanceDirectoryMember>(
             ((directoryRows || []) as AttendanceDirectoryMember[]).map((directory) => [directory.id, directory])
@@ -235,33 +298,8 @@ const fetchAttendanceRoster = async (
         .eq('department_id', departmentId)
         .eq('is_active', true);
 
-    if (error) throw error;
+    if (error) throw buildQueryError('legacy attendance roster query failed', error);
     return (data || []) as AttendanceDirectoryMember[];
-};
-
-const toMetricRoster = (members: AttendanceDirectoryMember[]): AttendanceRosterMember[] => {
-    return members
-        .filter((member) => member.person_id)
-        .map((member) => ({
-            directoryMemberId: member.id,
-            personId: String(member.person_id),
-            fullName: member.full_name || '이름 없음',
-            groupId: member.group_id,
-            groupName: member.group_name,
-            role: member.role_in_group,
-            spouseName: member.spouse_name,
-            familyName: member.family_name,
-            startsAt: typeof member.starts_at === 'string' ? member.starts_at : null,
-            endsAt: typeof member.ends_at === 'string' ? member.ends_at : null,
-            status: typeof member.membership_status === 'string' ? member.membership_status : null,
-        }));
-};
-
-const toMetricAttendance = (attendance: AttendanceRow[]): AttendanceRecordForMetrics[] => {
-    return attendance.map((record) => ({
-        directoryMemberId: record.directory_member_id,
-        status: record.status,
-    }));
 };
 
 const getAttendanceItemFamilyKey = (item: AttendanceDashboardItem) => {
@@ -383,16 +421,32 @@ const getSnapshotMembersForWeek = async (
     const snapshotId = await ensureAttendanceRosterSnapshot(snapshotRpcClient, departmentId, weekId);
     const snapshotMembers = await fetchAttendanceRosterSnapshotMembers(snapshotMembersClient, snapshotId);
 
+    const { data: departmentGroups, error: departmentGroupsError } = await supabase
+        .from('groups')
+        .select('id')
+        .eq('department_id', departmentId);
+
+    if (departmentGroupsError) {
+        throw buildQueryError('attendance department groups query failed', departmentGroupsError);
+    }
+
+    const departmentGroupIds = ((departmentGroups || []) as { id: string }[]).map((group) => group.id);
+    if (departmentGroupIds.length === 0) {
+        return {
+            snapshotId,
+            snapshotMembers,
+            snapshotMembersWithAttendance: snapshotMembers,
+            attendanceRows: [],
+        };
+    }
+
     const { data: attendance, error } = await supabase
         .from('attendance')
-        .select(`
-            *,
-            groups!inner(id, name, department_id)
-        `)
+        .select('*')
         .eq('week_id', weekId)
-        .eq('groups.department_id', departmentId);
+        .in('group_id', departmentGroupIds);
 
-    if (error) throw error;
+    if (error) throw buildQueryError('attendance rows query failed', error);
 
     return {
         snapshotId,
@@ -404,52 +458,49 @@ const getSnapshotMembersForWeek = async (
 
 export default function AttendancePage() {
     const [loading, setLoading] = useState(true);
-    const [profile, setProfile] = useState<any>(null);
+    const [profile, setProfile] = useState<ProfileRow | null>(null);
 
     // Selection States
-    const [churches, setChurches] = useState<any[]>([]);
+    const [churches, setChurches] = useState<ChurchRow[]>([]);
     const [selectedChurchId, setSelectedChurchId] = useState<string>('');
-    const [departments, setDepartments] = useState<any[]>([]);
+    const [departments, setDepartments] = useState<DepartmentRow[]>([]);
     const [selectedDeptId, setSelectedDeptId] = useState<string>('');
-    const [weeks, setWeeks] = useState<any[]>([]);
+    const [weeks, setWeeks] = useState<WeekRow[]>([]);
     const [selectedWeekId, setSelectedWeekId] = useState<string>('');
 
     // Data States
     const [attendanceData, setAttendanceData] = useState<AttendanceDashboardItem[]>([]);
-    const [groupStats, setGroupStats] = useState<any[]>([]);
-    const [selectedWeekMetrics, setSelectedWeekMetrics] = useState<WeekAttendanceMetrics | SnapshotAttendanceMetrics | null>(null);
+    const [groupStats, setGroupStats] = useState<GroupStat[]>([]);
+    const [selectedWeekMetrics, setSelectedWeekMetrics] = useState<SnapshotAttendanceMetrics | null>(null);
     const [targetExplanation, setTargetExplanation] = useState<string[]>([]);
     const [snapshotEditLoadingId, setSnapshotEditLoadingId] = useState<string | null>(null);
     const [ignoredSubmissionConflictKeys, setIgnoredSubmissionConflictKeys] = useState<Set<string>>(new Set());
     const [selectedWeekNoMeetingReason, setSelectedWeekNoMeetingReason] = useState<string | null>(null);
     const [selectedWeekHasSubmittedAttendance, setSelectedWeekHasSubmittedAttendance] = useState(false);
     const [isNoMeetingMutationLoading, setIsNoMeetingMutationLoading] = useState(false);
-
-    // Monthly/Weekly View States
-    const [monthWeeks, setMonthWeeks] = useState<any[]>([]);
-    const [monthlyStats, setMonthlyStats] = useState<any[]>([]);
+    const [attendanceView, setAttendanceView] = useState<'weekly' | 'insights'>('weekly');
 
     // Stats View States
     const [statsPeriod, setStatsPeriod] = useState<'quarter' | 'year'>('quarter');
-    const [hallOfFame, setHallOfFame] = useState<any[]>([]);
-    const [careList, setCareList] = useState<any[]>([]);
+    const [hallOfFame, setHallOfFame] = useState<InsightPersonReport[]>([]);
+    const [careList, setCareList] = useState<InsightPersonReport[]>([]);
 
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
     const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
-    const [weeklyTrendData, setWeeklyTrendData] = useState<any[]>([]);
+    const [weeklyTrendData, setWeeklyTrendData] = useState<WeeklyTrendDatum[]>([]);
     const [isTrendLoading, setIsTrendLoading] = useState(false);
     const [attendanceSnapshotVersion, setAttendanceSnapshotVersion] = useState(0);
 
     // Insight Report Specific States (Independent)
     const [insightYear, setInsightYear] = useState<number>(new Date().getFullYear());
     const [insightQuarter, setInsightQuarter] = useState<number>(Math.floor(new Date().getMonth() / 3) + 1);
-    const [groupRankings, setGroupRankings] = useState<any[]>([]);
+    const [groupRankings, setGroupRankings] = useState<InsightGroupRanking[]>([]);
 
     // Hall of Fame & Care List Filter Settings
-    const [hallOfFameTarget, setHallOfFameTarget] = useState<'rate' | 'count'>('rate');
+    const [hallOfFameTarget] = useState<'rate' | 'count'>('rate');
     const [hallOfFameValue, setHallOfFameValue] = useState<number>(80);
-    const [careTarget, setCareTarget] = useState<'rate' | 'consecutive'>('consecutive');
-    const [careValue, setCareValue] = useState<number>(3); // 3 weeks or 30%
+    const [careTarget] = useState<'rate' | 'consecutive'>('consecutive');
+    const [careValue] = useState<number>(3); // 3 weeks or 30%
 
     // Detail View Toggle
     const [isDetailExpanded, setIsDetailExpanded] = useState(false);
@@ -461,7 +512,7 @@ export default function AttendancePage() {
     const [endYear, setEndYear] = useState(new Date().getFullYear());
     const [endMonth, setEndMonth] = useState(new Date().getMonth() + 1);
     const [isExportLoading, setIsExportLoading] = useState(false);
-    const [isInsightsLoading, setIsInsightsLoading] = useState(false);
+    const [, setIsInsightsLoading] = useState(false);
     const [currentSnapshotId, setCurrentSnapshotId] = useState<string | null>(null);
     const [attendanceGroups, setAttendanceGroups] = useState<AttendanceGroupRow[]>([]);
     const [isAddSnapshotMemberModalOpen, setIsAddSnapshotMemberModalOpen] = useState(false);
@@ -578,77 +629,104 @@ export default function AttendancePage() {
         if (selectedChurchId && selectedDeptId) {
             const fetchTrendAndWeeks = async () => {
                 setIsTrendLoading(true);
-                // 1. Fetch weeks for the selected year/month
-                const startOfMonth = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-01`;
-                const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
-                const endOfMonth = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
+                try {
+                    // 1. Fetch weeks for the selected year/month
+                    const startOfMonth = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-01`;
+                    const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
+                    const endOfMonth = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
 
-                const { data: monthWeeksList } = await supabase
-                    .from('weeks')
-                    .select('*')
-                    .eq('church_id', selectedChurchId)
-                    .eq('is_active', true)
-                    .gte('week_date', startOfMonth)
-                    .lte('week_date', endOfMonth)
-                    .order('week_date', { ascending: true });
+                    const { data: monthWeeksList, error: monthWeeksError } = await supabase
+                        .from('weeks')
+                        .select('*')
+                        .eq('church_id', selectedChurchId)
+                        .eq('is_active', true)
+                        .gte('week_date', startOfMonth)
+                        .lte('week_date', endOfMonth)
+                        .order('week_date', { ascending: true });
 
-                const monthWeeks = monthWeeksList || [];
-                setWeeks(monthWeeks);
-                if (monthWeeks.length > 0) {
-                    setSelectedWeekId((currentWeekId) => (
-                        currentWeekId && monthWeeks.some((week) => week.id === currentWeekId)
-                            ? currentWeekId
-                            : monthWeeks[monthWeeks.length - 1].id
-                    ));
-                } else {
-                    setSelectedWeekId('');
-                }
+                    if (monthWeeksError) throw buildQueryError('attendance month weeks query failed', monthWeeksError);
 
-                // 2. Fetch Weekly Trend (Last 5 weeks for the vertical chart)
-                const { data: trendWeeks } = await supabase
-                    .from('weeks')
-                    .select('id, week_date')
-                    .eq('church_id', selectedChurchId)
-                    .eq('is_active', true)
-                    .gte('week_date', startOfMonth)
-                    .lte('week_date', endOfMonth)
-                    .order('week_date', { ascending: true });
+                    const monthWeeks = monthWeeksList || [];
+                    setWeeks(monthWeeks);
+                    if (monthWeeks.length > 0) {
+                        setSelectedWeekId((currentWeekId) => (
+                            currentWeekId && monthWeeks.some((week) => week.id === currentWeekId)
+                                ? currentWeekId
+                                : monthWeeks[monthWeeks.length - 1].id
+                        ));
+                    } else {
+                        setSelectedWeekId('');
+                    }
 
-                const { data: monthNoMeetingDays } = await supabase
-                    .from('no_meeting_days')
-                    .select('week_date')
-                    .eq('department_id', selectedDeptId)
-                    .gte('week_date', startOfMonth)
-                    .lte('week_date', endOfMonth);
-                const monthNoMeetingDateSet = new Set<string>(
-                    ((monthNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
-                );
+                    // 2. Fetch Weekly Trend (Last 5 weeks for the vertical chart)
+                    const { data: trendWeeks, error: trendWeeksError } = await supabase
+                        .from('weeks')
+                        .select('id, week_date')
+                        .eq('church_id', selectedChurchId)
+                        .eq('is_active', true)
+                        .gte('week_date', startOfMonth)
+                        .lte('week_date', endOfMonth)
+                        .order('week_date', { ascending: true });
 
-                if (trendWeeks && trendWeeks.length > 0) {
-                    const trendData = await Promise.all(trendWeeks.map(async (w) => {
-                        const isNoMeetingDay = monthNoMeetingDateSet.has(w.week_date);
-                        const { snapshotMembersWithAttendance } = await getSnapshotMembersForWeek(
-                            selectedDeptId,
-                            w.id
-                        );
-                        const metrics = isNoMeetingDay
-                            ? { totalPeople: 0, presentPeople: 0, absentPeople: 0, rate: null }
-                            : calculateSnapshotMetrics(snapshotMembersWithAttendance);
+                    if (trendWeeksError) throw buildQueryError('attendance trend weeks query failed', trendWeeksError);
 
-                        return {
-                            id: w.id,
-                            date: w.week_date.substring(5), // MM-DD
-                            present: metrics.presentPeople,
-                            total: metrics.totalPeople,
-                            rate: metrics.rate,
-                            isNoMeetingDay,
-                        };
-                    }));
-                    setWeeklyTrendData(trendData);
-                } else {
+                    const { data: monthNoMeetingDays, error: noMeetingDaysError } = await supabase
+                        .from('no_meeting_days')
+                        .select('week_date')
+                        .eq('department_id', selectedDeptId)
+                        .gte('week_date', startOfMonth)
+                        .lte('week_date', endOfMonth);
+
+                    if (noMeetingDaysError) throw buildQueryError('attendance no-meeting days query failed', noMeetingDaysError);
+
+                    const monthNoMeetingDateSet = new Set<string>(
+                        ((monthNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
+                    );
+
+                    if (trendWeeks && trendWeeks.length > 0) {
+                        const trendData = await Promise.all(trendWeeks.map(async (w) => {
+                            try {
+                                const isNoMeetingDay = monthNoMeetingDateSet.has(w.week_date);
+                                const { snapshotMembersWithAttendance } = await getSnapshotMembersForWeek(
+                                    selectedDeptId,
+                                    w.id
+                                );
+                                const metrics = isNoMeetingDay
+                                    ? { totalPeople: 0, presentPeople: 0, absentPeople: 0, rate: null }
+                                    : calculateSnapshotMetrics(snapshotMembersWithAttendance);
+
+                                return {
+                                    id: w.id,
+                                    date: w.week_date.substring(5), // MM-DD
+                                    present: metrics.presentPeople,
+                                    total: metrics.totalPeople,
+                                    rate: metrics.rate,
+                                    isNoMeetingDay,
+                                    hasError: false,
+                                };
+                            } catch (error) {
+                                console.error(`Attendance trend week failed (${w.week_date}):`, error);
+                                return {
+                                    id: w.id,
+                                    date: w.week_date.substring(5),
+                                    present: 0,
+                                    total: 0,
+                                    rate: null,
+                                    isNoMeetingDay: false,
+                                    hasError: true,
+                                };
+                            }
+                        }));
+                        setWeeklyTrendData(trendData);
+                    } else {
+                        setWeeklyTrendData([]);
+                    }
+                } catch (error) {
+                    console.error('Attendance trend fetch error:', error);
                     setWeeklyTrendData([]);
+                } finally {
+                    setIsTrendLoading(false);
                 }
-                setIsTrendLoading(false);
             };
             fetchTrendAndWeeks();
         }
@@ -705,11 +783,15 @@ export default function AttendancePage() {
             } = await getSnapshotMembersForWeek(selectedDeptId, selectedWeekId);
             setCurrentSnapshotId(snapshotId);
 
-            const { data: selectedNoMeetingDays } = await supabase
+            const { data: selectedNoMeetingDays, error: selectedNoMeetingDaysError } = await supabase
                 .from('no_meeting_days')
                 .select('week_date, reason')
                 .eq('department_id', selectedDeptId)
                 .eq('week_date', selectedWeek.week_date);
+
+            if (selectedNoMeetingDaysError) {
+                throw buildQueryError('selected week no-meeting query failed', selectedNoMeetingDaysError);
+            }
 
             const selectedNoMeetingDateSet = new Set<string>(
                 ((selectedNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
@@ -741,16 +823,7 @@ export default function AttendancePage() {
                     .filter((member) => member.included)
                     .map((member) => member.personId)
             );
-            const matchedAttendanceCount = snapshotMembersWithAttendance
-                .filter((member) => member.included && member.legacyMemberDirectoryId)
-                .filter((member) => attendanceRows.some((row) => row.directory_member_id === member.legacyMemberDirectoryId))
-                .length;
-            const explanation = isNoMeetingDay
-                ? ['모임없는날로 출석률 계산에서 제외했습니다.']
-                : [
-                    `출석 대상 snapshot ${metrics.totalPeople}명`,
-                    `출석 기록 매칭 ${matchedAttendanceCount}명`,
-                ];
+            const explanation: string[] = [];
 
             const previousWeek = [...weeks]
                 .filter((week) => week.week_date < selectedWeek.week_date)
@@ -787,13 +860,14 @@ export default function AttendancePage() {
 
             // 3. Merge & Reconstruct Data
             // 부서 내 전체 조 목록 조회 (미제출 조 표시용)
-            const { data: deptGroups } = await supabase
+            const { data: deptGroups, error: deptGroupsError } = await supabase
                 .from('groups')
                 .select('id, name, created_at')
                 .eq('department_id', selectedDeptId)
                 .eq('is_active', true)
                 .order('created_at', { ascending: true })
                 .order('name', { ascending: true });
+            if (deptGroupsError) throw buildQueryError('attendance active groups query failed', deptGroupsError);
             const orderedGroups = ((deptGroups || []) as AttendanceGroupRow[]);
             const groupOrder = new Map(orderedGroups.map((group, index) => [group.name, index]));
             setAttendanceGroups(orderedGroups);
@@ -1296,7 +1370,7 @@ export default function AttendancePage() {
     };
 
     const fetchInsights = async () => {
-        if (!selectedDeptId) return;
+        if (!selectedChurchId || !selectedDeptId) return;
         setIsInsightsLoading(true);
         try {
             let startDate = `${insightYear}-01-01`;
@@ -1311,7 +1385,7 @@ export default function AttendancePage() {
             }
 
             // Fetch weeks in the period
-            const { data: periodWeeks } = await supabase
+            const { data: periodWeeks, error: periodWeeksError } = await supabase
                 .from('weeks')
                 .select('*')
                 .eq('church_id', selectedChurchId)
@@ -1320,89 +1394,126 @@ export default function AttendancePage() {
                 .lte('week_date', endDate)
                 .order('week_date', { ascending: false });
 
-            if (!periodWeeks || periodWeeks.length === 0) return;
+            if (periodWeeksError) throw buildQueryError('attendance insight weeks query failed', periodWeeksError);
+
+            if (!periodWeeks || periodWeeks.length === 0) {
+                setHallOfFame([]);
+                setCareList([]);
+                setGroupRankings([]);
+                return;
+            }
 
             const noMeetingDateSet = new Set<string>();
-            const { data: noMeetingDaysForInsight } = await supabase
+            const { data: noMeetingDaysForInsight, error: noMeetingDaysForInsightError } = await supabase
                 .from('no_meeting_days')
                 .select('week_date')
                 .eq('department_id', selectedDeptId)
                 .gte('week_date', startDate)
                 .lte('week_date', endDate);
+            if (noMeetingDaysForInsightError) {
+                throw buildQueryError('attendance insight no-meeting query failed', noMeetingDaysForInsightError);
+            }
             ((noMeetingDaysForInsight || []) as { week_date: string }[]).forEach((day) => {
                 noMeetingDateSet.add(day.week_date);
             });
 
             const meetingWeeks = (periodWeeks as WeekRow[]).filter((week) => !noMeetingDateSet.has(week.week_date));
 
-            // Fetch members active during the selected period.
-            const members = await fetchAttendanceRoster(selectedDeptId);
-            const metricRoster = toMetricRoster(members);
-            if (metricRoster.length === 0) return;
+            const reportByPerson = new Map<string, InsightPersonReport>();
+            const groupTotals = new Map<string, { name: string; presentSum: number; totalAttCount: number; weekIds: Set<string> }>();
 
-            // Fetch all attendance for this department for the period
-            const { data: allAtt } = await supabase
-                .from('attendance')
-                .select('directory_member_id, status, week_id')
-                .in('week_id', periodWeeks.map(w => w.id));
+            const ensurePersonReport = (member: AttendanceRosterSnapshotMember) => {
+                const existing = reportByPerson.get(member.personId);
+                if (existing) {
+                    if (!existing.directoryMemberId && member.legacyMemberDirectoryId) {
+                        existing.directoryMemberId = member.legacyMemberDirectoryId;
+                    }
+                    if (existing.group_name === '조 없음' && member.groupName) {
+                        existing.group_name = member.groupName;
+                    }
+                    return existing;
+                }
 
-            if (!allAtt) return;
+                const report: InsightPersonReport = {
+                    id: member.personId,
+                    directoryMemberId: member.legacyMemberDirectoryId,
+                    full_name: member.displayName || '이름 없음',
+                    group_name: member.groupName || '조 없음',
+                    presentWeekIds: new Set<string>(),
+                    totalWeekIds: new Set<string>(),
+                    rate: 0,
+                    presentCount: 0,
+                    consecutiveAbsences: false,
+                    totalWeeks: 0,
+                };
+                reportByPerson.set(member.personId, report);
+                return report;
+            };
 
-            const attendanceRows = (allAtt || []) as PeriodAttendanceRow[];
-            const rosterByPerson = new Map<string, AttendanceRosterMember[]>();
-            metricRoster.forEach((member) => {
-                rosterByPerson.set(member.personId, [...(rosterByPerson.get(member.personId) || []), member]);
-            });
+            for (const week of meetingWeeks) {
+                const { snapshotMembersWithAttendance } = await getSnapshotMembersForWeek(selectedDeptId, week.id);
+                const includedMembers = snapshotMembersWithAttendance.filter((member) => member.included);
+                const weekMembersByPerson = new Map<string, AttendanceRosterSnapshotMember[]>();
+                const weekMembersByGroupAndPerson = new Map<string, AttendanceRosterSnapshotMember[]>();
 
-            // Analyze by real person, not member_directory row.
-            const report = Array.from(rosterByPerson.entries()).map(([personId, personRoster]) => {
-                const displayMember = sortRosterForDisplay(personRoster)[0];
-                const activeMeetingWeeks = meetingWeeks.filter((week) =>
-                    personRoster.some((member) => {
-                        if (getActiveRosterForWeek([member], week.week_date).length > 0) return true;
-                        const weekAttendance = attendanceRows
-                            .filter((attendance) => attendance.week_id === week.id)
-                            .map((attendance) => ({
-                                directoryMemberId: attendance.directory_member_id,
-                                status: attendance.status,
-                            }));
-                        const weekMetrics = calculateWeekAttendanceMetrics({
-                            weekDate: week.week_date,
-                            roster: metricRoster,
-                            attendance: weekAttendance,
-                            noMeetingDates: noMeetingDateSet,
-                            backfillMode: 'current-active',
-                        });
-                        return weekMetrics.usedRetroactiveBackfill && !member.endsAt;
-                    })
-                );
-                const activeWeekIds = new Set(activeMeetingWeeks.map((week) => week.id));
-                const personDirectoryIds = new Set(personRoster.map((member) => member.directoryMemberId));
-                const myAtt = attendanceRows.filter((attendance) =>
-                    personDirectoryIds.has(attendance.directory_member_id) && activeWeekIds.has(attendance.week_id)
-                );
-                const presentWeekIds = new Set(
-                    myAtt
-                        .filter(a => a.status === 'present' || a.status === 'late')
-                        .map(a => a.week_id)
-                );
-                const presentCount = presentWeekIds.size;
-                const rate = activeMeetingWeeks.length > 0 ? (presentCount / activeMeetingWeeks.length) * 100 : 0;
+                includedMembers.forEach((member) => {
+                    if (!member.personId) return;
+                    weekMembersByPerson.set(member.personId, [...(weekMembersByPerson.get(member.personId) || []), member]);
 
-                // Check consecutive absences (last 3 weeks of the period)
-                const last3Weeks = activeMeetingWeeks.slice(0, 3);
-                const consecutiveAbsences = last3Weeks.length >= 3 && last3Weeks.every(w => {
-                    return !presentWeekIds.has(w.id);
+                    const groupName = member.groupName || '조 없음';
+                    const groupPersonKey = `${groupName}::${member.personId}`;
+                    weekMembersByGroupAndPerson.set(groupPersonKey, [
+                        ...(weekMembersByGroupAndPerson.get(groupPersonKey) || []),
+                        member,
+                    ]);
                 });
 
+                weekMembersByPerson.forEach((membersForPerson) => {
+                    const displayMember = membersForPerson.find((member) => member.legacyMemberDirectoryId) || membersForPerson[0];
+                    const report = ensurePersonReport(displayMember);
+                    report.totalWeekIds.add(week.id);
+                    if (membersForPerson.some((member) => member.attendanceStatus === 'present' || member.attendanceStatus === 'late')) {
+                        report.presentWeekIds.add(week.id);
+                    }
+
+                });
+
+                weekMembersByGroupAndPerson.forEach((membersForGroupPerson) => {
+                    const displayMember = membersForGroupPerson[0];
+                    const groupName = displayMember.groupName || '조 없음';
+                    if (!groupName || groupName === '조 없음') return;
+
+                    const group = groupTotals.get(groupName) || {
+                        name: groupName,
+                        presentSum: 0,
+                        totalAttCount: 0,
+                        weekIds: new Set<string>(),
+                    };
+                    group.weekIds.add(week.id);
+                    group.totalAttCount += 1;
+                    if (membersForGroupPerson.some((member) => member.attendanceStatus === 'present' || member.attendanceStatus === 'late')) {
+                        group.presentSum += 1;
+                    }
+                    groupTotals.set(groupName, group);
+                });
+            }
+
+            const commonTotalWeeks = meetingWeeks.length;
+            const report = Array.from(reportByPerson.values()).map((personReport) => {
+                const totalWeeks = commonTotalWeeks;
+                const presentCount = personReport.presentWeekIds.size;
+                const rate = totalWeeks > 0 ? (presentCount / totalWeeks) * 100 : 0;
+                const last3Weeks = meetingWeeks.slice(0, 3);
+                const consecutiveAbsences = last3Weeks.length >= 3 && last3Weeks.every((week) => (
+                    !personReport.presentWeekIds.has(week.id)
+                ));
+
                 return {
-                    id: personId,
-                    full_name: displayMember.fullName,
-                    group_name: displayMember.groupName || '조 없음',
+                    ...personReport,
                     presentCount,
                     rate,
                     consecutiveAbsences,
-                    totalWeeks: activeMeetingWeeks.length
+                    totalWeeks,
                 };
             });
 
@@ -1415,23 +1526,21 @@ export default function AttendancePage() {
                 return r.rate <= careValue;
             }).sort((a, b) => a.rate - b.rate));
 
-            // [NEW] Calculate Group Rankings
-            const groupsMap = new Map<string, { name: string; presentSum: number; totalAttCount: number }>();
-            report.forEach(r => {
-                if (!groupsMap.has(r.group_name)) {
-                    groupsMap.set(r.group_name, { name: r.group_name, presentSum: 0, totalAttCount: 0 });
-                }
-                const g = groupsMap.get(r.group_name);
-                if (!g) return;
-                g.presentSum += r.presentCount;
-                g.totalAttCount += r.totalWeeks;
-            });
-
-            const rankings = Array.from(groupsMap.values())
-                .map((g) => ({
-                    ...g,
-                    rate: g.totalAttCount > 0 ? (g.presentSum / g.totalAttCount) * 100 : 0
-                }))
+            const rankings = Array.from(groupTotals.values())
+                .map((g) => {
+                    const weekCount = Math.max(1, commonTotalWeeks);
+                    const dataWeekCount = g.weekIds.size;
+                    return {
+                        name: g.name,
+                        presentSum: g.presentSum,
+                        totalAttCount: g.totalAttCount,
+                        weekCount,
+                        dataWeekCount,
+                        averagePresent: g.presentSum / weekCount,
+                        averageTarget: g.totalAttCount / weekCount,
+                        rate: g.totalAttCount > 0 ? (g.presentSum / g.totalAttCount) * 100 : 0
+                    };
+                })
                 .filter(g => g.name && g.name !== '조 없음')
                 .sort((a, b) => b.rate - a.rate);
 
@@ -1439,6 +1548,9 @@ export default function AttendancePage() {
 
         } catch (err) {
             console.error('Insights Error:', err);
+            setHallOfFame([]);
+            setCareList([]);
+            setGroupRankings([]);
         } finally {
             setIsInsightsLoading(false);
         }
@@ -1479,7 +1591,7 @@ export default function AttendancePage() {
                 .lte('week_date', endStr);
 
             const noMeetingDateSet = new Set<string>(
-                (noMeetingDays || []).map((d: any) => d.week_date as string)
+                ((noMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
             );
 
             const { data: exportGroups } = await supabase
@@ -1653,21 +1765,11 @@ export default function AttendancePage() {
         setIsExportModalOpen(true);
     };
 
-    const getStatusIcon = (status: string) => {
-        switch (status) {
-            case 'present': return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
-            default: return <XCircle className="w-5 h-5 text-rose-500" />;
-        }
-    };
-
-    const getStatusLabel = (status: string) => {
-        switch (status) {
-            case 'present': return '출석';
-            default: return '결석';
-        }
-    };
-
-
+    const selectedChurchName = churches.find((church) => church.id === selectedChurchId)?.name || '교회 선택 필요';
+    const selectedDepartmentName = departments.find((department) => department.id === selectedDeptId)?.name || '부서 선택 필요';
+    const insightPeriodLabel = statsPeriod === 'quarter'
+        ? `${insightYear}년 ${insightQuarter}분기`
+        : `${insightYear}년`;
 
     return (
         <div className="space-y-8 sm:space-y-10 max-w-7xl mx-auto">
@@ -1683,21 +1785,37 @@ export default function AttendancePage() {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <Tooltip content="선택된 기간의 전체 출석 현황을 엑셀 파일로 추출합니다.">
-                            <button
-                                onClick={downloadExcel}
-                                className="flex items-center gap-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-3.5 rounded-2xl font-black text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-slate-950/10 dark:shadow-white/5 border border-slate-800 dark:border-slate-100 cursor-pointer"
-                            >
-                                <Download className="w-4 h-4" />
-                                리포트 추출
-                            </button>
-                        </Tooltip>
+                    <div className="inline-flex rounded-2xl border border-indigo-100 bg-indigo-50/70 p-1 shadow-sm dark:border-indigo-500/20 dark:bg-indigo-500/10">
+                        <button
+                            type="button"
+                            onClick={() => setAttendanceView('weekly')}
+                            className={cn(
+                                "rounded-xl px-5 py-2.5 text-xs font-black transition-all",
+                                attendanceView === 'weekly'
+                                    ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-200"
+                                    : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                            )}
+                        >
+                            주차별 출석
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setAttendanceView('insights')}
+                            className={cn(
+                                "rounded-xl px-5 py-2.5 text-xs font-black transition-all",
+                                attendanceView === 'insights'
+                                    ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-200"
+                                    : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                            )}
+                        >
+                            인사이트 리포트
+                        </button>
                     </div>
                 </div>
             </header>
 
             {/* Horizontal Filter Bar - Compact & Glassy */}
+            {attendanceView === 'weekly' && (
             <div className="sticky top-20 z-[40] bg-white/70 dark:bg-[#0d1221]/70 backdrop-blur-2xl border border-slate-200/60 dark:border-slate-800/60 p-3 sm:p-4 rounded-2xl shadow-lg flex flex-wrap items-center gap-4">
                 <div className="flex flex-wrap items-center gap-3 flex-1">
                     {profile?.is_master && (
@@ -1761,7 +1879,7 @@ export default function AttendancePage() {
                             <select
                                 value={selectedWeekId}
                                 onChange={(e) => setSelectedWeekId(e.target.value)}
-                                className="w-full pl-10 pr-10 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-none rounded-2xl font-black text-xs outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all appearance-none cursor-pointer"
+                                className="w-full pl-10 pr-10 py-2.5 bg-indigo-600 text-white border-none rounded-2xl font-black text-xs outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all appearance-none cursor-pointer"
                             >
                                 {weeks.map((w, idx) => (
                                     <option key={w.id} value={w.id}>{idx + 1}주차 ({w.week_date.substring(5)})</option>
@@ -1777,8 +1895,10 @@ export default function AttendancePage() {
                     )}
                 </div>
             </div>
+            )}
 
             {/* Quick Summary Stats Row */}
+            {attendanceView === 'weekly' && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 px-1">
                 <div className="bg-white dark:bg-slate-800/40 p-6 rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm flex items-center justify-between group hover:border-indigo-500/30 transition-all">
                     <div>
@@ -1823,93 +1943,11 @@ export default function AttendancePage() {
                     </div>
                 </div>
             </div>
-
-            {(selectedWeekNoMeetingReason !== null || !selectedWeekHasSubmittedAttendance) && (
-                <div className="px-1">
-                    <div className={cn(
-                        "rounded-2xl border p-4 shadow-sm",
-                        selectedWeekNoMeetingReason !== null
-                            ? "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40"
-                            : "border-amber-100 bg-amber-50/70 dark:border-amber-500/20 dark:bg-amber-500/10"
-                    )}>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="flex items-start gap-3">
-                                <div className={cn(
-                                    "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm",
-                                    selectedWeekNoMeetingReason !== null
-                                        ? "bg-white text-slate-500 dark:bg-slate-900 dark:text-slate-300"
-                                        : "bg-white text-amber-600 dark:bg-amber-500/20 dark:text-amber-200"
-                                )}>
-                                    <CalendarDays className="h-5 w-5" />
-                                </div>
-                                <div className="min-w-0">
-                                    <p className="text-sm font-black text-slate-900 dark:text-white">
-                                        {selectedWeekNoMeetingReason !== null ? '모임없는 날로 지정된 주차입니다' : '아직 출석 제출이 없는 주차입니다'}
-                                    </p>
-                                    <p className="mt-1 text-xs font-bold leading-5 text-slate-500 dark:text-slate-400">
-                                        {selectedWeekNoMeetingReason !== null
-                                            ? `사유: ${selectedWeekNoMeetingReason || '모임 없음'}`
-                                            : '이 주차에 실제 모임이 없었다면 관리자 웹에서도 모임없는 날로 지정할 수 있습니다.'}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                                {selectedWeekNoMeetingReason !== null ? (
-                                    <button
-                                        type="button"
-                                        onClick={cancelSelectedWeekNoMeetingDay}
-                                        disabled={isNoMeetingMutationLoading}
-                                        className="rounded-2xl bg-white px-4 py-2 text-[11px] font-black text-slate-600 shadow-sm ring-1 ring-slate-200 transition-all hover:-translate-y-0.5 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:bg-slate-950/50 dark:text-slate-200 dark:ring-slate-700"
-                                    >
-                                        {isNoMeetingMutationLoading ? '처리 중...' : '지정 취소'}
-                                    </button>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        onClick={markSelectedWeekAsNoMeetingDay}
-                                        disabled={isNoMeetingMutationLoading}
-                                        className="rounded-2xl bg-amber-600 px-4 py-2 text-[11px] font-black text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-amber-700 disabled:cursor-wait disabled:opacity-60 dark:bg-amber-400 dark:text-amber-950 dark:hover:bg-amber-300"
-                                    >
-                                        {isNoMeetingMutationLoading ? '처리 중...' : '모임없는 날 지정'}
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {targetExplanation.length > 0 && (
-                <div className="px-1">
-                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
-                        <div className="flex items-start gap-3">
-                            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm dark:bg-indigo-500/20 dark:text-indigo-200">
-                                <AlertCircle className="h-5 w-5" />
-                            </div>
-                            <div className="min-w-0">
-                                <p className="text-sm font-black text-slate-900 dark:text-white">선택 주차 대상 산정 기준</p>
-                                <p className="mt-1 text-xs font-bold leading-5 text-slate-500 dark:text-slate-400">
-                                    일반 주차는 주차 기준 active person을 사용하고, 과거 후입력으로 active 이력이 없는 주차만 현재 active roster로 보정합니다.
-                                </p>
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    {targetExplanation.map((item) => (
-                                        <span
-                                            key={item}
-                                            className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-indigo-700 shadow-sm ring-1 ring-indigo-100 dark:bg-slate-900/40 dark:text-indigo-200 dark:ring-indigo-500/20"
-                                        >
-                                            {item}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             )}
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 mt-4 px-1">
                 {/* Main Content Column (Left/Center) */}
-                <div className="xl:col-span-8 space-y-8">
+                <div className={cn("space-y-8", attendanceView === 'insights' ? "hidden" : "xl:col-span-8")}>
                     {loading ? (
                         <div className="h-64 flex flex-col items-center justify-center bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/50">
                             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
@@ -1986,7 +2024,9 @@ export default function AttendancePage() {
                                                             {/* Bar BG */}
                                                             <div className={cn(
                                                                 "absolute inset-y-0 left-1/2 w-3 -translate-x-1/2 rounded-full transition-colors sm:w-5",
-                                                                selectedWeekId === data.id
+                                                                data.hasError
+                                                                    ? "bg-rose-100 ring-2 ring-rose-200/70 dark:bg-rose-900/30 dark:ring-rose-500/25"
+                                                                    : selectedWeekId === data.id
                                                                     ? "bg-indigo-100 ring-2 ring-indigo-200/70 dark:bg-indigo-900/30 dark:ring-indigo-500/25"
                                                                     : "bg-slate-100 dark:bg-slate-800/50"
                                                             )} />
@@ -1994,7 +2034,9 @@ export default function AttendancePage() {
                                                             <div
                                                                 className={cn(
                                                                     "absolute bottom-0 left-1/2 z-10 w-3 -translate-x-1/2 rounded-full transition-all duration-1000 ease-out sm:w-5",
-                                                                    selectedWeekId === data.id
+                                                                    data.hasError
+                                                                        ? "bg-rose-400/60 dark:bg-rose-500/60"
+                                                                        : selectedWeekId === data.id
                                                                         ? "bg-indigo-700 dark:bg-indigo-400 shadow-[0_0_14px_rgba(79,70,229,0.35)]"
                                                                         : "bg-indigo-500/70 dark:bg-indigo-500/70 group-hover:bg-indigo-600"
                                                                 )}
@@ -2008,11 +2050,11 @@ export default function AttendancePage() {
                                                                         ? "-top-6 text-indigo-700 dark:text-indigo-300"
                                                                         : "-top-6 text-indigo-500 dark:text-indigo-400"
                                                                 )}>
-                                                                    {data.present}
+                                                                    {data.hasError ? '!' : data.present}
                                                                 </div>
                                                                 {/* Tooltip */}
                                                                 <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all bg-slate-900 dark:bg-slate-700 text-white text-[10px] font-black px-2.5 py-1.5 rounded-xl z-20 whitespace-nowrap shadow-xl pointer-events-none">
-                                                                    {data.present}명 / {data.total}명
+                                                                    {data.hasError ? '계산 실패' : `${data.present}명 / ${data.total}명`}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -2300,69 +2342,241 @@ export default function AttendancePage() {
                     )}
                 </div>
 
+	                {attendanceView === 'weekly' && (
+	                    <aside className="xl:col-span-4 space-y-4">
+	                        <div className="sticky top-40 space-y-4">
+	                            <div className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-5 shadow-sm dark:border-indigo-500/20 dark:bg-indigo-500/10">
+	                                <div className="mb-4 flex items-center justify-between">
+	                                    <div>
+	                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500/70">리포트</p>
+                                        <h3 className="mt-1 text-lg font-black text-slate-900 dark:text-white">리포트 추출</h3>
+                                    </div>
+                                    <Download className="h-5 w-5 text-indigo-500" />
+                                </div>
+                                <p className="mb-4 text-[11px] font-bold leading-5 text-slate-500 dark:text-slate-400">
+                                    선택한 기간의 snapshot 기준 출석부를 엑셀로 생성합니다.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={downloadExcel}
+                                    className="w-full rounded-2xl bg-indigo-600 px-4 py-3 text-xs font-black text-white shadow-sm transition-all hover:bg-indigo-700 dark:bg-indigo-400 dark:text-indigo-950 dark:hover:bg-indigo-300"
+                                >
+	                                    기간 선택 후 다운로드
+	                                </button>
+	                            </div>
+
+	                            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+	                                <div className="mb-4 flex items-center gap-3">
+	                                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+	                                        <AlertCircle className="h-5 w-5" />
+	                                    </div>
+	                                    <div>
+	                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">인원 변동</p>
+	                                        <h3 className="mt-1 text-lg font-black text-slate-900 dark:text-white">지난 주와 달라진 출석 대상</h3>
+	                                    </div>
+	                                </div>
+
+	                                {targetExplanation.length > 0 ? (
+	                                    <div className="space-y-2">
+	                                        {targetExplanation.map((item) => (
+	                                            <div
+	                                                key={item}
+	                                                className="rounded-2xl bg-indigo-50 px-4 py-3 text-[11px] font-black leading-5 text-indigo-700 ring-1 ring-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-200 dark:ring-indigo-500/20"
+	                                            >
+	                                                {item}
+	                                            </div>
+	                                        ))}
+	                                    </div>
+	                                ) : (
+	                                    <div className="rounded-2xl bg-slate-50 px-4 py-4 text-[11px] font-bold leading-5 text-slate-500 dark:bg-slate-950/40 dark:text-slate-400">
+	                                        이번 주 출석 대상은 지난 주와 동일합니다.
+	                                    </div>
+	                                )}
+	                            </div>
+
+	                            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
+	                                <div className="mb-4 flex items-center justify-between">
+	                                    <div>
+	                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">모임 여부</p>
+	                                        <h3 className="mt-1 text-lg font-black text-slate-900 dark:text-white">모임없는 날</h3>
+	                                    </div>
+	                                    <div className={cn(
+	                                        "flex h-10 w-10 items-center justify-center rounded-2xl",
+	                                        selectedWeekNoMeetingReason !== null
+	                                            ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
+	                                            : !selectedWeekHasSubmittedAttendance
+	                                            ? "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300"
+	                                            : "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300"
+	                                    )}>
+	                                        <CalendarDays className="h-5 w-5" />
+	                                    </div>
+	                                </div>
+
+	                                <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/40">
+	                                    <p className="text-xs font-black text-slate-900 dark:text-white">
+	                                        {selectedWeekNoMeetingReason !== null
+	                                            ? '모임없는 날로 지정됨'
+	                                            : selectedWeekHasSubmittedAttendance
+	                                            ? '출석 기록이 있는 주차'
+	                                            : '아직 출석 제출 없음'}
+	                                    </p>
+	                                    <p className="mt-1 text-[11px] font-bold leading-5 text-slate-500 dark:text-slate-400">
+	                                        {selectedWeekNoMeetingReason !== null
+	                                            ? `사유: ${selectedWeekNoMeetingReason || '모임 없음'}`
+	                                            : selectedWeekHasSubmittedAttendance
+	                                            ? '이미 출석 기록이 있어 모임없는 날로 바꿀 수 없습니다.'
+	                                            : '실제 모임이 없었던 주차만 모임없는 날로 지정하세요.'}
+	                                    </p>
+	                                </div>
+
+	                                <div className="mt-4">
+	                                    {selectedWeekNoMeetingReason !== null ? (
+	                                        <button
+	                                            type="button"
+	                                            onClick={cancelSelectedWeekNoMeetingDay}
+	                                            disabled={isNoMeetingMutationLoading}
+	                                            className="w-full rounded-2xl bg-white px-4 py-3 text-xs font-black text-slate-700 shadow-sm ring-1 ring-slate-200 transition-all hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:bg-slate-950/50 dark:text-slate-200 dark:ring-slate-800 dark:hover:bg-slate-900"
+	                                        >
+	                                            {isNoMeetingMutationLoading ? '처리 중...' : '모임없는 날 지정 취소'}
+	                                        </button>
+	                                    ) : (
+	                                        <button
+	                                            type="button"
+	                                            onClick={markSelectedWeekAsNoMeetingDay}
+	                                            disabled={isNoMeetingMutationLoading || selectedWeekHasSubmittedAttendance}
+	                                            className="w-full rounded-2xl bg-amber-500 px-4 py-3 text-xs font-black text-white shadow-sm transition-all hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none dark:bg-amber-400 dark:text-amber-950 dark:hover:bg-amber-300 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+	                                        >
+	                                            {isNoMeetingMutationLoading
+	                                                ? '처리 중...'
+	                                                : selectedWeekHasSubmittedAttendance
+	                                                ? '출석 기록이 있어 지정 불가'
+	                                                : '모임없는 날로 지정'}
+	                                        </button>
+	                                    )}
+	                                </div>
+	                            </div>
+	                        </div>
+	                    </aside>
+	                )}
+
                 {/* Sidebar Column (Right) */}
-                <div className="xl:col-span-4 space-y-6">
-                    <div className="bg-white/60 dark:bg-[#111827]/40 backdrop-blur-2xl rounded-3xl p-8 border border-white dark:border-slate-800/50 shadow-xl relative overflow-hidden">
+                <div className={cn("space-y-6", attendanceView === 'weekly' ? "hidden" : "xl:col-span-12")}>
+                    <div className="relative overflow-hidden rounded-[2rem] border border-slate-100 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900/60">
                         <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 rounded-full -mr-24 -mt-24 blur-3xl" />
 
-                        <div className="flex items-center justify-between mb-8 relative">
-                            <div className="space-y-4 w-full">
-                                <h3 className="text-sm font-black text-slate-400 dark:text-slate-500 tracking-widest uppercase">인사이트 리포트</h3>
-
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/50 rounded-xl">
-                                        <button
-                                            onClick={() => setStatsPeriod('quarter')}
-                                            className={cn(
-                                                "px-4 py-1.5 rounded-lg text-[10px] font-black transition-all",
-                                                statsPeriod === 'quarter' ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" : "text-slate-400 hover:text-slate-600"
-                                            )}
-                                        >
-                                            분기
-                                        </button>
-                                        <button
-                                            onClick={() => setStatsPeriod('year')}
-                                            className={cn(
-                                                "px-4 py-1.5 rounded-lg text-[10px] font-black transition-all",
-                                                statsPeriod === 'year' ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" : "text-slate-400 hover:text-slate-600"
-                                            )}
-                                        >
-                                            년도
-                                        </button>
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                        <select
-                                            value={insightYear}
-                                            onChange={(e) => setInsightYear(parseInt(e.target.value))}
-                                            className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-xl text-[10px] font-black text-slate-600 dark:text-slate-400 outline-none border-none cursor-pointer"
-                                        >
-                                            {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
-                                        </select>
-
-                                        {statsPeriod === 'quarter' && (
-                                            <select
-                                                value={insightQuarter}
-                                                onChange={(e) => setInsightQuarter(parseInt(e.target.value))}
-                                                className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-xl text-[10px] font-black text-slate-600 dark:text-slate-400 outline-none border-none cursor-pointer"
-                                            >
-                                                {[1, 2, 3, 4].map(q => <option key={q} value={q}>{q}분기</option>)}
-                                            </select>
-                                        )}
-                                    </div>
+                        <div className="relative mb-8 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                                <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em]">Attendance Insights</p>
+                                <h3 className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-white">인사이트 리포트</h3>
+                                <p className="mt-2 max-w-2xl text-xs font-bold leading-5 text-slate-500 dark:text-slate-400">
+                                    선택 기간 중 출석 대상이었던 실제 성도 기준으로 우수 출석, 조별 흐름, 돌봄 필요 대상을 요약합니다.
+                                </p>
+                                <div className="mt-4 flex flex-wrap items-center gap-2">
+                                    <span className="inline-flex items-center gap-1.5 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] font-black text-slate-600 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:text-slate-300 dark:ring-slate-800">
+                                        <ChurchIcon className="h-3.5 w-3.5 text-indigo-500" />
+                                        {selectedChurchName}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1.5 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] font-black text-slate-600 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:text-slate-300 dark:ring-slate-800">
+                                        <Layers className="h-3.5 w-3.5 text-indigo-500" />
+                                        {selectedDepartmentName}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1.5 rounded-2xl bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-700 ring-1 ring-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-200 dark:ring-indigo-500/20">
+                                        <CalendarDays className="h-3.5 w-3.5" />
+                                        {insightPeriodLabel}
+                                    </span>
                                 </div>
+                            </div>
+
+                            <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                                <div className="flex items-center gap-1 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-1 shadow-sm dark:border-indigo-500/20 dark:bg-indigo-500/10">
+                                    <button
+                                        onClick={() => setStatsPeriod('quarter')}
+                                        className={cn(
+                                            "rounded-xl px-4 py-2 text-[10px] font-black transition-all",
+                                            statsPeriod === 'quarter'
+                                                ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-200"
+                                                : "text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-200"
+                                        )}
+                                    >
+                                        분기
+                                    </button>
+                                    <button
+                                        onClick={() => setStatsPeriod('year')}
+                                        className={cn(
+                                            "rounded-xl px-4 py-2 text-[10px] font-black transition-all",
+                                            statsPeriod === 'year'
+                                                ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-200"
+                                                : "text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-200"
+                                        )}
+                                    >
+                                        년도
+                                    </button>
+                                </div>
+
+                                <select
+                                    value={insightYear}
+                                    onChange={(e) => setInsightYear(parseInt(e.target.value))}
+                                    className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-600 outline-none transition-all focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300"
+                                >
+                                    {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
+                                </select>
+
+                                {statsPeriod === 'quarter' && (
+                                    <select
+                                        value={insightQuarter}
+                                        onChange={(e) => setInsightQuarter(parseInt(e.target.value))}
+                                        className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-600 outline-none transition-all focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300"
+                                    >
+                                        {[1, 2, 3, 4].map(q => <option key={q} value={q}>{q}분기</option>)}
+                                    </select>
+                                )}
                             </div>
                         </div>
 
-                        <div className="space-y-8 relative">
+                        <div className="relative mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+                            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">출석 우수</p>
+                                    <Trophy className="h-4 w-4 text-amber-500" />
+                                </div>
+                                <p className="mt-3 text-3xl font-black text-slate-900 dark:text-white">{hallOfFame.length}</p>
+                                <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">{hallOfFameValue}% 이상 출석한 성도</p>
+                            </div>
+                            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">상위 조</p>
+                                    <BarChart3 className="h-4 w-4 text-indigo-500" />
+                                </div>
+                                <p className="mt-3 truncate text-2xl font-black text-slate-900 dark:text-white">{groupRankings[0]?.name || '-'}</p>
+                                <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                    {groupRankings[0] ? `${Math.round(groupRankings[0].rate)}% 평균 출석률` : '집계 데이터 없음'}
+                                </p>
+                            </div>
+                            <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">돌봄 필요</p>
+                                    <HeartPulse className="h-4 w-4 text-rose-500" />
+                                </div>
+                                <p className="mt-3 text-3xl font-black text-slate-900 dark:text-white">{careList.length}</p>
+                                <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">최근 3회 연속 미출석 성도</p>
+                            </div>
+                        </div>
+
+                        <div className={cn(
+                            "relative gap-6",
+                            attendanceView === 'insights' ? "grid grid-cols-1 xl:grid-cols-3" : "space-y-8"
+                        )}>
                             {/* Hall of Fame - Compact */}
-                            <div className="space-y-5">
+                            <div className="space-y-5 rounded-[2rem] border border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-950/30">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                                        <div className="w-9 h-9 rounded-2xl bg-amber-500/10 flex items-center justify-center">
                                             <Trophy className="w-3.5 h-3.5 text-amber-500" />
                                         </div>
-                                        <span className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">출석 우수자 (Top 5)</span>
+                                        <div>
+                                            <span className="text-sm font-black text-slate-900 dark:text-white">출석 우수자</span>
+                                            <p className="text-[10px] font-bold text-slate-400">{hallOfFameValue}% 이상, 총 {hallOfFame.length}명</p>
+                                        </div>
                                     </div>
                                     <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl">
                                         <button
@@ -2382,12 +2596,12 @@ export default function AttendancePage() {
                                         </button>
                                     </div>
                                 </div>
-                                <div className="space-y-3">
+                                <div className="max-h-[460px] space-y-3 overflow-y-auto pr-1">
                                     {hallOfFame.length > 0 ? (
-                                        hallOfFame.slice(0, 5).map((member, idx) => (
-                                            <div key={member.id} className="flex items-center justify-between p-4 rounded-3xl bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100/50 dark:border-slate-700/30 hover:bg-white dark:hover:bg-slate-800 transition-all group">
+                                        hallOfFame.map((member, idx) => (
+                                            <div key={member.id} className="flex items-center justify-between rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-100 transition-all hover:-translate-y-0.5 hover:ring-amber-200 dark:bg-slate-900/70 dark:ring-slate-800">
                                                 <div className="flex items-center gap-4">
-                                                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center text-xs font-black text-amber-500">
+                                                    <div className="w-9 h-9 rounded-2xl bg-amber-500/10 flex items-center justify-center text-xs font-black text-amber-500">
                                                         {idx + 1}
                                                     </div>
                                                     <div>
@@ -2397,7 +2611,7 @@ export default function AttendancePage() {
                                                 </div>
                                                 <div className="text-right">
                                                     <p className="text-xs font-black text-amber-500">{Math.round(member.rate)}%</p>
-                                                    <p className="text-[9px] font-bold text-slate-400">{member.presentCount}주 출석</p>
+                                                    <p className="text-[9px] font-bold text-slate-400">{member.presentCount}/{member.totalWeeks}주 출석</p>
                                                 </div>
                                             </div>
                                         ))
@@ -2409,24 +2623,27 @@ export default function AttendancePage() {
                                 </div>
                             </div>
 
-                            <div className="h-px bg-slate-100 dark:bg-slate-800" />
+                            <div className={cn("h-px bg-slate-100 dark:bg-slate-800", attendanceView === 'insights' && "hidden")} />
 
                             {/* Group Rankings - [NEW] */}
-                            <div className="space-y-5">
+                            <div className="space-y-5 rounded-[2rem] border border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-950/30">
                                 <div className="flex items-center gap-2">
-                                    <div className="w-6 h-6 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                                    <div className="w-9 h-9 rounded-2xl bg-indigo-500/10 flex items-center justify-center">
                                         <BarChart3 className="w-3.5 h-3.5 text-indigo-500" />
                                     </div>
-                                    <span className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">조별 출석 순위 (Top 3)</span>
+                                    <div>
+                                        <span className="text-sm font-black text-slate-900 dark:text-white">조별 출석 순위</span>
+                                        <p className="text-[10px] font-bold text-slate-400">선택 기간 평균 출석률 상위 3개 조</p>
+                                    </div>
                                 </div>
                                 <div className="space-y-3">
                                     {groupRankings.length > 0 ? (
                                         groupRankings.slice(0, 3).map((group, idx) => (
-                                            <div key={group.name} className="relative overflow-hidden p-4 rounded-3xl bg-indigo-500/[0.03] dark:bg-indigo-500/[0.05] border border-indigo-100 dark:border-indigo-500/10 group/item">
-                                                <div className="flex items-center justify-between relative z-10">
+                                            <div key={group.name} className="relative overflow-hidden rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-900/70 dark:ring-slate-800">
+                                                <div className="relative z-10 space-y-3">
                                                     <div className="flex items-center gap-4">
                                                         <div className={cn(
-                                                            "w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shadow-sm",
+                                                            "w-9 h-9 rounded-2xl flex items-center justify-center text-xs font-black shadow-sm",
                                                             idx === 0 ? "bg-amber-400 text-white" :
                                                                 idx === 1 ? "bg-slate-300 text-slate-700" :
                                                                     "bg-orange-300 text-orange-800"
@@ -2435,32 +2652,23 @@ export default function AttendancePage() {
                                                         </div>
                                                         <div>
                                                             <p className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight">{group.name}</p>
-                                                            <p className="text-[10px] font-bold text-indigo-500/60 uppercase">{Math.round(group.rate)}% 출석</p>
+                                                            <p className="text-[10px] font-bold text-indigo-500/60">
+                                                                평균 {group.averagePresent.toFixed(1)}/{group.averageTarget.toFixed(1)}명 출석
+                                                            </p>
                                                         </div>
                                                     </div>
-                                                    <div className="w-10 h-10 rounded-full border-2 border-indigo-500/20 flex items-center justify-center relative">
-                                                        <svg className="w-full h-full -rotate-90">
-                                                            <circle
-                                                                cx="20"
-                                                                cy="20"
-                                                                r="16"
-                                                                fill="transparent"
-                                                                stroke="currentColor"
-                                                                strokeWidth="3"
-                                                                className="text-indigo-500/10"
-                                                            />
-                                                            <circle
-                                                                cx="20"
-                                                                cy="20"
-                                                                r="16"
-                                                                fill="transparent"
-                                                                stroke="currentColor"
-                                                                strokeWidth="3"
-                                                                strokeDasharray={`${2 * Math.PI * 16}`}
-                                                                strokeDashoffset={`${2 * Math.PI * 16 * (1 - group.rate / 100)}`}
-                                                                className="text-indigo-500"
-                                                            />
-                                                        </svg>
+                                                    <div className="flex items-center justify-between text-[9px] font-black text-slate-400">
+                                                        <span>
+                                                            {group.weekCount}개 모임 주차 기준
+                                                            {group.dataWeekCount < group.weekCount ? ` · ${group.dataWeekCount}주 데이터` : ''}
+                                                        </span>
+                                                        <span>기간 누적 {group.presentSum}/{group.totalAttCount}</span>
+                                                    </div>
+                                                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                                        <div
+                                                            className="h-full rounded-full bg-indigo-500"
+                                                            style={{ width: `${Math.min(100, Math.max(0, group.rate))}%` }}
+                                                        />
                                                     </div>
                                                 </div>
                                             </div>
@@ -2473,22 +2681,38 @@ export default function AttendancePage() {
                                 </div>
                             </div>
 
-                            <div className="h-px bg-slate-100 dark:bg-slate-800" />
+                            <div className={cn("h-px bg-slate-100 dark:bg-slate-800", attendanceView === 'insights' && "hidden")} />
 
                             {/* Care List - Compact */}
-                            <div className="space-y-5">
+                            <div className="space-y-5 rounded-[2rem] border border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-950/30">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-lg bg-rose-500/10 flex items-center justify-center">
+                                        <div className="w-9 h-9 rounded-2xl bg-rose-500/10 flex items-center justify-center">
                                             <HeartPulse className="w-3.5 h-3.5 text-rose-500" />
                                         </div>
-                                        <span className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">집중 보살핌 (Care)</span>
+                                        <div>
+                                            <span className="text-sm font-black text-slate-900 dark:text-white">집중 보살핌</span>
+                                            <p className="text-[10px] font-bold text-slate-400">최근 3회 연속 미출석, 총 {careList.length}명</p>
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="space-y-3">
+                                <div className="max-h-[460px] space-y-3 overflow-y-auto pr-1">
                                     {careList.length > 0 ? (
-                                        careList.slice(0, 6).map(member => (
-                                            <div key={member.id} className="flex items-center justify-between p-4 rounded-3xl bg-rose-500/5 border border-rose-500/10 hover:bg-rose-500/10 transition-all group cursor-pointer" onClick={() => router.push(`/members/${member.id}`)}>
+                                        careList.map(member => (
+                                            <div
+                                                key={member.id}
+                                                className={cn(
+                                                    "flex items-center justify-between rounded-3xl bg-white p-4 shadow-sm ring-1 ring-rose-100 transition-all group dark:bg-slate-900/70 dark:ring-rose-500/20",
+                                                    member.directoryMemberId
+                                                        ? "cursor-pointer hover:-translate-y-0.5 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                                                        : "cursor-default opacity-70"
+                                                )}
+                                                onClick={() => {
+                                                    if (member.directoryMemberId) {
+                                                        router.push(`/members/${member.directoryMemberId}`);
+                                                    }
+                                                }}
+                                            >
                                                 <div className="flex items-center gap-4">
                                                     <div className="w-9 h-9 rounded-xl bg-rose-500/10 flex items-center justify-center">
                                                         <AlertCircle className="w-4 h-4 text-rose-500" />
@@ -2496,7 +2720,7 @@ export default function AttendancePage() {
                                                     <div>
                                                         <p className="text-xs font-black text-slate-900 dark:text-white group-hover:text-rose-500 transition-colors">{member.full_name}</p>
                                                         <p className="text-[10px] font-bold text-rose-500/60 uppercase tracking-tighter">
-                                                            {member.consecutiveAbsences ? '3주 연속 결석' : '출석률 저조'}
+                                                            {member.consecutiveAbsences ? '최근 3회 연속 미출석' : `${Math.round(member.rate)}% 출석률`}
                                                         </p>
                                                     </div>
                                                 </div>
