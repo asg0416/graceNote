@@ -74,8 +74,8 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
                         {member.full_name}
                     </span>
                     {isLeader && (
-                        <span className="px-1.5 py-0.5 bg-amber-500 text-white text-[8px] font-black rounded uppercase tracking-widest shadow-lg shadow-amber-500/20 shrink-0">
-                            Leader
+                        <span className="px-1.5 py-0.5 bg-amber-500 text-white text-[8px] font-black rounded tracking-widest shadow-lg shadow-amber-500/20 shrink-0">
+                            조장
                         </span>
                     )}
                 </div>

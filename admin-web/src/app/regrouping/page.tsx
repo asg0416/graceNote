@@ -1175,12 +1175,12 @@ function RegroupingPageInner() {
                     {/* Stats Summary Integrated into Header */}
                     <div className="flex items-center gap-4 sm:gap-6 px-5 h-[44px] bg-white dark:bg-slate-900/60 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
                         <div className="flex items-center gap-2">
-                            <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest">전체 성도</span>
+                            <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest">실제 인원</span>
                             <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-none">{stats.total}</span>
                         </div>
                         <div className="w-[1px] h-3 bg-slate-200 dark:bg-slate-800" />
                         <div className="flex items-center gap-2">
-                            <span className="text-[9px] sm:text-[10px] font-black text-indigo-500 uppercase tracking-widest leading-none">편성 완료</span>
+                            <span className="text-[9px] sm:text-[10px] font-black text-indigo-500 uppercase tracking-widest leading-none">편성 인원</span>
                             <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 leading-none">{stats.assigned}</span>
                         </div>
                         <div className="w-[1px] h-3 bg-slate-200 dark:bg-slate-800" />
@@ -1235,6 +1235,7 @@ function RegroupingPageInner() {
                 </div>
             )}
 
+            {phase2RegroupingCheck.status !== 'ok' && (
             <div className={cn(
                 "mx-2 rounded-[24px] border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm",
                 phase2RegroupingCheck.status === 'warning'
@@ -1259,10 +1260,10 @@ function RegroupingPageInner() {
                     <div className="space-y-1">
                         <div className="flex items-center gap-2">
                             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">
-                                Phase 2 조편성 진단
+                                조편성 데이터 확인 필요
                             </p>
                             <span className="px-2 py-0.5 rounded-lg bg-white/70 dark:bg-slate-900/50 text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                                Read Only
+                                자동 점검
                             </span>
                         </div>
                         <p className={cn(
@@ -1276,7 +1277,7 @@ function RegroupingPageInner() {
                             {phase2RegroupingCheck.message}
                         </p>
                         <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                            저장 전후 선택 부서의 실제 사람 수와 active 소속 수를 Phase 2와 비교합니다. 조편성 저장 로직에는 영향을 주지 않습니다.
+                            저장 전후 선택 부서의 실제 사람 수와 active 소속 수가 맞는지 확인합니다. 이 경고가 계속 보이면 저장 후 성도명부와 조편성을 함께 점검해야 합니다.
                         </p>
                     </div>
                 </div>
@@ -1302,6 +1303,7 @@ function RegroupingPageInner() {
                     </div>
                 </div>
             </div>
+            )}
 
             {/* Sticky Interaction Toolbar */}
             <div className="sticky top-16 sm:top-20 z-30 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 mb-12 shadow-sm transition-all">
@@ -1337,7 +1339,9 @@ function RegroupingPageInner() {
                                             autoMoveCouples && "translate-x-4"
                                         )} />
                                     </div>
-                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors">부부 동시 이동</span>
+                                    <Tooltip content="같은 조에 함께 있는 배우자만 같이 이동합니다. 다른 조에 떨어져 있는 배우자는 자동으로 끌고 오지 않습니다.">
+                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors">부부 동시 이동</span>
+                                    </Tooltip>
                                 </label>
                             </div>
                         )}
