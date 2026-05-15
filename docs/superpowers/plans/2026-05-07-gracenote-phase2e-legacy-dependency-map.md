@@ -41,7 +41,7 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 | Flutter group/user state | `lib/core/providers/data_providers.dart`, `user_role_provider.dart` | active memberships 우선, legacy fallback | 운영 후보. role별 smoke 필수 | Medium |
 | Flutter member write | `grace_note_repository.dart` | 조장 성도 추가/수정/비활성은 RPC 경유 | 운영 후보. 앱 smoke 필수 | Medium |
 | Flutter attendance/prayer | `grace_note_repository.dart`, prayer/attendance screens | 저장 FK가 legacy id를 유지하지만 Phase 3 snapshot fields도 저장 | 운영 후보. FK 제거는 다음 단계 | High |
-| Edge functions | `notify-event`, `notify-scheduler`, `verify-sms` | 알림 대상은 memberships 우선 + legacy fallback. SMS verification은 phone/directory compatibility 유지 | 운영 후보. function deploy/dry-run smoke 필요 | Medium |
+| Edge functions | `notify-event`, `notify-scheduler`, `verify-sms` | 알림 대상은 memberships 우선 + legacy fallback. SMS verification은 phone/directory compatibility 유지 | 운영 후보. dev deploy/dry-run smoke 통과. 운영 전 prod env vars와 scheduler trigger만 재확인 | Medium |
 | Search/saved prayers | Flutter search/prayer screens | 일반 조원 범위 제한, 삭제 조 기록 표시 보정 완료 | 운영 후보. role switch smoke 필수 | Medium |
 
 ## Completed in Phase 2E Start
@@ -49,12 +49,13 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 | Date | Change | Verification |
 | --- | --- | --- |
 | 2026-05-07 | 관리자 대시보드 성도 수/미편성 수를 active `memberships.person_id` 기준으로 전환. Phase 2 read 실패 시 legacy count fallback 유지 | `npm run lint -- src/app/page.tsx` 0 errors, consistency mismatch 0 |
-| 2026-05-09 | Edge Function 알림 대상 조회를 active `memberships` 우선으로 전환. `group_members`는 fallback으로 유지 | `supabase/verify_phase2d_edge_notification_targets_dev_2026-05-09.sql` 추가. 실제 dev deploy/dry-run smoke는 `SUPABASE_ACCESS_TOKEN` 필요 |
+| 2026-05-09 | Edge Function 알림 대상 조회를 active `memberships` 우선으로 전환. `group_members`는 fallback으로 유지 | `supabase/verify_phase2d_edge_notification_targets_dev_2026-05-09.sql` 추가 |
 | 2026-05-11 | Admin-web 성도 추가/수정/비활성화와 Flutter 조장 성도 write를 `upsert_member_person_membership` / lifecycle RPC 중심으로 전환 | Phase 2 summary gate 0, targeted lint/analyze 통과 |
 | 2026-05-12 | person+department 단위 archive/restore와 church operations 휴지통 추가. restore는 선택한 group만 복구 가능 | selected restore transaction test, Phase 2 summary gate 0 |
 | 2026-05-13 | 조편성 저장 RPC와 profile-less group sync 보정. directory-only 성도도 성도명부/조편성/Phase 2 진단이 같은 조를 보도록 수정 | 김보영 케이스 smoke 통과, consistency summary 0 |
 | 2026-05-15 | 조 이름 변경 compatibility RPC 분리. generic person upsert가 stale profile을 재검증하지 않도록 조명 변경은 별도 RPC로 처리 | group rename smoke 통과, consistency summary 0 |
 | 2026-05-15 | 관리자 출석 snapshot integrity gate 추가 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all issue counts 0 |
+| 2026-05-15 | Edge Function dev deploy/dry-run smoke 완료 | `notify-event`, `notify-scheduler` 모두 `verify_jwt=false`. `notify-scheduler` leader reminder dry-run은 active memberships 우선으로 대상 계산 후 실제 발송 skip. `notify-event` dry-run endpoint reachable |
 
 ## Recommended Next Order
 
@@ -99,7 +100,7 @@ docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
 | Admin regrouping | 조 이동/저장 후 Phase 2 진단 issue 0 유지 |
 | Flutter app | 출석/기도 저장 기존 smoke 통과 유지 |
 | Edge functions | `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql`의 모든 mismatch count 0 |
-| Edge functions | dev 함수 배포 또는 dry-run 로그에서 기도 알림/공지/리마인더/등반 알림 대상이 active memberships 기준으로 산출 |
+| Edge functions | dev 함수 배포/dry-run 로그에서 리마인더 알림 대상이 active memberships 기준으로 산출됨. 운영 전에는 prod env vars와 실제 scheduler trigger만 재확인 |
 
 ## Current Remaining Before Prod Prep
 
@@ -109,6 +110,6 @@ docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
 | Fresh migration dry-run | dev DB는 수동 적용 이력이 있어 migration history만 믿으면 위험 | 2026-05-15 local fresh `supabase db reset` 통과. 운영 적용 직전 운영 복제 DB에서 재실행 |
 | Query-compatible verification SQL | 일부 dev verify 파일은 psql meta command 또는 여러 SELECT 때문에 `supabase db query --file`과 호환되지 않음 | Phase 2 schema는 `verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql`, Phase 3 attendance/prayer는 `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`로 대체 |
 | Pre-prod security lint | Supabase CLI가 `public.app_config` RLS disabled advisory를 출력했음 | `20260515001000_app_config_rls.sql` 추가. `verify_app_config_rls_dev_2026-05-15.sql` all 0 |
-| Edge function smoke | 알림 대상 read-switch는 코드/SQL gate만 있고 실제 함수 dry-run은 별도 | dev deploy 또는 dry-run log 확인 |
+| Edge function smoke | 알림 대상 read-switch는 dev 함수 dry-run까지 확인됨 | 운영 전 prod env vars, scheduled trigger, 실제 FCM 발송 권한만 재확인 |
 | Role-based app/admin smoke | 권한별 메뉴가 다르므로 한 계정 smoke만으로 부족 | master/admin/leader/member 체크리스트 수행 |
 | Legacy cleanup decision | legacy 테이블 삭제는 아직 위험 | 운영 1차에서는 삭제 금지. 이후 Phase 4에서 FK/backfill/report 영향 재설계 |

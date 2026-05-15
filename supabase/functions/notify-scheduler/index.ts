@@ -7,6 +7,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const FIREBASE_PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID");
 const FIREBASE_CLIENT_EMAIL = Deno.env.get("FIREBASE_CLIENT_EMAIL");
 const FIREBASE_PRIVATE_KEY = Deno.env.get("FIREBASE_PRIVATE_KEY");
+type SupabaseClientLike = any;
 
 async function getAccessToken(): Promise<string> {
   const privateKey = FIREBASE_PRIVATE_KEY!.replace(/\\n/g, "\n");
@@ -76,7 +77,7 @@ async function sendPush(accessToken: string, token: string, title: string, body:
 }
 
 async function getLeaderRowsByGroups(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClientLike,
   groupIds: string[],
   includePushPreference = false,
 ): Promise<any[]> {
@@ -139,7 +140,7 @@ async function getLeaderRowsByGroups(
 }
 
 async function getLeaderDirectoryIdsByGroup(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClientLike,
   groupId: string,
 ): Promise<Set<string>> {
   const { data: phase2Leaders, error: phase2Error } = await supabase
@@ -178,8 +179,9 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const task = url.searchParams.get("task");
   const force = url.searchParams.get("force") === "true"; // bypass time/day check for manual testing
+  const dryRun = url.searchParams.get("dry_run") === "true"; // calculate targets without sending push
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const accessToken = await getAccessToken();
+  const accessToken = dryRun ? "" : await getAccessToken();
 
   const nowKST = new Date(new Date().getTime() + (9 * 60 * 60 * 1000));
   const dayOfWeek = nowKST.getDay();
@@ -187,7 +189,7 @@ Deno.serve(async (req: Request) => {
   const minuteKST = nowKST.getMinutes();
 
   const log: string[] = [];
-  log.push(`Task: ${task}, Day: ${dayOfWeek}, Hour(KST): ${hourKST}, Minute(KST): ${minuteKST}, Force: ${force}`);
+  log.push(`Task: ${task}, Day: ${dayOfWeek}, Hour(KST): ${hourKST}, Minute(KST): ${minuteKST}, Force: ${force}, DryRun: ${dryRun}`);
 
   const { data: activeDepts } = await supabase.from("departments").select("id, name, church_id, leader_reminder_enabled, leader_reminder_days, leader_reminder_time, climbing_alert_enabled, climbing_alert_day, climbing_alert_time");
   if (!activeDepts?.length) return new Response(JSON.stringify({ log: ["No departments found"] }));
@@ -285,20 +287,24 @@ Deno.serve(async (req: Request) => {
             });
             log.push(`[leader_reminder] Sending to ${uniqueTokens.length} devices`);
             const title = "📝 이번주 기도제목을 업로드해주세요!";
-            const results = await Promise.allSettled(uniqueTokens.map(t => {
-              const groups = leaderGroupMap.get(t.user_id) || [];
-              const details = groups.map(g => {
-                const missing: string[] = [];
-                if (g.noAttendance) missing.push("출석 미체크");
-                if (g.noPrayer && g.hasDraftOnly) missing.push("임시저장 확인 필요");
-                else if (g.noPrayer) missing.push("기도제목 미등록");
-                return `${g.name}(${missing.join(", ")})`;
-              });
-              const body = `${details.join(", ")} 🙏`;
-              return sendPush(accessToken, t.token, title, body, "grace-note-leader-reminder");
-            }));
-            const sent = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
-            log.push(`[leader_reminder] Sent: ${sent}/${uniqueTokens.length}`);
+            if (dryRun) {
+              log.push(`[leader_reminder] Dry run skipped send for ${uniqueTokens.length} devices`);
+            } else {
+              const results = await Promise.allSettled(uniqueTokens.map(t => {
+                const groups = leaderGroupMap.get(t.user_id) || [];
+                const details = groups.map(g => {
+                  const missing: string[] = [];
+                  if (g.noAttendance) missing.push("출석 미체크");
+                  if (g.noPrayer && g.hasDraftOnly) missing.push("임시저장 확인 필요");
+                  else if (g.noPrayer) missing.push("기도제목 미등록");
+                  return `${g.name}(${missing.join(", ")})`;
+                });
+                const body = `${details.join(", ")} 🙏`;
+                return sendPush(accessToken, t.token, title, body, "grace-note-leader-reminder");
+              }));
+              const sent = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+              log.push(`[leader_reminder] Sent: ${sent}/${uniqueTokens.length}`);
+            }
           }
         }
       }
@@ -375,6 +381,10 @@ Deno.serve(async (req: Request) => {
               });
               const title = "🧗 등반 예정자 알림";
               const body = `다음 번 출석 시 등반 예정자가 있습니다: ${memberNames}`;
+              if (dryRun) {
+                log.push(`[climbing] Dry run skipped send to ${uniqueTokens.length} devices for candidates: ${memberNames}`);
+                continue;
+              }
               const results = await Promise.allSettled(uniqueTokens.map(t => sendPush(accessToken, t.token, title, body, "grace-note-climbing")));
               const sent = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
               log.push(`[climbing] Sent: ${sent}/${uniqueTokens.length} for candidates: ${memberNames}`);
