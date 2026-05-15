@@ -382,6 +382,22 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-15 Phase 3 group rename compatibility RPC | 부서관리에서 조 이름 변경 시 generic member upsert RPC가 성도 `profile_id`까지 다시 검증해 stale cross-church profile row에서 `Linked profile belongs to another church` 오류 발생. 조 이름 변경은 계정 연동 변경이 아니므로 `rename_member_directory_group_assignments()` 전용 RPC를 추가해 `group_name`만 갱신하도록 분리. dev DB에 남은 mismatch 1건 repair | `npm run lint -- src/app/departments/page.tsx src/lib/memberWriteRpc.ts`: 0 errors, existing hook warning only. `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all checks 0. 운영 적용 시 조 이름 변경 전용 RPC migration 포함 필수 |
 | 2026-05-15 Fresh local migration dry-run | 원격 `dev`에 origin UI/autosave 변경 + person migration 변경을 통합한 뒤, 로컬 fresh Supabase DB에 전체 migration을 처음부터 적용 | `supabase db reset`: migrations through `20260515001000_app_config_rls.sql` applied successfully. `verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql`: all 0. `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all 0. `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`: all 0. `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all 0. `verify_app_config_rls_dev_2026-05-15.sql`: all 0 |
 | 2026-05-15 Edge Function dry-run smoke | `notify-event`, `notify-scheduler` 알림 대상 read-switch 변경을 dev Edge Function에 재배포 | `deno check` 통과. `notify-event`, `notify-scheduler` 모두 `verify_jwt=false`. `notify-scheduler?task=leader_reminder&force=true&dry_run=true`에서 matched depts/groups/leaders 산출 후 send skip 확인. `notify-event?dry_run=true` endpoint reachable, no-target notice는 `skipped=true`. secret literal scan은 env var name만 검출 |
+| 2026-05-15 Local prod-prep gate rerun | 운영 전 핵심 query-compatible gate를 local Supabase에 재실행 | `verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql`: all 0. `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all 0. `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`: all 0. `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all 0. `verify_app_config_rls_dev_2026-05-15.sql`: all 0. `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql`: all mismatch 0 |
+
+## Pre-Prod UI Polish Backlog
+
+운영 적용 전 기능 정확성 gate와 별개로, person 구조 전환 중 추가된 진단/관리 UI는 사용자용 디자인 정리가 필요하다.
+
+| Area | Current Issue | Polish Direction |
+| --- | --- | --- |
+| 성도명부 상단 통계 | actual people / roster rows / active people가 디버깅 정보처럼 보임 | 운영 화면은 “성도 수” 중심으로 단순화하고 row/membership 수는 진단 접힘 영역으로 이동 |
+| 성도명부 소속 칩 | 다중 부서/조 소속 칩이 정보는 정확하지만 화면이 복잡함 | 기본은 현재 부서/조 중심, 다중 소속은 보조 뱃지/툴팁/상세 패널로 표시 |
+| 성도상세 소속/이력 패널 | Phase 2 현재 소속과 inactive 이력 정보가 기술적으로 노출됨 | “현재 소속”과 “과거 이력”을 사용자 언어로 재구성하고 source/debug 표시는 숨김 |
+| 조편성 진단 | Phase 2/legacy 진단 숫자가 운영자에게 내부 DB 로그처럼 보일 수 있음 | 문제 없을 때는 숨기고, issue가 있을 때만 해결 가이드와 함께 표시 |
+| 휴지통/비활성 관리 | person+department 복구와 선택 조 복구는 기능상 동작하지만 UX가 관리도구 느낌 | 항목별 “복구 대상 조 선택”을 더 명확한 단계형 UI로 정리 |
+| 출석 snapshot 관리 | 명단 불러오기, 제외, 출결 토글, 조장 제출 충돌 해결 기능이 많음 | 핵심 조작은 카드 안에 유지하고 상세/충돌 해결은 접힘 패널 또는 모달로 분리 |
+| SmartBatch 미리보기 | 사람 수/row 수/기존 성도 연결/조 선택이 한 화면에 몰림 | “분석 결과 → 연결 확인 → 조 배정 → 저장” 단계로 분리 |
+| Flutter 소속/기도 표시 | active 소속 칩, 삭제 조 히스토리, 날짜/주차 문구가 화면별로 다르게 느껴질 수 있음 | 앱 톤에 맞춰 소속 히스토리와 주차 표기 규칙을 통일 |
 
 ## Future Logging Protocol
 

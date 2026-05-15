@@ -113,3 +113,26 @@ docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
 | Edge function smoke | 알림 대상 read-switch는 dev 함수 dry-run까지 확인됨 | 운영 전 prod env vars, scheduled trigger, 실제 FCM 발송 권한만 재확인 |
 | Role-based app/admin smoke | 권한별 메뉴가 다르므로 한 계정 smoke만으로 부족 | master/admin/leader/member 체크리스트 수행 |
 | Legacy cleanup decision | legacy 테이블 삭제는 아직 위험 | 운영 1차에서는 삭제 금지. 이후 Phase 4에서 FK/backfill/report 영향 재설계 |
+
+## Final Pre-Prod Smoke Matrix
+
+운영 적용 직전에는 아래 smoke를 한 번에 실행한다. 이미 dev에서 대부분 통과했지만, 운영 복제본 dry-run 이후 같은 기준으로 다시 확인한다.
+
+| Role / Surface | Required Smoke |
+| --- | --- |
+| Master admin | 교회/부서 선택, 성도명부/조편성/출석/휴지통 진입, cross-church 성도 자동 연결이 발생하지 않음 |
+| Church admin | 성도 개별 추가, AI 일괄 등록, 기존 성도 같은 교회 다른 부서 연결, 부서/조 이름 변경, 비활성/복구 |
+| Department admin | 성도상세 수정, 가족정보/메모 저장, 조편성 저장, 출석 snapshot 수정, 리포트 export |
+| Leader | Flutter 조원 명단, 출석 저장/재진입 유지, 기도 저장, 조장 성도 추가/수정, 일반 조원보다 넓은 기도 검색 권한 |
+| Member | Flutter 일반 조원 화면, 자기 조 범위 기도 검색 제한, 나의 기도/저장된 기도 표시, 다른 조 개인정보 미노출 |
+| Edge functions | dev/prod 각각 `notify-event`, `notify-scheduler` env var 존재, `verify_jwt=false`, scheduler trigger, FCM dry-run 또는 실제 제한 발송 |
+
+## Operation Cutover Principle
+
+운영 1차 반영은 “person source-of-truth + legacy compatibility”다. `member_directory`/`group_members`/출석·기도 legacy FK는 즉시 삭제하지 않는다.
+
+| Decision | Reason |
+| --- | --- |
+| `people`/`memberships`를 읽기와 write 판단 기준으로 사용 | 다중 소속, 사람 수, 교회 범위 identity 문제를 안정적으로 처리 |
+| legacy row는 호환 저장으로 유지 | 기존 앱/리포트/FK/운영 데이터와의 충돌을 줄이고 rollback 경로 확보 |
+| 출석/기도 FK 제거는 Phase 4 | historical report, prayer timeline, group snapshot 영향 범위가 커서 운영 1차에서 같이 제거하면 위험 |
