@@ -1241,22 +1241,23 @@ function MembersPageInner() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="p-4 rounded-[22px] bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800 shadow-sm">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Actual People</p>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">성도 수</p>
                         <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{masterMembers.length}명</p>
-                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">현재 필터에서 중복 소속을 합친 실제 사람 수</p>
+                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">현재 필터에서 중복 소속을 합친 사람 수</p>
                     </div>
                     <div className="p-4 rounded-[22px] bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800 shadow-sm">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Roster Rows</p>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">소속 항목</p>
                         <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{filteredMembers.length}개</p>
-                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">legacy 명부 row 수, 한 사람이 여러 번 잡힐 수 있음</p>
+                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">부서·조 소속을 기준으로 본 항목 수</p>
                     </div>
                     <div className="p-4 rounded-[22px] bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800 shadow-sm">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Active People</p>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">현재 활동</p>
                         <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{phase2ListCheck.phase2ActivePersonCount}명</p>
-                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">Phase 2 memberships 기준 현재 활동 사람 수</p>
+                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">활성 소속이 있는 사람 수</p>
                     </div>
                 </div>
 
+                {phase2ListCheck.status !== 'ok' && (
                 <div className={cn(
                     "rounded-[24px] border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm",
                     phase2ListCheck.status === 'warning'
@@ -1322,6 +1323,7 @@ function MembersPageInner() {
                         </div>
                     </div>
                 </div>
+                )}
             </div>
 
             {/* Group Tabs (Only visible when a department is selected) */}
@@ -1677,6 +1679,15 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
     const groupInfo = groupedGroups.find((g) => g.name === m.group_name);
     const groupColor = getGroupColor(m.group_name || '', groupInfo?.color_hex);
     const phase2Affiliations = m.phase2_affiliations || [];
+    const primaryAffiliation = phase2Affiliations.find((affiliation) => affiliation.groupName === m.group_name)
+        || phase2Affiliations[0]
+        || null;
+    const extraAffiliations = primaryAffiliation
+        ? phase2Affiliations.filter((affiliation) => affiliation.id !== primaryAffiliation.id)
+        : [];
+    const affiliationSummary = phase2Affiliations
+        .map((affiliation) => `${affiliation.departmentName || '부서 미정'} · ${affiliation.groupName || '미정'}${affiliation.role === 'leader' ? ' · 조장' : ''}`)
+        .join('\n');
 
     return (
         <tr className={cn("hover:bg-slate-50/80 dark:hover:bg-indigo-500/[0.02] transition-colors group", isSelected && "bg-indigo-50/50 dark:bg-indigo-500/[0.05]")}>
@@ -1732,32 +1743,35 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
             </td>
             <td className="px-4 sm:px-6 py-4 sm:py-5 hidden sm:table-cell">
                 <div className="space-y-2">
-                    {phase2Affiliations.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5 max-w-[320px]">
-                            {phase2Affiliations.map((affiliation) => {
-                                const affiliationColor = getGroupColor(affiliation.groupName || '', affiliation.groupColor || undefined);
-                                return (
-                                    <div
-                                        key={affiliation.id}
-                                        className="inline-flex items-center gap-1.5 max-w-full px-2.5 py-1 border rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest bg-white dark:bg-slate-900/40 border-slate-200 dark:border-slate-800"
-                                    >
-                                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: affiliation.departmentColor || '#e2e8f0' }} />
-                                        <span className="text-slate-700 dark:text-slate-200 truncate">{affiliation.departmentName || '부서 미정'}</span>
-                                        <span
-                                            className={cn(
-                                                "px-1.5 py-0.5 border rounded-md truncate",
-                                                affiliationColor.className
-                                            )}
-                                            style={affiliationColor.style}
-                                        >
-                                            {affiliation.groupName || '미정'}
-                                        </span>
-                                        {affiliation.role === 'leader' && (
-                                            <span className="text-amber-600 dark:text-amber-400">leader</span>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                    {primaryAffiliation ? (
+                        <div className="max-w-[260px]" title={affiliationSummary}>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: primaryAffiliation.departmentColor || '#e2e8f0' }} />
+                                <span className="text-[11px] sm:text-xs font-black text-slate-700 dark:text-slate-200 truncate">
+                                    {primaryAffiliation.departmentName || '부서 미정'}
+                                </span>
+                                {primaryAffiliation.role === 'leader' && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300 text-[8px] font-black shrink-0">
+                                        조장
+                                    </span>
+                                )}
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-1.5">
+                                <span
+                                    className={cn(
+                                        "inline-flex max-w-[160px] px-2.5 py-1 border rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest truncate",
+                                        getGroupColor(primaryAffiliation.groupName || '', primaryAffiliation.groupColor || undefined).className
+                                    )}
+                                    style={getGroupColor(primaryAffiliation.groupName || '', primaryAffiliation.groupColor || undefined).style}
+                                >
+                                    {primaryAffiliation.groupName || '미정'}
+                                </span>
+                                {extraAffiliations.length > 0 && (
+                                    <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300">
+                                        외 {extraAffiliations.length}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     ) : (
                         <>
@@ -1775,11 +1789,6 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                                 {m.group_name || '미정'}
                             </div>
                         </>
-                    )}
-                    {phase2Affiliations.length > 1 && (
-                        <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">
-                            {phase2Affiliations.length} active memberships
-                        </p>
                     )}
                 </div>
             </td>

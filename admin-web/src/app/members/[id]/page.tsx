@@ -20,8 +20,8 @@ import {
     MessageSquare,
     Sparkles,
     ChevronRight,
-    Fingerprint,
-    GitBranch
+    UserCheck,
+    Archive
 } from 'lucide-react';
 import RichTextEditor from '@/components/RichTextEditor';
 import {
@@ -35,6 +35,24 @@ import { twMerge } from 'tailwind-merge';
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
+
+const formatMembershipRole = (role?: string | null) => {
+    if (role === 'leader') return '조장';
+    if (role === 'admin') return '관리자';
+    return '조원';
+};
+
+const formatMembershipStatus = (status?: string | null) => {
+    if (status === 'active') return '현재 활동';
+    if (status === 'inactive') return '비활성';
+    if (status === 'ended') return '종료';
+    return status || '이력';
+};
+
+const formatShortDate = (value?: string | null) => {
+    if (!value) return null;
+    return value.slice(0, 10).replaceAll('-', '. ');
+};
 
 export default function MemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -477,7 +495,10 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
         );
     }
 
-    const phase2ActiveAffiliations = (phase2Data?.memberships || []).filter((membership: any) => membership.status === 'active');
+    const phase2Memberships = phase2Data?.memberships || [];
+    const phase2ActiveAffiliations = phase2Memberships.filter((membership: any) => membership.status === 'active');
+    const phase2HistoricalAffiliations = phase2Memberships.filter((membership: any) => membership.status !== 'active');
+    const linkedProfileCount = phase2Data?.memberProfiles?.filter((mp: any) => mp.profile_id).length || 0;
     const legacyAffiliations = member._affiliations?.length > 0 ? member._affiliations : [member];
     const usesPhase2Affiliations = Boolean(phase2Data?.person);
     const formatGroupLabel = (groupName?: string | null) => {
@@ -643,15 +664,13 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                         </div>
                     </div>
 
-                    {/* Affiliations Info Card - Separated */}
+                    {/* Current Affiliations */}
                     <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6">
                         <div className="flex items-center justify-between px-2">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
-                                <Layers className="w-4 h-4 text-indigo-600" /> 소속 정보
+                                <Layers className="w-4 h-4 text-indigo-600" /> 현재 소속
                             </h3>
-                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">
-                                {usesPhase2Affiliations ? 'Phase 2 Read' : 'Legacy Fallback'}
-                            </p>
+                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Active Affiliations</p>
                         </div>
                         <div className="grid grid-cols-1 gap-2">
                             {usesPhase2Affiliations ? (
@@ -659,30 +678,37 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                     phase2ActiveAffiliations.map((membership: any) => (
                                         <div
                                             key={membership.id}
-                                            className="flex items-center justify-between p-3.5 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60 group/aff"
+                                            className="p-4 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60 group/aff"
                                         >
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
-                                                <div>
-                                                    <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-tighter">
-                                                        {membership.departments?.name || '부서 없음'}
-                                                    </span>
-                                                    <p className="text-[9px] font-bold text-slate-400 mt-0.5">
-                                                        role: {membership.role} / {membership.legacy_group_member_id ? 'group_members' : 'directory-only'}
-                                                    </p>
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex items-start gap-3 min-w-0">
+                                                    <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
+                                                        <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-black text-slate-900 dark:text-white truncate">
+                                                            {membership.departments?.name || '부서 없음'}
+                                                        </p>
+                                                        <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
+                                                            {membership.groups?.name || '조 미배정'}
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <div className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
-                                                <span className="text-[10px] font-black text-cyan-600 dark:text-cyan-400">
-                                                    {membership.groups?.name || '조 없음'}
+                                                <span className={cn(
+                                                    "px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0",
+                                                    membership.role === 'leader'
+                                                        ? "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300"
+                                                        : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
+                                                )}>
+                                                    {formatMembershipRole(membership.role)}
                                                 </span>
                                             </div>
                                         </div>
                                     ))
                                 ) : (
-                                    <div className="p-3.5 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60">
+                                    <div className="p-4 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60">
                                         <span className="text-xs font-bold text-slate-500 dark:text-slate-400 text-center block">
-                                            Phase 2 기준 현재 활성 소속이 없습니다.
+                                            현재 활동 중인 소속이 없습니다.
                                         </span>
                                     </div>
                                 )
@@ -700,7 +726,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                         </div>
                                         <div className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
                                             <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">
-                                                {aff.group_name} 조
+                                                {formatGroupLabel(aff.group_name) || '조 미배정'}
                                             </span>
                                         </div>
                                     </div>
@@ -715,199 +741,75 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                         </div>
                     </div>
 
-                    {/* Phase 2 Read-Only Diagnostic Card */}
-                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-cyan-100 dark:border-cyan-500/20 p-8 space-y-6 shadow-xl shadow-cyan-500/[0.03]">
+                    {/* Person History Summary */}
+                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 space-y-6 shadow-xl shadow-slate-900/[0.03]">
                         <div className="flex items-center justify-between px-2">
                             <h3 className="text-xs font-black text-slate-500 dark:text-slate-300 uppercase tracking-[0.2em] flex items-center gap-3">
-                                <Fingerprint className="w-4 h-4 text-cyan-600" /> Phase 2 데이터 확인
+                                <Archive className="w-4 h-4 text-slate-500" /> 소속 이력
                             </h3>
-                            <p className="text-[8px] font-black text-cyan-500 uppercase tracking-widest">Read Only</p>
+                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">History</p>
                         </div>
 
                         {phase2Error ? (
                             <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20">
                                 <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300 leading-relaxed">
-                                    {phase2Error}
-                                </p>
-                                <p className="text-[10px] font-bold text-amber-500/80 mt-2">
-                                    기존 성도 상세 기능에는 영향을 주지 않는 진단용 패널입니다.
+                                    소속 이력을 불러오지 못했습니다. 기본 성도 정보는 정상 표시됩니다.
                                 </p>
                             </div>
                         ) : phase2Data ? (
                             <div className="space-y-5">
-                                {(() => {
-                                    const activeMemberships = phase2Data.memberships.filter((membership: any) => membership.status === 'active');
-                                    const historicalMemberships = phase2Data.memberships.filter((membership: any) => membership.status !== 'active');
-                                    const legacyActiveAffiliations = (member._affiliations?.length > 0 ? member._affiliations : [member])
-                                        .filter((affiliation: any) => affiliation.is_active !== false && affiliation.group_name);
-                                    const legacyActiveDirectoryIds = new Set(legacyActiveAffiliations.map((affiliation: any) => affiliation.id));
-                                    const phase2ActiveDirectoryIds = new Set(
-                                        activeMemberships
-                                            .map((membership: any) => membership.legacy_member_directory_id)
-                                            .filter(Boolean)
-                                    );
-                                    const missingPhase2Memberships = legacyActiveAffiliations.filter(
-                                        (affiliation: any) => !phase2ActiveDirectoryIds.has(affiliation.id)
-                                    );
-                                    const extraPhase2Memberships = activeMemberships.filter(
-                                        (membership: any) => !membership.legacy_member_directory_id || !legacyActiveDirectoryIds.has(membership.legacy_member_directory_id)
-                                    );
-                                    const isPhase2Consistent = missingPhase2Memberships.length === 0 && extraPhase2Memberships.length === 0;
-
-                                    return (
-                                        <>
-                                <div className="p-4 rounded-2xl bg-cyan-50/70 dark:bg-cyan-500/10 border border-cyan-100 dark:border-cyan-500/20">
-                                    <p className="text-[9px] font-black text-cyan-600 dark:text-cyan-300 uppercase tracking-widest mb-1">people</p>
-                                    <p className="text-sm font-black text-slate-900 dark:text-white">{phase2Data.person?.display_name || '이름 없음'}</p>
-                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1 break-all">
-                                        person_id: {phase2Data.person?.id || '-'}
-                                    </p>
-                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5">
-                                        normalized_phone: {phase2Data.person?.normalized_phone || '없음'}
-                                    </p>
-                                </div>
-
-                                <div className={cn(
-                                    "p-4 rounded-2xl border space-y-3",
-                                    isPhase2Consistent
-                                        ? "bg-emerald-50/70 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
-                                        : "bg-rose-50/70 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20"
-                                )}>
-                                    <div className="flex items-center justify-between gap-3">
-                                        <p className={cn(
-                                            "text-[9px] font-black uppercase tracking-widest",
-                                            isPhase2Consistent ? "text-emerald-600 dark:text-emerald-300" : "text-rose-600 dark:text-rose-300"
-                                        )}>
-                                            legacy vs phase 2 active comparison
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">현재 활동</p>
+                                        <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{phase2ActiveAffiliations.length}개</p>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">앱 계정</p>
+                                        <p className="mt-1 text-sm font-black text-slate-900 dark:text-white">
+                                            {linkedProfileCount > 0 ? '연결됨' : '미연동'}
                                         </p>
-                                        <span className={cn(
-                                            "px-2 py-1 rounded-lg text-[9px] font-black uppercase",
-                                            isPhase2Consistent
-                                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"
-                                                : "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200"
-                                        )}>
-                                            {isPhase2Consistent ? '일치' : '확인 필요'}
-                                        </span>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div className="p-3 rounded-xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
-                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">legacy active</p>
-                                            <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{legacyActiveAffiliations.length}</p>
-                                        </div>
-                                        <div className="p-3 rounded-xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
-                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">phase 2 active</p>
-                                            <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{activeMemberships.length}</p>
-                                        </div>
-                                    </div>
-                                    {!isPhase2Consistent && (
-                                        <div className="space-y-2">
-                                            {missingPhase2Memberships.length > 0 && (
-                                                <p className="text-[10px] font-bold text-rose-600 dark:text-rose-300 leading-relaxed">
-                                                    Phase 2에 없는 legacy 소속: {missingPhase2Memberships.map((affiliation: any) => `${affiliation.departments?.name || '부서 없음'} / ${affiliation.group_name}`).join(', ')}
-                                                </p>
-                                            )}
-                                            {extraPhase2Memberships.length > 0 && (
-                                                <p className="text-[10px] font-bold text-rose-600 dark:text-rose-300 leading-relaxed">
-                                                    legacy active와 직접 연결되지 않은 Phase 2 소속: {extraPhase2Memberships.map((membership: any) => `${membership.departments?.name || '부서 없음'} / ${membership.groups?.name || '조 없음'}`).join(', ')}
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
                                 </div>
 
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-2 px-1">
-                                        <GitBranch className="w-3.5 h-3.5 text-slate-400" />
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">active memberships</p>
-                                    </div>
-                                    {activeMemberships.length > 0 ? (
-                                        <div className="grid grid-cols-1 gap-2">
-                                            {activeMemberships.map((membership: any) => (
-                                                <div key={membership.id} className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
-                                                    <div className="flex items-center justify-between gap-3">
-                                                        <p className="text-[11px] font-black text-slate-800 dark:text-slate-100">
-                                                            {membership.departments?.name || '부서 없음'} / {membership.groups?.name || '조 없음'}
-                                                        </p>
-                                                        <span className={cn(
-                                                            "px-2 py-0.5 rounded-lg text-[9px] font-black uppercase",
-                                                            membership.status === 'active'
-                                                                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300"
-                                                                : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                                                        )}>
-                                                            {membership.status}
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1">
-                                                        role: {membership.role} / source: {membership.legacy_group_member_id ? 'group_members' : 'directory-only'}
-                                                    </p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <p className="text-xs font-bold text-slate-400 px-1">현재 활성 소속 정보가 없습니다.</p>
-                                    )}
-                                </div>
-
-                                {historicalMemberships.length > 0 && (
+                                {phase2HistoricalAffiliations.length > 0 ? (
                                     <div className="space-y-2">
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">ended / inactive history</p>
-                                        <div className="grid grid-cols-1 gap-2">
-                                            {historicalMemberships.map((membership: any) => (
-                                                <div key={membership.id} className="p-3 rounded-2xl bg-slate-50/70 dark:bg-slate-900/30 border border-dashed border-slate-200 dark:border-slate-800 opacity-80">
-                                                    <div className="flex items-center justify-between gap-3">
-                                                        <p className="text-[11px] font-black text-slate-600 dark:text-slate-300">
-                                                            {membership.departments?.name || '부서 없음'} / {membership.groups?.name || '조 없음'}
-                                                        </p>
-                                                        <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                                            {membership.status}
+                                        {phase2HistoricalAffiliations.map((membership: any) => {
+                                            const startDate = formatShortDate(membership.starts_at);
+                                            const endDate = formatShortDate(membership.ends_at);
+
+                                            return (
+                                                <div key={membership.id} className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-800">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <p className="text-sm font-black text-slate-700 dark:text-slate-200 truncate">
+                                                                {membership.departments?.name || '부서 없음'}
+                                                            </p>
+                                                            <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
+                                                                {membership.groups?.name || '조 미배정'} · {formatMembershipRole(membership.role)}
+                                                            </p>
+                                                            {(startDate || endDate) && (
+                                                                <p className="text-[10px] font-bold text-slate-400 mt-2">
+                                                                    {startDate || '시작일 미상'} ~ {endDate || '현재'}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        <span className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-black text-slate-500 dark:text-slate-300 shrink-0">
+                                                            {formatMembershipStatus(membership.status)}
                                                         </span>
                                                     </div>
-                                                    <p className="text-[10px] font-bold text-slate-400 mt-1">
-                                                        role: {membership.role} / source: {membership.legacy_group_member_id ? 'group_members' : 'directory-only'}
-                                                    </p>
                                                 </div>
-                                            ))}
-                                        </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                                        <p className="text-xs font-bold text-slate-400 text-center">종료되거나 비활성화된 소속 이력이 없습니다.</p>
                                     </div>
                                 )}
-
-                                <div className="space-y-2">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">person_identifiers</p>
-                                    <div className="flex flex-wrap gap-2">
-                                        {phase2Data.identifiers.map((identifier: any, index: number) => (
-                                            <span
-                                                key={`${identifier.kind}-${identifier.value}-${index}`}
-                                                className="px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-[9px] font-black text-slate-500 dark:text-slate-400"
-                                            >
-                                                {identifier.kind}{identifier.is_primary ? ' *' : ''}
-                                            </span>
-                                        ))}
-                                        {phase2Data.identifiers.length === 0 && (
-                                            <span className="text-xs font-bold text-slate-400">식별자가 없습니다.</span>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">member_profiles</p>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {phase2Data.memberProfiles.map((mp: any) => (
-                                            <div key={mp.id} className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
-                                                <p className="text-[11px] font-black text-slate-800 dark:text-slate-100">{mp.full_name}</p>
-                                                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1">
-                                                    directory: {mp.member_directory_id ? '연결됨' : '없음'} / profile: {mp.profile_id ? '연결됨' : '없음'}
-                                                </p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                        </>
-                                    );
-                                })()}
                             </div>
                         ) : (
                             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
-                                <p className="text-xs font-bold text-slate-400">Phase 2 데이터를 확인하는 중입니다.</p>
+                                <p className="text-xs font-bold text-slate-400">소속 이력을 확인하는 중입니다.</p>
                             </div>
                         )}
                     </div>
