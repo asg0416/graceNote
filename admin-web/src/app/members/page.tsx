@@ -1724,6 +1724,29 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
     };
 
     useEffect(() => {
+        if (!hoverCard) {
+            return;
+        }
+
+        const closeHoverCard = () => {
+            clearHoverCloseTimer();
+            setHoverCard(null);
+        };
+
+        window.addEventListener('scroll', closeHoverCard, true);
+        window.addEventListener('wheel', closeHoverCard, { passive: true });
+        window.addEventListener('touchmove', closeHoverCard, { passive: true });
+        window.addEventListener('resize', closeHoverCard);
+
+        return () => {
+            window.removeEventListener('scroll', closeHoverCard, true);
+            window.removeEventListener('wheel', closeHoverCard);
+            window.removeEventListener('touchmove', closeHoverCard);
+            window.removeEventListener('resize', closeHoverCard);
+        };
+    }, [hoverCard]);
+
+    useEffect(() => {
         return () => {
             if (hoverCloseTimerRef.current) {
                 clearTimeout(hoverCloseTimerRef.current);
