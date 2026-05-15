@@ -1765,7 +1765,7 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                                 {extraAffiliations.length > 0 && (
                                     <span className="relative group/aff-more px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300 cursor-default">
                                         외 {extraAffiliations.length}
-                                        <span className="pointer-events-none absolute left-1/2 top-full z-[9999] mt-2 hidden w-72 -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-slate-900/15 group-hover/aff-more:block dark:border-slate-700 dark:bg-slate-900">
+                                        <span className="pointer-events-none absolute bottom-full left-1/2 z-[9999] mb-2 hidden w-72 -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-slate-900/15 group-hover/aff-more:block dark:border-slate-700 dark:bg-slate-900">
                                             <span className="block border-b border-slate-100 bg-slate-50 px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
                                                 추가 소속 {extraAffiliations.length}개
                                             </span>

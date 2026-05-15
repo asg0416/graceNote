@@ -205,7 +205,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                 .order('created_at', { ascending: true }),
                             supabase
                                 .from('memberships')
-                                .select('id, role, status, starts_at, ends_at, legacy_group_member_id, legacy_member_directory_id, departments!department_id(name), groups!group_id(name)')
+                                .select('id, role, status, starts_at, ends_at, legacy_group_member_id, legacy_member_directory_id, departments!department_id(name, color_hex), groups!group_id(name)')
                                 .eq('person_id', personId)
                                 .eq('church_id', memberData.church_id)
                                 .order('starts_at', { ascending: false })

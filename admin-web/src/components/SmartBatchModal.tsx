@@ -46,6 +46,8 @@ interface DBMatch {
     id: string;
     full_name: string;
     phone: string | null;
+    spouse_name: string | null;
+    children_info: string | null;
     person_id: string | null;
     profile_id: string | null;
     department_id: string | null;
@@ -57,6 +59,8 @@ interface SmartBatchMatchRow {
     id: string;
     full_name: string;
     phone: string | null;
+    spouse_name: string | null;
+    children_info: string | null;
     person_id: string | null;
     profile_id: string | null;
     department_id: string | null;
@@ -258,7 +262,9 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 .select(`
                     id, 
                     full_name, 
-                    phone, 
+                    phone,
+                    spouse_name,
+                    children_info,
                     person_id, 
                     profile_id, 
                     department_id,
@@ -279,6 +285,8 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                     id: m.id,
                     full_name: m.full_name,
                     phone: m.phone,
+                    spouse_name: m.spouse_name,
+                    children_info: m.children_info,
                     person_id: m.person_id,
                     profile_id: m.profile_id,
                     department_id: m.department_id,
@@ -343,6 +351,8 @@ export default function SmartBatchModal({ onClose, onSuccess, churchId, departme
                 return {
                     ...row,
                     phone: resolvedPhone,
+                    spouse_name: matchedPerson?.spouse_name || row.spouse_name || null,
+                    children_info: matchedPerson?.children_info || row.children_info || null,
                     person_id: personId || row.person_id,
                     profile_id: personId ? (profileId ?? null) : row.profile_id,
                     is_linked: personId ? !!profileId : row.is_linked,
