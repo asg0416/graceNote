@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
@@ -428,6 +428,45 @@ const formatShortWeekDate = (date: string) => {
     return month && day ? `${Number(month)}/${Number(day)}` : date;
 };
 
+const InsightSummarySkeleton = () => (
+    <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+        <div className="flex items-center justify-between">
+            <div className="h-3 w-20 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+            <div className="h-4 w-4 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+        </div>
+        <div className="mt-4 h-8 w-16 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />
+        <div className="mt-3 h-3 w-28 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+    </div>
+);
+
+const InsightPanelSkeleton = () => (
+    <div className="space-y-5 rounded-[2rem] border border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-950/30">
+        <div className="flex items-center gap-3">
+            <div className="h-9 w-9 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />
+            <div className="space-y-2">
+                <div className="h-4 w-28 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+                <div className="h-3 w-40 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+            </div>
+        </div>
+        <div className="space-y-3">
+            {[0, 1, 2, 3].map((item) => (
+                <div key={item} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-900/70 dark:ring-slate-800">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <div className="h-9 w-9 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />
+                            <div className="space-y-2">
+                                <div className="h-3.5 w-24 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+                                <div className="h-3 w-16 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+                            </div>
+                        </div>
+                        <div className="h-4 w-10 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+                    </div>
+                </div>
+            ))}
+        </div>
+    </div>
+);
+
 const getSnapshotMembersForWeek = async (
     departmentId: string,
     weekId: string
@@ -529,13 +568,16 @@ export default function AttendancePage() {
     const [endYear, setEndYear] = useState(new Date().getFullYear());
     const [endMonth, setEndMonth] = useState(new Date().getMonth() + 1);
     const [isExportLoading, setIsExportLoading] = useState(false);
-    const [, setIsInsightsLoading] = useState(false);
+    const [isInsightsLoading, setIsInsightsLoading] = useState(false);
     const [currentSnapshotId, setCurrentSnapshotId] = useState<string | null>(null);
     const [attendanceGroups, setAttendanceGroups] = useState<AttendanceGroupRow[]>([]);
     const [isAddSnapshotMemberModalOpen, setIsAddSnapshotMemberModalOpen] = useState(false);
     const [addSnapshotGroupId, setAddSnapshotGroupId] = useState<string | null>(null);
     const [addSnapshotSearch, setAddSnapshotSearch] = useState('');
     const [addSnapshotCandidates, setAddSnapshotCandidates] = useState<SnapshotAddCandidate[]>([]);
+    const latestTrendRequestKey = useRef('');
+    const latestAttendanceRequestKey = useRef('');
+    const latestInsightRequestKey = useRef('');
     const router = useRouter();
 
     useEffect(() => {
@@ -578,6 +620,31 @@ export default function AttendancePage() {
 
         checkUser();
     }, [router]);
+
+    useEffect(() => {
+        setAttendanceData([]);
+        setGroupStats([]);
+        setSelectedWeekMetrics(null);
+        setTargetExplanation([]);
+        setSelectedWeekNoMeetingReason(null);
+        setSelectedWeekHasSubmittedAttendance(false);
+        setWeeklyTrendData([]);
+        setCurrentSnapshotId(null);
+        setAttendanceGroups([]);
+        setIgnoredSubmissionConflictKeys(new Set());
+        setHallOfFame([]);
+        setCareList([]);
+        setGroupRankings([]);
+        setSubmissionRiskGroups([]);
+        setIsTrendLoading(false);
+        setIsInsightsLoading(false);
+        latestTrendRequestKey.current = '';
+        latestAttendanceRequestKey.current = '';
+        latestInsightRequestKey.current = '';
+        if (selectedChurchId || selectedDeptId) {
+            setSelectedWeekId('');
+        }
+    }, [selectedChurchId, selectedDeptId]);
 
     // Handle Church Change
     useEffect(() => {
@@ -645,6 +712,14 @@ export default function AttendancePage() {
     useEffect(() => {
         if (selectedChurchId && selectedDeptId) {
             const fetchTrendAndWeeks = async () => {
+                const requestKey = [
+                    selectedChurchId,
+                    selectedDeptId,
+                    selectedYear,
+                    selectedMonth,
+                    attendanceSnapshotVersion,
+                ].join(':');
+                latestTrendRequestKey.current = requestKey;
                 setIsTrendLoading(true);
                 try {
                     // 1. Fetch weeks for the selected year/month
@@ -664,6 +739,7 @@ export default function AttendancePage() {
                     if (monthWeeksError) throw buildQueryError('attendance month weeks query failed', monthWeeksError);
 
                     const monthWeeks = monthWeeksList || [];
+                    if (latestTrendRequestKey.current !== requestKey) return;
                     setWeeks(monthWeeks);
                     if (monthWeeks.length > 0) {
                         setSelectedWeekId((currentWeekId) => (
@@ -734,15 +810,20 @@ export default function AttendancePage() {
                                 };
                             }
                         }));
+                        if (latestTrendRequestKey.current !== requestKey) return;
                         setWeeklyTrendData(trendData);
                     } else {
+                        if (latestTrendRequestKey.current !== requestKey) return;
                         setWeeklyTrendData([]);
                     }
                 } catch (error) {
+                    if (latestTrendRequestKey.current !== requestKey) return;
                     console.error('Attendance trend fetch error:', error);
                     setWeeklyTrendData([]);
                 } finally {
-                    setIsTrendLoading(false);
+                    if (latestTrendRequestKey.current === requestKey) {
+                        setIsTrendLoading(false);
+                    }
                 }
             };
             fetchTrendAndWeeks();
@@ -777,8 +858,13 @@ export default function AttendancePage() {
         if (selectedWeekId) {
             fetchAttendance();
         } else {
+            latestAttendanceRequestKey.current = '';
             setAttendanceData([]);
             setGroupStats([]);
+            setSelectedWeekMetrics(null);
+            setTargetExplanation([]);
+            setCurrentSnapshotId(null);
+            setAttendanceGroups([]);
             setSelectedWeekNoMeetingReason(null);
             setSelectedWeekHasSubmittedAttendance(false);
         }
@@ -786,6 +872,8 @@ export default function AttendancePage() {
 
     const fetchAttendance = async () => {
         if (!selectedDeptId || !selectedWeekId) return;
+        const requestKey = `${selectedDeptId}:${selectedWeekId}`;
+        latestAttendanceRequestKey.current = requestKey;
 
         try {
             const selectedWeek = weeks.find((week) => week.id === selectedWeekId) as WeekRow | undefined;
@@ -798,6 +886,7 @@ export default function AttendancePage() {
                 snapshotMembersWithAttendance,
                 attendanceRows,
             } = await getSnapshotMembersForWeek(selectedDeptId, selectedWeekId);
+            if (latestAttendanceRequestKey.current !== requestKey) return;
             setCurrentSnapshotId(snapshotId);
 
             const { data: selectedNoMeetingDays, error: selectedNoMeetingDaysError } = await supabase
@@ -809,6 +898,7 @@ export default function AttendancePage() {
             if (selectedNoMeetingDaysError) {
                 throw buildQueryError('selected week no-meeting query failed', selectedNoMeetingDaysError);
             }
+            if (latestAttendanceRequestKey.current !== requestKey) return;
 
             const selectedNoMeetingDateSet = new Set<string>(
                 ((selectedNoMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date)
@@ -851,6 +941,7 @@ export default function AttendancePage() {
                     selectedDeptId,
                     previousWeek.id
                 );
+                if (latestAttendanceRequestKey.current !== requestKey) return;
                 const previousTargetPersonIds = new Set(
                     previousSnapshotMembers
                         .filter((member) => member.included)
@@ -885,11 +976,13 @@ export default function AttendancePage() {
                 .order('created_at', { ascending: true })
                 .order('name', { ascending: true });
             if (deptGroupsError) throw buildQueryError('attendance active groups query failed', deptGroupsError);
+            if (latestAttendanceRequestKey.current !== requestKey) return;
             const orderedGroups = ((deptGroups || []) as AttendanceGroupRow[]);
             const groupOrder = new Map(orderedGroups.map((group, index) => [group.name, index]));
             setAttendanceGroups(orderedGroups);
 
             const rosterForFamilySort = await fetchAttendanceRoster(selectedDeptId);
+            if (latestAttendanceRequestKey.current !== requestKey) return;
             const familySortByPersonId = new Map(
                 rosterForFamilySort
                     .filter((member) => member.person_id)
@@ -981,6 +1074,7 @@ export default function AttendancePage() {
 
             fetchInsights();
         } catch (err) {
+            if (latestAttendanceRequestKey.current !== requestKey) return;
             console.error('Attendance Fetch Error:', err);
         }
     };
@@ -1388,6 +1482,19 @@ export default function AttendancePage() {
 
     const fetchInsights = async () => {
         if (!selectedChurchId || !selectedDeptId) return;
+        const requestKey = [
+            selectedChurchId,
+            selectedDeptId,
+            statsPeriod,
+            insightYear,
+            insightQuarter,
+            hallOfFameTarget,
+            hallOfFameValue,
+            careTarget,
+            careValue,
+            attendanceSnapshotVersion,
+        ].join(':');
+        latestInsightRequestKey.current = requestKey;
         setIsInsightsLoading(true);
         try {
             let startDate = `${insightYear}-01-01`;
@@ -1414,6 +1521,7 @@ export default function AttendancePage() {
             if (periodWeeksError) throw buildQueryError('attendance insight weeks query failed', periodWeeksError);
 
             if (!periodWeeks || periodWeeks.length === 0) {
+                if (latestInsightRequestKey.current !== requestKey) return;
                 setHallOfFame([]);
                 setCareList([]);
                 setGroupRankings([]);
@@ -1582,6 +1690,8 @@ export default function AttendancePage() {
                 };
             });
 
+            if (latestInsightRequestKey.current !== requestKey) return;
+
             setHallOfFame(report.filter(r =>
                 hallOfFameTarget === 'rate' ? r.rate >= hallOfFameValue : r.presentCount >= hallOfFameValue
             ).sort((a, b) => b.rate - a.rate));
@@ -1632,19 +1742,22 @@ export default function AttendancePage() {
                 }));
 
         } catch (err) {
+            if (latestInsightRequestKey.current !== requestKey) return;
             console.error('Insights Error:', err);
             setHallOfFame([]);
             setCareList([]);
             setGroupRankings([]);
             setSubmissionRiskGroups([]);
         } finally {
-            setIsInsightsLoading(false);
+            if (latestInsightRequestKey.current === requestKey) {
+                setIsInsightsLoading(false);
+            }
         }
     };
 
     useEffect(() => {
         fetchInsights();
-    }, [statsPeriod, selectedDeptId, insightYear, insightQuarter, hallOfFameTarget, hallOfFameValue, careTarget, careValue]);
+    }, [statsPeriod, selectedChurchId, selectedDeptId, insightYear, insightQuarter, hallOfFameTarget, hallOfFameValue, careTarget, careValue, attendanceSnapshotVersion]);
 
     const downloadSubmissionRiskReport = () => {
         const exportData = submissionRiskGroups.map((group) => ({
@@ -2642,6 +2755,15 @@ export default function AttendancePage() {
                         </div>
 
                         <div className="relative mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                            {isInsightsLoading ? (
+                                <>
+                                    <InsightSummarySkeleton />
+                                    <InsightSummarySkeleton />
+                                    <InsightSummarySkeleton />
+                                    <InsightSummarySkeleton />
+                                </>
+                            ) : (
+                                <>
                             <div className="order-1 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
                                 <div className="flex items-center justify-between">
                                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">출석 우수</p>
@@ -2676,12 +2798,23 @@ export default function AttendancePage() {
                                 <p className="mt-3 text-3xl font-black text-slate-900 dark:text-white">{submissionRiskGroups.length}</p>
                                 <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">반복 미제출 조</p>
                             </div>
+                                </>
+                            )}
                         </div>
 
                         <div className={cn(
                             "relative gap-6",
                             attendanceView === 'insights' ? "grid grid-cols-1 xl:grid-cols-2" : "space-y-8"
                         )}>
+                            {isInsightsLoading ? (
+                                <>
+                                    <InsightPanelSkeleton />
+                                    <InsightPanelSkeleton />
+                                    <InsightPanelSkeleton />
+                                    <InsightPanelSkeleton />
+                                </>
+                            ) : (
+                                <>
                             {/* Hall of Fame - Compact */}
                             <div className="order-1 space-y-5 rounded-[2rem] border border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-950/30">
                                 <div className="flex items-center justify-between">
@@ -2837,7 +2970,7 @@ export default function AttendancePage() {
                                                     </span>
                                                 </div>
                                                 <div className="mt-3 flex flex-wrap gap-1.5">
-                                                    {group.missedWeekLabels.slice(0, 8).map((label) => (
+                                                    {group.missedWeekLabels.map((label) => (
                                                         <span
                                                             key={`${group.id}-${label}`}
                                                             className="rounded-xl bg-slate-50 px-2.5 py-1 text-[9px] font-black text-slate-500 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:text-slate-300 dark:ring-slate-800"
@@ -2845,11 +2978,6 @@ export default function AttendancePage() {
                                                             {label}
                                                         </span>
                                                     ))}
-                                                    {group.missedWeekLabels.length > 8 && (
-                                                        <span className="rounded-xl bg-slate-100 px-2.5 py-1 text-[9px] font-black text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-                                                            외 {group.missedWeekLabels.length - 8}주
-                                                        </span>
-                                                    )}
                                                 </div>
                                             </div>
                                         ))
@@ -2914,6 +3042,8 @@ export default function AttendancePage() {
                                     )}
                                 </div>
                             </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
