@@ -203,6 +203,7 @@ type InsightSubmissionRiskGroup = {
     submittedWeeks: number;
     missedWeeks: number;
     missedWeekLabels: string[];
+    missedWeekDates: string[];
     averageTarget: number;
     riskRate: number;
 };
@@ -568,6 +569,12 @@ export default function AttendancePage() {
     const [endYear, setEndYear] = useState(new Date().getFullYear());
     const [endMonth, setEndMonth] = useState(new Date().getMonth() + 1);
     const [isExportLoading, setIsExportLoading] = useState(false);
+    const [isSubmissionRiskExportModalOpen, setIsSubmissionRiskExportModalOpen] = useState(false);
+    const [submissionRiskStartYear, setSubmissionRiskStartYear] = useState(new Date().getFullYear());
+    const [submissionRiskStartMonth, setSubmissionRiskStartMonth] = useState(1);
+    const [submissionRiskEndYear, setSubmissionRiskEndYear] = useState(new Date().getFullYear());
+    const [submissionRiskEndMonth, setSubmissionRiskEndMonth] = useState(new Date().getMonth() + 1);
+    const [isSubmissionRiskExportLoading, setIsSubmissionRiskExportLoading] = useState(false);
     const [isInsightsLoading, setIsInsightsLoading] = useState(false);
     const [currentSnapshotId, setCurrentSnapshotId] = useState<string | null>(null);
     const [attendanceGroups, setAttendanceGroups] = useState<AttendanceGroupRow[]>([]);
@@ -1553,6 +1560,7 @@ export default function AttendancePage() {
                 expectedWeeks: number;
                 submittedWeeks: number;
                 missedWeekLabels: string[];
+                missedWeekDates: string[];
                 targetPeopleSum: number;
             }>();
 
@@ -1629,6 +1637,7 @@ export default function AttendancePage() {
                         expectedWeeks: 0,
                         submittedWeeks: 0,
                         missedWeekLabels: [],
+                        missedWeekDates: [],
                         targetPeopleSum: 0,
                     };
                     existing.expectedWeeks += 1;
@@ -1637,6 +1646,7 @@ export default function AttendancePage() {
                         existing.submittedWeeks += 1;
                     } else {
                         existing.missedWeekLabels.push(formatShortWeekDate(week.week_date));
+                        existing.missedWeekDates.push(week.week_date);
                     }
                     submissionRiskByGroup.set(groupTarget.id, existing);
                 });
@@ -1730,6 +1740,7 @@ export default function AttendancePage() {
                         submittedWeeks: group.submittedWeeks,
                         missedWeeks,
                         missedWeekLabels: group.missedWeekLabels,
+                        missedWeekDates: group.missedWeekDates,
                         averageTarget: group.expectedWeeks > 0 ? group.targetPeopleSum / group.expectedWeeks : 0,
                         riskRate: group.expectedWeeks > 0 ? (missedWeeks / group.expectedWeeks) * 100 : 0,
                     };
@@ -1759,26 +1770,160 @@ export default function AttendancePage() {
         fetchInsights();
     }, [statsPeriod, selectedChurchId, selectedDeptId, insightYear, insightQuarter, hallOfFameTarget, hallOfFameValue, careTarget, careValue, attendanceSnapshotVersion]);
 
-    const downloadSubmissionRiskReport = () => {
-        const exportData = submissionRiskGroups.map((group) => ({
-            교회: selectedChurchName,
-            부서: selectedDepartmentName,
-            기간: insightPeriodLabel,
-            조: group.name,
-            점검대상주수: group.expectedWeeks,
-            제출주수: group.submittedWeeks,
-            미제출주수: group.missedWeeks,
-            미제출주차: group.missedWeekLabels.join(', '),
-            평균대상인원: Number(group.averageTarget.toFixed(1)),
-            미제출비율: `${Math.round(group.riskRate)}%`,
-        }));
+    const buildSubmissionRiskGroupsForRange = async (startDate: string, endDate: string): Promise<InsightSubmissionRiskGroup[]> => {
+        if (!selectedChurchId || !selectedDeptId) return [];
 
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, '출석제출점검');
+        const { data: periodWeeks, error: periodWeeksError } = await supabase
+            .from('weeks')
+            .select('*')
+            .eq('church_id', selectedChurchId)
+            .gte('week_date', startDate)
+            .lte('week_date', endDate)
+            .order('week_date', { ascending: false });
+        if (periodWeeksError) throw buildQueryError('submission risk export weeks query failed', periodWeeksError);
 
-        const safeDepartmentName = selectedDepartmentName.replace(/[\\/:*?"<>|]/g, '_');
-        XLSX.writeFile(workbook, `출석제출점검_${safeDepartmentName}_${insightPeriodLabel}.xlsx`);
+        const { data: noMeetingDays, error: noMeetingDaysError } = await supabase
+            .from('no_meeting_days')
+            .select('week_date')
+            .eq('department_id', selectedDeptId)
+            .gte('week_date', startDate)
+            .lte('week_date', endDate);
+        if (noMeetingDaysError) throw buildQueryError('submission risk export no-meeting query failed', noMeetingDaysError);
+
+        const noMeetingDateSet = new Set(((noMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date));
+        const meetingWeeks = ((periodWeeks || []) as WeekRow[]).filter((week) => !noMeetingDateSet.has(week.week_date));
+        const submissionRiskByGroup = new Map<string, {
+            id: string;
+            name: string;
+            expectedWeeks: number;
+            submittedWeeks: number;
+            missedWeekLabels: string[];
+            missedWeekDates: string[];
+            targetPeopleSum: number;
+        }>();
+
+        for (const week of meetingWeeks) {
+            const { snapshotMembersWithAttendance, attendanceRows } = await getSnapshotMembersForWeek(selectedDeptId, week.id);
+            const submittedGroupIds = new Set(
+                attendanceRows
+                    .map((row) => row.group_id)
+                    .filter((groupId): groupId is string => Boolean(groupId))
+            );
+            const targetPeopleByGroup = new Map<string, {
+                id: string;
+                name: string;
+                personIds: Set<string>;
+            }>();
+
+            snapshotMembersWithAttendance
+                .filter((member) => member.included && member.personId && member.groupId)
+                .forEach((member) => {
+                    const groupName = member.groupName || '조 없음';
+                    if (!member.groupId || groupName === '조 없음') return;
+
+                    const groupTarget = targetPeopleByGroup.get(member.groupId) || {
+                        id: member.groupId,
+                        name: groupName,
+                        personIds: new Set<string>(),
+                    };
+                    groupTarget.personIds.add(member.personId);
+                    targetPeopleByGroup.set(member.groupId, groupTarget);
+                });
+
+            targetPeopleByGroup.forEach((groupTarget) => {
+                const existing = submissionRiskByGroup.get(groupTarget.id) || {
+                    id: groupTarget.id,
+                    name: groupTarget.name,
+                    expectedWeeks: 0,
+                    submittedWeeks: 0,
+                    missedWeekLabels: [],
+                    missedWeekDates: [],
+                    targetPeopleSum: 0,
+                };
+                existing.expectedWeeks += 1;
+                existing.targetPeopleSum += groupTarget.personIds.size;
+
+                if (submittedGroupIds.has(groupTarget.id)) {
+                    existing.submittedWeeks += 1;
+                } else {
+                    existing.missedWeekLabels.push(formatShortWeekDate(week.week_date));
+                    existing.missedWeekDates.push(week.week_date);
+                }
+
+                submissionRiskByGroup.set(groupTarget.id, existing);
+            });
+        }
+
+        return Array.from(submissionRiskByGroup.values())
+            .map((group) => {
+                const missedWeeks = group.expectedWeeks - group.submittedWeeks;
+                return {
+                    id: group.id,
+                    name: group.name,
+                    expectedWeeks: group.expectedWeeks,
+                    submittedWeeks: group.submittedWeeks,
+                    missedWeeks,
+                    missedWeekLabels: group.missedWeekLabels,
+                    missedWeekDates: group.missedWeekDates,
+                    averageTarget: group.expectedWeeks > 0 ? group.targetPeopleSum / group.expectedWeeks : 0,
+                    riskRate: group.expectedWeeks > 0 ? (missedWeeks / group.expectedWeeks) * 100 : 0,
+                };
+            })
+            .filter((group) => group.expectedWeeks >= 2 && group.missedWeeks >= 2)
+            .sort((a, b) => {
+                const missedDiff = b.missedWeeks - a.missedWeeks;
+                if (missedDiff !== 0) return missedDiff;
+                return b.riskRate - a.riskRate;
+            });
+    };
+
+    const downloadSubmissionRiskReport = async () => {
+        setIsSubmissionRiskExportLoading(true);
+        try {
+            const startStr = `${submissionRiskStartYear}-${submissionRiskStartMonth.toString().padStart(2, '0')}-01`;
+            const lastDay = new Date(submissionRiskEndYear, submissionRiskEndMonth, 0).getDate();
+            const endStr = `${submissionRiskEndYear}-${submissionRiskEndMonth.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
+
+            if (new Date(startStr) > new Date(endStr)) {
+                alert('시작 기간이 종료 기간보다 늦습니다.');
+                return;
+            }
+
+            const reportGroups = await buildSubmissionRiskGroupsForRange(startStr, endStr);
+            if (reportGroups.length === 0) {
+                alert('선택한 기간에 반복 미제출 조가 없습니다.');
+                return;
+            }
+
+            const periodLabel = `${submissionRiskStartYear}년 ${submissionRiskStartMonth}월 ~ ${submissionRiskEndYear}년 ${submissionRiskEndMonth}월`;
+            const exportData = reportGroups.map((group) => ({
+                교회: selectedChurchName,
+                부서: selectedDepartmentName,
+                기간: periodLabel,
+                조: group.name,
+                점검대상주수: group.expectedWeeks,
+                제출주수: group.submittedWeeks,
+                미제출주수: group.missedWeeks,
+                미제출주차: group.missedWeekDates.join(', '),
+                미제출주차표시: group.missedWeekLabels.join(', '),
+                평균대상인원: Number(group.averageTarget.toFixed(1)),
+                미제출비율: `${Math.round(group.riskRate)}%`,
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, '출석제출점검');
+
+            const safeDepartmentName = selectedDepartmentName.replace(/[\\/:*?"<>|]/g, '_');
+            const filenamePeriod = `${submissionRiskStartYear}${submissionRiskStartMonth.toString().padStart(2, '0')}_${submissionRiskEndYear}${submissionRiskEndMonth.toString().padStart(2, '0')}`;
+            XLSX.writeFile(workbook, `출석제출점검_${safeDepartmentName}_${filenamePeriod}.xlsx`);
+            setIsSubmissionRiskExportModalOpen(false);
+        } catch (err) {
+            console.error('Submission risk export error:', err);
+            alert('출석 제출 점검 현황을 생성하지 못했습니다.');
+        } finally {
+            setIsSubmissionRiskExportLoading(false);
+        }
     };
 
     const downloadRangeExcel = async () => {
@@ -2946,8 +3091,8 @@ export default function AttendancePage() {
                                     </div>
                                     <button
                                         type="button"
-                                        onClick={downloadSubmissionRiskReport}
-                                        disabled={submissionRiskGroups.length === 0}
+                                        onClick={() => setIsSubmissionRiskExportModalOpen(true)}
+                                        disabled={!selectedChurchId || !selectedDeptId}
                                         className="inline-flex items-center justify-center gap-1.5 rounded-2xl bg-white px-3 py-2 text-[10px] font-black text-orange-600 shadow-sm ring-1 ring-orange-100 transition-all hover:bg-orange-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:ring-slate-100 dark:bg-slate-950/50 dark:text-orange-200 dark:ring-orange-500/20 dark:hover:bg-orange-500/10 dark:disabled:text-slate-600"
                                     >
                                         <Download className="h-3.5 w-3.5" />
@@ -3088,6 +3233,76 @@ export default function AttendancePage() {
                                 추가할 수 있는 성도를 찾지 못했습니다.
                             </p>
                         )}
+                    </div>
+                </div>
+            </Modal>
+
+            <Modal
+                isOpen={isSubmissionRiskExportModalOpen}
+                onClose={() => setIsSubmissionRiskExportModalOpen(false)}
+                title="출석 제출 점검 현황 내려받기"
+                maxWidth="md"
+            >
+                <div className="space-y-8">
+                    <div className="rounded-3xl border border-orange-100 bg-orange-50/60 p-5 dark:border-orange-500/20 dark:bg-orange-500/10">
+                        <p className="text-sm font-black text-slate-900 dark:text-white">{selectedDepartmentName}</p>
+                        <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">
+                            선택한 기간 안에서 출석 대상은 있었지만 제출이 반복 누락된 조를 엑셀로 정리합니다.
+                        </p>
+                    </div>
+
+                    <div className="space-y-3">
+                        <label className="text-xs font-black text-slate-400 uppercase tracking-widest pl-1">시작 기간</label>
+                        <div className="flex gap-2">
+                            <select
+                                value={submissionRiskStartYear}
+                                onChange={(e) => setSubmissionRiskStartYear(parseInt(e.target.value))}
+                                className="flex-1 p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-orange-500/20"
+                            >
+                                {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
+                            </select>
+                            <select
+                                value={submissionRiskStartMonth}
+                                onChange={(e) => setSubmissionRiskStartMonth(parseInt(e.target.value))}
+                                className="flex-1 p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-orange-500/20"
+                            >
+                                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        <label className="text-xs font-black text-slate-400 uppercase tracking-widest pl-1">종료 기간</label>
+                        <div className="flex gap-2">
+                            <select
+                                value={submissionRiskEndYear}
+                                onChange={(e) => setSubmissionRiskEndYear(parseInt(e.target.value))}
+                                className="flex-1 p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-orange-500/20"
+                            >
+                                {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
+                            </select>
+                            <select
+                                value={submissionRiskEndMonth}
+                                onChange={(e) => setSubmissionRiskEndMonth(parseInt(e.target.value))}
+                                className="flex-1 p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-orange-500/20"
+                            >
+                                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="pt-4">
+                        <button
+                            onClick={downloadSubmissionRiskReport}
+                            disabled={isSubmissionRiskExportLoading}
+                            className="w-full py-5 bg-orange-500 text-white rounded-3xl font-black hover:bg-orange-600 transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3 shadow-xl shadow-orange-500/20 disabled:opacity-50 disabled:scale-100"
+                        >
+                            {isSubmissionRiskExportLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Download className="w-6 h-6" />}
+                            점검 현황 생성 및 다운로드
+                        </button>
+                        <p className="text-[10px] text-center text-slate-400 font-bold mt-4 tracking-tight">
+                            모임없는 날은 점검 대상에서 제외됩니다.
+                        </p>
                     </div>
                 </div>
             </Modal>
