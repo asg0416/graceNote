@@ -551,9 +551,9 @@ export default function ArchivePage() {
                         Archive Management
                     </div>
                     <div>
-                        <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">휴지통</h1>
+                        <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">비활성 항목 관리</h1>
                         <p className="text-sm font-bold text-slate-400 mt-2">
-                            비활성화된 성도 소속, 종료된 부서와 조를 확인하고 복구합니다.
+                            현재 화면에서 숨겨진 성도 소속, 종료된 부서와 조를 확인하고 필요한 항목만 복구합니다.
                         </p>
                     </div>
                 </div>
@@ -571,7 +571,7 @@ export default function ArchivePage() {
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
                     <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => setActiveTab('members')} className={tabClass('members')}>
-                            성도 소속 {memberAffiliations.length}
+                            비활성 성도 {memberAffiliations.length}
                         </button>
                         <button type="button" onClick={() => setActiveTab('departments')} className={tabClass('departments')}>
                             부서 {departments.length}
@@ -608,7 +608,7 @@ export default function ArchivePage() {
                                             <h3 className="text-lg font-black text-slate-900 dark:text-white">{member.full_name}</h3>
                                             <p className="text-xs font-bold text-slate-400">
                                                 {member.phone || '전화번호 없음'}
-                                                {member.rows.length > 1 ? ` / 보관 row ${member.rows.length}개` : ''}
+                                                {member.rows.length > 1 ? ` / 과거 등록 기록 ${member.rows.length}개` : ''}
                                             </p>
                                         </div>
                                     </div>
@@ -629,7 +629,7 @@ export default function ArchivePage() {
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] font-black text-slate-600 dark:text-slate-300">
                                         <Users className="w-3 h-3" />
                                         {member.archived_group_candidates.length > 0
-                                            ? '복구할 조 선택'
+                                            ? '복구할 조를 선택하세요'
                                             : member.archived_group_names.length > 0
                                                 ? `과거 조: ${member.archived_group_names.join(', ')}`
                                                 : '조 없음'}
@@ -641,7 +641,7 @@ export default function ArchivePage() {
                                 {member.archived_group_candidates.length > 0 && (
                                     <div className="space-y-2">
                                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                            복구할 조
+                                            마지막 소속 중 복구할 조
                                         </p>
                                         <div className="flex flex-wrap gap-2">
                                             {member.archived_group_candidates.map(candidate => {
@@ -660,12 +660,15 @@ export default function ArchivePage() {
                                                                 : 'bg-white border-slate-200 text-slate-400 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-500'
                                                         )}
                                                     >
-                                                        {isSelected ? '복구 ' : '제외 '}
+                                                        {isSelected ? '✓ ' : ''}
                                                         {candidate.group_name}
                                                     </button>
                                                 );
                                             })}
                                         </div>
+                                        <p className="text-[10px] font-bold text-slate-400">
+                                            선택한 조만 active 소속으로 복구됩니다. 아무 조도 선택하지 않으면 부서 소속만 복구됩니다.
+                                        </p>
                                         {member.archived_group_names.length > member.archived_group_candidates.length && (
                                             <p className="text-[10px] font-bold text-slate-400">
                                                 오래된 이력: {member.archived_group_names
