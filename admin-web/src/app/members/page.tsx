@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef, Fragment, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -1685,17 +1686,30 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
         top: number;
         items: RosterAffiliation[];
     } | null>(null);
+    const hoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const primaryAffiliation = phase2Affiliations.find((affiliation) => affiliation.groupName === m.group_name)
         || phase2Affiliations[0]
         || null;
     const extraAffiliations = primaryAffiliation
         ? phase2Affiliations.filter((affiliation) => affiliation.id !== primaryAffiliation.id)
         : [];
-    const affiliationSummary = phase2Affiliations
-        .map((affiliation) => `${affiliation.departmentName || '부서 미정'} · ${affiliation.groupName || '미정'}${affiliation.role === 'leader' ? ' · 조장' : ''}`)
-        .join('\n');
     const isLeader = m.role_in_group === 'leader' || phase2Affiliations.some((affiliation) => affiliation.role === 'leader');
+    const clearHoverCloseTimer = () => {
+        if (hoverCloseTimerRef.current) {
+            clearTimeout(hoverCloseTimerRef.current);
+            hoverCloseTimerRef.current = null;
+        }
+    };
+
+    const handleMoreAffiliationLeave = () => {
+        clearHoverCloseTimer();
+        hoverCloseTimerRef.current = setTimeout(() => {
+            setHoverCard(null);
+        }, 120);
+    };
+
     const handleMoreAffiliationEnter = (event: React.MouseEvent<HTMLElement>) => {
+        clearHoverCloseTimer();
         const rect = event.currentTarget.getBoundingClientRect();
         const placement = rect.top < window.innerHeight / 2 ? 'bottom' : 'top';
         const cardWidth = 288;
@@ -1708,6 +1722,14 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
             items: extraAffiliations,
         });
     };
+
+    useEffect(() => {
+        return () => {
+            if (hoverCloseTimerRef.current) {
+                clearTimeout(hoverCloseTimerRef.current);
+            }
+        };
+    }, []);
 
     return (
         <tr className={cn("hover:bg-slate-50/80 dark:hover:bg-indigo-500/[0.02] transition-colors group", isSelected && "bg-indigo-50/50 dark:bg-indigo-500/[0.05]")}>
@@ -1764,7 +1786,7 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
             <td className="px-4 sm:px-6 py-4 sm:py-5 hidden sm:table-cell">
                 <div className="space-y-2">
                     {primaryAffiliation ? (
-                        <div className="max-w-[260px]" title={affiliationSummary}>
+                        <div className="max-w-[260px]">
                             <div className="flex items-center gap-1.5 min-w-0">
                                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: primaryAffiliation.departmentColor || '#e2e8f0' }} />
                                 <span className="text-[11px] sm:text-xs font-black text-slate-700 dark:text-slate-200 truncate">
@@ -1781,19 +1803,21 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                                 >
                                     {primaryAffiliation.groupName || '미정'}
                                 </span>
-                                {extraAffiliations.length > 0 && (
-                                    <span
-                                        onMouseEnter={handleMoreAffiliationEnter}
-                                        onMouseLeave={() => setHoverCard(null)}
-                                        className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300 cursor-default"
-                                    >
-                                        외 {extraAffiliations.length}
-                                    </span>
-                                )}
-                            </div>
-                            {hoverCard && (
+                                        {extraAffiliations.length > 0 && (
+                                            <span
+                                                onMouseEnter={handleMoreAffiliationEnter}
+                                                onMouseLeave={handleMoreAffiliationLeave}
+                                                className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300 cursor-default"
+                                            >
+                                                외 {extraAffiliations.length}
+                                            </span>
+                                        )}
+                                    </div>
+                            {hoverCard && typeof document !== 'undefined' && createPortal(
                                 <div
-                                    className="pointer-events-none fixed z-[9999] w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-slate-900/15 dark:border-slate-700 dark:bg-slate-900"
+                                    onMouseEnter={clearHoverCloseTimer}
+                                    onMouseLeave={handleMoreAffiliationLeave}
+                                    className="fixed z-[99999] w-72 max-h-[min(320px,calc(100vh-24px))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-slate-900/20 dark:border-slate-700 dark:bg-slate-900"
                                     style={{
                                         left: hoverCard.left,
                                         top: hoverCard.top,
@@ -1822,7 +1846,8 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                                             </div>
                                         ))}
                                     </div>
-                                </div>
+                                </div>,
+                                document.body
                             )}
                         </div>
                     ) : (
