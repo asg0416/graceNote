@@ -15,6 +15,17 @@ with legacy_leader_profiles as (
     gm.group_id,
     gm.profile_id
   from public.group_members gm
+  left join public.member_directory md
+    on md.id = gm.member_directory_id
+  left join public.member_profiles mp
+    on mp.member_directory_id = md.id
+  join public.profiles p
+    on p.id = gm.profile_id
+   and (
+     p.person_id is null
+     or p.person_id = md.person_id
+     or p.person_id = mp.person_id
+   )
   where gm.is_active = true
     and gm.role_in_group = 'leader'
     and gm.profile_id is not null
@@ -27,6 +38,9 @@ phase2_leader_profiles as (
   join public.member_profiles mp
     on mp.person_id = m.person_id
    and mp.profile_id is not null
+  join public.profiles p
+    on p.id = mp.profile_id
+   and (p.person_id is null or p.person_id = mp.person_id)
   where m.status = 'active'
     and m.role = 'leader'
 ),
@@ -35,6 +49,17 @@ legacy_active_profiles as (
     gm.group_id,
     gm.profile_id
   from public.group_members gm
+  left join public.member_directory md
+    on md.id = gm.member_directory_id
+  left join public.member_profiles mp
+    on mp.member_directory_id = md.id
+  join public.profiles p
+    on p.id = gm.profile_id
+   and (
+     p.person_id is null
+     or p.person_id = md.person_id
+     or p.person_id = mp.person_id
+   )
   where gm.is_active = true
     and gm.profile_id is not null
 ),
@@ -46,6 +71,9 @@ phase2_active_profiles as (
   join public.member_profiles mp
     on mp.person_id = m.person_id
    and mp.profile_id is not null
+  join public.profiles p
+    on p.id = mp.profile_id
+   and (p.person_id is null or p.person_id = mp.person_id)
   where m.status = 'active'
 ),
 legacy_leader_directory_ids as (

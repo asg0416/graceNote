@@ -14,6 +14,18 @@ const uniqueStrings = (values: unknown[]): string[] => [
   ...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0)),
 ];
 
+const profileBelongsToPerson = (memberProfile: any): boolean => {
+  const linkedProfile = Array.isArray(memberProfile?.profiles)
+    ? memberProfile.profiles[0]
+    : memberProfile?.profiles;
+
+  return Boolean(
+    memberProfile?.profile_id
+      && memberProfile?.person_id
+      && (!linkedProfile?.person_id || linkedProfile.person_id === memberProfile.person_id),
+  );
+};
+
 async function getLeaderProfileIdsByGroups(
   supabase: SupabaseClientLike,
   groupIds: string[],
@@ -31,11 +43,15 @@ async function getLeaderProfileIdsByGroups(
     const personIds = uniqueStrings((phase2Memberships || []).map((leader: any) => leader.person_id));
     const { data: memberProfiles, error: profileError } = await supabase
       .from("member_profiles")
-      .select("profile_id")
+      .select("person_id, profile_id, profiles(person_id)")
       .in("person_id", personIds)
       .not("profile_id", "is", null);
 
-    const profileIds = uniqueStrings((memberProfiles || []).map((profile: any) => profile.profile_id));
+    const profileIds = uniqueStrings(
+      (memberProfiles || [])
+        .filter(profileBelongsToPerson)
+        .map((profile: any) => profile.profile_id),
+    );
     if (!profileError && profileIds.length > 0) {
       return profileIds;
     }
@@ -67,11 +83,15 @@ async function getActiveProfileIdsByGroups(
     const personIds = uniqueStrings((phase2Memberships || []).map((member: any) => member.person_id));
     const { data: memberProfiles, error: profileError } = await supabase
       .from("member_profiles")
-      .select("profile_id")
+      .select("person_id, profile_id, profiles(person_id)")
       .in("person_id", personIds)
       .not("profile_id", "is", null);
 
-    const profileIds = uniqueStrings((memberProfiles || []).map((profile: any) => profile.profile_id));
+    const profileIds = uniqueStrings(
+      (memberProfiles || [])
+        .filter(profileBelongsToPerson)
+        .map((profile: any) => profile.profile_id),
+    );
     if (!profileError && profileIds.length > 0) {
       return profileIds;
     }

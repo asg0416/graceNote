@@ -9,6 +9,18 @@ const FIREBASE_CLIENT_EMAIL = Deno.env.get("FIREBASE_CLIENT_EMAIL");
 const FIREBASE_PRIVATE_KEY = Deno.env.get("FIREBASE_PRIVATE_KEY");
 type SupabaseClientLike = any;
 
+const profileBelongsToPerson = (memberProfile: any): boolean => {
+  const linkedProfile = Array.isArray(memberProfile?.profiles)
+    ? memberProfile.profiles[0]
+    : memberProfile?.profiles;
+
+  return Boolean(
+    memberProfile?.profile_id
+      && memberProfile?.person_id
+      && (!linkedProfile?.person_id || linkedProfile.person_id === memberProfile.person_id),
+  );
+};
+
 async function getAccessToken(): Promise<string> {
   const privateKey = FIREBASE_PRIVATE_KEY!.replace(/\\n/g, "\n");
   const header = { alg: "RS256", typ: "JWT" };
@@ -93,8 +105,8 @@ async function getLeaderRowsByGroups(
   if (!phase2Error && (phase2Memberships || []).length > 0) {
     const personIds = [...new Set((phase2Memberships || []).map((leader: any) => leader.person_id).filter(Boolean))];
     const memberProfileSelect = includePushPreference
-      ? "person_id, profile_id, profiles(push_reminder_enabled)"
-      : "person_id, profile_id";
+      ? "person_id, profile_id, profiles(person_id, push_reminder_enabled)"
+      : "person_id, profile_id, profiles(person_id)";
     const { data: memberProfiles, error: profileError } = await supabase
       .from("member_profiles")
       .select(memberProfileSelect)
@@ -103,7 +115,7 @@ async function getLeaderRowsByGroups(
 
     if (!profileError && (memberProfiles || []).length > 0) {
       const profilesByPerson = new Map<string, any[]>();
-      for (const profile of memberProfiles || []) {
+      for (const profile of (memberProfiles || []).filter(profileBelongsToPerson)) {
         const existing = profilesByPerson.get(profile.person_id) || [];
         existing.push(profile);
         profilesByPerson.set(profile.person_id, existing);
