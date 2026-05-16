@@ -17,6 +17,13 @@ const getFlagValue = (flag) => {
 };
 
 const dbUrlFile = getFlagValue("--db-url-file");
+
+if (dbUrlFile && !existsSync(dbUrlFile)) {
+  console.error(`DB URL file not found: ${dbUrlFile}`);
+  console.error("Create it with: read -s GRACENOTE_VERIFY_DB_URL && printf '%s' \"$GRACENOTE_VERIFY_DB_URL\" > <path> && unset GRACENOTE_VERIFY_DB_URL");
+  process.exit(2);
+}
+
 const rawDbUrl = process.env.GRACENOTE_VERIFY_DB_URL
   || (dbUrlFile ? readFileSync(dbUrlFile, "utf8").trim() : "");
 
