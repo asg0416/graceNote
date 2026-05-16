@@ -6,22 +6,16 @@ import { useEffect, useState, useMemo, useRef, Suspense, useCallback } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
-    Users,
     Search,
     Loader2,
     Church,
     ChevronDown,
-    Layers,
     Save,
     RotateCcw,
-    CheckCircle2,
     AlertCircle,
-    Plus,
-    UserPlus,
     Download,
     FileDown,
     Image as ImageIcon,
-    Settings2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import * as htmlToImage from 'html-to-image';
@@ -29,7 +23,6 @@ import { ExportTableView } from '@/components/kanban/ExportTableView';
 import { cn } from '@/lib/utils';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { MemberModal } from '@/components/MemberModal';
-import { Modal } from '@/components/Modal';
 import { Tooltip } from '@/components/Tooltip';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
@@ -197,7 +190,7 @@ function RegroupingPageInner() {
     const [autoMoveCouples, setAutoMoveCouples] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
-    const [phase2RegroupingCheck, setPhase2RegroupingCheck] = useState<{
+    const [, setPhase2RegroupingCheck] = useState<{
         status: 'idle' | 'ok' | 'warning' | 'unavailable';
         legacyActiveCount: number;
         phase2ActiveCount: number;
@@ -1233,76 +1226,6 @@ function RegroupingPageInner() {
                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                     </div>
                 </div>
-            )}
-
-            {phase2RegroupingCheck.status !== 'ok' && (
-            <div className={cn(
-                "mx-2 rounded-[24px] border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm",
-                phase2RegroupingCheck.status === 'warning'
-                    ? "bg-rose-50/80 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20"
-                    : phase2RegroupingCheck.status === 'unavailable'
-                        ? "bg-amber-50/80 dark:bg-amber-500/10 border-amber-100 dark:border-amber-500/20"
-                        : "bg-emerald-50/80 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
-            )}>
-                <div className="flex items-start gap-3">
-                    <div className={cn(
-                        "w-10 h-10 rounded-2xl flex items-center justify-center shrink-0",
-                        phase2RegroupingCheck.status === 'warning'
-                            ? "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-300"
-                            : phase2RegroupingCheck.status === 'unavailable'
-                                ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300"
-                                : "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300"
-                    )}>
-                        {phase2RegroupingCheck.status === 'warning'
-                            ? <AlertCircle className="w-5 h-5" />
-                            : <CheckCircle2 className="w-5 h-5" />}
-                    </div>
-                    <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">
-                                조편성 데이터 확인 필요
-                            </p>
-                            <span className="px-2 py-0.5 rounded-lg bg-white/70 dark:bg-slate-900/50 text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                                자동 점검
-                            </span>
-                        </div>
-                        <p className={cn(
-                            "text-xs sm:text-sm font-black",
-                            phase2RegroupingCheck.status === 'warning'
-                                ? "text-rose-700 dark:text-rose-300"
-                                : phase2RegroupingCheck.status === 'unavailable'
-                                    ? "text-amber-700 dark:text-amber-300"
-                                    : "text-emerald-700 dark:text-emerald-300"
-                        )}>
-                            {phase2RegroupingCheck.message}
-                        </p>
-                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                            저장 전후 선택 부서의 실제 사람 수와 active 소속 수가 맞는지 확인합니다. 이 경고가 계속 보이면 저장 후 성도명부와 조편성을 함께 점검해야 합니다.
-                        </p>
-                    </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2 sm:min-w-[280px]">
-                    <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">legacy people</p>
-                        <p className="text-lg font-black text-slate-900 dark:text-white">{phase2RegroupingCheck.legacyActivePersonCount}</p>
-                        <p className="text-[8px] font-bold text-slate-400">{phase2RegroupingCheck.legacyActiveCount} rows</p>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">phase2 people</p>
-                        <p className="text-lg font-black text-slate-900 dark:text-white">{phase2RegroupingCheck.phase2ActivePersonCount}</p>
-                        <p className="text-[8px] font-bold text-slate-400">{phase2RegroupingCheck.phase2ActiveCount} memberships</p>
-                    </div>
-                    <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">issues</p>
-                        <p className={cn(
-                            "text-lg font-black",
-                            phase2RegroupingCheck.issueCount > 0 ? "text-rose-600 dark:text-rose-300" : "text-slate-900 dark:text-white"
-                        )}>
-                            {phase2RegroupingCheck.issueCount}
-                        </p>
-                    </div>
-                </div>
-            </div>
             )}
 
             {/* Sticky Interaction Toolbar */}

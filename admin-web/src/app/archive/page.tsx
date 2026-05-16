@@ -551,9 +551,9 @@ export default function ArchivePage() {
                         Archive Management
                     </div>
                     <div>
-                        <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">비활성 항목 관리</h1>
+                        <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">복구 관리</h1>
                         <p className="text-sm font-bold text-slate-400 mt-2">
-                            현재 화면에서 숨겨진 성도 소속, 종료된 부서와 조를 확인하고 필요한 항목만 복구합니다.
+                            비활성화된 성도 소속과 종료된 부서·조를 확인하고 필요한 항목만 다시 활성화합니다.
                         </p>
                     </div>
                 </div>
@@ -571,7 +571,7 @@ export default function ArchivePage() {
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
                     <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => setActiveTab('members')} className={tabClass('members')}>
-                            비활성 성도 {memberAffiliations.length}
+                            성도 소속 {memberAffiliations.length}
                         </button>
                         <button type="button" onClick={() => setActiveTab('departments')} className={tabClass('departments')}>
                             부서 {departments.length}
