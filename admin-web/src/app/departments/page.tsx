@@ -32,8 +32,11 @@ type GroupRecord = {
     id: string;
     name: string;
     department_id: string;
+    created_at?: string | null;
     color_hex?: string | null;
     is_active?: boolean | null;
+    active_from?: string | null;
+    ended_at?: string | null;
     is_new_member_group?: boolean | null;
     climbing_threshold?: number | null;
 };
@@ -58,6 +61,8 @@ export default function DepartmentsPage() {
 
     const [groupName, setGroupName] = useState('');
     const [groupColor, setGroupColor] = useState('#4f46e5');
+    const [groupActiveFrom, setGroupActiveFrom] = useState('');
+    const [groupEndedAt, setGroupEndedAt] = useState('');
     const [isNewMemberGroup, setIsNewMemberGroup] = useState(false);
     const [climbingThreshold, setClimbingThreshold] = useState(4);
 
@@ -200,6 +205,8 @@ export default function DepartmentsPage() {
                     .update({
                         name: groupName,
                         color_hex: groupColor,
+                        active_from: groupActiveFrom || null,
+                        ended_at: groupEndedAt ? `${groupEndedAt}T23:59:59+09:00` : null,
                         is_new_member_group: isNewMemberGroup,
                         climbing_threshold: climbingThreshold
                     })
@@ -224,6 +231,8 @@ export default function DepartmentsPage() {
                         department_id: selectedDeptId,
                         church_id: currentChurchId,
                         color_hex: groupColor,
+                        active_from: groupActiveFrom || null,
+                        ended_at: groupEndedAt ? `${groupEndedAt}T23:59:59+09:00` : null,
                         is_new_member_group: isNewMemberGroup,
                         climbing_threshold: isNewMemberGroup ? climbingThreshold : null
                     });
@@ -233,6 +242,8 @@ export default function DepartmentsPage() {
             setEditingGroup(null);
             setGroupName('');
             setGroupColor('#4f46e5');
+            setGroupActiveFrom('');
+            setGroupEndedAt('');
             fetchData(currentChurchId);
         } catch (err: unknown) {
             console.error('Group Submit Error:', err);
@@ -436,6 +447,8 @@ export default function DepartmentsPage() {
                                             setEditingGroup(null);
                                             setGroupName('');
                                             setGroupColor(dept.color_hex || '#4f46e5');
+                                            setGroupActiveFrom(new Date().toISOString().slice(0, 10));
+                                            setGroupEndedAt('');
                                             setIsNewMemberGroup(false);
                                             setClimbingThreshold(4);
                                             setIsGroupModalOpen(true);
@@ -459,6 +472,8 @@ export default function DepartmentsPage() {
                                                         setEditingGroup(group);
                                                         setGroupName(group.name);
                                                         setGroupColor(group.color_hex || dept.color_hex || '#4f46e5');
+                                                        setGroupActiveFrom(group.active_from?.slice(0, 10) || group.created_at?.slice(0, 10) || '');
+                                                        setGroupEndedAt(group.ended_at?.slice(0, 10) || '');
                                                         setIsNewMemberGroup(group.is_new_member_group || false);
                                                         setClimbingThreshold(group.climbing_threshold || 4);
                                                         setSelectedDeptId(dept.id);
@@ -519,6 +534,29 @@ export default function DepartmentsPage() {
                                     className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-black transition-all text-base"
                                     placeholder="예: 1조, 2조 등..."
                                 />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="space-y-2.5">
+                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">운영 시작일</label>
+                                    <input
+                                        type="date"
+                                        value={groupActiveFrom}
+                                        onChange={(e) => setGroupActiveFrom(e.target.value)}
+                                        className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-black transition-all text-sm"
+                                    />
+                                    <p className="text-[10px] font-bold text-slate-400 ml-1">과거 출석/기도 화면에서 이 날짜부터 조가 보입니다.</p>
+                                </div>
+                                <div className="space-y-2.5">
+                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">운영 종료일</label>
+                                    <input
+                                        type="date"
+                                        value={groupEndedAt}
+                                        onChange={(e) => setGroupEndedAt(e.target.value)}
+                                        className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-black transition-all text-sm"
+                                    />
+                                    <p className="text-[10px] font-bold text-slate-400 ml-1">종료일 이후 주차에는 기록이 있을 때만 보입니다.</p>
+                                </div>
                             </div>
 
                             {/* Theme Color Selection */}

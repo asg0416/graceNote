@@ -82,6 +82,9 @@ type AttendanceGroupRow = {
     id: string;
     name: string;
     created_at?: string | null;
+    active_from?: string | null;
+    ended_at?: string | null;
+    is_active?: boolean | null;
 };
 
 type SnapshotAddCandidate = {
@@ -115,6 +118,17 @@ type Phase2AttendanceMembership = {
 };
 
 const SUBMISSION_CONFLICT_KEEP_ADMIN_REASON = 'admin attendance dashboard keep admin over submitted attendance';
+
+const toDateOnly = (value?: string | null) => (
+    value ? value.slice(0, 10) : null
+);
+
+const isGroupActiveOnWeek = (group: AttendanceGroupRow, weekDate: string) => {
+    const activeFrom = toDateOnly(group.active_from) || toDateOnly(group.created_at);
+    const endedAt = toDateOnly(group.ended_at);
+
+    return (!activeFrom || activeFrom <= weekDate) && (!endedAt || endedAt >= weekDate);
+};
 
 type AttendanceStatusRow = {
     status?: string | null;
@@ -974,17 +988,39 @@ export default function AttendancePage() {
             setTargetExplanation(explanation);
 
             // 3. Merge & Reconstruct Data
-            // 부서 내 전체 조 목록 조회 (미제출 조 표시용)
+            // 선택 주차에 운영 중이었거나 실제 기록/snapshot이 있는 조만 표시한다.
             const { data: deptGroups, error: deptGroupsError } = await supabase
                 .from('groups')
-                .select('id, name, created_at')
+                .select('id, name, created_at, active_from, ended_at, is_active')
                 .eq('department_id', selectedDeptId)
-                .eq('is_active', true)
                 .order('created_at', { ascending: true })
                 .order('name', { ascending: true });
-            if (deptGroupsError) throw buildQueryError('attendance active groups query failed', deptGroupsError);
+            if (deptGroupsError) throw buildQueryError('attendance week groups query failed', deptGroupsError);
             if (latestAttendanceRequestKey.current !== requestKey) return;
-            const orderedGroups = ((deptGroups || []) as AttendanceGroupRow[]);
+
+            const snapshotGroupIds = new Set(
+                snapshotMembersWithAttendance
+                    .map((member) => member.groupId)
+                    .filter((groupId): groupId is string => Boolean(groupId))
+            );
+            const snapshotGroupNames = new Set(
+                snapshotMembersWithAttendance
+                    .map((member) => member.groupName)
+                    .filter((groupName): groupName is string => Boolean(groupName && groupName !== '조 없음'))
+            );
+            const submittedGroupIds = new Set(
+                attendanceRows
+                    .map((row) => row.group_id)
+                    .filter((groupId): groupId is string => Boolean(groupId))
+            );
+
+            const orderedGroups = ((deptGroups || []) as AttendanceGroupRow[])
+                .filter((group) => (
+                    isGroupActiveOnWeek(group, selectedWeek.week_date) ||
+                    snapshotGroupIds.has(group.id) ||
+                    snapshotGroupNames.has(group.name) ||
+                    submittedGroupIds.has(group.id)
+                ));
             const groupOrder = new Map(orderedGroups.map((group, index) => [group.name, index]));
             setAttendanceGroups(orderedGroups);
 
