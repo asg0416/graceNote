@@ -41,6 +41,18 @@ unset GRACENOTE_VERIFY_DB_URL
 node scripts/preprod-verify-gates.mjs --db-url-file /private/tmp/gracenote_verify_db_url
 ```
 
+Supabase CLI가 pooler prepared statement 오류를 내면 Docker/psql runner를 사용한다. 이 스크립트는 같은 SQL gate를 read-only로 실행하고, `issue_count`/`mismatch_count`가 0이 아니면 실패한다.
+
+```bash
+node scripts/preprod-verify-gates-psql.mjs --db-url-file /private/tmp/gracenote_verify_db_url
+```
+
+Edge Function 타입체크도 같이 실행한다.
+
+```bash
+deno check supabase/functions/notify-event/index.ts supabase/functions/notify-scheduler/index.ts
+```
+
 그 다음 운영 복제본 데이터 감사 SQL을 실행한다. 이 단계는 기존 운영 데이터의 꼬임을 적용 전에 분류하기 위한 read-only 점검이다.
 
 ```bash
@@ -62,6 +74,7 @@ supabase db query --db-url "$GRACENOTE_VERIFY_DB_URL" --file supabase/preprod_ma
 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql` | all `issue_count = 0` |
 | `verify_app_config_rls_dev_2026-05-15.sql` | all `issue_count = 0` |
 | `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql` | all `mismatch_count = 0` |
+| `deno check supabase/functions/notify-event/index.ts supabase/functions/notify-scheduler/index.ts` | Edge Function type check passed |
 
 ## Preprod Data Audit
 
@@ -77,6 +90,10 @@ supabase db query --db-url "$GRACENOTE_VERIFY_DB_URL" --file supabase/preprod_ma
 - `preprod_data_audit_summary_2026-05-15.sql`: executed on local DB, all counts `0`.
 - `preprod_auto_repair_candidates_2026-05-15.sql`: executed on local DB, 0 rows.
 - `preprod_manual_review_candidates_2026-05-15.sql`: executed on local DB, 0 rows.
+
+2026-05-16 dev gate check:
+- `node scripts/preprod-verify-gates-psql.mjs --db-url-file /private/tmp/gracenote_dev_db_url`: all gates `PASS`.
+- `deno check supabase/functions/notify-event/index.ts supabase/functions/notify-scheduler/index.ts`: passed.
 
 ## Manual Smoke After DB Gates
 
