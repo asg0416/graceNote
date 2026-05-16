@@ -103,6 +103,12 @@ Preprod data audit package:
 - Phase 2 목록 진단은 실제 사람 수와 active 소속 수를 함께 표시한다. row/membership count는 보조 정보로만 남긴다.
 - 조편성 kanban과 성도명부 write path는 아직 legacy 기준 유지. 순수 person route(`/people/[id]`)는 Phase 2E 이후 별도 작업이다.
 
+2026-05-16 Phase 3 attendance snapshot hardening:
+- 삭제/비활성 조라도 과거 출석/기도 기록이 있던 주차에는 화면에 나타나야 한다. 이를 위해 `groups.active_from` / `active_until` 기준을 도입하고, 과거 attendance/prayer 기록으로 `active_from`을 backfill한다.
+- 출석 row가 `person_id`, `directory_member_id`, `membership_id` 모두 없는 경우는 사람 기준 source-of-truth로 쓸 수 없으므로 제출/인사이트 집계에서 제외하고 integrity gate에서 0이어야 한다.
+- 제출된 출석 row가 snapshot의 자동 명단 row와 같은 person/group/week를 가리키면 제출값이 snapshot row에 반영되어야 한다. 단, 관리자가 직접 수정한 snapshot row는 자동 덮어쓰기하지 않는다.
+- Dev smoke: 삭제테스트조처럼 종료된 조의 2026-05-03 출석이 관리자 출석 현황과 성도상세 기도 타임라인에 함께 보임.
+
 ## Prod Migration Candidate Order
 
 이 순서는 운영 반영 후보 순서다. 운영 적용 전 각 단계의 gate를 통과해야 한다.
@@ -152,8 +158,11 @@ Preprod data audit package:
 | 41 | `supabase/migrations/20260513000000_phase3_regrouping_profileless_group_sync.sql` | `profile_id=null` directory-only 성도의 group sync 보정 | 김보영/profile-less sync gate all 0 |
 | 42 | `supabase/migrations/20260515000000_phase3_group_rename_assignment_rpc.sql` | 조명 변경 compatibility sync를 전용 RPC로 분리 | group rename smoke + consistency summary all 0 |
 | 43 | `supabase/migrations/20260515001000_app_config_rls.sql` | `app_config` RLS 활성화, service_role full access + `edge_function_base_url` read-only policy 추가 | `verify_app_config_rls_dev_2026-05-15.sql` all 0 |
+| 44 | `supabase/migrations/20260516000000_phase3_group_active_period.sql` | 조의 active 기간(`active_from`, `active_until`)을 도입하고 출석/기도/조 목록에서 기간 기준 표시 가능하게 함 | 삭제/비활성 조가 기록이 있는 과거 주차에는 보이고 생성 전 주차에는 보이지 않음 |
+| 45 | `supabase/migrations/20260516001000_phase3_group_active_period_history_backfill.sql` | 과거 attendance/prayer 기록으로 `groups.active_from`을 보정 | `attendance_rows_group_outside_active_period = 0` |
+| 46 | `supabase/migrations/20260516002000_attendance_snapshot_apply_submitted_person_rows.sql` | 제출 출석 row가 자동 snapshot row에 반영되도록 `ensure_attendance_roster_snapshot()` 보정 | 삭제/비활성 조의 제출 출석이 snapshot/리포트에 반영, manual snapshot row는 자동 덮어쓰기 안 함 |
 
-주의: 22~43은 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다.
+주의: 22~46은 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다.
 
 ## Hard Delete Gate
 
@@ -177,13 +186,14 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 
 | Category | Files | Prod Rule |
 | --- | --- | --- |
-| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260515001000_*` | 운영 적용 후보. 순서와 gate를 통과해야 함 |
+| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260516002000_*` | 운영 적용 후보. 순서와 gate를 통과해야 함 |
 | DB already prod-applied candidates | `20260429000000_phase1_fk_guardrails.sql`, `20260430000000_phase1_5_directory_member_guardrails.sql` | 운영 적용 완료 상태와 실제 schema 재확인 후 중복 적용 금지 |
 | Admin UI prod candidates | `admin-web/src/app/churches/page.tsx`, `admin-web/src/app/departments/page.tsx`, `admin-web/src/app/regrouping/page.tsx`, `admin-web/src/app/members/page.tsx`, `admin-web/src/app/members/[id]/page.tsx`, `admin-web/src/app/archive/page.tsx`, `admin-web/src/app/attendance/page.tsx`, `admin-web/src/app/page.tsx`, `admin-web/src/components/MemberModal.tsx`, `admin-web/src/components/SmartBatchModal.tsx`, `admin-web/src/components/Sidebar.tsx`, `admin-web/src/components/MemberBadge.tsx`, `admin-web/src/components/kanban/KanbanColumn.tsx`, `admin-web/src/components/RichTextEditor.tsx` | person 구조 read/write, 비활성 관리, 조편성, 출석 snapshot, UI polish 운영 후보. 운영 배포 전 role별 UI smoke 필요 |
 | Admin active-filter candidates | `admin-web/src/app/in-app-messages/IamForm.tsx`, `admin-web/src/app/notices/NoticeForm.tsx` | inactive 부서/조 노출 방지. 기존 화면 회귀 확인 필요 |
 | Flutter prod candidates | `lib/core/repositories/grace_note_repository.dart`, `lib/core/providers/data_providers.dart`, `lib/core/providers/user_role_provider.dart`, Flutter 출석/기도/검색/저장된 기도/관리자 상세 관련 화면 | person 구조 read, 조장 성도 추가 RPC, 출석/기도 snapshot 저장. master/admin/leader/member role별 앱 smoke 필요 |
 | Edge function candidates | `supabase/functions/notify-event`, `supabase/functions/notify-scheduler`, `supabase/functions/verify-sms` | memberships 우선 알림 대상과 dev/prod SMS auth 환경 확인. 운영 전 env vars, `verify_jwt=false`, scheduler trigger 재확인 |
 | Preprod verification/audit gates | `scripts/preprod-*.mjs`, `supabase/preprod_*_2026-05-15.sql`, query-compatible `verify_*summary*_2026-05-15.sql` | 운영 복제본/fresh DB에서만 실행. prod 직접 mutation 금지 |
+| Attendance snapshot integrity/detail gates | `supabase/verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`, `supabase/verify_attendance_unlinked_rows_detail_dev_2026-05-16.sql` | snapshot source-of-truth integrity, unlinked attendance row, group active period drift 확인. 운영 전 blocking 0이어야 함 |
 | Snapshot/dev reference | `supabase/migration_list.*.txt` | 운영 적용 금지. drift 비교용 |
 | Local docs | `docs/superpowers/plans/*` | 운영 적용 판단 기준. 코드 배포 대상은 아님 |
 
@@ -301,6 +311,9 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 | P2-074 | 대상 숫자가 바뀌었을 때 “누가 들어오고 나갔는지”가 보이지 않음 | 사용자는 계산식보다 “전주 대비 5명이 누구고 왜 빠졌는지”가 필요하다 | `attendance/page.tsx`: 이전 주차 target person set과 선택 주차 target person set을 비교해 `전주 대비 추가/제외 N명: 이름...` 표시 | Manual smoke: 2월 1주→2주 전환 시 추가/제외 목록이 표시되는지 확인 | 이후 reason label(신규 등록/소속 종료/보정 포함)은 별도 고도화 후보 |
 | P2-075 | 출석률 분모를 보정 알고리즘으로 추론하는 방식 자체가 불안정함 | 엑셀 출석표처럼 “그 주의 출석 대상 명단”이 먼저 있어야 하는데, 현재는 현재 roster/과거 membership/출석 제출 기록을 매번 조합해 분모를 추론한다 | `docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md`: 주차+부서별 attendance roster snapshot 설계. 시스템 자동 생성 + 부서 관리자 이상 수동 수정 | dev migration/RPC/UI 구현 전 설계 승인 필요. 이후 분모는 snapshot included person 기준으로 전환 | Phase 2E attendance cleanup 선행 작업 |
 | P2-076 | `profile_id`가 없는 directory-only 성도는 조편성 저장 후 조편성관리와 성도명부가 서로 다른 조를 보여줄 수 있음 | `sync_directory_to_group_members()`가 `profile_id is null`이면 return해서 `member_directory.group_name`은 새 조로 바뀌지만 active `group_members`/`memberships`는 옛 조에 남았다. 김보영 케이스에서 성도명부는 이동된 것처럼 보이고 조편성관리는 새가족부 카드가 남았다 | `20260513000000_phase3_regrouping_profileless_group_sync.sql`: `profile_id` 없이도 `member_directory.group_name` 기준으로 `group_members` active row를 생성/이동/비활성화. 기존 active directory row 재동기화 | `active_directory_group_member_group_mismatches = 0`, `active_membership_legacy_group_mismatches = 0`, Phase 2 consistency summary all 0. Manual smoke: 김보영 같은 directory-only 성도 이동 후 성도명부/조편성관리/진단 일치 | 운영 Phase 3 regrouping RPC 적용 전 필수 gate |
+| P2-077 | 삭제/비활성 조의 과거 출석/기도 기록이 화면별로 다르게 보임 | 성도상세 기도 타임라인에는 삭제 조 기록이 보이지만, 출석 현황은 현재 active 조/현재 roster만 보면 과거 출석을 누락할 수 있음 | `20260516000000_phase3_group_active_period.sql`, `20260516001000_phase3_group_active_period_history_backfill.sql`: 조 active 기간 도입 및 attendance/prayer history 기반 backfill | 삭제테스트조 2026-05-03 smoke 통과. `attendance_rows_group_outside_active_period = 0` | 운영 전 필수. 생성 전 주차에는 숨기고, 기록이 있는 과거 주차에는 표시 |
+| P2-078 | 사람 연결이 전혀 없는 attendance row가 출석 제출/인사이트 집계에 섞일 수 있음 | `person_id`, `directory_member_id`, `membership_id`가 모두 없는 row는 누가 출석했는지 증명할 수 없어 person 구조 통계와 리포트 신뢰도를 떨어뜨림 | `admin-web/src/app/attendance/page.tsx`: unlinked row는 warning으로만 표시하고 submitted/insight count에서 제외. `verify_attendance_unlinked_rows_detail_dev_2026-05-16.sql` 추가 | `attendance_rows_without_person_or_directory = 0`, detail SQL로 row 목록 확인 | 운영 전 blocking gate. 발견 시 자동 집계 금지, 운영자 확인 또는 cleanup 필요 |
+| P2-079 | 제출 출석 row가 이미 생성된 자동 snapshot row에 반영되지 않음 | 같은 person/group/week에 자동 snapshot row가 먼저 있으면 `on conflict do nothing` 때문에 실제 제출 출석이 snapshot/리포트에 반영되지 않을 수 있음 | `20260516002000_attendance_snapshot_apply_submitted_person_rows.sql`: submitted attendance가 `auto_membership + unknown + reason null` row를 안전하게 update. manual row는 보존 | 삭제/비활성 조 제출 출석이 관리자 출석 현황과 리포트에 반영됨 | 운영 전 필수. snapshot integrity gate와 리포트 smoke로 확인 |
 
 
 ## Prod Execution Gates
@@ -334,8 +347,11 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 | G23 Phase 3 regrouping save RPC | 조 이동/복사/부부 이동/신규 조/성도 추가/조 삭제 저장 | 성도명부와 조편성 화면이 같은 active memberships를 표시, profile-less mismatch 0 |
 | G24 attendance snapshot | 관리자 출석 현황에서 snapshot 생성/명단 불러오기/추가/제외/출결 수정/리포트 추출 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql` all 0, 리포트 분모는 snapshot 기준 |
 | G25 attendance/prayer snapshot fields | Flutter 출석/기도 저장 후 `person_id`, `membership_id`, `recorded_group_id`, `recorded_department_id` | `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql` all 0 |
-| G26 fresh migration dry-run | 운영 복제본 또는 fresh DB에 Order 1~42 순서 적용 | 2026-05-15 local fresh `supabase db reset` 통과. migration conflict 없음. dev-only 보정 SQL 미포함 |
+| G26 fresh migration dry-run | 운영 복제본 또는 fresh DB에 Order 1~46 순서 적용 | 2026-05-15 local fresh `supabase db reset` 통과. 2026-05-16 migration 44~46은 운영 복제본에서 재 dry-run 필요. dev-only 보정 SQL 미포함 |
 | G27 pre-prod security lint | Supabase CLI advisory / RLS scan | `verify_app_config_rls_dev_2026-05-15.sql` all 0, `public.app_config` RLS enabled |
+| G28 group active period history | 삭제/비활성 조의 과거 출석/기도 기록 | `attendance_rows_group_outside_active_period = 0`, 생성 전 주차에는 조 미노출, 기록 주차에는 조/출석/기도 노출 |
+| G29 unlinked attendance rows | person/directory/membership이 모두 없는 attendance row | `attendance_rows_without_person_or_directory = 0`. detail SQL 결과가 있으면 운영 집계 전 cleanup 또는 수동 연결 |
+| G30 submitted attendance snapshot apply | submitted attendance가 snapshot 자동 row에 반영되는지 | 삭제/비활성 조 또는 미제출 조 후제출 smoke에서 snapshot/리포트가 제출 출결을 표시 |
 
 ## Known Good Dev Verification
 
@@ -404,6 +420,7 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-15 Fresh local migration dry-run | 원격 `dev`에 origin UI/autosave 변경 + person migration 변경을 통합한 뒤, 로컬 fresh Supabase DB에 전체 migration을 처음부터 적용 | `supabase db reset`: migrations through `20260515001000_app_config_rls.sql` applied successfully. `verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql`: all 0. `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all 0. `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`: all 0. `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all 0. `verify_app_config_rls_dev_2026-05-15.sql`: all 0 |
 | 2026-05-15 Edge Function dry-run smoke | `notify-event`, `notify-scheduler` 알림 대상 read-switch 변경을 dev Edge Function에 재배포 | `deno check` 통과. `notify-event`, `notify-scheduler` 모두 `verify_jwt=false`. `notify-scheduler?task=leader_reminder&force=true&dry_run=true`에서 matched depts/groups/leaders 산출 후 send skip 확인. `notify-event?dry_run=true` endpoint reachable, no-target notice는 `skipped=true`. secret literal scan은 env var name만 검출 |
 | 2026-05-15 Local prod-prep gate rerun | 운영 전 핵심 query-compatible gate를 local Supabase에 재실행 | `verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql`: all 0. `verify_phase2_consistency_summary_dev_2026-05-10.sql`: all 0. `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`: all 0. `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all 0. `verify_app_config_rls_dev_2026-05-15.sql`: all 0. `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql`: all mismatch 0 |
+| 2026-05-16 Attendance snapshot history hardening | 삭제/비활성 조의 과거 출석/기도 기록과 submitted attendance snapshot 반영을 보정 | dev DB migration 44~46 적용. `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all 0, `attendance_rows_without_person_or_directory=0`, `attendance_rows_group_outside_active_period=0`. 삭제테스트조 2026-05-03 smoke 통과 |
 
 ## Pre-Prod UI Polish Backlog
 

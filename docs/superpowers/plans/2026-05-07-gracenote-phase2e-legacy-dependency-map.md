@@ -56,6 +56,7 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 | 2026-05-15 | 조 이름 변경 compatibility RPC 분리. generic person upsert가 stale profile을 재검증하지 않도록 조명 변경은 별도 RPC로 처리 | group rename smoke 통과, consistency summary 0 |
 | 2026-05-15 | 관리자 출석 snapshot integrity gate 추가 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`: all issue counts 0 |
 | 2026-05-15 | Edge Function dev deploy/dry-run smoke 완료 | `notify-event`, `notify-scheduler` 모두 `verify_jwt=false`. `notify-scheduler` leader reminder dry-run은 active memberships 우선으로 대상 계산 후 실제 발송 skip. `notify-event` dry-run endpoint reachable |
+| 2026-05-16 | 조 active period와 출석 snapshot 제출값 반영 보정 | `20260516000000`, `20260516001000`, `20260516002000` 추가. 삭제/비활성 조는 기록이 있는 과거 주차에만 표시되고, submitted attendance가 자동 snapshot row에 반영됨. snapshot integrity all 0 |
 
 ## Recommended Next Order
 
@@ -110,11 +111,12 @@ docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
 
 | Item | Why It Remains | Required Action |
 | --- | --- | --- |
-| Prod-safe migration order refresh | manifest의 migration list가 Phase 3 최신 파일까지 확장됨 | 운영 적용 직전 파일 존재/순서 재확인 |
+| Prod-safe migration order refresh | manifest의 migration list가 Phase 3 최신 파일까지 확장됨 | 운영 적용 직전 파일 존재/순서 재확인. 2026-05-16 기준 Order 1~46 |
 | Fresh migration dry-run | dev DB는 수동 적용 이력이 있어 migration history만 믿으면 위험 | 2026-05-15 local fresh `supabase db reset` 통과. 운영 적용 직전 운영 복제 DB에서 재실행 |
 | Query-compatible verification SQL | 일부 dev verify 파일은 psql meta command 또는 여러 SELECT 때문에 `supabase db query --file`과 호환되지 않음 | Phase 2 schema는 `verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql`, Phase 3 attendance/prayer는 `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql`로 대체 |
 | Pre-prod security lint | Supabase CLI가 `public.app_config` RLS disabled advisory를 출력했음 | `20260515001000_app_config_rls.sql` 추가. `verify_app_config_rls_dev_2026-05-15.sql` all 0 |
 | Edge function smoke | 알림 대상 read-switch는 dev 함수 dry-run까지 확인됨 | 운영 전 prod env vars, scheduled trigger, 실제 FCM 발송 권한만 재확인 |
+| Attendance history/snapshot integrity | 삭제 조 과거 출석, unlinked attendance row, submitted attendance snapshot 반영은 운영 데이터에서 새로 드러날 수 있음 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`와 `verify_attendance_unlinked_rows_detail_dev_2026-05-16.sql` 실행. unlinked rows/detail이 있으면 운영 반영 전 cleanup 또는 수동 연결 |
 | Preprod data audit | dev에서 발견한 legacy/person drift 패턴을 운영 복제본에서 사전 탐지해야 함 | `preprod_data_audit_summary_2026-05-15.sql` 실행. `blocking_gate=0`, `auto_repair_candidate`는 승인된 repair SQL 작성, `manual_review`는 자동 수정 금지 |
 | Role-based app/admin smoke | 권한별 메뉴가 다르므로 한 계정 smoke만으로 부족 | master/admin/leader/member 체크리스트 수행 |
 | Legacy cleanup decision | legacy 테이블 삭제는 아직 위험 | 운영 1차에서는 삭제 금지. 이후 Phase 4에서 FK/backfill/report 영향 재설계 |
