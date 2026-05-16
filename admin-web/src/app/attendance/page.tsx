@@ -135,8 +135,11 @@ type AttendanceStatusRow = {
 };
 
 type AttendanceRow = AttendanceStatusRow & {
-    directory_member_id: string;
+    directory_member_id?: string | null;
     group_id?: string | null;
+    person_id?: string | null;
+    membership_id?: string | null;
+    recorded_group_id?: string | null;
     updated_at?: string | null;
     groups?: {
         id?: string | null;
@@ -174,6 +177,11 @@ type GroupStat = {
     name: string;
     present: number;
     total: number;
+};
+
+type UnlinkedAttendanceGroupWarning = {
+    groupName: string;
+    count: number;
 };
 
 type WeeklyTrendDatum = {
@@ -388,6 +396,10 @@ const normalizeSubmittedAttendanceStatus = (
     return null;
 };
 
+const isLinkedAttendanceRow = (row: AttendanceRow) => (
+    Boolean(row.person_id || row.directory_member_id || row.membership_id)
+);
+
 const getCompactAttendanceLabel = (status?: SnapshotAttendanceStatus | null) => {
     switch (status) {
         case 'present':
@@ -547,6 +559,7 @@ export default function AttendancePage() {
     const [ignoredSubmissionConflictKeys, setIgnoredSubmissionConflictKeys] = useState<Set<string>>(new Set());
     const [selectedWeekNoMeetingReason, setSelectedWeekNoMeetingReason] = useState<string | null>(null);
     const [selectedWeekHasSubmittedAttendance, setSelectedWeekHasSubmittedAttendance] = useState(false);
+    const [unlinkedAttendanceGroups, setUnlinkedAttendanceGroups] = useState<UnlinkedAttendanceGroupWarning[]>([]);
     const [isNoMeetingMutationLoading, setIsNoMeetingMutationLoading] = useState(false);
     const [attendanceView, setAttendanceView] = useState<'weekly' | 'insights'>('weekly');
 
@@ -886,6 +899,7 @@ export default function AttendancePage() {
             setTargetExplanation([]);
             setCurrentSnapshotId(null);
             setAttendanceGroups([]);
+            setUnlinkedAttendanceGroups([]);
             setSelectedWeekNoMeetingReason(null);
             setSelectedWeekHasSubmittedAttendance(false);
         }
@@ -927,13 +941,14 @@ export default function AttendancePage() {
             const selectedNoMeetingDay = ((selectedNoMeetingDays || []) as { week_date: string; reason?: string | null }[])[0];
 
             const isNoMeetingDay = selectedNoMeetingDateSet.has(selectedWeek.week_date);
+            const linkedAttendanceRows = attendanceRows.filter(isLinkedAttendanceRow);
             setSelectedWeekNoMeetingReason(isNoMeetingDay ? selectedNoMeetingDay?.reason || '' : null);
-            setSelectedWeekHasSubmittedAttendance(attendanceRows.length > 0);
+            setSelectedWeekHasSubmittedAttendance(linkedAttendanceRows.length > 0);
             const rawSnapshotMemberById = new Map(
                 snapshotMembers.map((member) => [member.id, member])
             );
             const submittedAttendanceByDirectoryId = new Map(
-                attendanceRows
+                linkedAttendanceRows
                     .filter((row) => row.directory_member_id)
                     .map((row) => [row.directory_member_id, normalizeSubmittedAttendanceStatus(row.status)])
             );
@@ -1009,10 +1024,21 @@ export default function AttendancePage() {
                     .filter((groupName): groupName is string => Boolean(groupName && groupName !== '조 없음'))
             );
             const submittedGroupIds = new Set(
-                attendanceRows
+                linkedAttendanceRows
                     .map((row) => row.group_id)
                     .filter((groupId): groupId is string => Boolean(groupId))
             );
+            const unlinkedAttendanceCountByGroupId = new Map<string, number>();
+            attendanceRows
+                .filter((row) => !row.person_id && !row.directory_member_id && !row.membership_id)
+                .forEach((row) => {
+                    const groupId = row.group_id || row.recorded_group_id;
+                    if (!groupId) return;
+                    unlinkedAttendanceCountByGroupId.set(
+                        groupId,
+                        (unlinkedAttendanceCountByGroupId.get(groupId) || 0) + 1
+                    );
+                });
 
             const orderedGroups = ((deptGroups || []) as AttendanceGroupRow[])
                 .filter((group) => (
@@ -1023,6 +1049,14 @@ export default function AttendancePage() {
                 ));
             const groupOrder = new Map(orderedGroups.map((group, index) => [group.name, index]));
             setAttendanceGroups(orderedGroups);
+            setUnlinkedAttendanceGroups(
+                orderedGroups
+                    .map((group) => ({
+                        groupName: group.name,
+                        count: unlinkedAttendanceCountByGroupId.get(group.id) || 0,
+                    }))
+                    .filter((warning) => warning.count > 0)
+            );
 
             const rosterForFamilySort = await fetchAttendanceRoster(selectedDeptId);
             if (latestAttendanceRequestKey.current !== requestKey) return;
@@ -1630,11 +1664,12 @@ export default function AttendancePage() {
 
             for (const week of meetingWeeks) {
                 const { snapshotMembersWithAttendance, attendanceRows } = await getSnapshotMembersForWeek(selectedDeptId, week.id);
+                const linkedAttendanceRows = attendanceRows.filter(isLinkedAttendanceRow);
                 const includedMembers = snapshotMembersWithAttendance.filter((member) => member.included);
                 const weekMembersByPerson = new Map<string, AttendanceRosterSnapshotMember[]>();
                 const weekMembersByGroupAndPerson = new Map<string, AttendanceRosterSnapshotMember[]>();
                 const submittedGroupIds = new Set(
-                    attendanceRows
+                    linkedAttendanceRows
                         .map((row) => row.group_id)
                         .filter((groupId): groupId is string => Boolean(groupId))
                 );
@@ -1840,8 +1875,9 @@ export default function AttendancePage() {
 
         for (const week of meetingWeeks) {
             const { snapshotMembersWithAttendance, attendanceRows } = await getSnapshotMembersForWeek(selectedDeptId, week.id);
+            const linkedAttendanceRows = attendanceRows.filter(isLinkedAttendanceRow);
             const submittedGroupIds = new Set(
-                attendanceRows
+                linkedAttendanceRows
                     .map((row) => row.group_id)
                     .filter((groupId): groupId is string => Boolean(groupId))
             );
@@ -2515,6 +2551,7 @@ export default function AttendancePage() {
                                         <div className="space-y-10">
                                             {groupStats.map(gs => {
                                                 const groupMembers = attendanceData.filter(a => a.group === gs.name);
+                                                const unlinkedWarning = unlinkedAttendanceGroups.find((warning) => warning.groupName === gs.name);
                                                 const adminMembers = groupMembers.filter((member) => member.included !== false);
                                                 const isSubmittedConflictIgnored = ignoredSubmissionConflictKeys.has(getSubmissionConflictKey(gs.name));
                                                 const conflictMembers = isSubmittedConflictIgnored
@@ -2530,6 +2567,11 @@ export default function AttendancePage() {
                                                         <div className="flex items-center justify-between border-l-4 border-indigo-500 pl-4 py-1">
                                                             <div className="flex items-center gap-2">
                                                                 <h4 className="font-black text-slate-900 dark:text-white uppercase tracking-tight">{gs.name}</h4>
+                                                                {unlinkedWarning && (
+                                                                    <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[9px] font-black text-rose-600 ring-1 ring-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20">
+                                                                        성도 연결 안 된 출석 {unlinkedWarning.count}건
+                                                                    </span>
+                                                                )}
                                                                 {conflictMembers.length > 0 && (
                                                                     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-600 dark:bg-amber-500/10 dark:text-amber-300">
                                                                         조장 제출 확인 필요 {conflictMembers.length}
@@ -2540,6 +2582,11 @@ export default function AttendancePage() {
                                                                 출석: <span className="text-indigo-600">{gs.present}</span> / 전체: {gs.total}
                                                             </div>
                                                         </div>
+                                                        {unlinkedWarning && (
+                                                            <div className="rounded-2xl border border-rose-100 bg-rose-50/70 px-4 py-3 text-[11px] font-bold text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+                                                                이 조에는 과거 출석 기록이 있지만 성도/person과 연결되지 않은 row가 있습니다. 정상 명단으로 자동 복원할 수 없으므로 운영 반영 전 데이터 정리 대상입니다.
+                                                            </div>
+                                                        )}
                                                         <div className="flex flex-wrap gap-2">
                                                             {adminMembers.map(m => (
                                                                 <button

@@ -95,6 +95,27 @@ with checks as (
     group by snapshot_id, person_id
     having count(*) > 1
   ) duplicates
+
+  union all
+
+  select
+    'attendance_rows_without_person_or_directory' as check_name,
+    count(*)::bigint as issue_count
+  from public.attendance a
+  where a.person_id is null
+    and a.directory_member_id is null
+    and a.membership_id is null
+
+  union all
+
+  select
+    'attendance_rows_group_outside_active_period' as check_name,
+    count(*)::bigint as issue_count
+  from public.attendance a
+  join public.weeks w on w.id = a.week_id
+  join public.groups g on g.id = coalesce(a.recorded_group_id, a.group_id)
+  where (g.active_from is not null and g.active_from > w.week_date)
+     or (g.ended_at is not null and g.ended_at::date < w.week_date)
 )
 select *
 from checks
