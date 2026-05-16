@@ -161,8 +161,9 @@ Preprod data audit package:
 | 44 | `supabase/migrations/20260516000000_phase3_group_active_period.sql` | 조의 active 기간(`active_from`, `active_until`)을 도입하고 출석/기도/조 목록에서 기간 기준 표시 가능하게 함 | 삭제/비활성 조가 기록이 있는 과거 주차에는 보이고 생성 전 주차에는 보이지 않음 |
 | 45 | `supabase/migrations/20260516001000_phase3_group_active_period_history_backfill.sql` | 과거 attendance/prayer 기록으로 `groups.active_from`을 보정 | `attendance_rows_group_outside_active_period = 0` |
 | 46 | `supabase/migrations/20260516002000_attendance_snapshot_apply_submitted_person_rows.sql` | 제출 출석 row가 자동 snapshot row에 반영되도록 `ensure_attendance_roster_snapshot()` 보정 | 삭제/비활성 조의 제출 출석이 snapshot/리포트에 반영, manual snapshot row는 자동 덮어쓰기 안 함 |
+| 47 | `supabase/migrations/20260517000000_phase3_prod_clone_backfill_repair.sql` | 운영 복제본 dry-run에서 드러난 기존 운영 데이터 backfill gap 보정. pre-Phase2 row의 people/member_profiles/memberships와 attendance/prayer snapshot을 재완성 | stale missing directory membership 0, attendance/prayer missing person 0. 동일 교회 동일 전화번호 후보는 자동 병합하지 않고 manual review로 남김 |
 
-주의: 22~46은 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다.
+주의: 22~47은 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다.
 
 ## Hard Delete Gate
 
@@ -186,7 +187,7 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 
 | Category | Files | Prod Rule |
 | --- | --- | --- |
-| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260516002000_*` | 운영 적용 후보. 순서와 gate를 통과해야 함 |
+| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260517000000_*` | 운영 적용 후보. 순서와 gate를 통과해야 함 |
 | DB already prod-applied candidates | `20260429000000_phase1_fk_guardrails.sql`, `20260430000000_phase1_5_directory_member_guardrails.sql` | 운영 적용 완료 상태와 실제 schema 재확인 후 중복 적용 금지 |
 | Admin UI prod candidates | `admin-web/src/app/churches/page.tsx`, `admin-web/src/app/departments/page.tsx`, `admin-web/src/app/regrouping/page.tsx`, `admin-web/src/app/members/page.tsx`, `admin-web/src/app/members/[id]/page.tsx`, `admin-web/src/app/archive/page.tsx`, `admin-web/src/app/attendance/page.tsx`, `admin-web/src/app/page.tsx`, `admin-web/src/components/MemberModal.tsx`, `admin-web/src/components/SmartBatchModal.tsx`, `admin-web/src/components/Sidebar.tsx`, `admin-web/src/components/MemberBadge.tsx`, `admin-web/src/components/kanban/KanbanColumn.tsx`, `admin-web/src/components/RichTextEditor.tsx` | person 구조 read/write, 비활성 관리, 조편성, 출석 snapshot, UI polish 운영 후보. 운영 배포 전 role별 UI smoke 필요 |
 | Admin active-filter candidates | `admin-web/src/app/in-app-messages/IamForm.tsx`, `admin-web/src/app/notices/NoticeForm.tsx` | inactive 부서/조 노출 방지. 기존 화면 회귀 확인 필요 |
@@ -347,7 +348,7 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 | G23 Phase 3 regrouping save RPC | 조 이동/복사/부부 이동/신규 조/성도 추가/조 삭제 저장 | 성도명부와 조편성 화면이 같은 active memberships를 표시, profile-less mismatch 0 |
 | G24 attendance snapshot | 관리자 출석 현황에서 snapshot 생성/명단 불러오기/추가/제외/출결 수정/리포트 추출 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql` all 0, 리포트 분모는 snapshot 기준 |
 | G25 attendance/prayer snapshot fields | Flutter 출석/기도 저장 후 `person_id`, `membership_id`, `recorded_group_id`, `recorded_department_id` | `verify_phase3_attendance_prayer_person_snapshot_summary_dev_2026-05-15.sql` all 0 |
-| G26 fresh migration dry-run | 운영 복제본 또는 fresh DB에 Order 1~46 순서 적용 | 2026-05-15 local fresh `supabase db reset` 통과. 2026-05-16 migration 44~46은 운영 복제본에서 재 dry-run 필요. dev-only 보정 SQL 미포함 |
+| G26 fresh migration dry-run | 운영 복제본 또는 fresh DB에 Order 1~47 순서 적용 | 2026-05-15 local fresh `supabase db reset` 통과. 2026-05-17 운영 복제본 dry-run에서 Order 1~47 적용 확인. 동일 교회 동일 전화번호 후보는 manual review로 별도 처리 |
 | G27 pre-prod security lint | Supabase CLI advisory / RLS scan | `verify_app_config_rls_dev_2026-05-15.sql` all 0, `public.app_config` RLS enabled |
 | G28 group active period history | 삭제/비활성 조의 과거 출석/기도 기록 | `attendance_rows_group_outside_active_period = 0`, 생성 전 주차에는 조 미노출, 기록 주차에는 조/출석/기도 노출 |
 | G29 unlinked attendance rows | person/directory/membership이 모두 없는 attendance row | `attendance_rows_without_person_or_directory = 0`. detail SQL 결과가 있으면 운영 집계 전 cleanup 또는 수동 연결 |

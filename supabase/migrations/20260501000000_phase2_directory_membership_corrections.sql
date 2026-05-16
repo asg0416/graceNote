@@ -30,7 +30,7 @@ INSERT INTO public.memberships (
   legacy_member_directory_id
 )
 SELECT
-  COALESCE(md.person_id, p.person_id, md.profile_id, md.id) AS person_id,
+  person_seed.person_id,
   md.church_id,
   md.department_id,
   g.id AS group_id,
@@ -53,7 +53,16 @@ JOIN public.groups g
   ON g.church_id = md.church_id
  AND g.department_id = md.department_id
  AND g.name = md.group_name
-LEFT JOIN public.profiles p ON p.id = md.profile_id
+CROSS JOIN LATERAL (
+  SELECT public.phase2_upsert_person(
+    md.church_id,
+    md.person_id,
+    md.profile_id,
+    md.id,
+    md.full_name,
+    md.phone
+  ) AS person_id
+) person_seed
 WHERE md.church_id IS NOT NULL
   AND md.group_name IS NOT NULL
   AND md.group_name <> ''
