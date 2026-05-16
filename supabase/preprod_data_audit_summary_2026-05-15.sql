@@ -229,6 +229,18 @@ with checks as (
   union all
 
   select
+    'manual_review',
+    'member_directory_profile_church_mismatch',
+    count(*)::bigint
+  from public.member_directory md
+  join public.profiles pr on pr.id = md.profile_id
+  where md.church_id is not null
+    and pr.church_id is not null
+    and md.church_id <> pr.church_id
+
+  union all
+
+  select
     'blocking_gate',
     'attendance_snapshot_duplicate_person_per_snapshot',
     count(*)::bigint

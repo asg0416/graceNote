@@ -63,6 +63,12 @@ supabase db query --db-url "$GRACENOTE_VERIFY_DB_URL" --file supabase/preprod_ma
 
 임시 파일을 사용할 때는 `--db-url "$(cat /private/tmp/gracenote_verify_db_url)"`로 실행한다. 이 파일들은 read-only이며 운영 DB에 직접 실행하지 않는다.
 
+Supabase CLI가 pooler prepared statement 오류를 내면 Docker/psql runner를 사용한다.
+
+```bash
+node scripts/preprod-data-audit-psql.mjs --db-url-file /private/tmp/gracenote_verify_db_url
+```
+
 ## Gate List
 
 | Gate | Expected |
@@ -94,6 +100,7 @@ supabase db query --db-url "$GRACENOTE_VERIFY_DB_URL" --file supabase/preprod_ma
 2026-05-16 dev gate check:
 - `node scripts/preprod-verify-gates-psql.mjs --db-url-file /private/tmp/gracenote_dev_db_url`: all gates `PASS`.
 - `deno check supabase/functions/notify-event/index.ts supabase/functions/notify-scheduler/index.ts`: passed.
+- `node scripts/preprod-data-audit-psql.mjs --db-url-file /private/tmp/gracenote_dev_db_url`: no `blocking_gate` issues. dev-only manual review candidates remain for test pollution/profile mismatch review.
 
 ## Manual Smoke After DB Gates
 
