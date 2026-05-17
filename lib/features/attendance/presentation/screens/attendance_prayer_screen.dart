@@ -275,8 +275,12 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       final List<Map<String, dynamic>> existingPrayers;
 
       if (weekId != null) {
-        final weeklyData =
-            await repo.getWeeklyData(groupId, weekId, includeDrafts: true);
+        final weeklyData = await repo.getWeeklyData(
+          groupId,
+          weekId,
+          includeDrafts: true,
+          preloadedMembers: List<Map<String, dynamic>>.from(membersData),
+        );
         existingAttendance =
             List<Map<String, dynamic>>.from(weeklyData['attendance']);
         existingPrayers =

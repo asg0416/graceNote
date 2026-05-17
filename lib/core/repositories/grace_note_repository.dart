@@ -168,11 +168,6 @@ class GraceNoteRepository {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _enrichAttendanceRowsWithPhase2MemberInfo(
-      List<Map<String, dynamic>> rows) {
-    return _enrichPrayerRowsWithPhase2MemberInfo(rows);
-  }
-
   // 특정 날짜의 Week ID 조회 또는 생성
   // 특정 날짜의 Week ID 조회 또는 생성
   Future<String?> getOrCreateWeek(String churchId, DateTime weekDate,
@@ -225,78 +220,111 @@ class GraceNoteRepository {
     return res?['id'];
   }
 
-  Future<Map<String, dynamic>?> _resolvePhase3SnapshotForDirectoryMember({
-    required String directoryMemberId,
-    required String groupId,
+  Future<Map<String, Map<String, dynamic>>>
+      _resolvePhase3SnapshotsForDirectoryMembers({
+    required Set<String> directoryMemberIds,
+    required Set<String> groupIds,
   }) async {
+    final result = <String, Map<String, dynamic>>{};
+    final ids = directoryMemberIds.where((id) => id.isNotEmpty).toList();
+    final groups = groupIds.where((id) => id.isNotEmpty).toList();
+    if (ids.isEmpty || groups.isEmpty) return result;
+
     try {
-      final memberships = await _supabase
+      final membershipResponse = await _supabase
           .from('memberships')
-          .select('id, person_id, group_id, department_id, status')
-          .eq('legacy_member_directory_id', directoryMemberId)
-          .eq('group_id', groupId)
+          .select(
+              'id, person_id, group_id, department_id, status, legacy_member_directory_id, updated_at')
+          .inFilter('legacy_member_directory_id', ids)
+          .inFilter('group_id', groups)
           .order('updated_at', ascending: false);
 
-      final membershipRows = List<Map<String, dynamic>>.from(memberships);
-      Map<String, dynamic>? membership;
-      if (membershipRows.isNotEmpty) {
-        membership = membershipRows.firstWhere(
-          (row) => row['status'] == 'active',
-          orElse: () => membershipRows.first,
-        );
-      }
+      final membershipRows =
+          List<Map<String, dynamic>>.from(membershipResponse);
+      for (final row in membershipRows) {
+        final groupId = row['group_id']?.toString();
+        final directoryId = row['legacy_member_directory_id']?.toString();
+        if (groupId == null || directoryId == null) continue;
 
-      if (membership != null && membership['person_id'] != null) {
-        return {
-          'person_id': membership['person_id'],
-          'membership_id': membership['id'],
-          'recorded_group_id': membership['group_id'] ?? groupId,
-          if (membership['department_id'] != null)
-            'recorded_department_id': membership['department_id'],
+        final key = '$groupId:$directoryId';
+        final existing = result[key];
+        if (existing != null && existing['status'] == 'active') continue;
+        if (existing != null && row['status'] != 'active') continue;
+
+        result[key] = {
+          'person_id': row['person_id'],
+          'membership_id': row['id'],
+          'recorded_group_id': row['group_id'] ?? groupId,
+          if (row['department_id'] != null)
+            'recorded_department_id': row['department_id'],
+          'status': row['status'],
         };
       }
 
-      final memberProfile = await _supabase
-          .from('member_profiles')
-          .select('person_id')
-          .eq('member_directory_id', directoryMemberId)
-          .maybeSingle();
+      final missingDirectoryIds = ids
+          .where((directoryId) => !groups
+              .any((groupId) => result.containsKey('$groupId:$directoryId')))
+          .toList();
+      if (missingDirectoryIds.isEmpty) return result;
 
-      final group = await _supabase
+      final memberProfileResponse = await _supabase
+          .from('member_profiles')
+          .select('member_directory_id, person_id')
+          .inFilter('member_directory_id', missingDirectoryIds);
+      final personByDirectoryId = {
+        for (final row
+            in List<Map<String, dynamic>>.from(memberProfileResponse))
+          if (row['member_directory_id'] != null)
+            row['member_directory_id'].toString(): row['person_id']
+      };
+
+      final groupResponse = await _supabase
           .from('groups')
           .select('id, department_id')
-          .eq('id', groupId)
-          .maybeSingle();
-
-      return {
-        if (memberProfile?['person_id'] != null)
-          'person_id': memberProfile!['person_id'],
-        'recorded_group_id': groupId,
-        if (group?['department_id'] != null)
-          'recorded_department_id': group!['department_id'],
+          .inFilter('id', groups);
+      final departmentByGroupId = {
+        for (final row in List<Map<String, dynamic>>.from(groupResponse))
+          if (row['id'] != null) row['id'].toString(): row['department_id']
       };
+
+      for (final directoryId in missingDirectoryIds) {
+        for (final groupId in groups) {
+          final key = '$groupId:$directoryId';
+          result.putIfAbsent(
+              key,
+              () => {
+                    if (personByDirectoryId[directoryId] != null)
+                      'person_id': personByDirectoryId[directoryId],
+                    'recorded_group_id': groupId,
+                    if (departmentByGroupId[groupId] != null)
+                      'recorded_department_id': departmentByGroupId[groupId],
+                  });
+        }
+      }
     } catch (e) {
       debugPrint(
-          'GraceNoteRepository: Phase 3 snapshot lookup failed for prayer save: $e');
-      return null;
+          'GraceNoteRepository: Phase 3 bulk snapshot lookup failed: $e');
     }
+
+    return result;
   }
 
   Future<List<Map<String, dynamic>>> _buildPhase3PrayerPayloads(
-      List<PrayerEntryModel> prayerList) async {
+    List<PrayerEntryModel> prayerList, {
+    Map<String, Map<String, dynamic>>? preloadedSnapshots,
+  }) async {
     final payloads = <Map<String, dynamic>>[];
-    final snapshotCache = <String, Future<Map<String, dynamic>?>>{};
+    final snapshots = preloadedSnapshots ??
+        await _resolvePhase3SnapshotsForDirectoryMembers(
+          directoryMemberIds:
+              prayerList.map((prayer) => prayer.directoryMemberId).toSet(),
+          groupIds: prayerList.map((prayer) => prayer.groupId).toSet(),
+        );
 
     for (final prayer in prayerList) {
       final payload = prayer.toJson();
       final cacheKey = '${prayer.groupId}:${prayer.directoryMemberId}';
-      final snapshot = await snapshotCache.putIfAbsent(
-        cacheKey,
-        () => _resolvePhase3SnapshotForDirectoryMember(
-          directoryMemberId: prayer.directoryMemberId,
-          groupId: prayer.groupId,
-        ),
-      );
+      final snapshot = snapshots[cacheKey];
 
       if (snapshot != null) {
         payload.addAll({
@@ -321,9 +349,23 @@ class GraceNoteRepository {
   }
 
   Future<List<Map<String, dynamic>>> _buildPhase3AttendancePayloads(
-      List<AttendanceModel> attendanceList) async {
+    List<AttendanceModel> attendanceList, {
+    Map<String, Map<String, dynamic>>? preloadedSnapshots,
+  }) async {
     final payloads = <Map<String, dynamic>>[];
-    final snapshotCache = <String, Future<Map<String, dynamic>?>>{};
+    final attendanceWithGroup = attendanceList
+        .where((attendance) =>
+            attendance.groupId != null && attendance.groupId!.isNotEmpty)
+        .toList();
+    final snapshots = preloadedSnapshots ??
+        await _resolvePhase3SnapshotsForDirectoryMembers(
+          directoryMemberIds: attendanceWithGroup
+              .map((attendance) => attendance.directoryMemberId)
+              .toSet(),
+          groupIds: attendanceWithGroup
+              .map((attendance) => attendance.groupId!)
+              .toSet(),
+        );
 
     for (final attendance in attendanceList) {
       final payload = attendance.toJson();
@@ -335,13 +377,7 @@ class GraceNoteRepository {
       }
 
       final cacheKey = '$groupId:${attendance.directoryMemberId}';
-      final snapshot = await snapshotCache.putIfAbsent(
-        cacheKey,
-        () => _resolvePhase3SnapshotForDirectoryMember(
-          directoryMemberId: attendance.directoryMemberId,
-          groupId: groupId,
-        ),
-      );
+      final snapshot = snapshots[cacheKey];
 
       if (snapshot != null) {
         payload.addAll({
@@ -369,11 +405,34 @@ class GraceNoteRepository {
     required List<AttendanceModel> attendanceList,
     required List<PrayerEntryModel> prayerList,
   }) async {
+    final snapshotDirectoryIds = <String>{};
+    final snapshotGroupIds = <String>{};
+
+    for (final attendance in attendanceList) {
+      final groupId = attendance.groupId;
+      if (groupId == null || groupId.isEmpty) continue;
+      snapshotDirectoryIds.add(attendance.directoryMemberId);
+      snapshotGroupIds.add(groupId);
+    }
+
+    for (final prayer in prayerList) {
+      if (prayer.groupId.isEmpty) continue;
+      snapshotDirectoryIds.add(prayer.directoryMemberId);
+      snapshotGroupIds.add(prayer.groupId);
+    }
+
+    final snapshots = await _resolvePhase3SnapshotsForDirectoryMembers(
+      directoryMemberIds: snapshotDirectoryIds,
+      groupIds: snapshotGroupIds,
+    );
+
     // 1. Attendance Upsert (directory_member_id 기반)
     if (attendanceList.isNotEmpty) {
       // 팁: attendanceList의 각 항목에는 저장 시점의 groupId가 이미 포함되어 있어야 함
-      final attendancePayloads =
-          await _buildPhase3AttendancePayloads(attendanceList);
+      final attendancePayloads = await _buildPhase3AttendancePayloads(
+        attendanceList,
+        preloadedSnapshots: snapshots,
+      );
       await _supabase.from('attendance').upsert(
             attendancePayloads,
             onConflict: 'week_id,directory_member_id',
@@ -382,7 +441,10 @@ class GraceNoteRepository {
 
     // 2. Prayer Entries Upsert (directory_member_id 기반)
     if (prayerList.isNotEmpty) {
-      final prayerPayloads = await _buildPhase3PrayerPayloads(prayerList);
+      final prayerPayloads = await _buildPhase3PrayerPayloads(
+        prayerList,
+        preloadedSnapshots: snapshots,
+      );
       await _supabase.from('prayer_entries').upsert(
             prayerPayloads,
             onConflict: 'week_id,directory_member_id',
@@ -390,10 +452,14 @@ class GraceNoteRepository {
     }
   }
 
-  Future<Map<String, dynamic>> getWeeklyData(String groupId, String weekId,
-      {bool includeDrafts = false}) async {
+  Future<Map<String, dynamic>> getWeeklyData(
+    String groupId,
+    String weekId, {
+    bool includeDrafts = false,
+    List<Map<String, dynamic>>? preloadedMembers,
+  }) async {
     // 1. 조원 명단 정보 먼저 확보
-    final members = await getGroupMembers(groupId);
+    final members = preloadedMembers ?? await getGroupMembers(groupId);
 
     // 2. 출석 및 기도제목 데이터 별도 조회
     // Attendance: No Join (Safest)
@@ -503,10 +569,16 @@ class GraceNoteRepository {
       });
     }
 
+    final combinedRows = <Map<String, dynamic>>[
+      ...attendanceWithInfo,
+      ...prayersWithInfo,
+    ];
+    final enrichedRows =
+        await _enrichPrayerRowsWithPhase2MemberInfo(combinedRows);
+
     return {
-      'attendance':
-          await _enrichAttendanceRowsWithPhase2MemberInfo(attendanceWithInfo),
-      'prayers': await _enrichPrayerRowsWithPhase2MemberInfo(prayersWithInfo),
+      'attendance': enrichedRows.take(attendanceWithInfo.length).toList(),
+      'prayers': enrichedRows.skip(attendanceWithInfo.length).toList(),
     };
   }
 
@@ -983,7 +1055,8 @@ class GraceNoteRepository {
     List<String> memberDirectoryIds,
     String contextLabel,
   ) async {
-    final ids = memberDirectoryIds.where((id) => id.isNotEmpty).toSet().toList();
+    final ids =
+        memberDirectoryIds.where((id) => id.isNotEmpty).toSet().toList();
     if (ids.isEmpty) return;
 
     final directoryResponse = await _supabase
@@ -991,8 +1064,10 @@ class GraceNoteRepository {
         .select('id, full_name, group_name, is_active')
         .inFilter('id', ids);
     final directories = List<Map<String, dynamic>>.from(directoryResponse);
-    final existingDirectoryIds =
-        directories.map((row) => row['id']?.toString()).whereType<String>().toSet();
+    final existingDirectoryIds = directories
+        .map((row) => row['id']?.toString())
+        .whereType<String>()
+        .toSet();
     final missingDirectoryIds =
         ids.where((id) => !existingDirectoryIds.contains(id)).toList();
 
@@ -1007,7 +1082,8 @@ class GraceNoteRepository {
         .inFilter('member_directory_id', ids);
     final profileRows = List<Map<String, dynamic>>.from(profileResponse);
     final profileDirectoryIds = profileRows
-        .where((row) => row['member_directory_id'] != null && row['person_id'] != null)
+        .where((row) =>
+            row['member_directory_id'] != null && row['person_id'] != null)
         .map((row) => row['member_directory_id'].toString())
         .toSet();
 

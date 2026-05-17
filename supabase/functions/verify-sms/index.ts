@@ -56,11 +56,16 @@ serve(async (req) => {
             .from('member_directory')
             .select(`
                 id, 
+                person_id,
                 full_name, 
                 church_id, 
                 department_id, 
                 group_name, 
                 role_in_group,
+                family_name,
+                spouse_name,
+                children_info,
+                wedding_anniversary,
                 departments:department_id (name)
             `)
             .eq('phone', cleanPhone);

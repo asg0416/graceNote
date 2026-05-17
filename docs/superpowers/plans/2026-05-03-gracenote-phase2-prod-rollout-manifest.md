@@ -163,6 +163,7 @@ Preprod data audit package:
 | 46 | `supabase/migrations/20260516002000_attendance_snapshot_apply_submitted_person_rows.sql` | 제출 출석 row가 자동 snapshot row에 반영되도록 `ensure_attendance_roster_snapshot()` 보정 | 삭제/비활성 조의 제출 출석이 snapshot/리포트에 반영, manual snapshot row는 자동 덮어쓰기 안 함 |
 | 47 | `supabase/migrations/20260517000000_phase3_prod_clone_backfill_repair.sql` | 운영 복제본 dry-run에서 드러난 기존 운영 데이터 backfill gap 보정. pre-Phase2 row의 people/member_profiles/memberships와 attendance/prayer snapshot을 재완성 | stale missing directory membership 0, attendance/prayer missing person 0. 동일 교회 동일 전화번호 후보는 자동 병합하지 않고 manual review로 남김 |
 | 48 | `supabase/migrations/20260517001000_prod_data_repair_minjaehong_phone.sql` | 운영 복제본 audit에서 확인된 민재홍/임진슬 동일 전화번호를 민재홍 실제 번호로 정정 | `identity_candidate_same_church_phone = 0`, duplicate phone manual review 0 |
+| 49 | `supabase/migrations/20260517002000_guard_prayer_notification_updates.sql` | published 기도제목 row의 metadata/backfill update가 push 알림을 다시 발송하지 않도록 `notify_on_event()` 가드 추가 | 신규 published insert 또는 draft→published 전환만 기도 알림 발송. Phase 3 person snapshot 보정/운영 backfill 중 알림 폭주 방지 |
 
 주의: 22~48은 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다.
 
@@ -188,7 +189,7 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 
 | Category | Files | Prod Rule |
 | --- | --- | --- |
-| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260517001000_*` | 운영 적용 후보. 순서와 gate를 통과해야 함 |
+| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260517002000_*` | 운영 적용 후보. 순서와 gate를 통과해야 함 |
 | DB already prod-applied candidates | `20260429000000_phase1_fk_guardrails.sql`, `20260430000000_phase1_5_directory_member_guardrails.sql` | 운영 적용 완료 상태와 실제 schema 재확인 후 중복 적용 금지 |
 | Admin UI prod candidates | `admin-web/src/app/churches/page.tsx`, `admin-web/src/app/departments/page.tsx`, `admin-web/src/app/regrouping/page.tsx`, `admin-web/src/app/members/page.tsx`, `admin-web/src/app/members/[id]/page.tsx`, `admin-web/src/app/archive/page.tsx`, `admin-web/src/app/attendance/page.tsx`, `admin-web/src/app/page.tsx`, `admin-web/src/components/MemberModal.tsx`, `admin-web/src/components/SmartBatchModal.tsx`, `admin-web/src/components/Sidebar.tsx`, `admin-web/src/components/MemberBadge.tsx`, `admin-web/src/components/kanban/KanbanColumn.tsx`, `admin-web/src/components/RichTextEditor.tsx` | person 구조 read/write, 비활성 관리, 조편성, 출석 snapshot, UI polish 운영 후보. 운영 배포 전 role별 UI smoke 필요 |
 | Admin active-filter candidates | `admin-web/src/app/in-app-messages/IamForm.tsx`, `admin-web/src/app/notices/NoticeForm.tsx` | inactive 부서/조 노출 방지. 기존 화면 회귀 확인 필요 |

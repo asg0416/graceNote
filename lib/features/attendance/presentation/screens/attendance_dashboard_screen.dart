@@ -431,7 +431,11 @@ class _AttendanceDashboardScreenState
 
     // 1. 멤버 목록 및 기존 출석 데이터 가져오기
     final membersData = await repo.getGroupMembers(widget.groupId);
-    final weeklyData = await repo.getWeeklyData(widget.groupId, weekId);
+    final weeklyData = await repo.getWeeklyData(
+      widget.groupId,
+      weekId,
+      preloadedMembers: List<Map<String, dynamic>>.from(membersData),
+    );
     final existingAttendance =
         List<Map<String, dynamic>>.from(weeklyData['attendance']);
 

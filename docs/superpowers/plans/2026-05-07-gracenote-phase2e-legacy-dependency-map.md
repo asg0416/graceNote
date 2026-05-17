@@ -60,6 +60,7 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 | 2026-05-16 | Edge Function 알림 대상 profile ownership filter 보강 | `member_profiles.profile_id`가 다른 `profiles.person_id`에 명시 연결된 경우 알림 대상에서 제외. stale legacy profile link가 있어도 잘못된 계정으로 알림을 보내지 않음. edge target gate all 0 |
 | 2026-05-17 | 운영 복제본 dry-run에서 드러난 pre-Phase2 backfill gap 보정 | `20260517000000_phase3_prod_clone_backfill_repair.sql` 추가. 기존 운영 row의 `people/member_profiles/memberships`와 attendance/prayer person snapshot을 재완성. blocking/auto-repair audit 0, 동일 전화번호 수동 검토 1건 |
 | 2026-05-17 | 운영 복제본 manual duplicate phone 1건 정리 | `20260517001000_prod_data_repair_minjaehong_phone.sql` 추가. 장전제일교회 민재홍 전화번호를 확인된 번호로 정정해 민재홍/임진슬 동일 전화번호 gate 0 |
+| 2026-05-17 | 기도 알림 폭주 방지 가드 | `20260517002000_guard_prayer_notification_updates.sql` 추가. 이미 published인 기도제목의 person snapshot/backfill update는 알림을 다시 보내지 않고, 신규 published insert 또는 draft→published 전환만 발송 |
 
 ## Recommended Next Order
 
