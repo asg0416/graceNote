@@ -50,7 +50,7 @@ node scripts/preprod-verify-gates-psql.mjs --db-url-file /private/tmp/gracenote_
 Edge Function 타입체크도 같이 실행한다.
 
 ```bash
-deno check supabase/functions/notify-event/index.ts supabase/functions/notify-scheduler/index.ts
+deno check supabase/functions/notify-event/index.ts supabase/functions/notify-scheduler/index.ts supabase/functions/verify-sms/index.ts
 ```
 
 그 다음 운영 복제본 데이터 감사 SQL을 실행한다. 이 단계는 기존 운영 데이터의 꼬임을 적용 전에 분류하기 위한 read-only 점검이다.
@@ -102,6 +102,12 @@ node scripts/preprod-data-audit-psql.mjs --db-url-file /private/tmp/gracenote_ve
 - `deno check supabase/functions/notify-event/index.ts supabase/functions/notify-scheduler/index.ts`: passed.
 - `node scripts/preprod-data-audit-psql.mjs --db-url-file /private/tmp/gracenote_dev_db_url`: no `blocking_gate` issues. dev-only manual review candidates remain for test pollution/profile mismatch review.
 
+2026-05-17 staging/prod-clone gate check after `36f6145`:
+- `node scripts/preprod-check-migration-inventory.mjs`: `PASS`.
+- `node scripts/preprod-verify-gates-psql.mjs --db-url-file /private/tmp/gracenote_verify_db_url`: all gates `PASS`.
+- `deno check supabase/functions/notify-event/index.ts supabase/functions/notify-scheduler/index.ts supabase/functions/verify-sms/index.ts`: passed.
+- 추가 확인: `20260517002000_guard_prayer_notification_updates.sql`는 이미 published 상태인 `prayer_entries`의 metadata/backfill update가 push 알림을 다시 발생시키지 않도록 `notify_on_event()`를 가드한다.
+
 ## Manual Smoke After DB Gates
 
 | Surface | Smoke |
@@ -112,7 +118,7 @@ node scripts/preprod-data-audit-psql.mjs --db-url-file /private/tmp/gracenote_ve
 | Admin archive | person+department archive, selected group restore, duplicate restore prevention |
 | Admin attendance | snapshot load, bulk load unsubmitted groups, include/exclude, attendance toggle, conflict resolution, export |
 | Flutter master/admin/leader/member | role menu, group list, attendance save, prayer save, prayer search scope, saved prayers, deleted group history |
-| Edge functions | `notify-event` and `notify-scheduler` deployed, `verify_jwt=false`, dry-run or limited real send |
+| Edge functions | `notify-event`, `notify-scheduler`, `verify-sms` deployed, `verify_jwt=false`, dry-run or limited real send |
 
 ## UI Polish Before Prod
 
