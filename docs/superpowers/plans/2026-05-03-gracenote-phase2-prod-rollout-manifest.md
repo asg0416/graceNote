@@ -165,7 +165,7 @@ Preprod data audit package:
 | 48 | `supabase/migrations/20260517001000_prod_data_repair_minjaehong_phone.sql` | 운영 복제본 audit에서 확인된 민재홍/임진슬 동일 전화번호를 민재홍 실제 번호로 정정 | `identity_candidate_same_church_phone = 0`, duplicate phone manual review 0 |
 | 49 | `supabase/migrations/20260517002000_guard_prayer_notification_updates.sql` | published 기도제목 row의 metadata/backfill update가 push 알림을 다시 발송하지 않도록 `notify_on_event()` 가드 추가 | 신규 published insert 또는 draft→published 전환만 기도 알림 발송. Phase 3 person snapshot 보정/운영 backfill 중 알림 폭주 방지 |
 
-주의: 22~48은 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다.
+주의: 22~49는 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다.
 
 ## Hard Delete Gate
 
