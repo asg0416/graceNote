@@ -8,6 +8,103 @@ const FIREBASE_CLIENT_EMAIL = Deno.env.get("FIREBASE_CLIENT_EMAIL");
 const FIREBASE_PRIVATE_KEY = Deno.env.get("FIREBASE_PRIVATE_KEY");
 
 const APP_BASE_URL = "https://grace-note-app-pwa-asg0416.vercel.app";
+type SupabaseClientLike = any;
+
+const uniqueStrings = (values: unknown[]): string[] => [
+  ...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0)),
+];
+
+const profileBelongsToPerson = (memberProfile: any): boolean => {
+  const linkedProfile = Array.isArray(memberProfile?.profiles)
+    ? memberProfile.profiles[0]
+    : memberProfile?.profiles;
+
+  return Boolean(
+    memberProfile?.profile_id
+      && memberProfile?.person_id
+      && (!linkedProfile?.person_id || linkedProfile.person_id === memberProfile.person_id),
+  );
+};
+
+async function getLeaderProfileIdsByGroups(
+  supabase: SupabaseClientLike,
+  groupIds: string[],
+): Promise<string[]> {
+  if (groupIds.length === 0) return [];
+
+  const { data: phase2Memberships, error: phase2Error } = await supabase
+    .from("memberships")
+    .select("person_id")
+    .in("group_id", groupIds)
+    .eq("role", "leader")
+    .eq("status", "active");
+
+  if (!phase2Error && (phase2Memberships || []).length > 0) {
+    const personIds = uniqueStrings((phase2Memberships || []).map((leader: any) => leader.person_id));
+    const { data: memberProfiles, error: profileError } = await supabase
+      .from("member_profiles")
+      .select("person_id, profile_id, profiles(person_id)")
+      .in("person_id", personIds)
+      .not("profile_id", "is", null);
+
+    const profileIds = uniqueStrings(
+      (memberProfiles || [])
+        .filter(profileBelongsToPerson)
+        .map((profile: any) => profile.profile_id),
+    );
+    if (!profileError && profileIds.length > 0) {
+      return profileIds;
+    }
+  }
+
+  const { data: legacyLeaders } = await supabase
+    .from("group_members")
+    .select("profile_id")
+    .in("group_id", groupIds)
+    .eq("role_in_group", "leader")
+    .eq("is_active", true);
+
+  return uniqueStrings((legacyLeaders || []).map((leader: any) => leader.profile_id));
+}
+
+async function getActiveProfileIdsByGroups(
+  supabase: SupabaseClientLike,
+  groupIds: string[],
+): Promise<string[]> {
+  if (groupIds.length === 0) return [];
+
+  const { data: phase2Memberships, error: phase2Error } = await supabase
+    .from("memberships")
+    .select("person_id")
+    .in("group_id", groupIds)
+    .eq("status", "active");
+
+  if (!phase2Error && (phase2Memberships || []).length > 0) {
+    const personIds = uniqueStrings((phase2Memberships || []).map((member: any) => member.person_id));
+    const { data: memberProfiles, error: profileError } = await supabase
+      .from("member_profiles")
+      .select("person_id, profile_id, profiles(person_id)")
+      .in("person_id", personIds)
+      .not("profile_id", "is", null);
+
+    const profileIds = uniqueStrings(
+      (memberProfiles || [])
+        .filter(profileBelongsToPerson)
+        .map((profile: any) => profile.profile_id),
+    );
+    if (!profileError && profileIds.length > 0) {
+      return profileIds;
+    }
+  }
+
+  const { data: legacyMembers } = await supabase
+    .from("group_members")
+    .select("profile_id")
+    .in("group_id", groupIds)
+    .eq("is_active", true);
+
+  return uniqueStrings((legacyMembers || []).map((member: any) => member.profile_id));
+}
 
 async function getAccessToken(): Promise<string> {
   const privateKey = FIREBASE_PRIVATE_KEY!.replace(/\\n/g, "\n");
@@ -86,15 +183,17 @@ async function sendPush(accessToken: string, token: string, title: string, body:
 }
 
 Deno.serve(async (req: Request) => {
+  const url = new URL(req.url);
+  const dryRun = url.searchParams.get("dry_run") === "true";
   const payload = await req.json();
   const { table, record, old_record, type } = payload;
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  console.log(`[notify-event] Triggered for ${table} on ${type}`);
+  console.log(`[notify-event] Triggered for ${table} on ${type}. DryRun: ${dryRun}`);
 
   if (type !== 'INSERT' && type !== 'UPDATE') return new Response(JSON.stringify({ skipped: true }));
 
-  const accessToken = await getAccessToken();
+  const accessToken = dryRun ? "" : await getAccessToken();
   let title = "";
   let body = "";
   let link = "/";
@@ -110,19 +209,21 @@ Deno.serve(async (req: Request) => {
 
     // 1. Atomic dedup: INSERT with UNIQUE constraint (group_id, week_id, event_type).
     // Only the first concurrent request succeeds; others get a conflict error and skip.
-    const { data: inserted, error: dedupError } = await supabase
-      .from("notification_dedup")
-      .insert({
-        group_id: record.group_id,
-        week_id: record.week_id,
-        event_type: type,
-      })
-      .select("id")
-      .single();
+    if (!dryRun) {
+      const { data: inserted, error: dedupError } = await supabase
+        .from("notification_dedup")
+        .insert({
+          group_id: record.group_id,
+          week_id: record.week_id,
+          event_type: type,
+        })
+        .select("id")
+        .single();
 
-    if (dedupError || !inserted) {
-      console.log(`[notify-event] Skipping duplicate ${type} notification (dedup conflict)`);
-      return new Response(JSON.stringify({ skipped: true, reason: "dedup" }));
+      if (dedupError || !inserted) {
+        console.log(`[notify-event] Skipping duplicate ${type} notification (dedup conflict)`);
+        return new Response(JSON.stringify({ skipped: true, reason: "dedup" }));
+      }
     }
 
     // 2. Data fetching
@@ -155,13 +256,10 @@ Deno.serve(async (req: Request) => {
     const { data: deptGroups } = await supabase.from("groups").select("id").eq("department_id", departmentId);
     const deptGroupIds = (deptGroups || []).map(g => g.id);
 
-    // Get leaders from all groups in the department
-    const { data: leaders } = await supabase
-      .from("group_members")
-      .select("profile_id")
-      .in("group_id", deptGroupIds)
-      .eq("role_in_group", "leader")
-      .eq("is_active", true);
+    // Get leaders from all groups in the department.
+    // Phase 2 memberships is the canonical membership read; legacy group_members
+    // remains a fallback until write-switch removes legacy dependencies.
+    const leaderIds = await getLeaderProfileIdsByGroups(supabase, deptGroupIds);
 
     // Get department admins
     const { data: admins } = await supabase
@@ -173,7 +271,7 @@ Deno.serve(async (req: Request) => {
     // Exclude the author (prayer_entries uses author_id, not created_by)
     const authorId = record.author_id || record.created_by || record.user_id;
     targetUserIds = [...new Set([
-      ...(leaders || []).map(l => l.profile_id).filter(Boolean),
+      ...leaderIds,
       ...(admins || []).map(a => a.id).filter(Boolean)
     ])].filter(id => id !== authorId);
 
@@ -210,8 +308,7 @@ Deno.serve(async (req: Request) => {
       const { data: deptGroups } = await supabase.from("groups").select("id").in("department_id", tDeptIds);
       const groupIds = (deptGroups || []).map(g => g.id);
       if (groupIds.length > 0) {
-        const { data: deptMembers } = await supabase.from("group_members").select("profile_id").in("group_id", groupIds).eq("is_active", true);
-        targetUserIds = [...new Set((deptMembers || []).map(m => m.profile_id).filter(Boolean))];
+        targetUserIds = await getActiveProfileIdsByGroups(supabase, groupIds);
       }
     } else if (tChurchIds.length > 0) {
       // Multi-church target (no departments selected → all users in those churches)
@@ -221,8 +318,7 @@ Deno.serve(async (req: Request) => {
       // Legacy single department target
       const { data: deptGroups } = await supabase.from("groups").select("id").eq("department_id", record.department_id);
       const groupIds = (deptGroups || []).map(g => g.id);
-      const { data: deptMembers } = await supabase.from("group_members").select("profile_id").in("group_id", groupIds).eq("is_active", true);
-      targetUserIds = [...new Set((deptMembers || []).map(m => m.profile_id).filter(Boolean))];
+      targetUserIds = await getActiveProfileIdsByGroups(supabase, groupIds);
     } else if (record.church_id) {
       // Legacy single church target (no department)
       const { data: churchUsers } = await supabase.from("profiles").select("id").eq("church_id", record.church_id);
@@ -266,6 +362,21 @@ Deno.serve(async (req: Request) => {
   const tag = table === 'prayer_entries'
     ? `prayer-${record.group_id}`
     : `notice-${record.id}`;
+
+  if (dryRun) {
+    console.log(`[notify-event] Dry run target users: ${finalRecipientIds.length}, devices: ${uniqueTokens.length}, tag: ${tag}`);
+    return new Response(JSON.stringify({
+      dry_run: true,
+      table,
+      target_user_count: finalRecipientIds.length,
+      device_count: uniqueTokens.length,
+      tag,
+      title,
+      body,
+      link,
+    }));
+  }
+
   const results = await Promise.allSettled(
     uniqueTokens.map(([userId, token]) => sendPush(accessToken, token, title, body, { link, tag }))
   );
@@ -283,11 +394,16 @@ Deno.serve(async (req: Request) => {
   }
 
   // Cleanup: delete dedup records older than 5 minutes (fire and forget)
-  supabase.from("notification_dedup")
-    .delete()
-    .lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString())
-    .then(() => console.log("[notify-event] Dedup cleanup done"))
-    .catch(() => { });
+  void (async () => {
+    try {
+      await supabase.from("notification_dedup")
+        .delete()
+        .lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString());
+      console.log("[notify-event] Dedup cleanup done");
+    } catch (_) {
+      // Best-effort cleanup only. Do not fail notification delivery.
+    }
+  })();
 
   const sent = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
   console.log(`[notify-event] Sent: ${sent}/${uniqueTokens.length}, expired cleaned: ${expiredTokens.length}`);

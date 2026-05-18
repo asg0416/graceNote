@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Loader2, Users, Church, Calendar, AlertCircle, ArrowUpRight, TrendingUp, Bell } from 'lucide-react';
+import { Loader2, Users, Calendar, AlertCircle, ArrowUpRight, TrendingUp, Bell } from 'lucide-react';
+import type { ComponentType } from 'react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -11,10 +12,72 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+interface DashboardProfile {
+  id: string;
+  full_name: string | null;
+  role: string | null;
+  admin_status: string | null;
+  is_master: boolean;
+  church_id: string | null;
+  department_id: string | null;
+}
+
+interface DashboardStats {
+  totalMembers: number;
+  totalChurches: number;
+  pendingAdmins: number;
+  totalGroups: number;
+  pendingInquiries: number;
+  churchName: string;
+  unassignedMembers: number;
+}
+
+interface RecentMember {
+  full_name: string;
+  created_at: string;
+  role_in_group: string | null;
+}
+
+interface RecentMembershipRow {
+  person_id: string | null;
+  role: string | null;
+  created_at: string;
+  people: {
+    display_name: string | null;
+  } | { display_name: string | null }[] | null;
+}
+
+type StatColor = 'indigo' | 'emerald' | 'rose' | 'amber' | 'slate';
+
+interface StatsCardProps {
+  title: string;
+  value: string;
+  change: string;
+  icon: ComponentType<{ className?: string }>;
+  color: StatColor;
+  isWarning?: boolean;
+  onClick?: () => void;
+}
+
+interface ActivityItemProps {
+  title: string;
+  desc: string;
+  time: string;
+  dotColor: string;
+}
+
+type StatsCardStyle = {
+  bg: string;
+  iconBg: string;
+  text: string;
+  border: string;
+  badge: string;
+};
+
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<any>(null);
-  const [stats, setStats] = useState({
+  const [profile, setProfile] = useState<DashboardProfile | null>(null);
+  const [stats, setStats] = useState<DashboardStats>({
     totalMembers: 0,
     totalChurches: 0,
     pendingAdmins: 0,
@@ -23,8 +86,158 @@ export default function DashboardPage() {
     churchName: '',
     unassignedMembers: 0,
   });
-  const [recentMembers, setRecentMembers] = useState<any[]>([]);
+  const [recentMembers, setRecentMembers] = useState<RecentMember[]>([]);
   const router = useRouter();
+
+  async function fetchDashboardData(userProfile: DashboardProfile) {
+    try {
+      let totalMembers = 0;
+      let totalChurches = 0;
+      let pendingAdmins = 0;
+      let totalGroups = 0;
+      let churchName = '(전체)';
+
+      // Fetch church name if not master
+      if (userProfile.church_id) {
+        const { data: church } = await supabase
+          .from('churches')
+          .select('name')
+          .eq('id', userProfile.church_id)
+          .single();
+        if (church) churchName = church.name;
+      }
+
+      let unassignedMembers = 0;
+      if (userProfile.is_master) {
+        // Master Global Stats
+        const { data: activeMemberships, error: activeMembershipsError } = await supabase
+          .from('memberships')
+          .select('person_id')
+          .eq('status', 'active');
+        const { count: legacyMemberCount } = await supabase.from('member_directory').select('*', { count: 'exact', head: true });
+        const { count: churchCount } = await supabase.from('churches').select('*', { count: 'exact', head: true });
+        const { count: pendingCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('admin_status', 'pending');
+        const { count: groupCount } = await supabase.from('groups').select('*', { count: 'exact', head: true }).eq('is_active', true);
+
+        totalMembers = activeMembershipsError
+          ? legacyMemberCount || 0
+          : new Set((activeMemberships || []).map(membership => membership.person_id).filter(Boolean)).size;
+        totalChurches = churchCount || 0;
+        pendingAdmins = pendingCount || 0;
+        totalGroups = groupCount || 0;
+      } else {
+        // Church Admin Specific Stats
+        let memberQuery = supabase.from('member_directory').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id);
+        let membershipQuery = supabase.from('memberships').select('person_id, group_id').eq('church_id', userProfile.church_id).eq('status', 'active');
+        let pendingQuery = supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id).eq('admin_status', 'pending');
+        let groupQuery = supabase.from('groups').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id).eq('is_active', true);
+        let unassignedQuery = supabase.from('member_directory').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id).or('group_name.is.null,group_name.eq.""');
+
+        if (userProfile.department_id) {
+          memberQuery = memberQuery.eq('department_id', userProfile.department_id);
+          membershipQuery = membershipQuery.eq('department_id', userProfile.department_id);
+          pendingQuery = pendingQuery.eq('department_id', userProfile.department_id);
+          groupQuery = groupQuery.eq('department_id', userProfile.department_id);
+          unassignedQuery = unassignedQuery.eq('department_id', userProfile.department_id);
+        }
+
+        const { count: memberCount } = await memberQuery;
+        const { data: activeMemberships, error: activeMembershipsError } = await membershipQuery;
+        const { count: pendingCount } = await pendingQuery;
+        const { count: groupCount } = await groupQuery;
+        const { count: unassignedCount } = await unassignedQuery;
+
+        if (activeMembershipsError) {
+          totalMembers = memberCount || 0;
+          unassignedMembers = unassignedCount || 0;
+        } else {
+          const activeMembershipRows = activeMemberships || [];
+          totalMembers = new Set(activeMembershipRows.map(membership => membership.person_id).filter(Boolean)).size;
+          unassignedMembers = new Set(
+            activeMembershipRows
+              .filter(membership => !membership.group_id)
+              .map(membership => membership.person_id)
+              .filter(Boolean)
+          ).size;
+        }
+        totalChurches = 1; // Only their church
+        pendingAdmins = pendingCount || 0;
+        totalGroups = groupCount || 0;
+      }
+
+      // Inquiries count (pending)
+      let inquiryCount = 0;
+      if (userProfile.is_master) {
+        const { count } = await supabase
+          .from('inquiries')
+          .select('*', { count: 'exact', head: true })
+          .neq('status', 'closed');
+        inquiryCount = count || 0;
+      }
+
+      setStats({
+        totalMembers,
+        totalChurches,
+        pendingAdmins,
+        totalGroups,
+        pendingInquiries: inquiryCount,
+        churchName,
+        unassignedMembers,
+      });
+
+      // Recent Members: Phase 2 person-centered read. Fallback to legacy
+      // member_directory only if memberships/people read is unavailable.
+      let recentMembershipQuery = supabase
+        .from('memberships')
+        .select('person_id, role, created_at, people(display_name)')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!userProfile.is_master) {
+        recentMembershipQuery = recentMembershipQuery.eq('church_id', userProfile.church_id);
+        if (userProfile.department_id) recentMembershipQuery = recentMembershipQuery.eq('department_id', userProfile.department_id);
+      }
+
+      const { data: recentMemberships, error: recentMembershipsError } = await recentMembershipQuery;
+      if (!recentMembershipsError) {
+        const seenPeople = new Set<string>();
+        const phase2RecentMembers = ((recentMemberships || []) as unknown as RecentMembershipRow[])
+          .filter((membership) => {
+            if (!membership.person_id || seenPeople.has(membership.person_id)) return false;
+            seenPeople.add(membership.person_id);
+            return true;
+          })
+          .slice(0, 5)
+          .map((membership) => {
+            const people = Array.isArray(membership.people) ? membership.people[0] : membership.people;
+            return {
+              full_name: people?.display_name || '이름 없음',
+              created_at: membership.created_at,
+              role_in_group: membership.role || 'member',
+            };
+          });
+        setRecentMembers(phase2RecentMembers);
+      } else {
+        const memberQuery = supabase
+          .from('member_directory')
+          .select('full_name, created_at, role_in_group')
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (!userProfile.is_master) {
+          memberQuery.eq('church_id', userProfile.church_id);
+          if (userProfile.department_id) memberQuery.eq('department_id', userProfile.department_id);
+        }
+
+        const { data: members } = await memberQuery;
+        setRecentMembers((members || []) as RecentMember[]);
+      }
+
+    } catch (err) {
+      console.error('Dashboard Data Fetch Error:', err);
+    }
+  }
 
   useEffect(() => {
     const checkUser = async () => {
@@ -55,102 +268,6 @@ export default function DashboardPage() {
 
     checkUser();
   }, [router]);
-
-  const fetchDashboardData = async (userProfile: any) => {
-    try {
-      let totalMembers = 0;
-      let totalChurches = 0;
-      let pendingAdmins = 0;
-      let totalGroups = 0;
-      let churchName = '(전체)';
-
-      // Fetch church name if not master
-      if (userProfile.church_id) {
-        const { data: church } = await supabase
-          .from('churches')
-          .select('name')
-          .eq('id', userProfile.church_id)
-          .single();
-        if (church) churchName = church.name;
-      }
-
-      let unassignedMembers = 0;
-      if (userProfile.is_master) {
-        // Master Global Stats
-        const { count: memberCount } = await supabase.from('member_directory').select('*', { count: 'exact', head: true });
-        const { count: churchCount } = await supabase.from('churches').select('*', { count: 'exact', head: true });
-        const { count: pendingCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('admin_status', 'pending');
-        const { count: groupCount } = await supabase.from('groups').select('*', { count: 'exact', head: true });
-
-        totalMembers = memberCount || 0;
-        totalChurches = churchCount || 0;
-        pendingAdmins = pendingCount || 0;
-        totalGroups = groupCount || 0;
-      } else {
-        // Church Admin Specific Stats
-        let memberQuery = supabase.from('member_directory').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id);
-        let pendingQuery = supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id).eq('admin_status', 'pending');
-        let groupQuery = supabase.from('groups').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id);
-        let unassignedQuery = supabase.from('member_directory').select('*', { count: 'exact', head: true }).eq('church_id', userProfile.church_id).or('group_name.is.null,group_name.eq.""');
-
-        if (userProfile.department_id) {
-          memberQuery = memberQuery.eq('department_id', userProfile.department_id);
-          pendingQuery = pendingQuery.eq('department_id', userProfile.department_id);
-          groupQuery = groupQuery.eq('department_id', userProfile.department_id);
-          unassignedQuery = unassignedQuery.eq('department_id', userProfile.department_id);
-        }
-
-        const { count: memberCount } = await memberQuery;
-        const { count: pendingCount } = await pendingQuery;
-        const { count: groupCount } = await groupQuery;
-        const { count: unassignedCount } = await unassignedQuery;
-
-        totalMembers = memberCount || 0;
-        totalChurches = 1; // Only their church
-        pendingAdmins = pendingCount || 0;
-        totalGroups = groupCount || 0;
-        unassignedMembers = unassignedCount || 0;
-      }
-
-      // Inquiries count (pending)
-      let inquiryCount = 0;
-      if (userProfile.is_master) {
-        const { count } = await supabase
-          .from('inquiries')
-          .select('*', { count: 'exact', head: true })
-          .neq('status', 'closed');
-        inquiryCount = count || 0;
-      }
-
-      setStats({
-        totalMembers,
-        totalChurches,
-        pendingAdmins,
-        totalGroups,
-        pendingInquiries: inquiryCount,
-        churchName,
-        unassignedMembers,
-      });
-
-      // Recent Members
-      const memberQuery = supabase
-        .from('member_directory')
-        .select('full_name, created_at, role_in_group')
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (!userProfile.is_master) {
-        memberQuery.eq('church_id', userProfile.church_id);
-        if (userProfile.department_id) memberQuery.eq('department_id', userProfile.department_id);
-      }
-
-      const { data: members } = await memberQuery;
-      setRecentMembers(members || []);
-
-    } catch (err) {
-      console.error('Dashboard Data Fetch Error:', err);
-    }
-  };
 
 
 
@@ -343,8 +460,8 @@ export default function DashboardPage() {
 }
 
 
-function StatsCard({ title, value, change, icon: Icon, color, isWarning, onClick }: any) {
-  const colorMap: any = {
+function StatsCard({ title, value, change, icon: Icon, color, isWarning, onClick }: StatsCardProps) {
+  const colorMap: Record<StatColor, StatsCardStyle> = {
     indigo: {
       bg: "bg-indigo-50/50 dark:bg-indigo-500/5",
       iconBg: "from-indigo-600 to-indigo-700 text-white shadow-indigo-200 dark:shadow-indigo-900/20",
@@ -424,7 +541,7 @@ function StatsCard({ title, value, change, icon: Icon, color, isWarning, onClick
   );
 }
 
-function ActivityItem({ title, desc, time, dotColor }: any) {
+function ActivityItem({ title, desc, time, dotColor }: ActivityItemProps) {
   return (
     <div className="flex items-start gap-4 sm:gap-6 group cursor-pointer">
       <div className={cn("w-2 h-2 rounded-full mt-2 outline outline-4 sm:outline-8 outline-slate-100 dark:outline-white/5", dotColor)} />

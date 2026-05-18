@@ -1,17 +1,17 @@
 'use client';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
     ArrowLeft,
-    User,
     Phone,
     Users,
     Layers,
     Calendar,
     Heart,
-    Baby,
     StickyNote,
     History,
     Save,
@@ -20,16 +20,39 @@ import {
     MessageSquare,
     Sparkles,
     ChevronRight,
-    Clock,
-    Type
+    UserCheck,
+    Archive
 } from 'lucide-react';
 import RichTextEditor from '@/components/RichTextEditor';
+import {
+    setMemberDirectoryActiveStatus,
+    setPersonDepartmentActiveStatus,
+    upsertMemberPersonMembership,
+} from '@/lib/memberWriteRpc';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
+
+const formatMembershipRole = (role?: string | null) => {
+    if (role === 'leader') return '조장';
+    if (role === 'admin') return '관리자';
+    return '조원';
+};
+
+const formatMembershipStatus = (status?: string | null) => {
+    if (status === 'active') return '현재 활동';
+    if (status === 'inactive') return '비활성';
+    if (status === 'ended') return '종료';
+    return status || '이력';
+};
+
+const formatShortDate = (value?: string | null) => {
+    if (!value) return null;
+    return value.slice(0, 10).replaceAll('-', '. ');
+};
 
 export default function MemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -49,6 +72,8 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
     const PAGE_SIZE = 10;
     const [directoryIds, setDirectoryIds] = useState<string[]>([]);
     const [profileIds, setProfileIds] = useState<string[]>([]);
+    const [phase2Data, setPhase2Data] = useState<any>(null);
+    const [phase2Error, setPhase2Error] = useState<string | null>(null);
 
     const router = useRouter();
 
@@ -99,25 +124,155 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 // 2. Fetch all affiliations for the same person (using person_id or fallback to name+phone)
                 let relatedQuery = supabase
                     .from('member_directory')
-                    .select('id, profile_id, group_name, phone, departments!department_id(name, color_hex)');
+                    .select('id, profile_id, group_name, phone, role_in_group, is_active, spouse_name, children_info, wedding_anniversary, departments!department_id(name, color_hex)')
+                    .eq('church_id', memberData.church_id);
 
                 if (memberData.person_id) {
                     relatedQuery = relatedQuery.eq('person_id', memberData.person_id);
                 } else {
                     relatedQuery = relatedQuery
                         .eq('full_name', memberData.full_name)
-                        .eq('phone', memberData.phone)
-                        .eq('church_id', memberData.church_id);
+                        .eq('phone', memberData.phone);
                 }
 
                 const { data: allAffiliations, error: affiliationError } = await relatedQuery;
                 if (affiliationError) console.error('Error fetching affiliations:', affiliationError);
 
-                const directoryIds = allAffiliations?.map(m => m.id) || [id];
-                const profileIds = Array.from(new Set([
+                const familyRows = [memberData, ...(allAffiliations || [])];
+                const familySource = {
+                    spouse_name: familyRows.find(row => row.spouse_name)?.spouse_name || memberData.spouse_name,
+                    children_info: familyRows.find(row => row.children_info)?.children_info || memberData.children_info,
+                    wedding_anniversary: familyRows.find(row => row.wedding_anniversary)?.wedding_anniversary || memberData.wedding_anniversary
+                };
+                memberData.spouse_name = memberData.spouse_name || familySource.spouse_name || null;
+                memberData.children_info = memberData.children_info || familySource.children_info || null;
+                memberData.wedding_anniversary = memberData.wedding_anniversary || familySource.wedding_anniversary || null;
+
+                const legacyDirectoryIds = allAffiliations?.map(m => m.id) || [id];
+                const rawProfileIds = Array.from(new Set([
                     memberData.profile_id,
                     ...(allAffiliations?.map(m => m.profile_id) || [])
                 ])).filter(Boolean);
+                let profileIds: string[] = [];
+
+                if (rawProfileIds.length > 0) {
+                    const { data: scopedProfiles, error: scopedProfilesError } = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .in('id', rawProfileIds)
+                        .eq('church_id', memberData.church_id);
+
+                    if (scopedProfilesError) throw scopedProfilesError;
+                    profileIds = (scopedProfiles || []).map(profile => profile.id);
+                }
+
+                let resolvedDirectoryIds = legacyDirectoryIds;
+                let resolvedProfileIds = profileIds;
+
+                setPhase2Data(null);
+                setPhase2Error(null);
+                try {
+                    const { data: phase2MemberProfile, error: mpError } = await supabase
+                        .from('member_profiles')
+                        .select('id, person_id')
+                        .eq('member_directory_id', id)
+                        .maybeSingle();
+
+                    if (mpError) throw mpError;
+
+                    if (phase2MemberProfile?.person_id) {
+                        const personId = phase2MemberProfile.person_id;
+                        const [
+                            personResult,
+                            identifierResult,
+                            memberProfileResult,
+                            membershipResult
+                        ] = await Promise.all([
+                            supabase
+                                .from('people')
+                                .select('id, display_name, normalized_phone, primary_profile_id, updated_at')
+                                .eq('id', personId)
+                                .maybeSingle(),
+                            supabase
+                                .from('person_identifiers')
+                                .select('kind, value, source_table, source_id, is_primary')
+                                .eq('person_id', personId)
+                                .order('kind', { ascending: true }),
+                            supabase
+                                .from('member_profiles')
+                                .select('id, profile_id, member_directory_id, full_name, phone, family_name')
+                                .eq('person_id', personId)
+                                .order('created_at', { ascending: true }),
+                            supabase
+                                .from('memberships')
+                                .select('id, role, status, starts_at, ends_at, legacy_group_member_id, legacy_member_directory_id, departments!department_id(name, color_hex), groups!group_id(name, color_hex)')
+                                .eq('person_id', personId)
+                                .eq('church_id', memberData.church_id)
+                                .order('starts_at', { ascending: false })
+                        ]);
+
+                        if (personResult.error) throw personResult.error;
+                        if (identifierResult.error) throw identifierResult.error;
+                        if (memberProfileResult.error) throw memberProfileResult.error;
+                        if (membershipResult.error) throw membershipResult.error;
+
+                        const phase2MemberProfiles = memberProfileResult.data || [];
+                        const phase2Memberships = membershipResult.data || [];
+                        let scopedPhase2MemberProfiles = phase2MemberProfiles;
+                        const candidateDirectoryIds = Array.from(new Set([
+                            ...phase2MemberProfiles.map(profile => profile.member_directory_id),
+                            ...phase2Memberships.map(membership => membership.legacy_member_directory_id)
+                        ].filter(Boolean)));
+
+                        if (candidateDirectoryIds.length > 0) {
+                            const { data: scopedDirectoryRows, error: scopedDirectoryError } = await supabase
+                                .from('member_directory')
+                                .select('id, profile_id')
+                                .in('id', candidateDirectoryIds)
+                                .eq('church_id', memberData.church_id);
+
+                            if (scopedDirectoryError) throw scopedDirectoryError;
+
+                            resolvedDirectoryIds = (scopedDirectoryRows || []).map(row => row.id);
+                            const phase2ProfileIds = Array.from(new Set([
+                                phase2MemberProfiles.map(profile => profile.profile_id),
+                                scopedDirectoryRows?.map(row => row.profile_id)
+                            ].flat().filter(Boolean)));
+
+                            if (phase2ProfileIds.length > 0) {
+                                const { data: scopedPhase2Profiles, error: scopedPhase2ProfilesError } = await supabase
+                                    .from('profiles')
+                                    .select('id')
+                                    .in('id', phase2ProfileIds)
+                                    .eq('church_id', memberData.church_id);
+
+                                if (scopedPhase2ProfilesError) throw scopedPhase2ProfilesError;
+                                resolvedProfileIds = (scopedPhase2Profiles || []).map(profile => profile.id);
+                            } else {
+                                resolvedProfileIds = [];
+                            }
+
+                            const scopedDirectoryIdSet = new Set(resolvedDirectoryIds);
+                            const scopedProfileIdSet = new Set(resolvedProfileIds);
+                            scopedPhase2MemberProfiles = phase2MemberProfiles.filter(profile => (
+                                (profile.member_directory_id && scopedDirectoryIdSet.has(profile.member_directory_id)) ||
+                                (profile.profile_id && scopedProfileIdSet.has(profile.profile_id))
+                            ));
+                        }
+
+                        setPhase2Data({
+                            person: personResult.data,
+                            identifiers: identifierResult.data || [],
+                            memberProfiles: scopedPhase2MemberProfiles,
+                            memberships: phase2Memberships
+                        });
+                    } else {
+                        setPhase2Error('Phase 2 member_profiles 연결을 찾지 못했습니다.');
+                    }
+                } catch (phase2Err: any) {
+                    console.warn('Phase 2 read-only panel unavailable:', phase2Err);
+                    setPhase2Error(phase2Err?.message || 'Phase 2 데이터를 불러오지 못했습니다.');
+                }
 
                 // Attach affiliations to member object
                 (memberData as any)._affiliations = allAffiliations || [];
@@ -126,12 +281,17 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 setNote(memberData.notes || '');
 
                 if (memberData.profile_id) {
-                    const { data } = await supabase.from('profiles').select('*').eq('id', memberData.profile_id).maybeSingle();
+                    const { data } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', memberData.profile_id)
+                        .eq('church_id', memberData.church_id)
+                        .maybeSingle();
                     if (data) setProfile(data);
                 }
 
-                setDirectoryIds(directoryIds);
-                setProfileIds(profileIds);
+                setDirectoryIds(resolvedDirectoryIds);
+                setProfileIds(resolvedProfileIds);
                 setPage(0);
                 setPrayers([]);
                 setHasMorePrayers(true);
@@ -144,7 +304,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
         };
 
         fetchMemberData();
-    }, [id]);
+    }, [id, router]);
 
     useEffect(() => {
         if (directoryIds.length === 0 && profileIds.length === 0) return;
@@ -155,7 +315,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 const fetchWithJoin = async (targetId: string, isDirectory: boolean) => {
                     const { data, error } = await supabase
                         .from('prayer_entries')
-                        .select('*, weeks(week_date)')
+                        .select('*, weeks(week_date), groups!group_id(name)')
                         .eq(isDirectory ? 'directory_member_id' : 'member_id', targetId)
                         .eq('status', 'published')
                         .order('first_published_at', { ascending: false })
@@ -214,13 +374,12 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
     const handleSaveDetail = async (field: string, value: any) => {
         setIsSaving(true);
         try {
-            const { error } = await supabase
-                .from('member_directory')
-                .update({ [field]: value })
-                .eq('id', id);
-
-            if (error) throw error;
-            setMember({ ...member, [field]: value });
+            const updatedMember = await upsertMemberPersonMembership(supabase, {
+                ...member,
+                id,
+                [field]: value,
+            });
+            setMember({ ...member, ...updatedMember });
         } catch (err: any) {
             console.error('Error saving detail:', err);
             alert('정보 저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
@@ -233,13 +392,12 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
         if (!member || !profile) return;
         setIsSaving(true);
         try {
-            const { error } = await supabase
-                .from('member_directory')
-                .update({ is_linked: true, profile_id: profile.id })
-                .eq('id', member.id);
-
-            if (error) throw error;
-            setMember({ ...member, is_linked: true, profile_id: profile.id });
+            const updatedMember = await upsertMemberPersonMembership(supabase, {
+                ...member,
+                id: member.id,
+                profile_id: profile.id,
+            });
+            setMember({ ...member, ...updatedMember });
             alert('계정 연동이 성공적으로 완료되었습니다.');
         } catch (err: any) {
             console.error('Error linking account:', err);
@@ -263,13 +421,12 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                 updateData.children_info = editingMember.children_info;
             }
 
-            const { error } = await supabase
-                .from('member_directory')
-                .update(updateData)
-                .eq('id', id);
-
-            if (error) throw error;
-            setMember({ ...member, ...updateData });
+            const updatedMember = await upsertMemberPersonMembership(supabase, {
+                ...member,
+                ...updateData,
+                id,
+            });
+            setMember({ ...member, ...updatedMember });
             if (section === 'profile') setIsEditingProfile(false);
             if (section === 'family') setIsEditingFamily(false);
             alert('정보가 수정되었습니다.');
@@ -283,18 +440,35 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
 
     const handleToggleActive = async () => {
         const newStatus = member.is_active === false;
-        if (!confirm(`이 성도를 ${newStatus ? '활성화' : '비활성화'} 하시겠습니까?`)) return;
+        if (!confirm(`이 성도의 현재 소속을 ${newStatus ? '활성화' : '비활성화'} 하시겠습니까?`)) return;
 
         setIsSaving(true);
         try {
-            const { error } = await supabase
+            if (phase2Data?.person?.id && member.church_id && member.department_id) {
+                await setPersonDepartmentActiveStatus(supabase, {
+                    personId: phase2Data.person.id,
+                    churchId: member.church_id,
+                    departmentId: member.department_id,
+                    isActive: newStatus,
+                });
+            } else {
+                await setMemberDirectoryActiveStatus(supabase, id, newStatus);
+            }
+
+            const { data: refreshedMember, error: refreshError } = await supabase
                 .from('member_directory')
-                .update({ is_active: newStatus })
-                .eq('id', id);
-            if (error) throw error;
-            setMember({ ...member, is_active: newStatus });
-            alert(`${newStatus ? '활성화' : '비활성화'} 되었습니다.`);
-        } catch (err) {
+                .select(`
+                    *,
+                    departments!department_id (name, color_hex)
+                `)
+                .eq('id', id)
+                .single();
+            if (refreshError) throw refreshError;
+
+            setMember(refreshedMember);
+            alert(`현재 부서 소속이 ${newStatus ? '활성화' : '비활성화'} 되었습니다.`);
+            window.location.reload();
+        } catch {
             alert('오류 발생');
         } finally {
             setIsSaving(false);
@@ -321,6 +495,18 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
         );
     }
 
+    const phase2Memberships = phase2Data?.memberships || [];
+    const phase2ActiveAffiliations = phase2Memberships.filter((membership: any) => membership.status === 'active');
+    const phase2HistoricalAffiliations = phase2Memberships.filter((membership: any) => membership.status !== 'active');
+    const linkedProfileCount = phase2Data?.memberProfiles?.filter((mp: any) => mp.profile_id).length || 0;
+    const legacyAffiliations = member._affiliations?.length > 0 ? member._affiliations : [member];
+    const usesPhase2Affiliations = Boolean(phase2Data?.person);
+    const formatGroupLabel = (groupName?: string | null) => {
+        const trimmed = groupName?.trim();
+        if (!trimmed) return null;
+        return trimmed.includes('조') || trimmed.includes('부') ? trimmed : `${trimmed} 조`;
+    };
+
     return (
         <div className="max-w-5xl mx-auto space-y-8 pb-20">
             {/* Header / Navigation */}
@@ -341,7 +527,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                             disabled={isSaving}
                             className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black rounded-2xl hover:bg-emerald-500 transition-all uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-emerald-600/20"
                         >
-                            <CheckCircle2 className="w-3.5 h-3.5" /> 다시 활성화
+                            <CheckCircle2 className="w-3.5 h-3.5" /> 소속 다시 활성화
                         </button>
                     ) : (
                         <button
@@ -349,7 +535,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                             disabled={isSaving}
                             className="px-4 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-black rounded-2xl border border-rose-100 dark:border-rose-500/20 hover:bg-rose-100 transition-all uppercase tracking-widest flex items-center gap-2 shadow-sm"
                         >
-                            <Users className="w-3.5 h-3.5" /> 비활성화
+                            <Users className="w-3.5 h-3.5" /> 소속 비활성화
                         </button>
                     )}
                     <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-1" />
@@ -478,46 +664,8 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                         </div>
                     </div>
 
-                    {/* Affiliations Info Card - Separated */}
-                    <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6">
-                        <div className="flex items-center justify-between px-2">
-                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
-                                <Layers className="w-4 h-4 text-indigo-600" /> 소속 정보
-                            </h3>
-                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Affiliations Info</p>
-                        </div>
-                        <div className="grid grid-cols-1 gap-2">
-                            {member._affiliations?.length > 0 ? (
-                                member._affiliations.map((aff: any) => (
-                                    <div
-                                        key={aff.id}
-                                        className="flex items-center justify-between p-3.5 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60 group/aff"
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                                            <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-tighter">
-                                                {aff.departments?.name}
-                                            </span>
-                                        </div>
-                                        <div className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
-                                            <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">
-                                                {aff.group_name} 조
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="p-3.5 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60">
-                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 text-center block">
-                                        {member.departments?.name} | {member.group_name || '미정'}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
                     {/* Family Info Card */}
-                    <div className="bg-slate-50 dark:bg-[#111827]/40 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 p-8 space-y-6 group/family">
+                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 space-y-6 shadow-xl shadow-slate-900/[0.03] group/family">
                         <div className="flex items-center justify-between px-2">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
                                 <Heart className="w-4 h-4 text-rose-500" /> 가족 정보
@@ -569,6 +717,169 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                             </div>
                         </div>
                     </div>
+
+                    {/* Current Affiliations */}
+                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 space-y-6 shadow-xl shadow-slate-900/[0.03]">
+                        <div className="flex items-center justify-between px-2">
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-3">
+                                <Layers className="w-4 h-4 text-indigo-600" /> 현재 소속
+                            </h3>
+                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Active Affiliations</p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                            {usesPhase2Affiliations ? (
+                                phase2ActiveAffiliations.length > 0 ? (
+                                    phase2ActiveAffiliations.map((membership: any) => (
+                                        <div
+                                            key={membership.id}
+                                            className="relative overflow-hidden p-4 bg-slate-50/70 dark:bg-slate-900/35 rounded-2xl border border-slate-100 dark:border-slate-800/60 group/aff"
+                                        >
+                                            <div
+                                                className="absolute inset-y-0 left-0 w-1.5"
+                                                style={{ backgroundColor: membership.groups?.color_hex || membership.departments?.color_hex || '#4f46e5' }}
+                                            />
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex items-start gap-3 min-w-0">
+                                                    <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
+                                                        <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-black text-slate-900 dark:text-white truncate">
+                                                            {membership.departments?.name || '부서 없음'}
+                                                        </p>
+                                                        <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
+                                                            {membership.groups?.name || '조 미배정'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <span className={cn(
+                                                    "px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0",
+                                                    membership.role === 'leader'
+                                                        ? "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300"
+                                                        : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
+                                                )}>
+                                                    {formatMembershipRole(membership.role)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="p-4 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60">
+                                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 text-center block">
+                                            현재 활동 중인 소속이 없습니다.
+                                        </span>
+                                    </div>
+                                )
+                            ) : legacyAffiliations.length > 0 ? (
+                                legacyAffiliations.map((aff: any) => (
+                                    <div
+                                        key={aff.id}
+                                        className="flex items-center justify-between p-3.5 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60 group/aff"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                            <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-tighter">
+                                                {aff.departments?.name}
+                                            </span>
+                                        </div>
+                                        <div className="px-2 py-0.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                                            <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">
+                                                {formatGroupLabel(aff.group_name) || '조 미배정'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="p-3.5 bg-white dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60">
+                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 text-center block">
+                                        {member.departments?.name} | {member.group_name || '미정'}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Person History Summary */}
+                    <div className="bg-white dark:bg-[#111827]/60 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 space-y-6 shadow-xl shadow-slate-900/[0.03]">
+                        <div className="flex items-center justify-between px-2">
+                            <h3 className="text-xs font-black text-slate-500 dark:text-slate-300 uppercase tracking-[0.2em] flex items-center gap-3">
+                                <Archive className="w-4 h-4 text-slate-500" /> 소속 이력
+                            </h3>
+                            <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">History</p>
+                        </div>
+
+                        {phase2Error ? (
+                            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20">
+                                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300 leading-relaxed">
+                                    소속 이력을 불러오지 못했습니다. 기본 성도 정보는 정상 표시됩니다.
+                                </p>
+                            </div>
+                        ) : phase2Data ? (
+                            <div className="space-y-5">
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">현재 활동</p>
+                                        <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{phase2ActiveAffiliations.length}개</p>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">앱 계정</p>
+                                        <p className="mt-1 text-sm font-black text-slate-900 dark:text-white">
+                                            {linkedProfileCount > 0 ? '연결됨' : '미연동'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {phase2HistoricalAffiliations.length > 0 ? (
+                                    <div className={cn(
+                                        "space-y-2",
+                                        phase2HistoricalAffiliations.length > 3 && "max-h-[360px] overflow-y-auto pr-2"
+                                    )}>
+                                        {phase2HistoricalAffiliations.map((membership: any) => {
+                                            const startDate = formatShortDate(membership.starts_at);
+                                            const endDate = formatShortDate(membership.ends_at);
+
+                                            return (
+                                                <div key={membership.id} className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-800">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <p className="text-sm font-black text-slate-700 dark:text-slate-200 truncate">
+                                                                {membership.departments?.name || '부서 없음'}
+                                                            </p>
+                                                            <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1">
+                                                                {membership.groups?.name || '조 미배정'} · {formatMembershipRole(membership.role)}
+                                                            </p>
+                                                            {(startDate || endDate) && (
+                                                                <p className="text-[10px] font-bold text-slate-400 mt-2">
+                                                                    {startDate || '시작일 미상'} ~ {endDate || '현재'}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        <span className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-black text-slate-500 dark:text-slate-300 shrink-0">
+                                                            {formatMembershipStatus(membership.status)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        {phase2HistoricalAffiliations.length > 3 && (
+                                            <p className="px-1 pt-1 text-[10px] font-bold text-slate-400">
+                                                스크롤해서 나머지 이력을 확인할 수 있습니다.
+                                            </p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                                        <p className="text-xs font-bold text-slate-400 text-center">종료되거나 비활성화된 소속 이력이 없습니다.</p>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                                <p className="text-xs font-bold text-slate-400">소속 이력을 확인하는 중입니다.</p>
+                            </div>
+                        )}
+                    </div>
+
                 </div>
 
                 {/* Right Column: Detailed Info & Timeline */}
@@ -679,11 +990,17 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                                                         {prayer.weeks?.name || (prayer.weeks?.week_date ? new Date(prayer.weeks.week_date).toLocaleDateString() : '날짜 미상')}
                                                                     </span>
                                                                     {/** Group Origin Indicator **/}
-                                                                    {prayer.directory_member_id && member._affiliations?.find((a: any) => a.id === prayer.directory_member_id) && (
-                                                                        <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-100 dark:border-emerald-500/20">
-                                                                            {member._affiliations.find((a: any) => a.id === prayer.directory_member_id).group_name} 조
-                                                                        </span>
-                                                                    )}
+                                                                    {(() => {
+                                                                        const legacyGroupName = prayer.directory_member_id
+                                                                            ? member._affiliations?.find((a: any) => a.id === prayer.directory_member_id)?.group_name
+                                                                            : null;
+                                                                        const groupLabel = formatGroupLabel(prayer.groups?.name || legacyGroupName);
+                                                                        return groupLabel ? (
+                                                                            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-100 dark:border-emerald-500/20">
+                                                                                {groupLabel}
+                                                                            </span>
+                                                                        ) : null;
+                                                                    })()}
                                                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{prayer.updated_at ? new Date(prayer.updated_at).toLocaleDateString() : '-'}</span>
                                                                 </div>
                                                                 {prayer.ai_refined_content && (

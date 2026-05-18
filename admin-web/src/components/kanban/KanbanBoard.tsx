@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import React, { useState } from 'react';
 import {
     DndContext,
@@ -24,6 +26,14 @@ import {
 import { KanbanColumn } from './KanbanColumn';
 import { MemberBadge } from '../MemberBadge';
 import { cn } from '@/lib/utils';
+
+const isSameKanbanGroup = (left: any, right: any) => {
+    if (!left || !right) return false;
+    if (left.group_id && right.group_id && left.group_id === right.group_id) return true;
+    const leftGroupName = (left.group_name || '').trim();
+    const rightGroupName = (right.group_name || '').trim();
+    return Boolean(leftGroupName) && leftGroupName === rightGroupName;
+};
 
 interface KanbanBoardProps {
     groups: any[];
@@ -122,7 +132,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             const spouse = dragSessionMembers.find(s =>
                 s.full_name === activeMemberInSession.spouse_name &&
                 s.spouse_name === activeMemberInSession.full_name &&
-                s.group_id === activeMemberInSession.group_id
+                isSameKanbanGroup(s, activeMemberInSession)
             );
             if (spouse) activeUnitIds.push(spouse.id);
         }
@@ -154,7 +164,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 });
             });
         }
-    }, [dragSessionMembers, groups, profileMode]);
+    }, [autoMoveCouples, dragSessionMembers, groups, profileMode]);
 
     const handleDragEnd = React.useCallback((event: DragEndEvent) => {
         const { active, over } = event;
@@ -184,7 +194,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 targetGroupId = overMember.group_id || null;
                 const groupMembers = finalSessionMembers.filter(m => (m.group_id || null) === targetGroupId);
 
-                let unitsInGroup: string[] = [];
+                const unitsInGroup: string[] = [];
                 const seen = new Set<string>();
                 groupMembers.forEach(m => {
                     if (seen.has(m.id)) return;
@@ -208,10 +218,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         idsToMoveSet.add(activeUnitId);
 
         if (autoMoveCouples && profileMode === 'couple' && finalActiveMember.spouse_name) {
+            const originalActiveMember = members.find(m => m.id === activeUnitId);
             const spouse = members.find(s => // Use members prop to find original spouse
                 s.full_name === finalActiveMember.spouse_name &&
                 s.spouse_name === finalActiveMember.full_name &&
-                s.group_id === members.find(m => m.id === activeUnitId)?.group_id // find original group
+                isSameKanbanGroup(s, originalActiveMember)
             );
             if (spouse) idsToMoveSet.add(spouse.id);
         }
@@ -220,7 +231,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
         const isCopy = (event.activatorEvent as any)?.shiftKey;
         onMoveMembers(Array.from(idsToMoveSet), targetGroupId, isCopy, targetIndex);
-    }, [dragSessionMembers, groups, members, profileMode, selectedMemberIds, onMoveMembers]);
+    }, [autoMoveCouples, dragSessionMembers, groups, members, profileMode, selectedMemberIds, onMoveMembers]);
 
     const getMembersByGroup = (groupId: string | null) => {
         return currentMembers.filter((m: any) => (m.group_id || null) === groupId);
@@ -263,7 +274,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             const spouse = currentMembers.find((s: any) =>
                 s.full_name === activeMemberInSession.spouse_name &&
                 s.spouse_name === activeMemberInSession.full_name &&
-                s.group_id === activeMemberInSession.group_id
+                isSameKanbanGroup(s, activeMemberInSession)
             );
             if (spouse) movingIds.add(spouse.id);
         }

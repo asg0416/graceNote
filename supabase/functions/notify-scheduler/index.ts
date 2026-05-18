@@ -7,6 +7,19 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const FIREBASE_PROJECT_ID = Deno.env.get("FIREBASE_PROJECT_ID");
 const FIREBASE_CLIENT_EMAIL = Deno.env.get("FIREBASE_CLIENT_EMAIL");
 const FIREBASE_PRIVATE_KEY = Deno.env.get("FIREBASE_PRIVATE_KEY");
+type SupabaseClientLike = any;
+
+const profileBelongsToPerson = (memberProfile: any): boolean => {
+  const linkedProfile = Array.isArray(memberProfile?.profiles)
+    ? memberProfile.profiles[0]
+    : memberProfile?.profiles;
+
+  return Boolean(
+    memberProfile?.profile_id
+      && memberProfile?.person_id
+      && (!linkedProfile?.person_id || linkedProfile.person_id === memberProfile.person_id),
+  );
+};
 
 async function getAccessToken(): Promise<string> {
   const privateKey = FIREBASE_PRIVATE_KEY!.replace(/\\n/g, "\n");
@@ -75,12 +88,172 @@ async function sendPush(accessToken: string, token: string, title: string, body:
   return res.ok;
 }
 
+async function getLeaderRowsByGroups(
+  supabase: SupabaseClientLike,
+  groupIds: string[],
+  includePushPreference = false,
+): Promise<any[]> {
+  if (groupIds.length === 0) return [];
+
+  const { data: phase2Memberships, error: phase2Error } = await supabase
+    .from("memberships")
+    .select("person_id, group_id")
+    .in("group_id", groupIds)
+    .eq("role", "leader")
+    .eq("status", "active");
+
+  if (!phase2Error && (phase2Memberships || []).length > 0) {
+    const personIds = [...new Set((phase2Memberships || []).map((leader: any) => leader.person_id).filter(Boolean))];
+    const memberProfileSelect = includePushPreference
+      ? "person_id, profile_id, profiles(person_id, push_reminder_enabled)"
+      : "person_id, profile_id, profiles(person_id)";
+    const { data: memberProfiles, error: profileError } = await supabase
+      .from("member_profiles")
+      .select(memberProfileSelect)
+      .in("person_id", personIds)
+      .not("profile_id", "is", null);
+
+    if (!profileError && (memberProfiles || []).length > 0) {
+      const profilesByPerson = new Map<string, any[]>();
+      for (const profile of (memberProfiles || []).filter(profileBelongsToPerson)) {
+        const existing = profilesByPerson.get(profile.person_id) || [];
+        existing.push(profile);
+        profilesByPerson.set(profile.person_id, existing);
+      }
+
+      const rows: any[] = [];
+      for (const membership of phase2Memberships || []) {
+        for (const profile of profilesByPerson.get(membership.person_id) || []) {
+          rows.push({
+            profile_id: profile.profile_id,
+            group_id: membership.group_id,
+            profiles: profile.profiles,
+          });
+        }
+      }
+
+      if (rows.length > 0) {
+        return rows;
+      }
+    }
+  }
+
+  const legacySelect = includePushPreference
+    ? "profile_id, group_id, profiles(push_reminder_enabled)"
+    : "profile_id, group_id";
+  const { data: legacyLeaders } = await supabase
+    .from("group_members")
+    .select(legacySelect)
+    .in("group_id", groupIds)
+    .eq("role_in_group", "leader")
+    .eq("is_active", true);
+
+  return legacyLeaders || [];
+}
+
+async function getLeaderDirectoryIdsByGroup(
+  supabase: SupabaseClientLike,
+  groupId: string,
+): Promise<Set<string>> {
+  const { data: phase2Leaders, error: phase2Error } = await supabase
+    .from("memberships")
+    .select("legacy_member_directory_id")
+    .eq("group_id", groupId)
+    .eq("role", "leader")
+    .eq("status", "active")
+    .not("legacy_member_directory_id", "is", null);
+
+  if (!phase2Error && (phase2Leaders || []).length > 0) {
+    return new Set((phase2Leaders || []).map((leader: any) => leader.legacy_member_directory_id).filter(Boolean));
+  }
+
+  const { data: legacyLeaders } = await supabase
+    .from("group_members")
+    .select("member_directory_id")
+    .eq("group_id", groupId)
+    .eq("role_in_group", "leader")
+    .eq("is_active", true);
+
+  const legacyDirectoryIds = [...new Set((legacyLeaders || []).map((leader: any) => leader.member_directory_id).filter(Boolean))];
+  if (legacyDirectoryIds.length === 0) {
+    return new Set();
+  }
+
+  const { data: existingDirectoryRows } = await supabase
+    .from("member_directory")
+    .select("id")
+    .in("id", legacyDirectoryIds);
+
+  return new Set((existingDirectoryRows || []).map((member: any) => member.id).filter(Boolean));
+}
+
+async function getLeaderIdentitySetsByGroup(
+  supabase: SupabaseClientLike,
+  groupId: string,
+): Promise<{ personIds: Set<string>; legacyDirectoryIds: Set<string> }> {
+  const { data: phase2Leaders, error: phase2Error } = await supabase
+    .from("memberships")
+    .select("person_id, legacy_member_directory_id")
+    .eq("group_id", groupId)
+    .eq("role", "leader")
+    .eq("status", "active");
+
+  const personIds = new Set<string>();
+  const legacyDirectoryIds = new Set<string>();
+
+  if (!phase2Error && (phase2Leaders || []).length > 0) {
+    for (const leader of phase2Leaders || []) {
+      if (leader.person_id) personIds.add(leader.person_id);
+      if (leader.legacy_member_directory_id) legacyDirectoryIds.add(leader.legacy_member_directory_id);
+    }
+    return { personIds, legacyDirectoryIds };
+  }
+
+  return {
+    personIds,
+    legacyDirectoryIds: await getLeaderDirectoryIdsByGroup(supabase, groupId),
+  };
+}
+
+async function getCandidateDisplayNames(
+  supabase: SupabaseClientLike,
+  candidateKeys: string[],
+): Promise<string> {
+  const personIds = candidateKeys
+    .filter((key) => key.startsWith("person:"))
+    .map((key) => key.replace("person:", ""));
+  const directoryIds = candidateKeys
+    .filter((key) => key.startsWith("directory:"))
+    .map((key) => key.replace("directory:", ""));
+
+  const names: string[] = [];
+
+  if (personIds.length > 0) {
+    const { data: people } = await supabase
+      .from("people")
+      .select("id, display_name")
+      .in("id", personIds);
+    names.push(...(people || []).map((person: any) => person.display_name).filter(Boolean));
+  }
+
+  if (directoryIds.length > 0) {
+    const { data: directoryRows } = await supabase
+      .from("member_directory")
+      .select("id, full_name")
+      .in("id", directoryIds);
+    names.push(...(directoryRows || []).map((member: any) => member.full_name).filter(Boolean));
+  }
+
+  return [...new Set(names)].join(", ");
+}
+
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const task = url.searchParams.get("task");
   const force = url.searchParams.get("force") === "true"; // bypass time/day check for manual testing
+  const dryRun = url.searchParams.get("dry_run") === "true"; // calculate targets without sending push
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const accessToken = await getAccessToken();
+  const accessToken = dryRun ? "" : await getAccessToken();
 
   const nowKST = new Date(new Date().getTime() + (9 * 60 * 60 * 1000));
   const dayOfWeek = nowKST.getDay();
@@ -88,7 +261,7 @@ Deno.serve(async (req: Request) => {
   const minuteKST = nowKST.getMinutes();
 
   const log: string[] = [];
-  log.push(`Task: ${task}, Day: ${dayOfWeek}, Hour(KST): ${hourKST}, Minute(KST): ${minuteKST}, Force: ${force}`);
+  log.push(`Task: ${task}, Day: ${dayOfWeek}, Hour(KST): ${hourKST}, Minute(KST): ${minuteKST}, Force: ${force}, DryRun: ${dryRun}`);
 
   const { data: activeDepts } = await supabase.from("departments").select("id, name, church_id, leader_reminder_enabled, leader_reminder_days, leader_reminder_time, climbing_alert_enabled, climbing_alert_day, climbing_alert_time");
   if (!activeDepts?.length) return new Response(JSON.stringify({ log: ["No departments found"] }));
@@ -153,12 +326,11 @@ Deno.serve(async (req: Request) => {
             });
           }
 
-          const { data: leaders } = await supabase
-            .from("group_members")
-            .select("profile_id, group_id, profiles(push_reminder_enabled)")
-            .in("group_id", incompleteGroups.map(g => g.id))
-            .eq("role_in_group", "leader")
-            .eq("is_active", true);
+          const leaders = await getLeaderRowsByGroups(
+            supabase,
+            incompleteGroups.map(g => g.id),
+            true,
+          );
 
           // Build map: leader profile_id → list of { groupName, missing info }
           const leaderGroupMap = new Map<string, { name: string; noAttendance: boolean; noPrayer: boolean; hasDraftOnly: boolean }[]>();
@@ -187,20 +359,24 @@ Deno.serve(async (req: Request) => {
             });
             log.push(`[leader_reminder] Sending to ${uniqueTokens.length} devices`);
             const title = "📝 이번주 기도제목을 업로드해주세요!";
-            const results = await Promise.allSettled(uniqueTokens.map(t => {
-              const groups = leaderGroupMap.get(t.user_id) || [];
-              const details = groups.map(g => {
-                const missing: string[] = [];
-                if (g.noAttendance) missing.push("출석 미체크");
-                if (g.noPrayer && g.hasDraftOnly) missing.push("임시저장 확인 필요");
-                else if (g.noPrayer) missing.push("기도제목 미등록");
-                return `${g.name}(${missing.join(", ")})`;
-              });
-              const body = `${details.join(", ")} 🙏`;
-              return sendPush(accessToken, t.token, title, body, "grace-note-leader-reminder");
-            }));
-            const sent = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
-            log.push(`[leader_reminder] Sent: ${sent}/${uniqueTokens.length}`);
+            if (dryRun) {
+              log.push(`[leader_reminder] Dry run skipped send for ${uniqueTokens.length} devices`);
+            } else {
+              const results = await Promise.allSettled(uniqueTokens.map(t => {
+                const groups = leaderGroupMap.get(t.user_id) || [];
+                const details = groups.map(g => {
+                  const missing: string[] = [];
+                  if (g.noAttendance) missing.push("출석 미체크");
+                  if (g.noPrayer && g.hasDraftOnly) missing.push("임시저장 확인 필요");
+                  else if (g.noPrayer) missing.push("기도제목 미등록");
+                  return `${g.name}(${missing.join(", ")})`;
+                });
+                const body = `${details.join(", ")} 🙏`;
+                return sendPush(accessToken, t.token, title, body, "grace-note-leader-reminder");
+              }));
+              const sent = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+              log.push(`[leader_reminder] Sent: ${sent}/${uniqueTokens.length}`);
+            }
           }
         }
       }
@@ -233,21 +409,27 @@ Deno.serve(async (req: Request) => {
       if (groups?.length) {
         for (const group of groups) {
           if (!group.climbing_threshold) continue;
-          // Get leader member_directory_ids to exclude from candidates
-          const { data: leaderMembers } = await supabase
-            .from("group_members")
-            .select("member_directory_id")
-            .eq("group_id", group.id)
-            .eq("role_in_group", "leader")
-            .eq("is_active", true);
-          const leaderDirIds = new Set((leaderMembers || []).map(l => l.member_directory_id).filter(Boolean));
+          const leaderIdentities = await getLeaderIdentitySetsByGroup(supabase, group.id);
 
-          const { data: attendance } = await supabase.from("attendance").select("directory_member_id").eq("group_id", group.id).eq("status", "present");
+          const { data: attendance } = await supabase
+            .from("attendance")
+            .select("person_id, directory_member_id")
+            .eq("group_id", group.id)
+            .eq("status", "present");
           const counts: Record<string, number> = {};
           attendance?.forEach(a => {
-            // Exclude leaders from climbing candidates
-            if (!leaderDirIds.has(a.directory_member_id)) {
-              counts[a.directory_member_id] = (counts[a.directory_member_id] || 0) + 1;
+            const personId = a.person_id as string | null;
+            const directoryId = a.directory_member_id as string | null;
+            if (personId && leaderIdentities.personIds.has(personId)) return;
+            if (!personId && directoryId && leaderIdentities.legacyDirectoryIds.has(directoryId)) return;
+
+            const candidateKey = personId
+              ? `person:${personId}`
+              : directoryId
+                ? `directory:${directoryId}`
+                : null;
+            if (candidateKey) {
+              counts[candidateKey] = (counts[candidateKey] || 0) + 1;
             }
           });
           const targetThreshold = group.climbing_threshold - 1;
@@ -256,9 +438,8 @@ Deno.serve(async (req: Request) => {
           log.push(`[climbing] ${group.name}: ${attendance?.length || 0} attendance records, ${candidates.length} candidates at threshold ${targetThreshold}`);
 
           if (candidates.length > 0) {
-            const { data: names } = await supabase.from("member_directory").select("full_name").in("id", candidates.map(c => c[0]));
-            const memberNames = names?.map(n => n.full_name).join(", ");
-            const { data: leaders } = await supabase.from("group_members").select("profile_id").eq("group_id", group.id).eq("role_in_group", "leader").eq("is_active", true);
+            const memberNames = await getCandidateDisplayNames(supabase, candidates.map(c => c[0]));
+            const leaders = await getLeaderRowsByGroups(supabase, [group.id]);
             const leaderIds = (leaders || []).map(l => l.profile_id).filter(Boolean);
 
             // Also notify department admins
@@ -283,6 +464,10 @@ Deno.serve(async (req: Request) => {
               });
               const title = "🧗 등반 예정자 알림";
               const body = `다음 번 출석 시 등반 예정자가 있습니다: ${memberNames}`;
+              if (dryRun) {
+                log.push(`[climbing] Dry run skipped send to ${uniqueTokens.length} devices for candidates: ${memberNames}`);
+                continue;
+              }
               const results = await Promise.allSettled(uniqueTokens.map(t => sendPush(accessToken, t.token, title, body, "grace-note-climbing")));
               const sent = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
               log.push(`[climbing] Sent: ${sent}/${uniqueTokens.length} for candidates: ${memberNames}`);

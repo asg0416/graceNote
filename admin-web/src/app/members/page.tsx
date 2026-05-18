@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef, Fragment, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -37,6 +38,12 @@ import SmartBatchModal from '@/components/SmartBatchModal';
 import RichTextEditor from '@/components/RichTextEditor';
 import { MemberModal, MemberProfile } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
+import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
+import {
+    setMemberDirectoryActiveStatus,
+    setPersonDepartmentActiveStatus,
+    upsertMemberPersonMembership,
+} from '@/lib/memberWriteRpc';
 
 interface Church {
     id: string;
@@ -57,6 +64,72 @@ interface Group {
     color_hex?: string;
 }
 
+type RosterMember = MemberProfile & {
+    phase2_person_id?: string | null;
+    phase2_affiliations?: RosterAffiliation[];
+};
+
+interface RosterAffiliation {
+    id: string;
+    departmentName: string | null;
+    departmentColor: string | null;
+    groupName: string | null;
+    groupColor: string | null;
+    role: string | null;
+    source: 'group_member' | 'directory_only';
+}
+
+interface RawMembershipAffiliation {
+    id: string;
+    person_id: string;
+    role: string | null;
+    legacy_group_member_id: string | null;
+    departments: { name: string | null; color_hex: string | null } | null;
+    groups: { name: string | null; color_hex: string | null } | null;
+}
+
+interface Phase2ListCheck {
+    status: 'idle' | 'ok' | 'warning' | 'unavailable';
+    legacyActiveCount: number;
+    phase2ActiveCount: number;
+    legacyActivePersonCount: number;
+    phase2ActivePersonCount: number;
+    issueCount: number;
+    message: string;
+}
+
+const getRosterPersonKey = (member: RosterMember) => member.phase2_person_id || member.person_id || member.id;
+
+const selectPreferredInactiveRosterRow = (rows: RosterMember[]) => (
+    rows.find(row => row.is_active !== false) ||
+    rows.find(row => Boolean(row.group_name) && row.group_name !== '미정') ||
+    rows[0]
+);
+
+const applyCanonicalFamilyInfo = (sourceMembers: RosterMember[]) => {
+    const rowsByPerson = new Map<string, RosterMember[]>();
+    sourceMembers.forEach((member) => {
+        const key = getRosterPersonKey(member);
+        const rows = rowsByPerson.get(key) || [];
+        rows.push(member);
+        rowsByPerson.set(key, rows);
+    });
+
+    return sourceMembers.map((member) => {
+        const rows = rowsByPerson.get(getRosterPersonKey(member)) || [member];
+        const spouseName = rows.find(row => row.spouse_name)?.spouse_name || member.spouse_name;
+        const childrenInfo = rows.find(row => row.children_info)?.children_info || member.children_info;
+        const weddingAnniversary = rows.find(row => row.wedding_anniversary)?.wedding_anniversary || member.wedding_anniversary;
+
+        return {
+            ...member,
+            spouse_name: member.spouse_name || spouseName || null,
+            children_info: member.children_info || childrenInfo || null,
+            wedding_anniversary: member.wedding_anniversary || weddingAnniversary || null
+        };
+    });
+};
+
 export default function MembersPage() {
     return (
         <Suspense fallback={
@@ -72,7 +145,7 @@ export default function MembersPage() {
 
 function MembersPageInner() {
     const [loading, setLoading] = useState(true);
-    const [members, setMembers] = useState<MemberProfile[]>([]);
+    const [members, setMembers] = useState<RosterMember[]>([]);
     const [churches, setChurches] = useState<Church[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
     const [isMaster, setIsMaster] = useState(false);
@@ -99,7 +172,7 @@ function MembersPageInner() {
     const [isGroupedView, setIsGroupedView] = useState(false);
 
     const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
-    const [lastAction, setLastAction] = useState<{ type: 'move' | 'delete', data: MemberProfile[] } | null>(null);
+    const [lastAction, setLastAction] = useState<{ type: 'move' | 'archive', data: MemberProfile[] } | null>(null);
     const [showUndo, setShowUndo] = useState(false);
     const [sortBy, setSortBy] = useState<'name' | 'group' | 'role' | 'family'>('name');
     const [filterStatus, setFilterStatus] = useState<'all' | 'linked' | 'not_linked'>('all');
@@ -110,6 +183,15 @@ function MembersPageInner() {
     const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
     const [collapsedDepts, setCollapsedDepts] = useState<string[]>([]);
     const [nameSuggestions, setNameSuggestions] = useState<MemberProfile[]>([]);
+    const [phase2ListCheck, setPhase2ListCheck] = useState<Phase2ListCheck>({
+        status: 'idle',
+        legacyActiveCount: 0,
+        phase2ActiveCount: 0,
+        legacyActivePersonCount: 0,
+        phase2ActivePersonCount: 0,
+        issueCount: 0,
+        message: 'Phase 2 진단 대기 중'
+    });
 
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -256,8 +338,9 @@ function MembersPageInner() {
         try {
             let query = supabase
                 .from('departments')
-                .select('id, name, color_hex')
-                .eq('church_id', churchId);
+                .select('id, name, color_hex, profile_mode')
+                .eq('church_id', churchId)
+                .eq('is_active', true);
 
             if (assignedDeptId) {
                 query = query.eq('id', assignedDeptId);
@@ -280,11 +363,72 @@ function MembersPageInner() {
                 .from('groups')
                 .select('id, name, color_hex')
                 .eq('department_id', deptId)
+                .eq('is_active', true)
                 .order('name');
             setGroups((data as Group[]) || []);
         } catch (err) {
             console.error(err);
         }
+    };
+
+    const fetchPhase2PersonMap = async (directoryIds: string[]) => {
+        if (directoryIds.length === 0) return new Map<string, string>();
+
+        const { data, error } = await supabase
+            .from('member_profiles')
+            .select('person_id, member_directory_id')
+            .in('member_directory_id', directoryIds);
+
+        if (error) throw error;
+
+        return new Map(
+            (data || [])
+                .filter(profile => profile.member_directory_id && profile.person_id)
+                .map(profile => [profile.member_directory_id as string, profile.person_id as string])
+        );
+    };
+
+    const fetchPhase2AffiliationsMap = async (churchId: string, personIds: string[], deptId: string = 'all') => {
+        const uniquePersonIds = Array.from(new Set(personIds.filter(Boolean)));
+        if (uniquePersonIds.length === 0) return new Map<string, RosterAffiliation[]>();
+
+        let query = supabase
+            .from('memberships')
+            .select(`
+                id,
+                person_id,
+                role,
+                legacy_group_member_id,
+                departments!department_id (name, color_hex),
+                groups!group_id (name, color_hex)
+            `)
+            .eq('church_id', churchId)
+            .eq('status', 'active')
+            .in('person_id', uniquePersonIds);
+
+        if (deptId !== 'all') {
+            query = query.eq('department_id', deptId);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: true });
+        if (error) throw error;
+
+        const affiliationsByPerson = new Map<string, RosterAffiliation[]>();
+        ((data || []) as unknown as RawMembershipAffiliation[]).forEach((membership) => {
+            const affiliations = affiliationsByPerson.get(membership.person_id) || [];
+            affiliations.push({
+                id: membership.id,
+                departmentName: membership.departments?.name || null,
+                departmentColor: membership.departments?.color_hex || null,
+                groupName: membership.groups?.name || null,
+                groupColor: membership.groups?.color_hex || null,
+                role: membership.role,
+                source: membership.legacy_group_member_id ? 'group_member' : 'directory_only'
+            });
+            affiliationsByPerson.set(membership.person_id, affiliations);
+        });
+
+        return affiliationsByPerson;
     };
 
     const fetchMembers = async (churchId: string, deptId: string = 'all') => {
@@ -320,15 +464,128 @@ function MembersPageInner() {
             const { data, error } = await query.order('full_name');
 
             if (error) throw error;
-            const fetchedMembers = data || [];
+            const fetchedMembers = (data || []) as MemberProfile[];
+            const phase2PersonMap = await fetchPhase2PersonMap(fetchedMembers.map(member => member.id));
+            const phase2AffiliationsMap = await fetchPhase2AffiliationsMap(
+                churchId,
+                Array.from(new Set(fetchedMembers.map(member => phase2PersonMap.get(member.id)).filter(Boolean))) as string[],
+                deptId
+            );
+            const enrichedMembers: RosterMember[] = applyCanonicalFamilyInfo(fetchedMembers.map(member => ({
+                ...member,
+                phase2_person_id: phase2PersonMap.get(member.id) || null,
+                phase2_affiliations: phase2PersonMap.get(member.id)
+                    ? phase2AffiliationsMap.get(phase2PersonMap.get(member.id) as string) || []
+                    : []
+            })));
 
+            await refreshPhase2ListCheck(enrichedMembers, churchId, deptId);
 
-
-            setMembers(fetchedMembers as MemberProfile[]);
+            setMembers(enrichedMembers);
         } catch (err) {
             console.error(err);
+            setPhase2ListCheck({
+                status: 'unavailable',
+                legacyActiveCount: 0,
+                phase2ActiveCount: 0,
+                legacyActivePersonCount: 0,
+                phase2ActivePersonCount: 0,
+                issueCount: 0,
+                message: 'Phase 2 목록 진단을 실행하지 못했습니다.'
+            });
         } finally {
             setLoading(false);
+        }
+    };
+
+    const refreshPhase2ListCheck = async (fetchedMembers: RosterMember[], churchId: string, deptId: string = 'all') => {
+        // '미정'(unassigned)은 아직 조에 배정되지 않은 대기 상태 — Phase 2 group membership이 없어도 정상이므로 진단에서 제외
+        const activeLegacyMembers = fetchedMembers.filter(member =>
+            member.is_active !== false &&
+            Boolean(member.group_name) &&
+            member.group_name !== '미정'
+        );
+        const activeLegacyDirectoryIds = new Set(activeLegacyMembers.map(member => member.id));
+        const activeLegacyPersonIds = new Set(activeLegacyMembers.map(getRosterPersonKey));
+        const personIds = Array.from(new Set(fetchedMembers.map(member => member.phase2_person_id).filter(Boolean)));
+
+        if (fetchedMembers.length === 0) {
+            setPhase2ListCheck({
+                status: 'ok',
+                legacyActiveCount: 0,
+                phase2ActiveCount: 0,
+                legacyActivePersonCount: 0,
+                phase2ActivePersonCount: 0,
+                issueCount: 0,
+                message: '확인할 명부 row가 없습니다.'
+            });
+            return;
+        }
+
+        try {
+            if (personIds.length === 0) {
+                setPhase2ListCheck({
+                    status: activeLegacyMembers.length === 0 ? 'ok' : 'warning',
+                    legacyActiveCount: activeLegacyMembers.length,
+                    phase2ActiveCount: 0,
+                    legacyActivePersonCount: activeLegacyPersonIds.size,
+                    phase2ActivePersonCount: 0,
+                    issueCount: activeLegacyMembers.length,
+                    message: activeLegacyMembers.length === 0
+                        ? 'Phase 2 비교 대상이 없습니다.'
+                        : 'Phase 2 member_profiles 연결이 없는 active 명부가 있습니다.'
+                });
+                return;
+            }
+
+            const { data: memberships, error: membershipsError } = await supabase
+                .from('memberships')
+                .select('id, person_id, status, department_id, legacy_member_directory_id')
+                .in('person_id', personIds)
+                .eq('church_id', churchId)
+                .eq('status', 'active');
+
+            if (membershipsError) throw membershipsError;
+
+            const relevantActiveMemberships = (memberships || []).filter(membership => {
+                if (deptId !== 'all' && membership.department_id !== deptId) return false;
+                return true;
+            });
+            const phase2ActivePersonIds = new Set(relevantActiveMemberships.map(membership => membership.person_id).filter(Boolean));
+            const phase2ActiveDirectoryIds = new Set(
+                relevantActiveMemberships
+                    .map(membership => membership.legacy_member_directory_id)
+                    .filter(Boolean)
+            );
+
+            const missingPhase2Count = activeLegacyMembers.filter(member => !phase2ActiveDirectoryIds.has(member.id)).length;
+            const extraPhase2Count = relevantActiveMemberships.filter(membership => (
+                !membership.legacy_member_directory_id || !activeLegacyDirectoryIds.has(membership.legacy_member_directory_id)
+            )).length;
+            const issueCount = missingPhase2Count + extraPhase2Count;
+
+            setPhase2ListCheck({
+                status: issueCount === 0 ? 'ok' : 'warning',
+                legacyActiveCount: activeLegacyMembers.length,
+                phase2ActiveCount: relevantActiveMemberships.length,
+                legacyActivePersonCount: activeLegacyPersonIds.size,
+                phase2ActivePersonCount: phase2ActivePersonIds.size,
+                issueCount,
+                message: issueCount === 0
+                    ? '현재 목록 범위의 실제 사람과 active 소속이 Phase 2와 일치합니다.'
+                    : `누락 ${missingPhase2Count}건 / 추가 확인 ${extraPhase2Count}건`
+            });
+        } catch (error) {
+            console.warn('Phase 2 list diagnostic unavailable:', error);
+            setPhase2ListCheck({
+                status: 'unavailable',
+                legacyActiveCount: activeLegacyMembers.length,
+                phase2ActiveCount: 0,
+                legacyActivePersonCount: activeLegacyPersonIds.size,
+                phase2ActivePersonCount: 0,
+                issueCount: 0,
+                message: 'Phase 2 목록 진단을 불러오지 못했습니다.'
+            });
         }
     };
 
@@ -396,19 +653,24 @@ function MembersPageInner() {
         // Save for undo
         const previousStates = members
             .filter(m => selectedMemberIds.includes(m.id))
-            .map(m => ({ id: m.id, group_name: m.group_name, department_id: m.department_id }));
+            .map(m => ({ ...m }));
 
         setLoading(true);
         try {
-            const { error } = await supabase
-                .from('member_directory')
-                .update({
+            const movedMembers = [];
+            for (const member of previousStates) {
+                const savedMember = await upsertMemberPersonMembership(supabase, {
+                    ...member,
                     group_name: selectedGroup.name,
-                    department_id: targetDeptIdForMove
-                })
-                .in('id', selectedMemberIds);
-
-            if (error) throw error;
+                    department_id: targetDeptIdForMove,
+                });
+                movedMembers.push(savedMember);
+            }
+            await assertPhase2MemberDirectorySync(
+                supabase,
+                (movedMembers || []).map(member => member.id),
+                '성도 이동'
+            );
             setIsMoveModalOpen(false);
             setLastAction({ type: 'move', data: previousStates as MemberProfile[] });
             setShowUndo(true);
@@ -434,17 +696,34 @@ function MembersPageInner() {
                 // For simplicity, we can do multiple updates or a smarter mapping if needed
                 // But since it's just a few members usually, we can loop or use a custom RPC if it grows
                 for (const item of lastAction.data) {
-                    await supabase
-                        .from('member_directory')
-                        .update({ group_name: item.group_name, department_id: item.department_id })
-                        .eq('id', item.id);
+                    const data = await upsertMemberPersonMembership(supabase, {
+                        ...item,
+                        id: item.id,
+                        group_name: item.group_name,
+                        department_id: item.department_id,
+                    });
+                    await assertPhase2MemberDirectorySync(
+                        supabase,
+                        [data.id],
+                        '성도 이동 되돌리기'
+                    );
                 }
-            } else if (lastAction.type === 'delete') {
-                // Restore delete: re-insert
-                const { error } = await supabase
-                    .from('member_directory')
-                    .insert(lastAction.data);
-                if (error) throw error;
+            } else if (lastAction.type === 'archive') {
+                // Restore archived members.
+                const restoredIds = [];
+                const restoredKeys = new Set<string>();
+                for (const item of lastAction.data) {
+                    const key = `${getRosterPersonKey(item)}:${item.church_id}:${item.department_id}`;
+                    if (restoredKeys.has(key)) continue;
+                    restoredKeys.add(key);
+                    const affectedIds = await setMemberDepartmentActive(item, true);
+                    restoredIds.push(...affectedIds);
+                }
+                await assertPhase2MemberDirectorySync(
+                    supabase,
+                    restoredIds,
+                    '성도 부서 소속 비활성화 되돌리기'
+                );
             }
 
             setLastAction(null);
@@ -459,7 +738,38 @@ function MembersPageInner() {
         }
     };
 
-    const filteredMembers = members.filter(m => {
+    const rosterDisplayMembers = useMemo(() => {
+        if (filterActive !== 'all') return members;
+
+        const rowsByPerson = new Map<string, RosterMember[]>();
+        members.forEach((member) => {
+            const key = getRosterPersonKey(member);
+            const rows = rowsByPerson.get(key) || [];
+            rows.push(member);
+            rowsByPerson.set(key, rows);
+        });
+
+        const visibleRows: RosterMember[] = [];
+        rowsByPerson.forEach((rows) => {
+            const hasActiveMembership = rows.some(row => (row.phase2_affiliations || []).length > 0);
+            if (hasActiveMembership) {
+                const assignedActiveRows = rows.filter(row =>
+                    row.is_active !== false &&
+                    Boolean(row.group_name) &&
+                    row.group_name !== '미정'
+                );
+                visibleRows.push(...(assignedActiveRows.length > 0 ? assignedActiveRows : [selectPreferredInactiveRosterRow(rows)]));
+                return;
+            }
+
+            const fallbackRow = selectPreferredInactiveRosterRow(rows);
+            if (fallbackRow) visibleRows.push(fallbackRow);
+        });
+
+        return visibleRows;
+    }, [filterActive, members]);
+
+    const filteredMembers = rosterDisplayMembers.filter(m => {
         const matchesSearch = m.full_name?.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesGroup = selectedGroupId === 'all' || m.group_name === groups.find(g => g.id === selectedGroupId)?.name;
         const matchesStatus = filterStatus === 'all'
@@ -478,7 +788,7 @@ function MembersPageInner() {
     }).sort((a, b) => {
         // Priority 1: If sorted by family OR in couple mode, use family grouping
         if (sortBy === 'family' || (sortBy === 'name' && deptProfileMode === 'couple')) {
-            const getFamilyKey = (m: MemberProfile) => {
+            const getFamilyKey = (m: RosterMember) => {
                 if (m.family_id) return m.family_id;
                 if (m.spouse_name) {
                     // Create a stable key from both names so husband/wife get same key
@@ -502,13 +812,13 @@ function MembersPageInner() {
 
     // 3. Deduplicate by person_id to create 'Master List'
     const masterMembers = useMemo(() => {
-        const map = new Map();
-        filteredMembers.forEach((m: MemberProfile) => {
-            const key = m.person_id || m.id;
+        const map = new Map<string, RosterMember>();
+        filteredMembers.forEach((m: RosterMember) => {
+            const key = getRosterPersonKey(m);
             // If already exists, keep the one with group info or preferred metadata
             if (!map.has(key)) {
                 map.set(key, m);
-            } else if (!map.get(key).group_name && m.group_name) {
+            } else if (!map.get(key)?.group_name && m.group_name) {
                 map.set(key, m);
             }
         });
@@ -522,14 +832,22 @@ function MembersPageInner() {
     const groupedData = useMemo(() => {
         if (!isGroupedView) return null;
 
-        const groups: Record<string, MemberProfile[]> = {};
-        masterMembers.forEach((m: MemberProfile) => {
-            const groupName = m.group_name || '미배정';
+        const groups: Record<string, RosterMember[]> = {};
+        const sourceMembers = selectedDeptId === 'all' ? masterMembers : filteredMembers;
+
+        sourceMembers.forEach((m: RosterMember) => {
+            const groupName = selectedDeptId === 'all'
+                ? m.departments?.name || '부서 미정'
+                : m.group_name || '미배정';
             if (!groups[groupName]) groups[groupName] = [];
             groups[groupName].push(m);
         });
         return groups;
-    }, [masterMembers, isGroupedView]);
+    }, [filteredMembers, masterMembers, isGroupedView, selectedDeptId]);
+
+    const visibleMembers = isGroupedView && selectedDeptId !== 'all' ? filteredMembers : masterMembers;
+    const groupedCountUnit = selectedDeptId === 'all' ? '명' : '개 소속';
+    const groupedModeLabel = selectedDeptId === 'all' ? '부서별 모드' : '조별 모드';
 
     const toggleMemberSelection = (id: string) => {
         setSelectedMemberIds(prev =>
@@ -538,21 +856,41 @@ function MembersPageInner() {
     };
 
     const toggleAllMembers = () => {
-        if (selectedMemberIds.length === filteredMembers.length) {
+        if (selectedMemberIds.length === visibleMembers.length) {
             setSelectedMemberIds([]);
         } else {
-            setSelectedMemberIds(filteredMembers.map((m: MemberProfile) => m.id));
+            setSelectedMemberIds(visibleMembers.map((m: RosterMember) => m.id));
         }
     };
 
+    const setMemberDepartmentActive = async (member: RosterMember, isActive: boolean) => {
+        if (member.phase2_person_id && member.church_id && member.department_id) {
+            return setPersonDepartmentActiveStatus(supabase, {
+                personId: member.phase2_person_id,
+                churchId: member.church_id,
+                departmentId: member.department_id,
+                isActive,
+            });
+        }
+
+        const savedMember = await setMemberDirectoryActiveStatus(supabase, member.id, isActive);
+        return [savedMember.id];
+    };
+
     const handleDeleteMember = async (id: string) => {
-        if (!confirm('이 성도 정보를 삭제하시겠습니까?')) return;
+        const targetMember = members.find(member => member.id === id);
+        if (!targetMember) return;
+        if (!confirm('이 사람의 현재 부서 소속 전체를 비활성화하시겠습니까? 여러 조 소속이 있으면 함께 비활성화되고, 출석/기도 기록은 보존됩니다.')) return;
         try {
-            const { error } = await supabase.from('member_directory').delete().eq('id', id);
-            if (error) throw error;
+            const affectedIds = await setMemberDepartmentActive(targetMember, false);
+            await assertPhase2MemberDirectorySync(
+                supabase,
+                affectedIds,
+                '성도 부서 소속 비활성화'
+            );
             if (currentChurchId) fetchMembers(currentChurchId, selectedDeptId);
         } catch (err) {
-            alert('삭제 중 오류가 발생했습니다.');
+            alert('비활성화 중 오류가 발생했습니다.');
         }
     };
 
@@ -568,14 +906,34 @@ function MembersPageInner() {
 
             if (error) throw error;
 
-            // Sync with member_directory: 조 이름이 명부에도 저장되어 있으므로 함께 업데이트
-            const { error: syncError } = await supabase
+            const renamedGroup = groups.find(group => group.id === groupId);
+            let syncQuery = supabase
                 .from('member_directory')
-                .update({ group_name: newName.trim() })
+                .select('*')
                 .eq('church_id', currentChurchId)
                 .eq('group_name', currentName.trim());
 
+            if (renamedGroup?.department_id) {
+                syncQuery = syncQuery.eq('department_id', renamedGroup.department_id);
+            }
+
+            const { data: membersToRename, error: syncError } = await syncQuery;
             if (syncError) throw syncError;
+
+            const renamedMembers = [];
+            for (const member of membersToRename || []) {
+                const savedMember = await upsertMemberPersonMembership(supabase, {
+                    ...member,
+                    group_name: newName.trim(),
+                });
+                renamedMembers.push(savedMember);
+            }
+
+            await assertPhase2MemberDirectorySync(
+                supabase,
+                (renamedMembers || []).map(member => member.id),
+                '조 이름 변경'
+            );
 
             // Update local member data to reflect change immediately if current view uses this group
             setMembers(prev => prev.map(m => m.group_name === currentName ? { ...m, group_name: newName } : m));
@@ -605,7 +963,7 @@ function MembersPageInner() {
                         <p className="text-slate-500 dark:text-slate-500 font-bold text-xs sm:text-sm tracking-tight">
                             {isMaster
                                 ? '성도 개개인의 상세 프로필과 신상 정보를 통합 관리하는 마스터 명부입니다.'
-                                : <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || (selectedDeptId === 'all' ? '교회 전체' : '부서')}</span> 명부입니다. 소속 성도들의 정보를 관리합니다.</>}
+                                : <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || (selectedDeptId === 'all' ? '교회 전체' : '부서')}</span> 명부입니다. 실제 사람 기준으로 성도를 관리합니다.</>}
                         </p>
                     </div>
                     <div className="flex items-center gap-2 sm:gap-3">
@@ -728,7 +1086,7 @@ function MembersPageInner() {
                         )}
                     </div>
 
-                    <Tooltip content={isGroupedView ? "모든 성도를 한 번에 나열하여 확인합니다." : "성도를 조별로 묶어서 관리하기 편하게 보여줍니다."}>
+                    <Tooltip content={isGroupedView ? "모든 성도를 한 번에 나열하여 확인합니다." : selectedDeptId === 'all' ? "성도를 부서별로 묶어서 확인합니다." : "성도를 조별 소속 기준으로 묶어서 확인합니다."}>
                         <button
                             onClick={() => setIsGroupedView(!isGroupedView)}
                             className={cn(
@@ -740,7 +1098,7 @@ function MembersPageInner() {
                             title={""}
                         >
                             {isGroupedView ? <LayoutGrid className="w-4 h-4 text-indigo-500" /> : <Layout className="w-4 h-4" />}
-                            <span>{isGroupedView ? '조별 모드' : '목록 모드'}</span>
+                            <span>{isGroupedView ? groupedModeLabel : '목록 모드'}</span>
                         </button>
                     </Tooltip>
 
@@ -881,6 +1239,92 @@ function MembersPageInner() {
                         )}
                     </div>
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="p-4 rounded-[22px] bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">성도 수</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{masterMembers.length}명</p>
+                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">현재 필터에서 중복 소속을 합친 사람 수</p>
+                    </div>
+                    <div className="p-4 rounded-[22px] bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">소속 항목</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{filteredMembers.length}개</p>
+                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">부서·조 소속을 기준으로 본 항목 수</p>
+                    </div>
+                    <div className="p-4 rounded-[22px] bg-white dark:bg-[#111827]/60 border border-slate-200 dark:border-slate-800 shadow-sm">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">현재 활동</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{phase2ListCheck.phase2ActivePersonCount}명</p>
+                        <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">활성 소속이 있는 사람 수</p>
+                    </div>
+                </div>
+
+                {phase2ListCheck.status !== 'ok' && (
+                <div className={cn(
+                    "rounded-[24px] border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm",
+                    phase2ListCheck.status === 'warning'
+                        ? "bg-rose-50/80 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20"
+                        : phase2ListCheck.status === 'unavailable'
+                            ? "bg-amber-50/80 dark:bg-amber-500/10 border-amber-100 dark:border-amber-500/20"
+                            : "bg-emerald-50/80 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20"
+                )}>
+                    <div className="flex items-start gap-3">
+                        <div className={cn(
+                            "w-10 h-10 rounded-2xl flex items-center justify-center shrink-0",
+                            phase2ListCheck.status === 'warning'
+                                ? "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-300"
+                                : phase2ListCheck.status === 'unavailable'
+                                    ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300"
+                                    : "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300"
+                        )}>
+                            {phase2ListCheck.status === 'warning' ? <ShieldCheck className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+                        </div>
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">
+                                    Phase 2 목록 진단
+                                </p>
+                                <span className="px-2 py-0.5 rounded-lg bg-white/70 dark:bg-slate-900/50 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                                    Read Only
+                                </span>
+                            </div>
+                            <p className={cn(
+                                "text-xs sm:text-sm font-black",
+                                phase2ListCheck.status === 'warning'
+                                    ? "text-rose-700 dark:text-rose-300"
+                                    : phase2ListCheck.status === 'unavailable'
+                                        ? "text-amber-700 dark:text-amber-300"
+                                        : "text-emerald-700 dark:text-emerald-300"
+                            )}>
+                                {phase2ListCheck.message}
+                            </p>
+                            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                현재 교회/부서 로드 범위에서 실제 사람 수와 active 소속 수를 함께 비교합니다. 기존 명부 기능에는 영향을 주지 않습니다.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 sm:min-w-[280px]">
+                        <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">legacy people</p>
+                            <p className="text-lg font-black text-slate-900 dark:text-white">{phase2ListCheck.legacyActivePersonCount}</p>
+                            <p className="text-[8px] font-bold text-slate-400">{phase2ListCheck.legacyActiveCount} rows</p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">phase2 people</p>
+                            <p className="text-lg font-black text-slate-900 dark:text-white">{phase2ListCheck.phase2ActivePersonCount}</p>
+                            <p className="text-[8px] font-bold text-slate-400">{phase2ListCheck.phase2ActiveCount} memberships</p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">issues</p>
+                            <p className={cn(
+                                "text-lg font-black",
+                                phase2ListCheck.issueCount > 0 ? "text-rose-600 dark:text-rose-300" : "text-slate-900 dark:text-white"
+                            )}>
+                                {phase2ListCheck.issueCount}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                )}
             </div>
 
             {/* Group Tabs (Only visible when a department is selected) */}
@@ -938,14 +1382,14 @@ function MembersPageInner() {
                 )
             }
             {/* Members List Table */}
-            <div className="bg-white dark:bg-[#111827]/60 backdrop-blur-xl rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800/80 overflow-hidden shadow-xl">
-                <div className="overflow-x-auto">
+            <div className="relative z-0 bg-white dark:bg-[#111827]/60 backdrop-blur-xl rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800/80 shadow-xl">
+                <div className="overflow-visible">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-800/60">
                                 <th className="pl-6 sm:pl-8 py-4 w-10">
                                     <button onClick={toggleAllMembers} className="text-slate-400 hover:text-indigo-600 transition-colors">
-                                        {selectedMemberIds.length === filteredMembers.length ? <CheckSquare className="w-5 h-5 text-indigo-600" /> : <Square className="w-5 h-5" />}
+                                        {selectedMemberIds.length === visibleMembers.length ? <CheckSquare className="w-5 h-5 text-indigo-600" /> : <Square className="w-5 h-5" />}
                                     </button>
                                 </th>
                                 <th className="px-4 sm:px-6 py-4 text-[9px] sm:text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">성도 이름</th>
@@ -971,12 +1415,12 @@ function MembersPageInner() {
                                                     </div>
                                                     <span className="flex items-center gap-2">
                                                         {groupName}
-                                                        <span className="text-slate-400 dark:text-slate-500 font-bold ml-1">({groupMembers.length}명)</span>
+                                                        <span className="text-slate-400 dark:text-slate-500 font-bold ml-1">({groupMembers.length}{groupedCountUnit})</span>
                                                     </span>
                                                 </button>
                                             </td>
                                         </tr>
-                                        {!collapsedGroups.includes(groupName) && groupMembers.map((m: MemberProfile) => (
+                                        {!collapsedGroups.includes(groupName) && groupMembers.map((m: RosterMember) => (
                                             <MemberRow
                                                 key={m.id}
                                                 member={m}
@@ -990,7 +1434,7 @@ function MembersPageInner() {
                                     </Fragment>
                                 ))
                             ) : (
-                                masterMembers.map((m: MemberProfile) => (
+                                masterMembers.map((m: RosterMember) => (
                                     <MemberRow
                                         key={m.id}
                                         member={m}
@@ -1002,7 +1446,7 @@ function MembersPageInner() {
                                     />
                                 ))
                             )}
-                            {masterMembers.length === 0 && (
+                            {visibleMembers.length === 0 && (
                                 <tr>
                                     <td colSpan={6} className="px-8 py-32 text-center">
                                         <div className="flex flex-col items-center gap-4">
@@ -1043,24 +1487,36 @@ function MembersPageInner() {
                                 </button>
                                 <button
                                     onClick={async () => {
-                                        if (!confirm(`${selectedMemberIds.length}명을 일괄 삭제하시겠습니까?`)) return;
-                                        const deletedMembers = members.filter(m => selectedMemberIds.includes(m.id));
+                                        if (!confirm('선택한 성도의 현재 부서 소속을 일괄 비활성화하시겠습니까? 같은 사람이 여러 조에 있으면 해당 부서 소속 전체가 함께 비활성화됩니다.')) return;
+                                        const archivedMembers = members.filter(m => selectedMemberIds.includes(m.id));
                                         try {
-                                            const { error } = await supabase.from('member_directory').delete().in('id', selectedMemberIds);
-                                            if (error) throw error;
-                                            setLastAction({ type: 'delete', data: deletedMembers });
+                                            const archivedIds = [];
+                                            const archivedKeys = new Set<string>();
+                                            for (const member of archivedMembers) {
+                                                const key = `${getRosterPersonKey(member)}:${member.church_id}:${member.department_id}`;
+                                                if (archivedKeys.has(key)) continue;
+                                                archivedKeys.add(key);
+                                                const affectedIds = await setMemberDepartmentActive(member, false);
+                                                archivedIds.push(...affectedIds);
+                                            }
+                                            await assertPhase2MemberDirectorySync(
+                                                supabase,
+                                                archivedIds,
+                                                '성도 부서 소속 일괄 비활성화'
+                                            );
+                                            setLastAction({ type: 'archive', data: archivedMembers });
                                             setShowUndo(true);
                                             setSelectedMemberIds([]);
                                             if (currentChurchId) fetchMembers(currentChurchId, selectedDeptId);
                                             setTimeout(() => setShowUndo(false), 10000);
                                         } catch (err) {
-                                            alert('삭제 오류');
+                                            alert('비활성화 오류');
                                         }
                                     }}
                                     className="flex items-center gap-2 px-5 py-2.5 bg-rose-500/20 dark:bg-rose-50 hover:bg-rose-500/30 dark:hover:bg-rose-100 text-rose-500 rounded-2xl font-black text-xs transition-all active:scale-95 group"
                                 >
                                     <TrashIcon className="w-4 h-4 group-hover:shake transition-transform" />
-                                    일괄 삭제
+                                    일괄 비활성화
                                 </button>
                                 <button
                                     onClick={() => setSelectedMemberIds([])}
@@ -1079,7 +1535,7 @@ function MembersPageInner() {
                 showUndo && lastAction && (
                     <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-5 duration-500">
                         <div className="bg-indigo-600 text-white px-6 py-4 rounded-[24px] shadow-2xl flex items-center gap-4">
-                            <p className="text-sm font-bold">삭제되었습니다.</p>
+                            <p className="text-sm font-bold">비활성화되었습니다.</p>
                             <button
                                 onClick={handleUndo}
                                 className="bg-white text-indigo-600 px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-50 transition-all active:scale-95"
@@ -1212,7 +1668,7 @@ const getGroupColor = (groupName: string, customHex?: string) => {
 
 // Helper component for each row
 interface MemberRowProps {
-    member: MemberProfile;
+    member: RosterMember;
     groupedGroups: Group[];
     isSelected: boolean;
     onToggle: () => void;
@@ -1223,6 +1679,80 @@ interface MemberRowProps {
 const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onDelete }: MemberRowProps) => {
     const groupInfo = groupedGroups.find((g) => g.name === m.group_name);
     const groupColor = getGroupColor(m.group_name || '', groupInfo?.color_hex);
+    const phase2Affiliations = m.phase2_affiliations || [];
+    const [hoverCard, setHoverCard] = useState<{
+        placement: 'top' | 'bottom';
+        left: number;
+        top: number;
+        items: RosterAffiliation[];
+    } | null>(null);
+    const hoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const primaryAffiliation = phase2Affiliations.find((affiliation) => affiliation.groupName === m.group_name)
+        || phase2Affiliations[0]
+        || null;
+    const extraAffiliations = primaryAffiliation
+        ? phase2Affiliations.filter((affiliation) => affiliation.id !== primaryAffiliation.id)
+        : [];
+    const isLeader = m.role_in_group === 'leader' || phase2Affiliations.some((affiliation) => affiliation.role === 'leader');
+    const clearHoverCloseTimer = () => {
+        if (hoverCloseTimerRef.current) {
+            clearTimeout(hoverCloseTimerRef.current);
+            hoverCloseTimerRef.current = null;
+        }
+    };
+
+    const handleMoreAffiliationLeave = () => {
+        clearHoverCloseTimer();
+        hoverCloseTimerRef.current = setTimeout(() => {
+            setHoverCard(null);
+        }, 120);
+    };
+
+    const handleMoreAffiliationEnter = (event: React.MouseEvent<HTMLElement>) => {
+        clearHoverCloseTimer();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const placement = rect.top < window.innerHeight / 2 ? 'bottom' : 'top';
+        const cardWidth = 288;
+        const left = Math.min(Math.max(rect.left + rect.width / 2, cardWidth / 2 + 12), window.innerWidth - cardWidth / 2 - 12);
+
+        setHoverCard({
+            placement,
+            left,
+            top: placement === 'bottom' ? rect.bottom + 8 : rect.top - 8,
+            items: extraAffiliations,
+        });
+    };
+
+    useEffect(() => {
+        if (!hoverCard) {
+            return;
+        }
+
+        const closeHoverCard = () => {
+            clearHoverCloseTimer();
+            setHoverCard(null);
+        };
+
+        window.addEventListener('scroll', closeHoverCard, true);
+        window.addEventListener('wheel', closeHoverCard, { passive: true });
+        window.addEventListener('touchmove', closeHoverCard, { passive: true });
+        window.addEventListener('resize', closeHoverCard);
+
+        return () => {
+            window.removeEventListener('scroll', closeHoverCard, true);
+            window.removeEventListener('wheel', closeHoverCard);
+            window.removeEventListener('touchmove', closeHoverCard);
+            window.removeEventListener('resize', closeHoverCard);
+        };
+    }, [hoverCard]);
+
+    useEffect(() => {
+        return () => {
+            if (hoverCloseTimerRef.current) {
+                clearTimeout(hoverCloseTimerRef.current);
+            }
+        };
+    }, []);
 
     return (
         <tr className={cn("hover:bg-slate-50/80 dark:hover:bg-indigo-500/[0.02] transition-colors group", isSelected && "bg-indigo-50/50 dark:bg-indigo-500/[0.05]")}>
@@ -1244,14 +1774,14 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                             >
                                 {m.full_name}
                             </Link>
+                            {isLeader && (
+                                <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300 text-[9px] font-black border border-amber-100 dark:border-amber-500/20">
+                                    조장
+                                </span>
+                            )}
                             {m.is_active === false && (
                                 <span className="px-1.5 py-0.5 bg-slate-200 text-slate-500 text-[8px] sm:text-[9px] font-black rounded-md uppercase tracking-widest border border-slate-300">
                                     비활성
-                                </span>
-                            )}
-                            {m.role_in_group === 'leader' && (
-                                <span className="px-1.5 py-0.5 bg-amber-500 text-white text-[8px] sm:text-[9px] font-black rounded-md uppercase tracking-widest shadow-lg shadow-amber-500/20">
-                                    Leader
                                 </span>
                             )}
                         </div>
@@ -1277,20 +1807,89 @@ const MemberRow = ({ member: m, groupedGroups, isSelected, onToggle, onEdit, onD
                 </div>
             </td>
             <td className="px-4 sm:px-6 py-4 sm:py-5 hidden sm:table-cell">
-                <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.departments?.color_hex || '#e2e8f0' }} />
-                        <span className="text-[11px] sm:text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-tight">{m.departments?.name}</span>
-                    </div>
-                    <div
-                        className={cn(
-                            "inline-flex px-2.5 py-1 border rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-colors",
-                            groupColor.className
-                        )}
-                        style={groupColor.style}
-                    >
-                        {m.group_name || '미정'}
-                    </div>
+                <div className="space-y-2">
+                    {primaryAffiliation ? (
+                        <div className="max-w-[260px]">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: primaryAffiliation.departmentColor || '#e2e8f0' }} />
+                                <span className="text-[11px] sm:text-xs font-black text-slate-700 dark:text-slate-200 truncate">
+                                    {primaryAffiliation.departmentName || '부서 미정'}
+                                </span>
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-1.5">
+                                <span
+                                    className={cn(
+                                        "inline-flex max-w-[160px] px-2.5 py-1 border rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest truncate",
+                                        getGroupColor(primaryAffiliation.groupName || '', primaryAffiliation.groupColor || undefined).className
+                                    )}
+                                    style={getGroupColor(primaryAffiliation.groupName || '', primaryAffiliation.groupColor || undefined).style}
+                                >
+                                    {primaryAffiliation.groupName || '미정'}
+                                </span>
+                                        {extraAffiliations.length > 0 && (
+                                            <span
+                                                onMouseEnter={handleMoreAffiliationEnter}
+                                                onMouseLeave={handleMoreAffiliationLeave}
+                                                className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-300 cursor-default"
+                                            >
+                                                외 {extraAffiliations.length}
+                                            </span>
+                                        )}
+                                    </div>
+                            {hoverCard && typeof document !== 'undefined' && createPortal(
+                                <div
+                                    onMouseEnter={clearHoverCloseTimer}
+                                    onMouseLeave={handleMoreAffiliationLeave}
+                                    className="fixed z-[99999] w-72 max-h-[min(320px,calc(100vh-24px))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-slate-900/20 dark:border-slate-700 dark:bg-slate-900"
+                                    style={{
+                                        left: hoverCard.left,
+                                        top: hoverCard.top,
+                                        transform: hoverCard.placement === 'top' ? 'translate(-50%, -100%)' : 'translate(-50%, 0)',
+                                    }}
+                                >
+                                    <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
+                                        추가 소속 {hoverCard.items.length}개
+                                    </div>
+                                    <div className="space-y-2 p-3">
+                                        {hoverCard.items.map((affiliation) => (
+                                            <div
+                                                key={affiliation.id}
+                                                className="flex items-start gap-2 rounded-xl bg-white px-3 py-2.5 text-[10px] font-black text-slate-700 ring-1 ring-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700"
+                                            >
+                                                <span
+                                                    className="mt-1 h-2 w-2 shrink-0 rounded-full"
+                                                    style={{ backgroundColor: affiliation.groupColor || affiliation.departmentColor || '#94a3b8' }}
+                                                />
+                                                <span className="min-w-0">
+                                                    <span className="block truncate text-slate-900 dark:text-white">{affiliation.departmentName || '부서 미정'}</span>
+                                                    <span className="mt-0.5 block truncate text-[9px] font-bold text-slate-500 dark:text-slate-400">
+                                                        {affiliation.groupName || '미정'}{affiliation.role === 'leader' ? ' · 조장' : ''}
+                                                    </span>
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>,
+                                document.body
+                            )}
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex items-center gap-1.5">
+                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.departments?.color_hex || '#e2e8f0' }} />
+                                <span className="text-[11px] sm:text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-tight">{m.departments?.name}</span>
+                            </div>
+                            <div
+                                className={cn(
+                                    "inline-flex px-2.5 py-1 border rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-colors",
+                                    groupColor.className
+                                )}
+                                style={groupColor.style}
+                            >
+                                {m.group_name || '미정'}
+                            </div>
+                        </>
+                    )}
                 </div>
             </td>
             <td className="px-4 sm:px-6 py-4 sm:py-5 hidden lg:table-cell">

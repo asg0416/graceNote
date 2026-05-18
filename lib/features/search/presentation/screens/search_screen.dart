@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/utils/snack_bar_util.dart';
-import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:grace_note/features/prayer/presentation/widgets/prayer_card.dart';
 import 'package:grace_note/core/widgets/app_skeleton.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
+import 'package:grace_note/core/providers/user_role_provider.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -25,11 +25,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   List<Map<String, dynamic>> _searchResults = [];
   bool _isLoading = false;
   bool _searchInitiated = false;
+  String? _lastRoleScopeKey;
 
   @override
   void initState() {
     super.initState();
     // 초기 검색 제거 (사용자가 검색을 시작할 때까지는 비워둠)
+  }
+
+  void _resetSearchStateForRoleChange() {
+    _searchController.clear();
+    setState(() {
+      _selectedDate = null;
+      _selectedGroupId = 'all';
+      _searchResults = [];
+      _isLoading = false;
+      _searchInitiated = false;
+    });
   }
 
   Future<void> _performSearch() async {
@@ -43,26 +55,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     try {
       final userGroups = ref.read(userGroupsProvider).value ?? [];
-      final isLeaderOrAdmin = userGroups.any((g) => g['role_in_group'] == 'leader' || g['role_in_group'] == 'admin') ||
-                             profile.role == 'admin' || profile.isMaster;
-      
+      final activeRole = ref.read(activeRoleProvider);
+      final activeMembership = ref.read(activeMembershipProvider);
+      final isLeaderOrAdmin =
+          activeRole == AppRole.admin || activeRole == AppRole.leader;
+
       String finalGroupId = _selectedGroupId;
       if (!isLeaderOrAdmin && userGroups.isNotEmpty) {
-        // 조원은 본인 소속 조 ID로 강제 고정
-        finalGroupId = userGroups.first['group_id'];
+        // 일반 조원 역할에서는 현재 선택된 소속 조 안에서만 검색한다.
+        finalGroupId =
+            activeMembership?.groupId ?? userGroups.first['group_id'];
       }
 
-      final List<Map<String, dynamic>> results = await ref.read(repositoryProvider).searchPrayers(
-        churchId: profile.churchId ?? '',
-        departmentId: profile.departmentId,
-        groupId: finalGroupId,
-        date: _selectedDate,
-        searchTerm: _searchController.text,
-      );
+      final List<Map<String, dynamic>> results =
+          await ref.read(repositoryProvider).searchPrayers(
+                churchId: profile.churchId ?? '',
+                departmentId: profile.departmentId,
+                groupId: finalGroupId,
+                date: _selectedDate,
+                searchTerm: _searchController.text,
+              );
 
-      final List<Map<String, dynamic>> sortedResults = List<Map<String, dynamic>>.from(results);
+      final List<Map<String, dynamic>> sortedResults =
+          List<Map<String, dynamic>>.from(results);
       // [SORT] 부부형이면 marriage key(부부묶음+가나다), 아니면 이름순
-      final isCoupleMode = userGroups.isNotEmpty && userGroups.first['profile_mode'] == 'couple';
+      final isCoupleMode =
+          userGroups.isNotEmpty && userGroups.first['profile_mode'] == 'couple';
 
       sortedResults.sort((a, b) {
         final m1 = a['member_directory'] ?? {};
@@ -105,6 +123,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       }
     }
   }
+
 // ... (selectDate 메서드는 동일하므로 생략하거나 아래에서 context 유지)
   Future<void> _selectDate(BuildContext context) async {
     showDialog(
@@ -118,38 +137,51 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(24),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))],
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10))
+              ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('검색 날짜 선택 (일요일)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textMain, fontFamily: 'Pretendard')),
+                  child: Text('검색 날짜 선택 (일요일)',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textMain,
+                          fontFamily: 'Pretendard')),
                 ),
                 const Divider(height: 24),
                 shad.ShadCalendar(
                   key: ValueKey(_selectedDate),
                   selected: _selectedDate,
                   initialMonth: () {
-                    final DateTime d = _selectedDate ?? ref.read(selectedWeekDateProvider);
+                    final DateTime d =
+                        _selectedDate ?? ref.read(selectedWeekDateProvider);
                     return DateTime(d.year, d.month, 1);
                   }(),
                   weekStartsOn: 7,
                   selectableDayPredicate: (date) {
                     final profile = ref.read(userProfileProvider).value;
                     if (profile?.churchId == null) return false;
-                    
+
                     // 동기적으로 provider 값을 읽어옴 (이미 로드되었을 가능성 높음)
                     // 만약 로드되지 않았다면 기본적으로 false가 되어 선택 등 불가하거나,
-                    // 사용자 경험상 로딩 스피너를 보여주는게 맞지만, 
+                    // 사용자 경험상 로딩 스피너를 보여주는게 맞지만,
                     // 여기서는 간단히 availableWeeksProvider값 확인
-                    final weeksAsync = ref.read(availableWeeksProvider(profile!.churchId!));
-                    
+                    final weeksAsync =
+                        ref.read(availableWeeksProvider(profile!.churchId!));
+
                     if (weeksAsync.hasValue) {
-                      return weeksAsync.value!.any((w) => 
-                        w.year == date.year && w.month == date.month && w.day == date.day
-                      );
+                      return weeksAsync.value!.any((w) =>
+                          w.year == date.year &&
+                          w.month == date.month &&
+                          w.day == date.day);
                     }
                     return false;
                   },
@@ -172,14 +204,31 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final profile = ref.watch(userProfileProvider).value;
-    final groupsAsync = profile != null 
+    final activeRole = ref.watch(activeRoleProvider);
+    final activeMembership = ref.watch(activeMembershipProvider);
+    final roleScopeKey =
+        '${activeRole?.name ?? 'none'}:${activeMembership?.groupId ?? 'none'}';
+    if (_lastRoleScopeKey != null && _lastRoleScopeKey != roleScopeKey) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _resetSearchStateForRoleChange();
+        context.go('/prayer');
+      });
+    }
+    _lastRoleScopeKey = roleScopeKey;
+
+    final groupsAsync = profile != null
         ? ref.watch(departmentGroupsProvider(profile.departmentId ?? ''))
         : const AsyncValue<List<Map<String, dynamic>>>.data([]);
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('기도제목 검색', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 20)),
+        title: const Text('기도제목 검색',
+            style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textMain,
+                fontSize: 20)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
@@ -188,7 +237,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           child: Container(color: AppTheme.border, height: 1.0),
         ),
         leading: IconButton(
-          icon: const Icon(lucide.LucideIcons.chevronLeft, color: AppTheme.textMain, size: 24),
+          icon: const Icon(lucide.LucideIcons.chevronLeft,
+              color: AppTheme.textMain, size: 24),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -206,9 +256,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 const SizedBox(height: 16),
                 groupsAsync.when(
                   data: (groups) {
-                    final isLeaderOrAdmin = groups.any((g) => g['role_in_group'] == 'leader' || g['role_in_group'] == 'admin') ||
-                                           (profile?.role == 'admin' || profile?.isMaster == true);
-                    
+                    final activeRole = ref.watch(activeRoleProvider);
+                    final isLeaderOrAdmin = activeRole == AppRole.admin ||
+                        activeRole == AppRole.leader;
+
                     if (!isLeaderOrAdmin) {
                       return _buildDateFilter(); // 조원은 날짜 필터만 표시
                     }
@@ -221,52 +272,65 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ],
                     );
                   },
-                  loading: () => const SizedBox(height: 48, child: AppSkeleton(height: 40, width: double.infinity, borderRadius: BorderRadius.all(Radius.circular(16)))),
+                  loading: () => const SizedBox(
+                      height: 48,
+                      child: AppSkeleton(
+                          height: 40,
+                          width: double.infinity,
+                          borderRadius: BorderRadius.all(Radius.circular(16)))),
                   error: (e, s) => const Text('로드 실패'),
                 ),
               ],
             ),
           ),
           Expanded(
-            child: _isLoading 
-              ? ListView.builder(
-                  padding: const EdgeInsets.all(24),
-                  itemCount: 3,
-                  itemBuilder: (context, index) => const AppSkeleton(
-                    height: 120,
-                    width: double.infinity,
-                    borderRadius: BorderRadius.all(Radius.circular(24)),
-                    margin: EdgeInsets.only(bottom: 20),
-                  ),
-                )
-              : !_searchInitiated 
-                ? _buildInitialState() // 검색 전 안내 문구
-                : _searchResults.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
+            child: _isLoading
+                ? ListView.builder(
                     padding: const EdgeInsets.all(24),
-                    itemCount: _searchResults.length,
-                    itemBuilder: (context, index) {
-                      final prayer = _searchResults[index];
-                      return PrayerCard(
-                        key: ValueKey(prayer['id']),
-                        prayerId: prayer['id'].toString(),
-                        name: prayer['member_directory']['full_name'] ?? '알 수 없음',
-                        groupName: prayer['member_directory']['group_name'] ?? '',
-                        profileId: prayer['member_directory']['profile_id'] ?? prayer['member_id'] ?? '',
-                        content: prayer['content'] ?? '',
-                        togetherCount: prayer['together_count'] ?? 0,
-                        date: prayer['weeks'] != null ? prayer['weeks']['week_date'] : null,
-                        onInteractionToggle: (type, isPositive) {
-                          if (type == 'pray') {
-                            setState(() {
-                              prayer['together_count'] = (prayer['together_count'] ?? 0) + (isPositive ? 1 : -1);
-                            });
-                          }
-                        },
-                      );
-                    },
-                  ),
+                    itemCount: 3,
+                    itemBuilder: (context, index) => const AppSkeleton(
+                      height: 120,
+                      width: double.infinity,
+                      borderRadius: BorderRadius.all(Radius.circular(24)),
+                      margin: EdgeInsets.only(bottom: 20),
+                    ),
+                  )
+                : !_searchInitiated
+                    ? _buildInitialState() // 검색 전 안내 문구
+                    : _searchResults.isEmpty
+                        ? _buildEmptyState()
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(24),
+                            itemCount: _searchResults.length,
+                            itemBuilder: (context, index) {
+                              final prayer = _searchResults[index];
+                              final member = Map<String, dynamic>.from(
+                                  (prayer['member_directory'] as Map?) ?? {});
+                              return PrayerCard(
+                                key: ValueKey(prayer['id']),
+                                prayerId: prayer['id'].toString(),
+                                name: member['full_name'] ?? '알 수 없음',
+                                groupName: member['group_name'] ?? '',
+                                profileId: member['profile_id'] ??
+                                    prayer['member_id'] ??
+                                    '',
+                                content: prayer['content'] ?? '',
+                                togetherCount: prayer['together_count'] ?? 0,
+                                date: prayer['weeks'] != null
+                                    ? prayer['weeks']['week_date']
+                                    : null,
+                                onInteractionToggle: (type, isPositive) {
+                                  if (type == 'pray') {
+                                    setState(() {
+                                      prayer['together_count'] =
+                                          (prayer['together_count'] ?? 0) +
+                                              (isPositive ? 1 : -1);
+                                    });
+                                  }
+                                },
+                              );
+                            },
+                          ),
           ),
         ],
       ),
@@ -280,8 +344,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: [
           Icon(Icons.search_rounded, size: 64, color: AppTheme.divider),
           const SizedBox(height: 16),
-          const Text('이름이나 기도내용을 입력하여 검색해 보세요', 
-            style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.bold)),
+          const Text('이름이나 기도내용을 입력하여 검색해 보세요',
+              style: TextStyle(
+                  color: AppTheme.textSub, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -296,33 +361,33 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       decoration: InputDecoration(
         hintText: '이름이나 기도제목을 입력하세요',
         prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.textSub),
-        suffixIcon: _searchController.text.isNotEmpty 
-          ? IconButton(
-              icon: const Icon(Icons.cancel_rounded, color: AppTheme.textSub, size: 20),
-              onPressed: () {
-                _searchController.clear();
-                setState(() {
-                  _searchResults = [];
-                  _searchInitiated = false;
-                });
-              },
-            )
-          : null,
+        suffixIcon: _searchController.text.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.cancel_rounded,
+                    color: AppTheme.textSub, size: 20),
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() {
+                    _searchResults = [];
+                    _searchInitiated = false;
+                  });
+                },
+              )
+            : null,
         fillColor: AppTheme.background,
         filled: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16), 
-          borderSide: const BorderSide(color: AppTheme.borderMedium)
-        ),
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: AppTheme.borderMedium)),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16), 
-          borderSide: const BorderSide(color: AppTheme.borderMedium)
-        ),
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: AppTheme.borderMedium)),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16), 
-          borderSide: const BorderSide(color: AppTheme.primaryViolet, width: 2)
-        ),
+            borderRadius: BorderRadius.circular(16),
+            borderSide:
+                const BorderSide(color: AppTheme.primaryViolet, width: 2)),
       ),
     );
   }
@@ -337,19 +402,31 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         decoration: BoxDecoration(
           color: AppTheme.background,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _selectedDate != null ? AppTheme.primaryViolet : AppTheme.borderMedium),
+          border: Border.all(
+              color: _selectedDate != null
+                  ? AppTheme.primaryViolet
+                  : AppTheme.borderMedium),
         ),
         child: Row(
           children: [
-            Icon(lucide.LucideIcons.calendar, size: 16, color: _selectedDate != null ? AppTheme.primaryViolet : AppTheme.textSub),
+            Icon(lucide.LucideIcons.calendar,
+                size: 16,
+                color: _selectedDate != null
+                    ? AppTheme.primaryViolet
+                    : AppTheme.textSub),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                _selectedDate == null ? '전체 날짜' : DateFormat('yyyy.MM.dd').format(_selectedDate!),
+                _selectedDate == null
+                    ? '전체 날짜'
+                    : DateFormat('yyyy.MM.dd').format(_selectedDate!),
                 style: TextStyle(
-                  color: _selectedDate != null ? AppTheme.primaryViolet : AppTheme.textSub,
+                  color: _selectedDate != null
+                      ? AppTheme.primaryViolet
+                      : AppTheme.textSub,
                   fontSize: 13,
-                  fontWeight: _selectedDate != null ? FontWeight.w700 : FontWeight.w500,
+                  fontWeight:
+                      _selectedDate != null ? FontWeight.w700 : FontWeight.w500,
                   fontFamily: 'Pretendard',
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -361,7 +438,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   setState(() => _selectedDate = null);
                   _performSearch();
                 },
-                child: const Icon(lucide.LucideIcons.x, size: 14, color: AppTheme.textSub),
+                child: const Icon(lucide.LucideIcons.x,
+                    size: 14, color: AppTheme.textSub),
               ),
           ],
         ),
@@ -372,11 +450,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String _groupSearchQuery = '';
 
   Widget _buildGroupFilter(List<Map<String, dynamic>> groups) {
-    final allGroups = [{'id': 'all', 'name': '전체 조'}, ...groups];
-    final filteredGroups = allGroups.where((g) => 
-      (g['name'] as String).toLowerCase().contains(_groupSearchQuery.toLowerCase())
-    ).toList();
-    
+    final allGroups = [
+      {'id': 'all', 'name': '전체 조'},
+      ...groups
+    ];
+    final filteredGroups = allGroups
+        .where((g) => (g['name'] as String)
+            .toLowerCase()
+            .contains(_groupSearchQuery.toLowerCase()))
+        .toList();
+
     // 현재 선택된 ID가 목록에 없으면 'all'로 리셋
     if (!allGroups.any((g) => g['id'] == _selectedGroupId)) {
       _selectedGroupId = 'all';
@@ -385,7 +468,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return SizedBox(
       height: 48,
       child: shad.ShadSelect<String>.withSearch(
-        placeholder: const Text('조 선택', style: TextStyle(fontSize: 14, color: AppTheme.textSub, fontFamily: 'Pretendard')),
+        placeholder: const Text('조 선택',
+            style: TextStyle(
+                fontSize: 14,
+                color: AppTheme.textSub,
+                fontFamily: 'Pretendard')),
         initialValue: _selectedGroupId,
         minWidth: 120,
         maxHeight: 400,
@@ -405,20 +492,36 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           }
         },
         selectedOptionBuilder: (context, value) {
-          final group = allGroups.firstWhere((g) => g['id'] == value, orElse: () => allGroups.first);
-          return Text(group['name'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textMain, fontFamily: 'Pretendard'));
+          final group = allGroups.firstWhere((g) => g['id'] == value,
+              orElse: () => allGroups.first);
+          return Text(group['name'],
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.textMain,
+                  fontFamily: 'Pretendard'));
         },
         options: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-            child: Text('조 목록', style: TextStyle(fontSize: 12, color: AppTheme.textSub, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
+            child: Text('조 목록',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSub,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Pretendard')),
           ),
           ...filteredGroups.map((g) => shad.ShadOption(
-            value: g['id'] as String,
-            child: Text(g['name'] as String, style: const TextStyle(fontFamily: 'Pretendard', fontWeight: FontWeight.w500, fontSize: 14)),
-          )),
+                value: g['id'] as String,
+                child: Text(g['name'] as String,
+                    style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14)),
+              )),
         ],
-        searchPlaceholder: const Text('조 이름을 입력하세요', style: TextStyle(fontFamily: 'Pretendard', fontSize: 14)),
+        searchPlaceholder: const Text('조 이름을 입력하세요',
+            style: TextStyle(fontFamily: 'Pretendard', fontSize: 14)),
         onSearchChanged: (query) => setState(() => _groupSearchQuery = query),
       ),
     );
@@ -431,7 +534,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: [
           Icon(Icons.search_off_rounded, size: 64, color: AppTheme.divider),
           const SizedBox(height: 16),
-          const Text('검색 결과가 없습니다', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.bold)),
+          const Text('검색 결과가 없습니다',
+              style: TextStyle(
+                  color: AppTheme.textSub, fontWeight: FontWeight.bold)),
         ],
       ),
     );

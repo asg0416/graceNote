@@ -1,25 +1,21 @@
 'use client';
 
-import { useEffect, useState, useMemo, useRef, Suspense } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+import { useEffect, useState, useMemo, useRef, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
-    Users,
     Search,
     Loader2,
     Church,
     ChevronDown,
-    Layers,
     Save,
     RotateCcw,
-    CheckCircle2,
     AlertCircle,
-    Plus,
-    UserPlus,
     Download,
     FileDown,
     Image as ImageIcon,
-    Settings2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import * as htmlToImage from 'html-to-image';
@@ -27,8 +23,137 @@ import { ExportTableView } from '@/components/kanban/ExportTableView';
 import { cn } from '@/lib/utils';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { MemberModal } from '@/components/MemberModal';
-import { Modal } from '@/components/Modal';
 import { Tooltip } from '@/components/Tooltip';
+import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
+import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
+
+const getRegroupingIdentityKey = (member: any) => {
+    const normalizedPhone = (member.phone || '').replace(/[^0-9]/g, '');
+    return member.phase2_person_id || member.person_id || `${member.full_name}|${normalizedPhone}`;
+};
+
+const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
+    const rowsByPerson = new Map<string, any[]>();
+    sourceMembers.forEach((member) => {
+        const key = getRegroupingIdentityKey(member);
+        const rows = rowsByPerson.get(key) || [];
+        rows.push(member);
+        rowsByPerson.set(key, rows);
+    });
+
+    const visibleRows: any[] = [];
+    rowsByPerson.forEach((rows) => {
+        const draftRows = rows.filter(row => String(row.id || '').startsWith('temp-') || row.is_new);
+        if (draftRows.length > 0) {
+            visibleRows.push(...draftRows);
+        }
+
+        const activeMembershipRows = rows.filter(row =>
+            !draftRows.includes(row) &&
+            Boolean(row.phase2_person_id) &&
+            Boolean(row.phase2_membership_id) &&
+            Boolean(row.group_id) &&
+            row.is_active !== false
+        );
+        if (activeMembershipRows.length > 0) {
+            visibleRows.push(...activeMembershipRows);
+            return;
+        }
+
+        const assignedLegacyRows = rows.filter(row =>
+            !draftRows.includes(row) &&
+            Boolean(row.group_id) &&
+            row.is_active !== false
+        );
+        if (assignedLegacyRows.length > 0) {
+            visibleRows.push(...assignedLegacyRows);
+            return;
+        }
+
+        const preferredUnassignedRow = rows.find(row => row.is_active !== false) || rows[0];
+        if (preferredUnassignedRow) visibleRows.push(preferredUnassignedRow);
+    });
+
+    return visibleRows;
+};
+
+const isSameRegroupingGroup = (left: any, right: any) => {
+    if (!left || !right) return false;
+    if (left.group_id && right.group_id && left.group_id === right.group_id) return true;
+    const leftGroupName = (left.group_name || '').trim();
+    const rightGroupName = (right.group_name || '').trim();
+    return Boolean(leftGroupName) && leftGroupName === rightGroupName;
+};
+
+const isSameRegroupingPerson = (left: any, right: any) => {
+    return getRegroupingIdentityKey(left) === getRegroupingIdentityKey(right);
+};
+
+const getRegroupingGroupKey = (member: any) => {
+    return member.group_id || (member.group_name || '').trim() || null;
+};
+
+const expandCoupleMovesBeforeSave = (draftMembers: any[], originalMembers: any[]) => {
+    const nextMembers = draftMembers.map(member => ({ ...member }));
+    const originalById = new Map(originalMembers.map(member => [member.id, member]));
+
+    nextMembers.forEach(member => {
+        if (!member.spouse_name) return;
+
+        const originalMember = originalById.get(member.id);
+        if (!originalMember) return;
+
+        const originalGroupKey = getRegroupingGroupKey(originalMember);
+        const draftGroupKey = getRegroupingGroupKey(member);
+        if (originalGroupKey === draftGroupKey) return;
+
+        const spouse = nextMembers.find(candidate => {
+            const originalSpouse = originalById.get(candidate.id);
+            return candidate.full_name === member.spouse_name &&
+                candidate.spouse_name === member.full_name &&
+                originalSpouse &&
+                getRegroupingGroupKey(originalSpouse) === originalGroupKey;
+        });
+
+        if (!spouse) return;
+
+        const spouseOriginal = originalById.get(spouse.id);
+        if (!spouseOriginal) return;
+
+        const spouseWasIndependentlyMoved =
+            getRegroupingGroupKey(spouse) !== getRegroupingGroupKey(spouseOriginal);
+        if (spouseWasIndependentlyMoved) return;
+
+        spouse.group_id = member.group_id || null;
+        spouse.group_name = member.group_name || null;
+    });
+
+    return nextMembers;
+};
+
+const applyCanonicalFamilyInfo = (sourceMembers: any[]) => {
+    const rowsByPerson = new Map<string, any[]>();
+    sourceMembers.forEach((member) => {
+        const key = getRegroupingIdentityKey(member);
+        const rows = rowsByPerson.get(key) || [];
+        rows.push(member);
+        rowsByPerson.set(key, rows);
+    });
+
+    return sourceMembers.map((member) => {
+        const rows = rowsByPerson.get(getRegroupingIdentityKey(member)) || [member];
+        const spouseName = rows.find(row => row.spouse_name)?.spouse_name || member.spouse_name;
+        const childrenInfo = rows.find(row => row.children_info)?.children_info || member.children_info;
+        const weddingAnniversary = rows.find(row => row.wedding_anniversary)?.wedding_anniversary || member.wedding_anniversary;
+
+        return {
+            ...member,
+            spouse_name: member.spouse_name || spouseName || null,
+            children_info: member.children_info || childrenInfo || null,
+            wedding_anniversary: member.wedding_anniversary || weddingAnniversary || null
+        };
+    });
+};
 
 export default function RegroupingPage() {
     return (
@@ -65,6 +190,23 @@ function RegroupingPageInner() {
     const [autoMoveCouples, setAutoMoveCouples] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
+    const [, setPhase2RegroupingCheck] = useState<{
+        status: 'idle' | 'ok' | 'warning' | 'unavailable';
+        legacyActiveCount: number;
+        phase2ActiveCount: number;
+        legacyActivePersonCount: number;
+        phase2ActivePersonCount: number;
+        issueCount: number;
+        message: string;
+    }>({
+        status: 'idle',
+        legacyActiveCount: 0,
+        phase2ActiveCount: 0,
+        legacyActivePersonCount: 0,
+        phase2ActivePersonCount: 0,
+        issueCount: 0,
+        message: 'Phase 2 진단 대기 중'
+    });
 
     const [hasChanges, setHasChanges] = useState(false);
     const boardRef = useRef<HTMLDivElement>(null);
@@ -78,15 +220,13 @@ function RegroupingPageInner() {
 
         // Count by identity (person_id or normalized name+phone)
         localMembers.forEach(m => {
-            const normalizedPhone = (m.phone || '').replace(/[^0-9]/g, '');
-            const key = m.person_id || `${m.full_name}-${normalizedPhone}`;
+            const key = getRegroupingIdentityKey(m);
             counts[key] = (counts[key] || 0) + 1;
         });
 
         const map: Record<string, boolean> = {};
         localMembers.forEach(m => {
-            const normalizedPhone = (m.phone || '').replace(/[^0-9]/g, '');
-            const key = m.person_id || `${m.full_name}-${normalizedPhone}`;
+            const key = getRegroupingIdentityKey(m);
             // Member is deletable if their identity appears more than once
             // OR if it's a temporary copy/new member
             map[m.id] = counts[key] > 1 || m.id.startsWith('temp-');
@@ -177,6 +317,7 @@ function RegroupingPageInner() {
             .from('departments')
             .select('id, name, color_hex, profile_mode')
             .eq('church_id', churchId)
+            .eq('is_active', true)
             .order('name');
         setDepartments(data || []);
 
@@ -216,32 +357,205 @@ function RegroupingPageInner() {
         setGroups(data || []);
     };
 
+    const fetchPhase2PersonMap = async (directoryIds: string[]) => {
+        if (directoryIds.length === 0) return new Map<string, string>();
+
+        const { data, error } = await supabase
+            .from('member_profiles')
+            .select('person_id, member_directory_id')
+            .in('member_directory_id', directoryIds);
+
+        if (error) throw error;
+
+        return new Map(
+            (data || [])
+                .filter(profile => profile.member_directory_id && profile.person_id)
+                .map(profile => [profile.member_directory_id as string, profile.person_id as string])
+        );
+    };
+
+    const fetchPhase2ActiveMembershipMap = async (directoryIds: string[], churchId: string, deptId: string) => {
+        if (directoryIds.length === 0) return new Map<string, any>();
+
+        const { data, error } = await supabase
+            .from('memberships')
+            .select('id, person_id, legacy_member_directory_id, group_id, role')
+            .eq('church_id', churchId)
+            .eq('department_id', deptId)
+            .eq('status', 'active')
+            .in('legacy_member_directory_id', directoryIds);
+
+        if (error) throw error;
+
+        return new Map(
+            (data || [])
+                .filter(membership => membership.legacy_member_directory_id)
+                .map(membership => [membership.legacy_member_directory_id as string, membership])
+        );
+    };
+
     const fetchMembers = async (churchId: string, deptId: string) => {
         setLoading(true);
         const { data } = await supabase
             .from('member_directory')
             .select('*')
             .eq('church_id', churchId)
-            .eq('department_id', deptId);
+            .eq('department_id', deptId)
+            .neq('is_active', false);
 
         // Match members with their group_id for Kanban
         const { data: groupData } = await supabase
             .from('groups')
             .select('id, name')
-            .eq('department_id', deptId);
+            .eq('department_id', deptId)
+            .eq('is_active', true);
 
-        const membersWithGroupId = (data || []).map(m => ({
+        const directoryIds = (data || []).map(m => m.id);
+        const [phase2PersonMap, phase2MembershipMap] = await Promise.all([
+            fetchPhase2PersonMap(directoryIds),
+            fetchPhase2ActiveMembershipMap(directoryIds, churchId, deptId)
+        ]);
+        const membersWithGroupId = applyCanonicalFamilyInfo((data || []).map(m => ({
             ...m,
-            group_id: groupData?.find(g => g.name === m.group_name)?.id || null
-        }));
+            group_id: phase2MembershipMap.get(m.id)?.group_id || groupData?.find(g => g.name === m.group_name)?.id || null,
+            role_in_group: phase2MembershipMap.get(m.id)?.role || m.role_in_group,
+            phase2_membership_id: phase2MembershipMap.get(m.id)?.id || null,
+            phase2_person_id: phase2MembershipMap.get(m.id)?.person_id || phase2PersonMap.get(m.id) || null
+        })));
 
+        await refreshPhase2RegroupingCheck(membersWithGroupId, churchId, deptId);
         setMembers(membersWithGroupId);
         setLocalMembers(JSON.parse(JSON.stringify(membersWithGroupId)));
         setHasChanges(false);
         setLoading(false);
     };
 
+    const refreshPhase2RegroupingCheck = async (loadedMembers: any[], churchId: string, deptId: string) => {
+        // '미정'(unassigned)은 아직 조에 배정되지 않은 대기 상태 — Phase 2 group membership이 없어도 정상이므로 진단에서 제외
+        const activeLegacyMembers = loadedMembers.filter(member =>
+            member.is_active !== false &&
+            Boolean(member.group_name) &&
+            member.group_name !== '미정'
+        );
+        const activeLegacyDirectoryIds = new Set(activeLegacyMembers.map(member => member.id));
+        const activeLegacyPersonIds = new Set(activeLegacyMembers.map(getRegroupingIdentityKey));
+        const directoryIds = loadedMembers.map(member => member.id).filter(Boolean);
+
+        if (directoryIds.length === 0) {
+            setPhase2RegroupingCheck({
+                status: 'ok',
+                legacyActiveCount: 0,
+                phase2ActiveCount: 0,
+                legacyActivePersonCount: 0,
+                phase2ActivePersonCount: 0,
+                issueCount: 0,
+                message: '확인할 명부 row가 없습니다.'
+            });
+            return;
+        }
+
+        try {
+            const { data: memberProfiles, error: memberProfilesError } = await supabase
+                .from('member_profiles')
+                .select('person_id, member_directory_id')
+                .in('member_directory_id', directoryIds);
+
+            if (memberProfilesError) throw memberProfilesError;
+
+            const personIds = Array.from(new Set((memberProfiles || []).map(profile => profile.person_id).filter(Boolean)));
+            if (personIds.length === 0) {
+                setPhase2RegroupingCheck({
+                    status: activeLegacyMembers.length === 0 ? 'ok' : 'warning',
+                    legacyActiveCount: activeLegacyMembers.length,
+                    phase2ActiveCount: 0,
+                    legacyActivePersonCount: activeLegacyPersonIds.size,
+                    phase2ActivePersonCount: 0,
+                    issueCount: activeLegacyMembers.length,
+                    message: activeLegacyMembers.length === 0
+                        ? 'Phase 2 비교 대상이 없습니다.'
+                        : 'Phase 2 member_profiles 연결이 없는 active 명부가 있습니다.'
+                });
+                return;
+            }
+
+            const { data: memberships, error: membershipsError } = await supabase
+                .from('memberships')
+                .select('id, person_id, status, department_id, legacy_member_directory_id')
+                .in('person_id', personIds)
+                .eq('church_id', churchId)
+                .eq('department_id', deptId)
+                .eq('status', 'active');
+
+            if (membershipsError) throw membershipsError;
+
+            const activeMemberships = memberships || [];
+            const phase2ActivePersonIds = new Set(activeMemberships.map(membership => membership.person_id).filter(Boolean));
+            const phase2ActiveDirectoryIds = new Set(
+                activeMemberships
+                    .map(membership => membership.legacy_member_directory_id)
+                    .filter(Boolean)
+            );
+            const missingPhase2Count = activeLegacyMembers.filter(member => !phase2ActiveDirectoryIds.has(member.id)).length;
+            const extraPhase2Count = activeMemberships.filter(membership => (
+                !membership.legacy_member_directory_id || !activeLegacyDirectoryIds.has(membership.legacy_member_directory_id)
+            )).length;
+            const issueCount = missingPhase2Count + extraPhase2Count;
+
+            setPhase2RegroupingCheck({
+                status: issueCount === 0 ? 'ok' : 'warning',
+                legacyActiveCount: activeLegacyMembers.length,
+                phase2ActiveCount: activeMemberships.length,
+                legacyActivePersonCount: activeLegacyPersonIds.size,
+                phase2ActivePersonCount: phase2ActivePersonIds.size,
+                issueCount,
+                message: issueCount === 0
+                    ? '선택 부서의 조편성 active 사람/소속이 Phase 2와 일치합니다.'
+                    : `누락 ${missingPhase2Count}건 / 추가 확인 ${extraPhase2Count}건`
+            });
+        } catch (error) {
+            console.warn('Phase 2 regrouping diagnostic unavailable:', error);
+            setPhase2RegroupingCheck({
+                status: 'unavailable',
+                legacyActiveCount: activeLegacyMembers.length,
+                phase2ActiveCount: 0,
+                legacyActivePersonCount: activeLegacyPersonIds.size,
+                phase2ActivePersonCount: 0,
+                issueCount: 0,
+                message: 'Phase 2 조편성 진단을 불러오지 못했습니다.'
+            });
+        }
+    };
+
+    const getMemberIdentityKey = useCallback((member: any) => {
+        return getRegroupingIdentityKey(member);
+    }, []);
+
+    const findDuplicateIdentityNames = useCallback((candidateMembers: any[]) => {
+        const identityMap = new Map<string, string[]>();
+
+        candidateMembers.forEach(member => {
+            const key = getMemberIdentityKey(member);
+            const names = identityMap.get(key) || [];
+            names.push(member.full_name);
+            identityMap.set(key, names);
+        });
+
+        return Array.from(identityMap.values())
+            .filter(names => names.length > 1)
+            .flat();
+    }, [getMemberIdentityKey]);
+
     const handleReorderMembers = useMemo(() => (ids: string[], targetGroupId: string | null) => {
+        if (targetGroupId) {
+            const movingMembers = localMembers.filter(member => ids.includes(member.id));
+            const duplicateMovingNames = findDuplicateIdentityNames(movingMembers);
+
+            if (duplicateMovingNames.length > 0) {
+                alert(`같은 사람의 여러 소속 카드를 한 조에 동시에 넣을 수 없습니다: ${Array.from(new Set(duplicateMovingNames)).join(', ')}`);
+                return;
+            }
+        }
+
         // Prevent duplicates in the target group
         if (targetGroupId) {
             const targetGroupMembers = localMembers.filter(m => m.group_id === targetGroupId);
@@ -249,12 +563,9 @@ function RegroupingPageInner() {
                 const memberToMove = localMembers.find(m => m.id === id);
                 if (!memberToMove || ids.includes(memberToMove.id) && memberToMove.group_id === targetGroupId) return false;
 
-                const normalizedPhone = (memberToMove.phone || '').replace(/[^0-9]/g, '');
                 return targetGroupMembers.some(tm =>
-                    !ids.includes(tm.id) && (
-                        (tm.person_id && tm.person_id === memberToMove.person_id) ||
-                        (tm.full_name === memberToMove.full_name && (tm.phone || '').replace(/[^0-9]/g, '') === normalizedPhone)
-                    )
+                    !ids.includes(tm.id) &&
+                    isSameRegroupingPerson(tm, memberToMove)
                 );
             });
 
@@ -278,7 +589,7 @@ function RegroupingPageInner() {
             return changed ? next : prev;
         });
         setHasChanges(true);
-    }, [localMembers]); // Needs localMembers for duplicate check
+    }, [findDuplicateIdentityNames, localMembers]); // Needs localMembers for duplicate check
 
     const handleMoveMembers = (ids: string[], targetGroupId: string | null, isCopy: boolean = false, targetIndex?: number) => {
         let finalIdsToMove = [...ids];
@@ -292,7 +603,7 @@ function RegroupingPageInner() {
                     const spouse = localMembers.find(m =>
                         m.full_name === member.spouse_name &&
                         m.spouse_name === member.full_name &&
-                        m.group_id === member.group_id
+                        isSameRegroupingGroup(m, member)
                     );
                     if (spouse && !finalIdsToMove.includes(spouse.id)) {
                         spousesToInclude.push(spouse.id);
@@ -302,19 +613,33 @@ function RegroupingPageInner() {
             finalIdsToMove = [...finalIdsToMove, ...spousesToInclude];
         }
 
+        if (targetGroupId) {
+            const movingMembers = localMembers.filter(member => finalIdsToMove.includes(member.id));
+            const duplicateMovingNames = findDuplicateIdentityNames(movingMembers);
+
+            if (duplicateMovingNames.length > 0) {
+                alert(`같은 사람의 여러 소속 카드를 한 조에 동시에 넣을 수 없습니다: ${Array.from(new Set(duplicateMovingNames)).join(', ')}`);
+                setSelectedMemberIds([]);
+                return;
+            }
+        }
+
         // Prevent duplicates in the target group
         if (targetGroupId) {
             const targetGroupMembers = localMembers.filter(m => m.group_id === targetGroupId);
-            const duplicates = ids.filter(id => {
+            const idsBeingMoved = new Set(finalIdsToMove);
+            const duplicates = finalIdsToMove.filter(id => {
                 const memberToMove = localMembers.find(m => m.id === id);
                 if (!memberToMove) return false;
 
+                if (isCopy && (memberToMove.group_id || null) === targetGroupId) {
+                    return true;
+                }
+
                 // Check if someone with same identity already exists in the target group (excluding the ones being moved)
                 return targetGroupMembers.some(tm =>
-                    !ids.includes(tm.id) && (
-                        (tm.person_id && tm.person_id === memberToMove.person_id) ||
-                        (tm.full_name === memberToMove.full_name && (tm.phone || '').replace(/[^0-9]/g, '') === (memberToMove.phone || '').replace(/[^0-9]/g, ''))
-                    )
+                    !idsBeingMoved.has(tm.id) &&
+                    isSameRegroupingPerson(tm, memberToMove)
                 );
             });
 
@@ -332,7 +657,7 @@ function RegroupingPageInner() {
         }
 
         if (isCopy) {
-            const membersToCopy = localMembers.filter(m => ids.includes(m.id));
+            const membersToCopy = localMembers.filter(m => finalIdsToMove.includes(m.id));
             const newCopies = membersToCopy.map(m => ({
                 ...m,
                 id: `temp-copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -432,13 +757,13 @@ function RegroupingPageInner() {
 
     const handleMemberClick = (id: string) => {
         const member = localMembers.find(m => m.id === id);
-        let idsToToggle = [id];
+        const idsToToggle = [id];
 
         if (autoMoveCouples && member?.spouse_name) {
             const spouse = localMembers.find(s =>
                 s.full_name === member.spouse_name &&
                 s.spouse_name === member.full_name &&
-                s.group_id === member.group_id
+                isSameRegroupingGroup(s, member)
             );
             if (spouse) {
                 idsToToggle.push(spouse.id);
@@ -469,7 +794,7 @@ function RegroupingPageInner() {
         const currentProfileMode = departments.find(d => d.id === selectedDeptId)?.profile_mode;
 
         groups.forEach(group => {
-            const members = localMembers.filter(m => m.group_id === group.id);
+            const members = displayLocalMembers.filter(m => m.group_id === group.id);
 
             // Unified Leader logic for Excel
             const currentLeaders = members.filter(m => m.role_in_group === 'leader');
@@ -548,7 +873,7 @@ function RegroupingPageInner() {
         });
 
         // Add unassigned
-        const unassigned = localMembers.filter(m => !m.group_id);
+        const unassigned = displayLocalMembers.filter(m => !m.group_id);
         if (unassigned.length > 0) {
             exportData.push({
                 '조': '미편성',
@@ -616,10 +941,11 @@ function RegroupingPageInner() {
             // Add new - Check for duplicates in the target group first
             const targetGroupId = targetGroupForNewMember?.id || null;
             const isDuplicate = localMembers.some(m =>
-                m.group_id === targetGroupId && (
-                    (m.person_id && memberData.person_id && m.person_id === memberData.person_id) ||
-                    (m.full_name === memberData.full_name && (m.phone || '').replace(/[^0-9]/g, '') === normalizedNewPhone)
-                )
+                m.group_id === targetGroupId &&
+                isSameRegroupingPerson(m, {
+                    ...memberData,
+                    phone: normalizedNewPhone,
+                })
             );
 
             if (isDuplicate) {
@@ -670,198 +996,68 @@ function RegroupingPageInner() {
         setSaving(true);
 
         try {
-            // 1. Sync Groups (Add / Rename / Delete)
-            // For simplicity, we'll fetch existing groups and compare
-            const { data: remoteGroups, error: groupsError } = await supabase
-                .from('groups')
-                .select('*')
-                .eq('department_id', selectedDeptId);
+            const duplicateAssignments = new Map<string, string[]>();
+            localMembers.forEach(member => {
+                const targetGroup = member.group_id ? groups.find(group => group.id === member.group_id) : null;
+                const targetGroupName = targetGroup?.name || null;
+                if (!targetGroupName) return;
 
-            if (groupsError) throw groupsError;
-
-            // Delete groups that are not in local state
-            const groupsToDelete = remoteGroups.filter(rg => !groups.find(lg => lg.id === rg.id));
-            if (groupsToDelete.length > 0) {
-                const { error: delError } = await supabase
-                    .from('groups')
-                    .delete()
-                    .in('id', groupsToDelete.map(g => g.id));
-                if (delError) throw delError;
-            }
-
-            // Upsert remaining groups (Add new / Rename existing)
-            const existingGroupsToUpdate = groups.filter(g => !g.id.startsWith('temp-')).map(g => ({
-                id: g.id,
-                name: g.name,
-                color_hex: g.color_hex,
-                department_id: selectedDeptId,
-                church_id: currentChurchId,
-                is_active: true
-            }));
-
-            const newGroupsToInsert = groups.filter(g => g.id.startsWith('temp-')).map(g => ({
-                name: g.name,
-                color_hex: g.color_hex,
-                department_id: selectedDeptId,
-                church_id: currentChurchId,
-                is_active: true
-            }));
-
-            let upsertedGroups: any[] = [];
-
-            if (existingGroupsToUpdate.length > 0) {
-                const { data: updated, error: updateError } = await supabase
-                    .from('groups')
-                    .upsert(existingGroupsToUpdate, { onConflict: 'id' })
-                    .select();
-                if (updateError) throw updateError;
-                if (updated) upsertedGroups = [...upsertedGroups, ...updated];
-            }
-
-            if (newGroupsToInsert.length > 0) {
-                const { data: inserted, error: insertError } = await supabase
-                    .from('groups')
-                    .upsert(newGroupsToInsert, { onConflict: 'church_id,department_id,name' })
-                    .select();
-                if (insertError) throw insertError;
-                if (inserted) upsertedGroups = [...upsertedGroups, ...inserted];
-            }
-
-            // Map temp group IDs to real ones for member updates
-            const groupIdMap: Record<string, string> = {};
-            groups.forEach((lg) => {
-                if (lg.id.startsWith('temp-')) {
-                    const matched = upsertedGroups.find(ug => ug.name === lg.name);
-                    if (matched) groupIdMap[lg.id] = matched.id;
-                } else {
-                    groupIdMap[lg.id] = lg.id;
-                }
+                const key = [
+                    currentChurchId,
+                    selectedDeptId,
+                    targetGroupName,
+                    member.full_name,
+                    member.phone || ''
+                ].join('|');
+                const labels = duplicateAssignments.get(key) || [];
+                labels.push(member.full_name);
+                duplicateAssignments.set(key, labels);
             });
 
-            // 2. Process Member Changes
-            // Identify new members, moved members, and renamed groups
-            const existingMemberUpdates = localMembers.filter(m => !m.id.startsWith('temp-'));
+            const duplicateAssignmentNames = Array.from(duplicateAssignments.values())
+                .filter(labels => labels.length > 1)
+                .flat();
 
-            // CRITICAL: Identify members that were REMOVED from the view (duplicate cards that were deleted)
-            const removedMembers = members.filter(orig => !localMembers.find(lm => lm.id === orig.id));
+            if (duplicateAssignmentNames.length > 0) {
+                throw new Error(`같은 조에 같은 이름/전화번호의 성도가 중복 편성되어 있습니다: ${Array.from(new Set(duplicateAssignmentNames)).join(', ')}`);
+            }
 
-            const idsToUnassign: string[] = [];
-            const idsToDelete: string[] = [];
+            const membersToSave = autoMoveCouples
+                ? expandCoupleMovesBeforeSave(localMembers, members)
+                : localMembers;
 
-            removedMembers.forEach(rm => {
-                const normalizedPhone = (rm.phone || '').replace(/[^0-9]/g, '');
-                // Check if this person still exists in any group in the local state
-                const stillExists = localMembers.some(lm =>
-                    (rm.person_id && lm.person_id === rm.person_id) ||
-                    (lm.full_name === rm.full_name && (lm.phone || '').replace(/[^0-9]/g, '') === normalizedPhone)
-                );
-
-                if (stillExists) {
-                    // It's a redundant duplicate being removed - physically delete to avoid "Unassigned" clutter
-                    idsToDelete.push(rm.id);
-                } else {
-                    // It's the last/only record - move to unassigned
-                    idsToUnassign.push(rm.id);
-                }
+            const savedDirectoryIds = await saveRegroupingMemberships(supabase, {
+                churchId: currentChurchId,
+                departmentId: selectedDeptId,
+                groups: groups.map(group => ({
+                    id: group.id,
+                    name: group.name,
+                    color_hex: group.color_hex,
+                })),
+                assignments: membersToSave.map(member => ({
+                    id: member.id,
+                    full_name: member.full_name,
+                    phone: member.phone || '',
+                    group_id: member.group_id || null,
+                    role_in_group: member.role_in_group || 'member',
+                    family_name: member.family_name || null,
+                    spouse_name: member.spouse_name || null,
+                    children_info: member.children_info || null,
+                    birth_date: member.birth_date || null,
+                    wedding_anniversary: member.wedding_anniversary || null,
+                    notes: member.notes || null,
+                    avatar_url: member.avatar_url || null,
+                    person_id: member.person_id || null,
+                    phase2_person_id: member.phase2_person_id || null,
+                    profile_id: member.profile_id || null,
+                })),
             });
 
-            if (idsToDelete.length > 0) {
-                // Before deleting, deactivate their specific group memberships if linked to a profile
-                for (const rid of idsToDelete) {
-                    const m = removedMembers.find(rm => rm.id === rid);
-                    if (m?.profile_id && m.group_id) {
-                        await supabase
-                            .from('group_members')
-                            .update({ is_active: false })
-                            .eq('profile_id', m.profile_id)
-                            .eq('group_id', m.group_id);
-                    }
-                }
-
-                const { error: delError } = await supabase
-                    .from('member_directory')
-                    .delete()
-                    .in('id', idsToDelete);
-                if (delError) throw delError;
-            }
-
-            const groupedChanges = existingMemberUpdates.reduce((acc, m) => {
-                const original = members.find(orig => orig.id === m.id);
-                const mappedGroupId = m.group_id ? (groupIdMap[m.group_id] || m.group_id) : null;
-
-                const originalGroup = remoteGroups.find(rg => rg.id === original?.group_id);
-                const currentGroup = groups.find(lg => lg.id === m.group_id);
-
-                // Trigger update if:
-                // 1. Group assignment changed (moved)
-                // 2. Current group was renamed (group_name in member_directory needs update)
-                // 3. Role changed (leader <-> member)
-                const isMoved = original?.group_id !== mappedGroupId;
-                const isGroupRenamed = currentGroup && originalGroup && currentGroup.name !== originalGroup.name;
-                const isRoleChanged = original?.role_in_group !== m.role_in_group;
-
-                if (isMoved || isGroupRenamed || isRoleChanged) {
-                    const key = mappedGroupId || 'unassigned';
-                    if (!acc[key]) acc[key] = [];
-                    acc[key].push(m.id);
-                }
-                return acc;
-            }, {} as Record<string, string[]>);
-
-            // Add members to be unassigned (the ones that are not redundant deletes)
-            if (idsToUnassign.length > 0) {
-                if (!groupedChanges['unassigned']) groupedChanges['unassigned'] = [];
-                groupedChanges['unassigned'] = [...new Set([...groupedChanges['unassigned'], ...idsToUnassign])];
-            }
-
-            for (const [groupId, memberIds] of Object.entries(groupedChanges)) {
-                const targetId = groupId === 'unassigned' ? null : groupId;
-
-                // For each group, we update their group_id and their individual roles
-                // We'll update the roles individually for members in this group who changed
-                for (const mid of (memberIds as string[])) {
-                    const localMember = localMembers.find(lm => lm.id === mid);
-                    if (localMember) {
-                        const { error: roleError } = await supabase
-                            .from('member_directory')
-                            .update({ role_in_group: localMember.role_in_group })
-                            .eq('id', mid);
-                        if (roleError) throw roleError;
-                    }
-                }
-
-                const { error } = await supabase.rpc('regroup_members', {
-                    p_member_ids: memberIds,
-                    p_target_group_id: targetId
-                });
-                if (error) throw error;
-            }
-
-            // For new/copied members (temp IDs)
-            const tempMembers = localMembers.filter(m => m.id.startsWith('temp-'));
-            for (const m of tempMembers) {
-                const mappedGroupId = m.group_id ? (groupIdMap[m.group_id] || m.group_id) : null;
-                const targetGroup = upsertedGroups.find(ug => ug.id === mappedGroupId);
-
-                const { error: insError } = await supabase.from('member_directory').insert({
-                    church_id: currentChurchId!,
-                    department_id: selectedDeptId,
-                    group_name: targetGroup?.name || null,
-                    full_name: m.full_name,
-                    phone: m.phone || '',
-                    spouse_name: m.spouse_name,
-                    children_info: m.children_info,
-                    role_in_group: m.role_in_group || 'member',
-                    birth_date: m.birth_date,
-                    wedding_anniversary: m.wedding_anniversary,
-                    notes: m.notes,
-                    person_id: m.person_id || null,
-                    profile_id: m.profile_id || null
-                });
-                if (insError) throw insError;
-                // group_members sync is handled automatically by the 
-                // sync_directory_to_group_members DB trigger on member_directory INSERT
-            }
+            await assertPhase2MemberDirectorySync(
+                supabase,
+                savedDirectoryIds,
+                '조편성 저장'
+            );
 
             // 3. Refresh State
             await fetchData();
@@ -882,13 +1078,15 @@ function RegroupingPageInner() {
         }
     };
 
+    const displayLocalMembers = useMemo(() => normalizeRegroupingDisplayMembers(localMembers), [localMembers]);
+
     const filteredLocalMembers = useMemo(() => {
-        if (!searchTerm) return localMembers;
-        return localMembers.filter(m =>
+        if (!searchTerm) return displayLocalMembers;
+        return displayLocalMembers.filter(m =>
             m.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             m.phone?.includes(searchTerm)
         );
-    }, [localMembers, searchTerm]);
+    }, [displayLocalMembers, searchTerm]);
 
     const sortedMembers = useMemo(() => {
         const dept = departments.find(d => d.id === selectedDeptId);
@@ -927,11 +1125,21 @@ function RegroupingPageInner() {
     }, [currentChurchId, churches]);
 
     const stats = useMemo(() => {
-        const total = localMembers.length;
-        const assigned = localMembers.filter(m => m.group_id).length;
+        const people = new Map<string, { assigned: boolean }>();
+
+        displayLocalMembers.forEach(member => {
+            const identityKey = getMemberIdentityKey(member);
+            const current = people.get(identityKey) || { assigned: false };
+            people.set(identityKey, {
+                assigned: current.assigned || Boolean(member.group_id)
+            });
+        });
+
+        const total = people.size;
+        const assigned = Array.from(people.values()).filter(person => person.assigned).length;
         const unassigned = total - assigned;
         return { total, assigned, unassigned };
-    }, [localMembers]);
+    }, [displayLocalMembers, getMemberIdentityKey]);
 
     if (loading) {
         return (
@@ -960,12 +1168,12 @@ function RegroupingPageInner() {
                     {/* Stats Summary Integrated into Header */}
                     <div className="flex items-center gap-4 sm:gap-6 px-5 h-[44px] bg-white dark:bg-slate-900/60 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
                         <div className="flex items-center gap-2">
-                            <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest">전체 성도</span>
+                            <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest">실제 인원</span>
                             <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-none">{stats.total}</span>
                         </div>
                         <div className="w-[1px] h-3 bg-slate-200 dark:bg-slate-800" />
                         <div className="flex items-center gap-2">
-                            <span className="text-[9px] sm:text-[10px] font-black text-indigo-500 uppercase tracking-widest leading-none">편성 완료</span>
+                            <span className="text-[9px] sm:text-[10px] font-black text-indigo-500 uppercase tracking-widest leading-none">편성 인원</span>
                             <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 leading-none">{stats.assigned}</span>
                         </div>
                         <div className="w-[1px] h-3 bg-slate-200 dark:bg-slate-800" />
@@ -1054,7 +1262,9 @@ function RegroupingPageInner() {
                                             autoMoveCouples && "translate-x-4"
                                         )} />
                                     </div>
-                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors">부부 동시 이동</span>
+                                    <Tooltip content="같은 조에 함께 있는 배우자만 같이 이동합니다. 다른 조에 떨어져 있는 배우자는 자동으로 끌고 오지 않습니다.">
+                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors">부부 동시 이동</span>
+                                    </Tooltip>
                                 </label>
                             </div>
                         )}
@@ -1203,7 +1413,7 @@ function RegroupingPageInner() {
                     tableRef={exportTableRef}
                     deptName={departments.find(d => d.id === selectedDeptId)?.name || '조편성'}
                     groups={groups}
-                    localMembers={localMembers}
+                    localMembers={displayLocalMembers}
                     profileMode={departments.find(d => d.id === selectedDeptId)?.profile_mode}
                 />
             </div>

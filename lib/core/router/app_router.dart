@@ -405,7 +405,7 @@ class _AuthenticatedShellState extends ConsumerState<AuthenticatedShell> with Wi
       final profile = profileAsync.value;
 
       if (profile == null) {
-        return _buildLoadingScreen('프로필 정보를 확인하고 있습니다...');
+        return const PhoneVerificationScreen();
       }
 
       if (!profile.isOnboardingComplete) {
@@ -549,7 +549,7 @@ class _ScaffoldWithNavBarState extends ConsumerState<ScaffoldWithNavBar> {
 
     // 역할 전환 감지: 최초 진입(null → 역할) 또는 역할 변경 시 올바른 탭으로 이동하고
     // 탭 스택을 루트로 초기화하여 이전 역할의 화면이 스택에 남아있는 버그를 방지
-    if (activeRole != null && activeRole != _lastRole) {
+    if (activeRole != _lastRole) {
       final previousRole = _lastRole;
       _lastRole = activeRole;
       WidgetsBinding.instance.addPostFrameCallback((_) {

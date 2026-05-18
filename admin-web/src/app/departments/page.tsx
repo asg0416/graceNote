@@ -21,11 +21,38 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
+import { renameMemberDirectoryGroupAssignments } from '@/lib/memberWriteRpc';
+
+type ChurchOption = {
+    id: string;
+    name: string;
+};
+
+type GroupRecord = {
+    id: string;
+    name: string;
+    department_id: string;
+    created_at?: string | null;
+    color_hex?: string | null;
+    is_active?: boolean | null;
+    active_from?: string | null;
+    ended_at?: string | null;
+    is_new_member_group?: boolean | null;
+    climbing_threshold?: number | null;
+};
+
+type DepartmentRecord = {
+    id: string;
+    name: string;
+    color_hex?: string | null;
+    profile_mode?: 'individual' | 'couple' | null;
+    groups?: GroupRecord[];
+};
 
 export default function DepartmentsPage() {
     const [loading, setLoading] = useState(true);
-    const [departments, setDepartments] = useState<any[]>([]);
-    const [churches, setChurches] = useState<any[]>([]);
+    const [departments, setDepartments] = useState<DepartmentRecord[]>([]);
+    const [churches, setChurches] = useState<ChurchOption[]>([]);
     const [isMaster, setIsMaster] = useState(false);
     const [currentChurchId, setCurrentChurchId] = useState<string | null>(null);
     const [currentChurchName, setCurrentChurchName] = useState<string>('');
@@ -35,11 +62,13 @@ export default function DepartmentsPage() {
 
     const [groupName, setGroupName] = useState('');
     const [groupColor, setGroupColor] = useState('#4f46e5');
+    const [groupActiveFrom, setGroupActiveFrom] = useState('');
+    const [groupEndedAt, setGroupEndedAt] = useState('');
     const [isNewMemberGroup, setIsNewMemberGroup] = useState(false);
     const [climbingThreshold, setClimbingThreshold] = useState(4);
 
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
-    const [editingGroup, setEditingGroup] = useState<any>(null);
+    const [editingGroup, setEditingGroup] = useState<GroupRecord | null>(null);
     const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
 
     // 부서 삭제 확인 모달
@@ -136,7 +165,8 @@ export default function DepartmentsPage() {
                     *,
                     groups (*)
                 `)
-                .eq('church_id', churchId);
+                .eq('church_id', churchId)
+                .eq('is_active', true);
 
             if (assignedDeptId) {
                 query = query.eq('id', assignedDeptId);
@@ -145,7 +175,10 @@ export default function DepartmentsPage() {
             const { data, error } = await query.order('name');
 
             if (error) throw error;
-            setDepartments(data || []);
+            setDepartments((data || []).map((dept) => ({
+                ...dept,
+                groups: (dept.groups || []).filter((group: { is_active?: boolean }) => group.is_active !== false)
+            })));
         } catch (err) {
             console.error('Fetch Data Error:', err);
         } finally {
@@ -173,6 +206,8 @@ export default function DepartmentsPage() {
                     .update({
                         name: groupName,
                         color_hex: groupColor,
+                        active_from: groupActiveFrom || null,
+                        ended_at: groupEndedAt ? `${groupEndedAt}T23:59:59+09:00` : null,
                         is_new_member_group: isNewMemberGroup,
                         climbing_threshold: climbingThreshold
                     })
@@ -182,17 +217,12 @@ export default function DepartmentsPage() {
                 // 2. Cascade update to members (Sync)
                 // We only need to sync if the name actually changed
                 if (editingGroup.name !== groupName) {
-                    const { error: syncError } = await supabase
-                        .from('member_directory')
-                        .update({ group_name: groupName })
-                        .eq('church_id', currentChurchId)
-                        .eq('department_id', editingGroup.department_id)
-                        .eq('group_name', editingGroup.name);
-
-                    if (syncError) {
-                        console.error('Cascading update failed:', syncError);
-                        // We don't block the whole process, but alert might be helpful
-                    }
+                    await renameMemberDirectoryGroupAssignments(supabase, {
+                        churchId: currentChurchId,
+                        departmentId: editingGroup.department_id,
+                        oldGroupName: editingGroup.name,
+                        newGroupName: groupName,
+                    });
                 }
             } else {
                 const { error } = await supabase
@@ -202,6 +232,8 @@ export default function DepartmentsPage() {
                         department_id: selectedDeptId,
                         church_id: currentChurchId,
                         color_hex: groupColor,
+                        active_from: groupActiveFrom || null,
+                        ended_at: groupEndedAt ? `${groupEndedAt}T23:59:59+09:00` : null,
                         is_new_member_group: isNewMemberGroup,
                         climbing_threshold: isNewMemberGroup ? climbingThreshold : null
                     });
@@ -211,10 +243,12 @@ export default function DepartmentsPage() {
             setEditingGroup(null);
             setGroupName('');
             setGroupColor('#4f46e5');
+            setGroupActiveFrom('');
+            setGroupEndedAt('');
             fetchData(currentChurchId);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Group Submit Error:', err);
-            alert('오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
+            alert('오류가 발생했습니다: ' + (err instanceof Error ? err.message : '알 수 없는 오류'));
         }
     };
 
@@ -230,12 +264,15 @@ export default function DepartmentsPage() {
         if (!deleteTarget || deleteConfirmInput !== deleteTarget.name) return;
         setDeleting(true);
         try {
-            const { error } = await supabase.from('departments').delete().eq('id', deleteTarget.id);
+            const { error } = await supabase
+                .from('departments')
+                .update({ is_active: false })
+                .eq('id', deleteTarget.id);
             if (error) throw error;
             fetchData(currentChurchId!);
             setDeleteTarget(null);
-        } catch (err) {
-            alert('삭제 중 오류가 발생했습니다.');
+        } catch {
+            alert('부서 종료 중 오류가 발생했습니다.');
         } finally {
             setDeleting(false);
         }
@@ -244,13 +281,16 @@ export default function DepartmentsPage() {
     const handleDeleteGroup = async (e: React.MouseEvent, id: string) => {
         e.preventDefault();
         e.stopPropagation();
-        if (!confirm('조를 삭제하시겠습니까? 조원 정보는 유지되나 소속 조가 없어집니다.')) return;
+        if (!confirm('조를 종료하시겠습니까? 조원 정보와 이력은 보존되며 현재 조 목록에서는 숨겨집니다.')) return;
         try {
-            const { error } = await supabase.from('groups').delete().eq('id', id);
+            const { error } = await supabase
+                .from('groups')
+                .update({ is_active: false })
+                .eq('id', id);
             if (error) throw error;
             fetchData(currentChurchId!);
-        } catch (err) {
-            alert('삭제 중 오류가 발생했습니다.');
+        } catch {
+            alert('조 종료 중 오류가 발생했습니다.');
         }
     };
 
@@ -408,6 +448,8 @@ export default function DepartmentsPage() {
                                             setEditingGroup(null);
                                             setGroupName('');
                                             setGroupColor(dept.color_hex || '#4f46e5');
+                                            setGroupActiveFrom(new Date().toISOString().slice(0, 10));
+                                            setGroupEndedAt('');
                                             setIsNewMemberGroup(false);
                                             setClimbingThreshold(4);
                                             setIsGroupModalOpen(true);
@@ -419,7 +461,7 @@ export default function DepartmentsPage() {
                                     </button>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 max-h-[400px] sm:max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
-                                    {dept.groups?.map((group: any) => (
+                                    {dept.groups?.map((group) => (
                                         <div key={group.id} className="flex items-center justify-between p-3.5 sm:p-4 bg-slate-50 dark:bg-slate-800/20 border border-slate-200 dark:border-slate-800 rounded-2xl group/item hover:bg-white dark:hover:bg-slate-800/40 transition-all border-l-4" style={{ borderLeftColor: group.color_hex || dept.color_hex || '#4f46e5' }}>
                                             <div className="flex items-center gap-3">
                                                 <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: group.color_hex || dept.color_hex || '#4f46e5' }} />
@@ -431,6 +473,8 @@ export default function DepartmentsPage() {
                                                         setEditingGroup(group);
                                                         setGroupName(group.name);
                                                         setGroupColor(group.color_hex || dept.color_hex || '#4f46e5');
+                                                        setGroupActiveFrom(group.active_from?.slice(0, 10) || group.created_at?.slice(0, 10) || '');
+                                                        setGroupEndedAt(group.ended_at?.slice(0, 10) || '');
                                                         setIsNewMemberGroup(group.is_new_member_group || false);
                                                         setClimbingThreshold(group.climbing_threshold || 4);
                                                         setSelectedDeptId(dept.id);
@@ -491,6 +535,29 @@ export default function DepartmentsPage() {
                                     className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-black transition-all text-base"
                                     placeholder="예: 1조, 2조 등..."
                                 />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="space-y-2.5">
+                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">운영 시작일</label>
+                                    <input
+                                        type="date"
+                                        value={groupActiveFrom}
+                                        onChange={(e) => setGroupActiveFrom(e.target.value)}
+                                        className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-black transition-all text-sm"
+                                    />
+                                    <p className="text-[10px] font-bold text-slate-400 ml-1">과거 출석/기도 화면에서 이 날짜부터 조가 보입니다.</p>
+                                </div>
+                                <div className="space-y-2.5">
+                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">운영 종료일</label>
+                                    <input
+                                        type="date"
+                                        value={groupEndedAt}
+                                        onChange={(e) => setGroupEndedAt(e.target.value)}
+                                        className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-black transition-all text-sm"
+                                    />
+                                    <p className="text-[10px] font-bold text-slate-400 ml-1">종료일 이후 주차에는 기록이 있을 때만 보입니다.</p>
+                                </div>
                             </div>
 
                             {/* Theme Color Selection */}
@@ -596,17 +663,17 @@ export default function DepartmentsPage() {
                 </form>
             </Modal>
 
-            {/* 부서 삭제 확인 모달 */}
+            {/* 부서 종료 확인 모달 */}
             <Modal
                 isOpen={!!deleteTarget}
                 onClose={() => setDeleteTarget(null)}
-                title="부서 삭제"
+                title="부서 종료"
                 maxWidth="md"
             >
                 <div className="space-y-6 py-2">
-                    <div className="p-4 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-xl">
-                        <p className="text-sm text-rose-700 dark:text-rose-400 font-bold leading-relaxed">
-                            이 작업은 되돌릴 수 없습니다. 부서에 속한 모든 조와 관련 데이터가 영구적으로 삭제됩니다.
+                    <div className="p-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl">
+                        <p className="text-sm text-amber-800 dark:text-amber-300 font-bold leading-relaxed">
+                            부서를 종료하면 현재 부서/조 목록에서는 숨겨지고, 소속 성도는 비활성화됩니다. 기존 출석, 기도제목, 소속 이력은 삭제하지 않고 보존합니다.
                         </p>
                     </div>
                     <div className="space-y-2.5">
@@ -618,7 +685,7 @@ export default function DepartmentsPage() {
                             value={deleteConfirmInput}
                             onChange={(e) => setDeleteConfirmInput(e.target.value)}
                             placeholder={deleteTarget?.name}
-                            className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-rose-500 text-slate-900 dark:text-white font-bold transition-all text-sm"
+                            className="w-full px-5 py-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl focus:outline-none focus:border-amber-500 text-slate-900 dark:text-white font-bold transition-all text-sm"
                             autoFocus
                         />
                     </div>
@@ -632,9 +699,9 @@ export default function DepartmentsPage() {
                         <button
                             onClick={confirmDeleteDept}
                             disabled={deleteConfirmInput !== deleteTarget?.name || deleting}
-                            className="flex-1 py-4 bg-rose-600 text-white font-black rounded-2xl hover:bg-rose-500 transition-all shadow-xl shadow-rose-600/20 active:scale-95 text-sm disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
+                            className="flex-1 py-4 bg-amber-600 text-white font-black rounded-2xl hover:bg-amber-500 transition-all shadow-xl shadow-amber-600/20 active:scale-95 text-sm disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
                         >
-                            {deleting ? '삭제 중...' : '삭제'}
+                            {deleting ? '종료 중...' : '부서 종료'}
                         </button>
                     </div>
                 </div>
@@ -643,4 +710,3 @@ export default function DepartmentsPage() {
         </div>
     );
 }
-

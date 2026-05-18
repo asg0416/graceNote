@@ -21,10 +21,12 @@ class AttendanceDashboardScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<AttendanceDashboardScreen> createState() => _AttendanceDashboardScreenState();
+  ConsumerState<AttendanceDashboardScreen> createState() =>
+      _AttendanceDashboardScreenState();
 }
 
-class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardScreen> {
+class _AttendanceDashboardScreenState
+    extends ConsumerState<AttendanceDashboardScreen> {
   String? _selectedWeekId;
   late int _viewYear;
   late int _viewMonth;
@@ -40,8 +42,9 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
 
   @override
   Widget build(BuildContext context) {
-    final historyAsync = ref.watch(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth'));
-    
+    final historyAsync = ref.watch(
+        attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth'));
+
     // 데이터가 있을 때만 캐시 업데이트
     if (historyAsync.hasValue) {
       _cachedHistory = historyAsync.value;
@@ -53,7 +56,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     final profileForDept = ref.watch(userProfileProvider).value;
     final deptId = profileForDept?.departmentId ?? '';
     final noMeetingListAsync = deptId.isNotEmpty
-        ? ref.watch(noMeetingDaysInMonthProvider('$deptId:$_viewYear:$_viewMonth'))
+        ? ref.watch(
+            noMeetingDaysInMonthProvider('$deptId:$_viewYear:$_viewMonth'))
         : const AsyncValue<List<NoMeetingDayModel>>.data([]);
     final noMeetingDates = <String>{
       for (final d in (noMeetingListAsync.value ?? []))
@@ -64,7 +68,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     if (historyAsync.hasError && !historyAsync.isLoading) {
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) {
-          ref.invalidate(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth'));
+          ref.invalidate(attendanceHistoryProvider(
+              '${widget.groupId}:$_viewYear:$_viewMonth'));
         }
       });
     }
@@ -72,7 +77,12 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('우리 조 출석 통계', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 18, fontFamily: 'Pretendard')),
+        title: const Text('우리 조 출석 통계',
+            style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textMain,
+                fontSize: 18,
+                fontFamily: 'Pretendard')),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
@@ -86,50 +96,71 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
               height: 2,
               child: LinearProgressIndicator(
                 backgroundColor: Colors.transparent,
-                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet),
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet),
               ),
             ),
           Expanded(
             // [FIX] 초기 로딩(캐시 없음) 중일 때만 스피너, 그 외에는 항상 전체 UI를 표시
-            child: (_cachedHistory == null && (isLoading || historyAsync.hasError))
+            child: (_cachedHistory == null &&
+                    (isLoading || historyAsync.hasError))
                 ? Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
                 : RefreshIndicator(
                     onRefresh: () async {
-                      ref.invalidate(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth'));
+                      ref.invalidate(attendanceHistoryProvider(
+                          '${widget.groupId}:$_viewYear:$_viewMonth'));
                       final groupsAsync = ref.read(userGroupsProvider);
-                      final churchId = groupsAsync.value?.first['church_id'] ?? '';
+                      final churchId =
+                          groupsAsync.value?.first['church_id'] ?? '';
                       if (_selectedWeekId != null) {
-                        ref.invalidate(weeklyDataProvider('${widget.groupId}:$churchId:$_selectedWeekId'));
+                        ref.invalidate(weeklyDataProvider(
+                            '${widget.groupId}:$churchId:$_selectedWeekId'));
                       } else if (history.isNotEmpty) {
-                        ref.invalidate(weeklyDataProvider('${widget.groupId}:$churchId:${history.first['week_id']}'));
+                        ref.invalidate(weeklyDataProvider(
+                            '${widget.groupId}:$churchId:${history.first['week_id']}'));
                       }
-                      await ref.read(attendanceHistoryProvider('${widget.groupId}:$_viewYear:$_viewMonth').future);
+                      await ref.read(attendanceHistoryProvider(
+                              '${widget.groupId}:$_viewYear:$_viewMonth')
+                          .future);
                     },
                     color: AppTheme.primaryViolet,
                     child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSummaryHeader(history, isLoading: isLoading, noMeetingDates: noMeetingDates, noMeetingList: noMeetingListAsync.value ?? []),
-                        _buildHistoryList(history, isLoading: isLoading),
-                        _buildGraphSection(history, isLoading: isLoading),
-                        Builder(builder: (_) {
-                          final activeWeekIdForDetail = _selectedWeekId ?? (history.isNotEmpty ? history.first['week_id'] : null);
-                          final activeWeekDateForDetail = history.isNotEmpty
-                              ? history.firstWhere(
-                                  (h) => h['week_id'] == activeWeekIdForDetail,
-                                  orElse: () => history.first,
-                                )['week_date'] as String? ?? ''
-                              : '';
-                          if (activeWeekIdForDetail != null && !noMeetingDates.contains(activeWeekDateForDetail)) {
-                            return _buildDetailedAttendanceSection(activeWeekIdForDetail, history, isLoading: isLoading);
-                          }
-                          return const SizedBox.shrink();
-                        }),
-                        const SizedBox(height: 40),
-                      ],
-                    ),
+                      physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics()),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSummaryHeader(history,
+                              isLoading: isLoading,
+                              noMeetingDates: noMeetingDates,
+                              noMeetingList: noMeetingListAsync.value ?? []),
+                          _buildHistoryList(history, isLoading: isLoading),
+                          _buildGraphSection(history, isLoading: isLoading),
+                          Builder(builder: (_) {
+                            final activeWeekIdForDetail = _selectedWeekId ??
+                                (history.isNotEmpty
+                                    ? history.first['week_id']
+                                    : null);
+                            final activeWeekDateForDetail = history.isNotEmpty
+                                ? history.firstWhere(
+                                      (h) =>
+                                          h['week_id'] == activeWeekIdForDetail,
+                                      orElse: () => history.first,
+                                    )['week_date'] as String? ??
+                                    ''
+                                : '';
+                            if (activeWeekIdForDetail != null &&
+                                !noMeetingDates
+                                    .contains(activeWeekDateForDetail)) {
+                              return _buildDetailedAttendanceSection(
+                                  activeWeekIdForDetail, history,
+                                  isLoading: isLoading);
+                            }
+                            return const SizedBox.shrink();
+                          }),
+                          const SizedBox(height: 40),
+                        ],
+                      ),
                     ),
                   ),
           ),
@@ -143,28 +174,43 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.bar_chart_rounded, size: 80, color: AppTheme.divider),
+          const Icon(Icons.bar_chart_rounded,
+              size: 80, color: AppTheme.divider),
           const SizedBox(height: 16),
-          const Text('아직 출석 기록이 없습니다.', style: TextStyle(color: AppTheme.textSub, fontSize: 16)),
+          const Text('아직 출석 기록이 없습니다.',
+              style: TextStyle(color: AppTheme.textSub, fontSize: 16)),
           const SizedBox(height: 24),
-          const Text('기록 탭에서 출석을 기록해주세요.', style: TextStyle(color: AppTheme.textSub, fontSize: 14)),
+          const Text('기록 탭에서 출석을 기록해주세요.',
+              style: TextStyle(color: AppTheme.textSub, fontSize: 14)),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryHeader(List<Map<String, dynamic>> history, {bool isLoading = false, Set<String> noMeetingDates = const {}, List<NoMeetingDayModel> noMeetingList = const []}) {
-    final activeWeekId = _selectedWeekId ?? (history.isNotEmpty ? history.first['week_id'] : null);
+  Widget _buildSummaryHeader(List<Map<String, dynamic>> history,
+      {bool isLoading = false,
+      Set<String> noMeetingDates = const {},
+      List<NoMeetingDayModel> noMeetingList = const []}) {
+    final activeWeekId = _selectedWeekId ??
+        (history.isNotEmpty ? history.first['week_id'] : null);
     final activeWeek = (history.isNotEmpty)
-        ? history.firstWhere((h) => h['week_id'] == activeWeekId, orElse: () => history.first)
-        : {'present_count': 0, 'total_count': 0, 'week_id': null, 'week_date': ''};
+        ? history.firstWhere((h) => h['week_id'] == activeWeekId,
+            orElse: () => history.first)
+        : {
+            'present_count': 0,
+            'total_count': 0,
+            'week_id': null,
+            'week_date': ''
+          };
 
     final activeWeekDate = activeWeek['week_date'] as String? ?? '';
     final isNoMeeting = noMeetingDates.contains(activeWeekDate);
     final noMeetingReason = isNoMeeting && noMeetingList.isNotEmpty
         ? noMeetingList
             .firstWhere(
-              (d) => '${d.weekDate.year}-${d.weekDate.month.toString().padLeft(2, '0')}-${d.weekDate.day.toString().padLeft(2, '0')}' == activeWeekDate,
+              (d) =>
+                  '${d.weekDate.year}-${d.weekDate.month.toString().padLeft(2, '0')}-${d.weekDate.day.toString().padLeft(2, '0')}' ==
+                  activeWeekDate,
               orElse: () => noMeetingList.first,
             )
             .reason
@@ -183,7 +229,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                 : [const Color(0xFF8B5CF6), const Color(0xFF6366F1)],
           ),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppTheme.border.withOpacity(0.5), width: 1.0),
+          border:
+              Border.all(color: AppTheme.border.withOpacity(0.5), width: 1.0),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
@@ -209,7 +256,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                   children: [
                     Row(
                       children: [
-                        const Icon(lucide.LucideIcons.barChart3, color: Colors.white, size: 20),
+                        const Icon(lucide.LucideIcons.barChart3,
+                            color: Colors.white, size: 20),
                         const SizedBox(width: 8),
                         const Text(
                           '우리 조 출석 요약',
@@ -227,11 +275,13 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                     if (isNoMeeting)
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 16, horizontal: 16),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                          border: Border.all(
+                              color: Colors.white.withOpacity(0.2), width: 1),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -246,7 +296,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                                 letterSpacing: -0.5,
                               ),
                             ),
-                            if (noMeetingReason != null && noMeetingReason.isNotEmpty) ...[
+                            if (noMeetingReason != null &&
+                                noMeetingReason.isNotEmpty) ...[
                               const SizedBox(height: 4),
                               Text(
                                 noMeetingReason,
@@ -263,27 +314,39 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                     else
                       // [STYLE] 글래스모피즘 카드 레이아웃
                       Container(
-                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 16, horizontal: 8),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+                          border: Border.all(
+                              color: Colors.white.withOpacity(0.2), width: 1),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
                             _buildSummaryItem(
                               '선택 주차',
-                              activeWeek['week_id'] != null ? '${activeWeek['present_count']}명' : '-',
+                              activeWeek['week_id'] != null
+                                  ? '${activeWeek['present_count']}명'
+                                  : '-',
                               lucide.LucideIcons.calendarCheck2,
                             ),
-                            Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                            Container(
+                                width: 1,
+                                height: 30,
+                                color: Colors.white.withOpacity(0.2)),
                             _buildSummaryItem(
                               '평균 출석',
-                              history.isNotEmpty ? '${(history.map((e) => e['present_count'] as int).reduce((a, b) => a + b) / history.length).toStringAsFixed(1)}명' : '-',
+                              history.isNotEmpty
+                                  ? '${(history.map((e) => e['present_count'] as int).reduce((a, b) => a + b) / history.length).toStringAsFixed(1)}명'
+                                  : '-',
                               lucide.LucideIcons.users,
                             ),
-                            Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+                            Container(
+                                width: 1,
+                                height: 30,
+                                color: Colors.white.withOpacity(0.2)),
                             _buildSummaryItem(
                               '기록 주차',
                               '${history.length}회',
@@ -308,22 +371,22 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
         Icon(icon, color: Colors.white.withOpacity(0.8), size: 16),
         const SizedBox(height: 6),
         Text(
-          label, 
+          label,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.7), 
-            fontSize: 11, 
-            fontWeight: FontWeight.w600, 
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
             fontFamily: 'Pretendard',
           ),
         ),
         const SizedBox(height: 4),
         Text(
-          value, 
+          value,
           style: const TextStyle(
-            color: Colors.white, 
-            fontSize: 16, 
-            fontWeight: FontWeight.w900, 
-            fontFamily: 'Pretendard', 
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            fontFamily: 'Pretendard',
             letterSpacing: -0.5,
           ),
         ),
@@ -359,7 +422,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
   /// 대시보드에서 직접 출석체크 모달을 띄우는 메서드.
   /// 탭 전환(context.go('/record')) 없이 현재 화면 위에 AttendanceCheckScreen을 모달로 열고,
   /// 완료 시 출석 데이터를 저장한 뒤 대시보드를 갱신합니다.
-  Future<void> _openAttendanceCheckModal(String weekId, String weekDateStr) async {
+  Future<void> _openAttendanceCheckModal(
+      String weekId, String weekDateStr) async {
     final repo = ref.read(repositoryProvider);
     final groupsAsync = ref.read(userGroupsProvider);
     final churchId = groupsAsync.value?.first['church_id'] ?? '';
@@ -367,8 +431,13 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
 
     // 1. 멤버 목록 및 기존 출석 데이터 가져오기
     final membersData = await repo.getGroupMembers(widget.groupId);
-    final weeklyData = await repo.getWeeklyData(widget.groupId, weekId);
-    final existingAttendance = List<Map<String, dynamic>>.from(weeklyData['attendance']);
+    final weeklyData = await repo.getWeeklyData(
+      widget.groupId,
+      weekId,
+      preloadedMembers: List<Map<String, dynamic>>.from(membersData),
+    );
+    final existingAttendance =
+        List<Map<String, dynamic>>.from(weeklyData['attendance']);
 
     // 2. 멤버 리스트 구성 (AttendancePrayerScreen._fetchInitialData 로직과 동일)
     final Map<String, Map<String, dynamic>> combinedMembers = {};
@@ -387,8 +456,10 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     }
     for (final att in existingAttendance) {
       final directoryId = att['directory_member_id'];
-      if (directoryId == null || !combinedMembers.containsKey(directoryId)) continue;
-      combinedMembers[directoryId]!['isPresent'] = att['status'] == 'present' || att['status'] == 'late';
+      if (directoryId == null || !combinedMembers.containsKey(directoryId))
+        continue;
+      combinedMembers[directoryId]!['isPresent'] =
+          att['status'] == 'present' || att['status'] == 'late';
       combinedMembers[directoryId]!['source'] = 'snapshot';
     }
     final members = combinedMembers.values.toList();
@@ -396,7 +467,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     // [SORT] 부부형이면 marriage key로 부부 묶음 정렬, 아니면 이름순
     final groups = groupsAsync.value ?? [];
     final currentGroup = groups.isNotEmpty
-        ? groups.firstWhere((g) => g['group_id'] == widget.groupId, orElse: () => groups.first)
+        ? groups.firstWhere((g) => g['group_id'] == widget.groupId,
+            orElse: () => groups.first)
         : <String, dynamic>{};
     final isCoupleMode = currentGroup['profile_mode'] == 'couple';
     members.sort((a, b) {
@@ -411,6 +483,7 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
         list.sort();
         return list.join('_');
       }
+
       final k1 = getMarriageKey(a);
       final k2 = getMarriageKey(b);
       if (k1 != k2) return k1.compareTo(k2);
@@ -444,7 +517,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
 
     if (result != null && result is List<Map<String, dynamic>>) {
       // 6. 출석 데이터 저장
-      final weekIdResult = await repo.getOrCreateWeek(churchId, weekDate, createIfMissing: true);
+      final weekIdResult =
+          await repo.getOrCreateWeek(churchId, weekDate, createIfMissing: true);
       if (weekIdResult == null) return;
 
       final List<AttendanceModel> attendance = [];
@@ -457,7 +531,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
           status: m['isPresent'] == true ? 'present' : 'absent',
         ));
       }
-      await repo.saveAttendanceAndPrayers(attendanceList: attendance, prayerList: []);
+      await repo
+          .saveAttendanceAndPrayers(attendanceList: attendance, prayerList: []);
 
       // 7. 대시보드 데이터 갱신
       ref.invalidate(weeklyDataProvider);
@@ -465,15 +540,19 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     }
   }
 
-  Widget _buildGraphSection(List<Map<String, dynamic>> history, {bool isLoading = false}) {
+  Widget _buildGraphSection(List<Map<String, dynamic>> history,
+      {bool isLoading = false}) {
     // Reverse to show chronological order in graph
     // Reverse to show chronological order in graph
     final reversedHistory = history.reversed.toList();
-    
+
     // [FIX] 배경 막대 가시성: 데이터 중 최대 인원수를 배경 높이로 설정하여 비어있는 주차도 가시성 확보
     double maxAttendance = 10;
     if (history.isNotEmpty) {
-      final actualMax = history.map((e) => (e['total_count'] as int)).reduce((a, b) => a > b ? a : b).toDouble();
+      final actualMax = history
+          .map((e) => (e['total_count'] as int))
+          .reduce((a, b) => a > b ? a : b)
+          .toDouble();
       maxAttendance = actualMax > 0 ? actualMax : 10;
     }
 
@@ -485,7 +564,8 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppTheme.border, width: 1.0), // [STYLE] 그림자 제거 후 테두리 복원
+        border: Border.all(
+            color: AppTheme.border, width: 1.0), // [STYLE] 그림자 제거 후 테두리 복원
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -495,18 +575,27 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('$_viewYear년 $_viewMonth월 출석 (명)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.textSub)),
+                Text('$_viewYear년 $_viewMonth월 출석 (명)',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: AppTheme.textSub)),
                 Row(
                   children: [
                     IconButton(
-                      icon: Icon(lucide.LucideIcons.chevronLeft, size: 18, color: AppTheme.textSub),
+                      icon: Icon(lucide.LucideIcons.chevronLeft,
+                          size: 18, color: AppTheme.textSub),
                       onPressed: _previousMonth,
                       tooltip: '이전 달',
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
-                      icon: Icon(lucide.LucideIcons.chevronRight, size: 18, color: AppTheme.textSub),
-                      onPressed: (_viewYear == DateTime.now().year && _viewMonth == DateTime.now().month) ? null : _nextMonth,
+                      icon: Icon(lucide.LucideIcons.chevronRight,
+                          size: 18, color: AppTheme.textSub),
+                      onPressed: (_viewYear == DateTime.now().year &&
+                              _viewMonth == DateTime.now().month)
+                          ? null
+                          : _nextMonth,
                       tooltip: '다음 달',
                       visualDensity: VisualDensity.compact,
                     ),
@@ -531,9 +620,12 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.event_busy_rounded, size: 40, color: AppTheme.divider),
+                    const Icon(Icons.event_busy_rounded,
+                        size: 40, color: AppTheme.divider),
                     const SizedBox(height: 8),
-                    const Text('이 달의 출석 기록이 없습니다.', style: TextStyle(color: AppTheme.textSub, fontSize: 13)),
+                    const Text('이 달의 출석 기록이 없습니다.',
+                        style:
+                            TextStyle(color: AppTheme.textSub, fontSize: 13)),
                   ],
                 ),
               ),
@@ -542,103 +634,125 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
             Expanded(
               child: BarChart(
                 BarChartData(
-                alignment: BarChartAlignment.spaceAround,
-                maxY: maxAttendance + 4, // [FIX] 계산된 최대치 기반 (명시적 표시를 위해 여유분 확보)
-                barTouchData: BarTouchData(
-                  enabled: true,
-                  touchCallback: (event, response) {
-                    if (response != null && response.spot != null && event is FlTapUpEvent) {
-                      final index = response.spot!.touchedBarGroupIndex;
-                      if (index >= 0 && index < reversedHistory.length) {
-                        setState(() {
-                          _selectedWeekId = reversedHistory[index]['week_id'];
-                        });
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY:
+                      maxAttendance + 4, // [FIX] 계산된 최대치 기반 (명시적 표시를 위해 여유분 확보)
+                  barTouchData: BarTouchData(
+                    enabled: true,
+                    touchCallback: (event, response) {
+                      if (response != null &&
+                          response.spot != null &&
+                          event is FlTapUpEvent) {
+                        final index = response.spot!.touchedBarGroupIndex;
+                        if (index >= 0 && index < reversedHistory.length) {
+                          setState(() {
+                            _selectedWeekId = reversedHistory[index]['week_id'];
+                          });
+                        }
                       }
-                    }
-                  },
-                  touchTooltipData: BarTouchTooltipData(
-                    getTooltipColor: (_) => Colors.transparent, // 배경 투명
-                    tooltipPadding: EdgeInsets.zero,
-                    tooltipMargin: 8,
-                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                      return BarTooltipItem(
-                        '${rod.toY.toInt()}명',
-                        const TextStyle(
-                          color: AppTheme.primaryViolet,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          fontFamily: 'Pretendard',
-                        ),
-                      );
                     },
-                  ),
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (value, meta) {
-                        int idx = value.toInt();
-                        if (idx < 0 || idx >= reversedHistory.length) return const SizedBox.shrink();
-                        final date = DateTime.parse(reversedHistory[idx]['week_date']);
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 10),
-                          child: Text('${date.month}/${date.day}', style: const TextStyle(fontSize: 11, color: AppTheme.textSub, fontWeight: FontWeight.w500)),
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipColor: (_) => Colors.transparent, // 배경 투명
+                      tooltipPadding: EdgeInsets.zero,
+                      tooltipMargin: 8,
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        return BarTooltipItem(
+                          '${rod.toY.toInt()}명',
+                          const TextStyle(
+                            color: AppTheme.primaryViolet,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                            fontFamily: 'Pretendard',
+                          ),
                         );
                       },
-                      reservedSize: 32,
                     ),
                   ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (value, meta) => Text(value.toInt().toString(), style: const TextStyle(fontSize: 11, color: AppTheme.textSub)),
-                      reservedSize: 28,
-                    ),
-                  ),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                ),
-                gridData: FlGridData(
-                  show: true, 
-                  drawVerticalLine: false, 
-                  horizontalInterval: 5,
-                  getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey[300]!, strokeWidth: 1), // [STYLE] 그리드 선명도 개선
-                ),
-                borderData: FlBorderData(show: false),
-                barGroups: reversedHistory.asMap().entries.map((e) {
-                  final attendance = (e.value['present_count'] as int).toDouble();
-                  final total = (e.value['total_count'] as int).toDouble();
-                  final isSelected = _selectedWeekId == e.value['week_id'] || (_selectedWeekId == null && e.key == reversedHistory.length - 1);
-
-                  return BarChartGroupData(
-                    x: e.key,
-                    barRods: [
-                      BarChartRodData(
-                        toY: attendance,
-                        color: isSelected ? AppTheme.primaryViolet : AppTheme.primaryViolet.withOpacity(0.3),
-                        width: 16,
-                        borderRadius: BorderRadius.circular(4),
-                        backDrawRodData: BackgroundBarChartRodData(
-                          show: true,
-                          toY: maxAttendance, // [FIX] 모든 막대의 배경 높이를 통일하여 가시성 확보
-                          color: const Color(0xFFF1F5F9),
-                        ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          int idx = value.toInt();
+                          if (idx < 0 || idx >= reversedHistory.length)
+                            return const SizedBox.shrink();
+                          final date =
+                              DateTime.parse(reversedHistory[idx]['week_date']);
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Text('${date.month}/${date.day}',
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppTheme.textSub,
+                                    fontWeight: FontWeight.w500)),
+                          );
+                        },
+                        reservedSize: 32,
                       ),
-                    ],
-                    showingTooltipIndicators: [0],
-                  );
-                }).toList(),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) => Text(
+                            value.toInt().toString(),
+                            style: const TextStyle(
+                                fontSize: 11, color: AppTheme.textSub)),
+                        reservedSize: 28,
+                      ),
+                    ),
+                    rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: 5,
+                    getDrawingHorizontalLine: (value) => FlLine(
+                        color: Colors.grey[300]!,
+                        strokeWidth: 1), // [STYLE] 그리드 선명도 개선
+                  ),
+                  borderData: FlBorderData(show: false),
+                  barGroups: reversedHistory.asMap().entries.map((e) {
+                    final attendance =
+                        (e.value['present_count'] as int).toDouble();
+                    final isSelected = _selectedWeekId == e.value['week_id'] ||
+                        (_selectedWeekId == null &&
+                            e.key == reversedHistory.length - 1);
+
+                    return BarChartGroupData(
+                      x: e.key,
+                      barRods: [
+                        BarChartRodData(
+                          toY: attendance,
+                          color: isSelected
+                              ? AppTheme.primaryViolet
+                              : AppTheme.primaryViolet.withOpacity(0.3),
+                          width: 16,
+                          borderRadius: BorderRadius.circular(4),
+                          backDrawRodData: BackgroundBarChartRodData(
+                            show: true,
+                            toY:
+                                maxAttendance, // [FIX] 모든 막대의 배경 높이를 통일하여 가시성 확보
+                            color: const Color(0xFFF1F5F9),
+                          ),
+                        ),
+                      ],
+                      showingTooltipIndicators: [0],
+                    );
+                  }).toList(),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildHistoryList(List<Map<String, dynamic>> history, {bool isLoading = false}) {
+  Widget _buildHistoryList(List<Map<String, dynamic>> history,
+      {bool isLoading = false}) {
     if (history.isEmpty && !isLoading) return const SizedBox.shrink();
 
     // Reverse to match chronological order of the graph (oldest left, newest right)
@@ -647,67 +761,82 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
     return Opacity(
       opacity: isLoading ? 0.6 : 1.0,
       child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(26, 24, 24, 12), // [LAYOUT] 간격 미세 조정
-          child: Text('주차별 기록', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
-        ),
-        SizedBox(
-          height: 48, // [STYLE] 높이 감소
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: reversedHistory.length,
-            itemBuilder: (context, index) {
-              final item = reversedHistory[index];
-              final date = DateTime.parse(item['week_date']);
-              final isSelected = _selectedWeekId == item['week_id'] || (_selectedWeekId == null && index == reversedHistory.length - 1);
- 
-              return GestureDetector(
-                onTap: () => setState(() => _selectedWeekId = item['week_id']),
-                child: Container(
-                  margin: const EdgeInsets.only(right: 8, bottom: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0), // [STYLE] 좌우 넓히고 상하 패딩 제거
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppTheme.primaryViolet : const Color(0xFFF1F5F9), // [STYLE] 미선택 시 연한 회색 배경
-                    borderRadius: BorderRadius.circular(10), // [STYLE] 더 샤프한 뱃지 느낌
-                    border: Border.all(color: isSelected ? AppTheme.primaryViolet : AppTheme.border), // [STYLE] 테두리 복원
-                  ),
-                  child: Center(
-                    child: Text(
-                      DateFormat('M/d').format(date), 
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700, 
-                        color: isSelected ? Colors.white : AppTheme.textSub,
-                        fontFamily: 'Pretendard',
-                      )
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(26, 24, 24, 12), // [LAYOUT] 간격 미세 조정
+            child: Text('주차별 기록',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: AppTheme.textMain)),
+          ),
+          SizedBox(
+            height: 48, // [STYLE] 높이 감소
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: reversedHistory.length,
+              itemBuilder: (context, index) {
+                final item = reversedHistory[index];
+                final date = DateTime.parse(item['week_date']);
+                final isSelected = _selectedWeekId == item['week_id'] ||
+                    (_selectedWeekId == null &&
+                        index == reversedHistory.length - 1);
+
+                return GestureDetector(
+                  onTap: () =>
+                      setState(() => _selectedWeekId = item['week_id']),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8, bottom: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 0), // [STYLE] 좌우 넓히고 상하 패딩 제거
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppTheme.primaryViolet
+                          : const Color(0xFFF1F5F9), // [STYLE] 미선택 시 연한 회색 배경
+                      borderRadius:
+                          BorderRadius.circular(10), // [STYLE] 더 샤프한 뱃지 느낌
+                      border: Border.all(
+                          color: isSelected
+                              ? AppTheme.primaryViolet
+                              : AppTheme.border), // [STYLE] 테두리 복원
+                    ),
+                    child: Center(
+                      child: Text(DateFormat('M/d').format(date),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: isSelected ? Colors.white : AppTheme.textSub,
+                            fontFamily: 'Pretendard',
+                          )),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        ),
-      ],
-    ),
+        ],
+      ),
     );
   }
 
-  Widget _buildDetailedAttendanceSection(String weekId, List<Map<String, dynamic>> history, {bool isLoading = false}) {
+  Widget _buildDetailedAttendanceSection(
+      String weekId, List<Map<String, dynamic>> history,
+      {bool isLoading = false}) {
     final groupsAsync = ref.watch(userGroupsProvider);
     final churchId = groupsAsync.value?.first['church_id'] ?? '';
     final groups = groupsAsync.value ?? [];
     final currentGroup = groups.isNotEmpty
-        ? groups.firstWhere((g) => g['group_id'] == widget.groupId, orElse: () => groups.first)
+        ? groups.firstWhere((g) => g['group_id'] == widget.groupId,
+            orElse: () => groups.first)
         : <String, dynamic>{};
     final isCoupleMode = currentGroup['profile_mode'] == 'couple';
-    final weekDateStr = history.firstWhere(
-      (h) => h['week_id'] == weekId, 
-      orElse: () => history.isNotEmpty ? history.first : <String, dynamic>{}
-    )['week_date'] as String?;
-    
+    final weekDateStr = history.firstWhere((h) => h['week_id'] == weekId,
+        orElse: () => history.isNotEmpty
+            ? history.first
+            : <String, dynamic>{})['week_date'] as String?;
+
     return Opacity(
       opacity: isLoading ? 0.5 : 1.0,
       child: Column(
@@ -715,141 +844,178 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(24, 32, 24, 16),
-            child: Text('상세 현황', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.textMain)),
+            child: Text('상세 현황',
+                style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                    color: AppTheme.textMain)),
           ),
-          ref.watch(weeklyDataProvider('${widget.groupId}:$churchId:$weekId')).maybeWhen(
-            skipLoadingOnRefresh: true,
-            skipLoadingOnReload: true,
-            skipError: true,
-            data: (data) {
-              final attendanceList = List<Map<String, dynamic>>.from(data['attendance']);
-              if (attendanceList.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        if (weekDateStr != null) {
-                          _openAttendanceCheckModal(weekId, weekDateStr);
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryViolet,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        elevation: 0,
-                      ),
-                      icon: const Icon(lucide.LucideIcons.edit3, size: 20),
-                      label: const Text('출석 등록하기', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
-                    ),
-                  ),
-                );
-              }
-
-              // [SORT] 명단 정렬: 부부형이면 marriage key(부부묶음+가나다), 아니면 이름순
-              attendanceList.sort((a, b) {
-                final m1 = a['member_directory'] ?? {};
-                final m2 = b['member_directory'] ?? {};
-                final n1 = (m1['full_name'] as String?)?.trim() ?? '';
-                final n2 = (m2['full_name'] as String?)?.trim() ?? '';
-
-                if (!isCoupleMode) return n1.compareTo(n2);
-
-                // 부부형: marriage key로 정렬 (부부가 항상 묶여서 나옴)
-                String getMarriageKey(Map<String, dynamic> m) {
-                  final name = (m['full_name'] as String?)?.trim() ?? '';
-                  final spouse = (m['spouse_name'] as String?)?.trim() ?? '';
-                  if (spouse.isEmpty) return name;
-                  final list = [name, spouse];
-                  list.sort();
-                  return list.join('_');
-                }
-                final k1 = getMarriageKey(m1);
-                final k2 = getMarriageKey(m2);
-                if (k1 != k2) return k1.compareTo(k2);
-                return n1.compareTo(n2);
-              });
-
-              return Column(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.symmetric(horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: AppTheme.border, width: 1.0), // [STYLE] 테두리 복원
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          return Wrap(
-                            spacing: 6, // [STYLE] 간격 좁힘
-                            runSpacing: 8,
-                            children: attendanceList.map((att) {
-                              final member = att['member_directory'];
-                              if (member == null) return const SizedBox.shrink();
-                              
-                              final status = att['status'];
-                              final isPresent = status == 'present' || status == 'late';
-                              
-                              return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), // [STYLE] 패딩 축소
-                                decoration: BoxDecoration(
-                                  color: isPresent ? AppTheme.accentViolet : const Color(0xFFF8FAFC),
-                                  borderRadius: BorderRadius.circular(12), // [STYLE] 조금 더 샤프한 어드민 스타일 뱃지
-                                  border: Border.all(
-                                    color: isPresent ? AppTheme.primaryViolet.withOpacity(0.4) : AppTheme.border.withOpacity(0.6),
-                                    width: 1.0,
-                                  ),
-                                ),
-                                child: Text(
-                                  member['full_name'], 
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: isPresent ? FontWeight.w800 : FontWeight.w600,
-                                    color: isPresent ? AppTheme.primaryViolet : AppTheme.textSub,
-                                    fontFamily: 'Pretendard',
-                                    letterSpacing: -0.3,
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                          );
-                        }
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          if (weekDateStr != null) {
-                            _openAttendanceCheckModal(weekId, weekDateStr);
-                          }
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.primaryViolet,
-                          side: const BorderSide(color: AppTheme.primaryViolet),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ref
+              .watch(weeklyDataProvider('${widget.groupId}:$churchId:$weekId'))
+              .maybeWhen(
+                skipLoadingOnRefresh: true,
+                skipLoadingOnReload: true,
+                skipError: true,
+                data: (data) {
+                  final attendanceList =
+                      List<Map<String, dynamic>>.from(data['attendance']);
+                  if (attendanceList.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 24),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            if (weekDateStr != null) {
+                              _openAttendanceCheckModal(weekId, weekDateStr);
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryViolet,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                          ),
+                          icon: const Icon(lucide.LucideIcons.edit3, size: 20),
+                          label: const Text('출석 등록하기',
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  fontFamily: 'Pretendard')),
                         ),
-                        icon: const Icon(lucide.LucideIcons.edit2, size: 18),
-                        label: const Text('출석 현황 수정하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
                       ),
-                    ),
-                  ),
-                ],
-              );
-            },
-            orElse: () => _buildAttendanceDetailSkeleton(),
-          ),
+                    );
+                  }
+
+                  // [SORT] 명단 정렬: 부부형이면 marriage key(부부묶음+가나다), 아니면 이름순
+                  attendanceList.sort((a, b) {
+                    final m1 = a['member_directory'] ?? {};
+                    final m2 = b['member_directory'] ?? {};
+                    final n1 = (m1['full_name'] as String?)?.trim() ?? '';
+                    final n2 = (m2['full_name'] as String?)?.trim() ?? '';
+
+                    if (!isCoupleMode) return n1.compareTo(n2);
+
+                    // 부부형: marriage key로 정렬 (부부가 항상 묶여서 나옴)
+                    String getMarriageKey(Map<String, dynamic> m) {
+                      final name = (m['full_name'] as String?)?.trim() ?? '';
+                      final spouse =
+                          (m['spouse_name'] as String?)?.trim() ?? '';
+                      if (spouse.isEmpty) return name;
+                      final list = [name, spouse];
+                      list.sort();
+                      return list.join('_');
+                    }
+
+                    final k1 = getMarriageKey(m1);
+                    final k2 = getMarriageKey(m2);
+                    if (k1 != k2) return k1.compareTo(k2);
+                    return n1.compareTo(n2);
+                  });
+
+                  return Column(
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                              color: AppTheme.border,
+                              width: 1.0), // [STYLE] 테두리 복원
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: LayoutBuilder(builder: (context, constraints) {
+                            return Wrap(
+                              spacing: 6, // [STYLE] 간격 좁힘
+                              runSpacing: 8,
+                              children: attendanceList.map((att) {
+                                final member = Map<String, dynamic>.from(
+                                    (att['member_directory'] as Map?) ?? {});
+                                if (member.isEmpty)
+                                  return const SizedBox.shrink();
+
+                                final status = att['status'];
+                                final isPresent =
+                                    status == 'present' || status == 'late';
+
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8), // [STYLE] 패딩 축소
+                                  decoration: BoxDecoration(
+                                    color: isPresent
+                                        ? AppTheme.accentViolet
+                                        : const Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.circular(
+                                        12), // [STYLE] 조금 더 샤프한 어드민 스타일 뱃지
+                                    border: Border.all(
+                                      color: isPresent
+                                          ? AppTheme.primaryViolet
+                                              .withOpacity(0.4)
+                                          : AppTheme.border.withOpacity(0.6),
+                                      width: 1.0,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    member['full_name'] ?? '알 수 없음',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: isPresent
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
+                                      color: isPresent
+                                          ? AppTheme.primaryViolet
+                                          : AppTheme.textSub,
+                                      fontFamily: 'Pretendard',
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          }),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              if (weekDateStr != null) {
+                                _openAttendanceCheckModal(weekId, weekDateStr);
+                              }
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppTheme.primaryViolet,
+                              side: const BorderSide(
+                                  color: AppTheme.primaryViolet),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16)),
+                            ),
+                            icon:
+                                const Icon(lucide.LucideIcons.edit2, size: 18),
+                            label: const Text('출석 현황 수정하기',
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: 'Pretendard')),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+                orElse: () => _buildAttendanceDetailSkeleton(),
+              ),
         ],
       ),
     );
@@ -871,14 +1037,16 @@ class _AttendanceDashboardScreenState extends ConsumerState<AttendanceDashboardS
             child: Wrap(
               spacing: 6,
               runSpacing: 8,
-              children: [56.0, 48.0, 64.0, 52.0, 60.0, 50.0, 58.0, 44.0].map((w) => Container(
-                width: w,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              )).toList(),
+              children: [56.0, 48.0, 64.0, 52.0, 60.0, 50.0, 58.0, 44.0]
+                  .map((w) => Container(
+                        width: w,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ))
+                  .toList(),
             ),
           ),
           const SizedBox(height: 16),

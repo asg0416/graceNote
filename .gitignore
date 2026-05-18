@@ -64,7 +64,9 @@ models_list.json
 
 # Supabase Temp & Dump Files
 supabase/.temp/
+supabase/.branches/
 supabase/*_dump.sql
+supabase/migration_list.*.txt
 supabase/*.sql
 !supabase/schema.sql
 !supabase/migrations/*.sql
@@ -73,6 +75,10 @@ supabase/*.sql
 # AI Planning & Context
 ai-plan/
 *.md
+!docs/superpowers/plans/2026-05-03-gracenote-dev-db-drift-log.md
+!docs/superpowers/plans/2026-05-03-gracenote-hard-delete-audit.md
+!docs/superpowers/plans/2026-05-03-gracenote-phase2-prod-rollout-manifest.md
+!docs/superpowers/plans/2026-05-04-gracenote-phase2c-ui-app-smoke-checklist.md
 
 # Oh My Claude Code (plugin state/sessions)
 .omc/

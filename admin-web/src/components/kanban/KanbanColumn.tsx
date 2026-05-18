@@ -1,15 +1,22 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { DraggableCard } from './DraggableCard';
 import { cn } from '@/lib/utils';
 import { Users, MoreVertical, Plus, Trash2, Edit2, X, Check, Search } from 'lucide-react';
-import { useRef, useEffect } from 'react';
+
+type KanbanMember = {
+    id: string;
+    full_name?: string | null;
+    phone?: string | null;
+    spouse_name?: string | null;
+    [key: string]: unknown;
+};
 
 interface KanbanColumnProps {
     id: string; // group_id or 'unassigned'
     title: string;
-    members: any[];
+    members: KanbanMember[];
     selectedMemberIds: string[];
     onMemberClick: (id: string) => void;
     onMemberDoubleClick?: (id: string) => void;
@@ -50,7 +57,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     autoMoveCouples = true
 }) => {
     const { setNodeRef, isOver } = useDroppable({ id });
-    const [isRenaming, setIsRenaming] = useState(false);
+    const [isRenaming, setIsRenaming] = useState(autoFocusRename);
     const [newName, setNewName] = useState(title);
     const [newColor, setNewColor] = useState(color);
     const [isAdding, setIsAdding] = useState(false);
@@ -69,13 +76,6 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
         '#ec4899', // Pink
         '#64748b', // Slate
     ];
-
-    // Auto-focus renaming on mount if requested
-    useEffect(() => {
-        if (autoFocusRename) {
-            setIsRenaming(true);
-        }
-    }, [autoFocusRename]);
 
     // Close menu on outside click
     useEffect(() => {
@@ -105,7 +105,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
             return filteredMembers.map(m => ({ id: m.id, members: [m] }));
         }
 
-        const units: { id: string, members: any[] }[] = [];
+        const units: { id: string, members: KanbanMember[] }[] = [];
         const seen = new Set<string>();
 
         filteredMembers.forEach(m => {
@@ -246,7 +246,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                             {onDelete && (
                                 <button
                                     onClick={() => {
-                                        if (confirm('이 조를 삭제하시겠습니까? 소속된 인원은 미편성으로 이동됩니다.')) {
+                                        if (confirm('이 조를 종료하시겠습니까? 소속된 인원은 미편성으로 이동됩니다. 기존 출석과 기도 기록은 보존됩니다.')) {
                                             onDelete();
                                         }
                                         setShowMenu(false);
@@ -254,7 +254,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                     className="w-full flex items-center gap-2 px-4 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
                                 >
                                     <Trash2 className="w-3.5 h-3.5" />
-                                    조 삭제
+                                    조 종료
                                 </button>
                             )}
                         </div>
@@ -298,11 +298,11 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
             >
                 <div className="flex-1 space-y-4">
                     <SortableContext
-                        items={familyUnits.map((u: { id: string }) => u.id)}
+                        items={familyUnits.map((unit) => unit.id)}
                         strategy={verticalListSortingStrategy}
                     >
-                        {familyUnits.map((unit: { id: string, members: any[] }) => {
-                            const isSelected = unit.members.some((m: any) => selectedMemberIds.includes(m.id));
+                        {familyUnits.map((unit) => {
+                            const isSelected = unit.members.some((member) => selectedMemberIds.includes(member.id));
                             const isBeingDragged = !!activeId && (activeId === unit.id || isSelected);
 
                             return (
