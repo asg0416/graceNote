@@ -310,7 +310,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                 key: ValueKey(prayer['id']),
                                 prayerId: prayer['id'].toString(),
                                 name: member['full_name'] ?? '알 수 없음',
-                                groupName: member['group_name'] ?? '',
+                                groupName: prayer['recorded_group_name'] ??
+                                    member['recorded_group_name'] ??
+                                    member['group_name'] ??
+                                    '',
                                 profileId: member['profile_id'] ??
                                     prayer['member_id'] ??
                                     '',
