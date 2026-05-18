@@ -629,12 +629,12 @@ class GraceNoteRepository {
   // 부서 전체의 특정 주차 데이터 가져오기 (전체 탭용)
   Future<Map<String, dynamic>> getDepartmentWeeklyData(
       String departmentId, String weekId) async {
-    if (departmentId.isEmpty || weekId.isEmpty)
+    if (departmentId.isEmpty || weekId.isEmpty) {
       return {'groups': [], 'prayers': []};
+    }
     final weekDate = await _getWeekDate(weekId);
 
-    // 1. 부서 내 조 조회: 현재 활성 조는 항상 포함하고, 비활성/삭제된 조도
-    // 해당 주차에 실제 기도 기록이 있으면 기록 보존을 위해 포함한다.
+    // 1. 부서 내 조 조회: 선택 주차에 존재했거나 실제 기록이 있는 조만 포함한다.
     final groupsResponse = await _supabase
         .from('groups')
         .select(
@@ -668,7 +668,6 @@ class GraceNoteRepository {
         .toSet();
     final groups = allGroups
         .where((group) =>
-            group['is_active'] == true ||
             _groupWasInUseOnWeek(group, weekDate) ||
             prayerGroupIds.contains(group['id']?.toString()))
         .toList();
@@ -1497,7 +1496,6 @@ class GraceNoteRepository {
         .toSet();
     final groups = allGroups
         .where((group) =>
-            group['is_active'] == true ||
             _groupWasInUseOnWeek(group, weekDate) ||
             attendanceGroupIds.contains(group['id']?.toString()))
         .toList();
