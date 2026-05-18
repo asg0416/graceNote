@@ -1020,8 +1020,10 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
                     : {'full_name': '알 수 없음'});
             final String memberName = memberInfo['full_name'] ?? '알 수 없음';
             final String profileId = memberInfo['profile_id'] ?? '';
-            final String displayGroupName =
-                (prayerMemberDirectory['group_name'] ?? groupName).toString();
+            final String displayGroupName = (prayer['recorded_group_name'] ??
+                    prayerMemberDirectory['recorded_group_name'] ??
+                    groupName)
+                .toString();
 
             return PrayerCard(
               key: ValueKey(

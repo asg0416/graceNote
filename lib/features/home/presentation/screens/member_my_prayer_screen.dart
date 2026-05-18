@@ -439,7 +439,11 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
                                           : AppTheme.textSub),
                                 ),
                                 if (item['member'] != null &&
-                                    item['member']['group_name'] != null) ...[
+                                    (item['recorded_group_name'] != null ||
+                                        item['member']['recorded_group_name'] !=
+                                            null ||
+                                        item['member']['group_name'] !=
+                                            null)) ...[
                                   const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
@@ -453,7 +457,7 @@ class _MemberMyPrayerScreenState extends ConsumerState<MemberMyPrayerScreen> {
                                               .withOpacity(0.2)),
                                     ),
                                     child: Text(
-                                      '${item['member']['group_name']} 조',
+                                      '${item['recorded_group_name'] ?? item['member']['recorded_group_name'] ?? item['member']['group_name']} 조',
                                       style: const TextStyle(
                                         color: AppTheme.primaryViolet,
                                         fontSize: 10,

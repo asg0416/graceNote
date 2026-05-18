@@ -77,15 +77,36 @@ class GraceNoteRepository {
         .whereType<String>()
         .toSet()
         .toList();
+    final recordedGroupIds = rows
+        .map((row) =>
+            row['recorded_group_id']?.toString() ?? row['group_id']?.toString())
+        .whereType<String>()
+        .toSet()
+        .toList();
 
-    if (directoryIds.isEmpty) return rows;
+    if (directoryIds.isEmpty && recordedGroupIds.isEmpty) return rows;
 
     try {
-      final memberProfilesResponse = await _supabase
-          .from('member_profiles')
-          .select(
-              'person_id, profile_id, member_directory_id, full_name, family_name')
-          .inFilter('member_directory_id', directoryIds);
+      final Map<String, Map<String, dynamic>> groupById = {};
+      if (recordedGroupIds.isNotEmpty) {
+        final groupsResponse = await _supabase
+            .from('groups')
+            .select('id, name, color_hex')
+            .inFilter('id', recordedGroupIds);
+
+        for (final group in List<Map<String, dynamic>>.from(groupsResponse)) {
+          final id = group['id']?.toString();
+          if (id != null) groupById[id] = group;
+        }
+      }
+
+      final memberProfilesResponse = directoryIds.isEmpty
+          ? <Map<String, dynamic>>[]
+          : await _supabase
+              .from('member_profiles')
+              .select(
+                  'person_id, profile_id, member_directory_id, full_name, family_name')
+              .inFilter('member_directory_id', directoryIds);
 
       final memberProfiles =
           List<Map<String, dynamic>>.from(memberProfilesResponse);
@@ -124,11 +145,26 @@ class GraceNoteRepository {
 
       return rows.map((row) {
         final directoryId = row['directory_member_id']?.toString();
-        if (directoryId == null) return row;
+        final recordedGroupId =
+            row['recorded_group_id']?.toString() ?? row['group_id']?.toString();
+        final recordedGroup =
+            recordedGroupId == null ? null : groupById[recordedGroupId];
+
+        if (directoryId == null) {
+          return {
+            ...row,
+            if (recordedGroup?['name'] != null)
+              'recorded_group_name': recordedGroup!['name'],
+            if (recordedGroup?['color_hex'] != null)
+              'recorded_group_color_hex': recordedGroup!['color_hex'],
+          };
+        }
 
         final profile = profileByDirectoryId[directoryId];
         final membership = membershipByDirectoryId[directoryId];
-        if (profile == null && membership == null) return row;
+        if (profile == null && membership == null && recordedGroup == null) {
+          return row;
+        }
 
         final memberDirectory = Map<String, dynamic>.from(
             (row['member_directory'] as Map?) ??
@@ -147,6 +183,10 @@ class GraceNoteRepository {
             'family_name': profile!['family_name'],
           if (group is Map && group['name'] != null)
             'group_name': group['name'],
+          if (recordedGroup?['name'] != null)
+            'recorded_group_name': recordedGroup!['name'],
+          if (recordedGroup?['color_hex'] != null)
+            'recorded_group_color_hex': recordedGroup!['color_hex'],
           if (membership?['role'] != null) 'role_in_group': membership!['role'],
           if (membership?['status'] != null)
             'membership_status': membership!['status'],
@@ -155,6 +195,10 @@ class GraceNoteRepository {
 
         return {
           ...row,
+          if (recordedGroup?['name'] != null)
+            'recorded_group_name': recordedGroup!['name'],
+          if (recordedGroup?['color_hex'] != null)
+            'recorded_group_color_hex': recordedGroup!['color_hex'],
           'member_directory': enrichedMemberDirectory,
           // Some older app screens read the alias `member` instead of
           // `member_directory`; keep both display aliases in sync.
