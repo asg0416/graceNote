@@ -30,10 +30,12 @@ class GraceNoteRepository {
 
     final weekStart = DateTime(weekDate.year, weekDate.month, weekDate.day);
     final weekEnd = weekStart.add(const Duration(days: 1));
-    final createdAt = DateTime.tryParse(group['created_at']?.toString() ?? '');
+    final activeFrom =
+        DateTime.tryParse(group['active_from']?.toString() ?? '') ??
+            DateTime.tryParse(group['created_at']?.toString() ?? '');
     final endedAt = DateTime.tryParse(group['ended_at']?.toString() ?? '');
 
-    if (createdAt != null && !createdAt.isBefore(weekEnd)) return false;
+    if (activeFrom != null && !activeFrom.isBefore(weekEnd)) return false;
     if (endedAt != null && endedAt.isBefore(weekStart)) return false;
     return true;
   }
@@ -638,7 +640,7 @@ class GraceNoteRepository {
     final groupsResponse = await _supabase
         .from('groups')
         .select(
-            'id, name, color_hex, is_new_member_group, climbing_threshold, is_active, created_at, ended_at')
+            'id, name, color_hex, is_new_member_group, climbing_threshold, is_active, created_at, active_from, ended_at')
         .eq('department_id', departmentId);
 
     final allGroups = List<Map<String, dynamic>>.from(groupsResponse);
@@ -1446,7 +1448,7 @@ class GraceNoteRepository {
     // 1. 부서 내 모든 조 조회
     final groupsResponse = await _supabase
         .from('groups')
-        .select('id, name, is_active, created_at, ended_at')
+        .select('id, name, is_active, created_at, active_from, ended_at')
         .eq('department_id', departmentId)
         .order('name');
     final allGroups = List<Map<String, dynamic>>.from(groupsResponse);
