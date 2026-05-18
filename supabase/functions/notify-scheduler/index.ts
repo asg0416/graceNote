@@ -187,6 +187,66 @@ async function getLeaderDirectoryIdsByGroup(
   return new Set((existingDirectoryRows || []).map((member: any) => member.id).filter(Boolean));
 }
 
+async function getLeaderIdentitySetsByGroup(
+  supabase: SupabaseClientLike,
+  groupId: string,
+): Promise<{ personIds: Set<string>; legacyDirectoryIds: Set<string> }> {
+  const { data: phase2Leaders, error: phase2Error } = await supabase
+    .from("memberships")
+    .select("person_id, legacy_member_directory_id")
+    .eq("group_id", groupId)
+    .eq("role", "leader")
+    .eq("status", "active");
+
+  const personIds = new Set<string>();
+  const legacyDirectoryIds = new Set<string>();
+
+  if (!phase2Error && (phase2Leaders || []).length > 0) {
+    for (const leader of phase2Leaders || []) {
+      if (leader.person_id) personIds.add(leader.person_id);
+      if (leader.legacy_member_directory_id) legacyDirectoryIds.add(leader.legacy_member_directory_id);
+    }
+    return { personIds, legacyDirectoryIds };
+  }
+
+  return {
+    personIds,
+    legacyDirectoryIds: await getLeaderDirectoryIdsByGroup(supabase, groupId),
+  };
+}
+
+async function getCandidateDisplayNames(
+  supabase: SupabaseClientLike,
+  candidateKeys: string[],
+): Promise<string> {
+  const personIds = candidateKeys
+    .filter((key) => key.startsWith("person:"))
+    .map((key) => key.replace("person:", ""));
+  const directoryIds = candidateKeys
+    .filter((key) => key.startsWith("directory:"))
+    .map((key) => key.replace("directory:", ""));
+
+  const names: string[] = [];
+
+  if (personIds.length > 0) {
+    const { data: people } = await supabase
+      .from("people")
+      .select("id, display_name")
+      .in("id", personIds);
+    names.push(...(people || []).map((person: any) => person.display_name).filter(Boolean));
+  }
+
+  if (directoryIds.length > 0) {
+    const { data: directoryRows } = await supabase
+      .from("member_directory")
+      .select("id, full_name")
+      .in("id", directoryIds);
+    names.push(...(directoryRows || []).map((member: any) => member.full_name).filter(Boolean));
+  }
+
+  return [...new Set(names)].join(", ");
+}
+
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const task = url.searchParams.get("task");
@@ -349,15 +409,27 @@ Deno.serve(async (req: Request) => {
       if (groups?.length) {
         for (const group of groups) {
           if (!group.climbing_threshold) continue;
-          // Get leader member_directory_ids to exclude from candidates
-          const leaderDirIds = await getLeaderDirectoryIdsByGroup(supabase, group.id);
+          const leaderIdentities = await getLeaderIdentitySetsByGroup(supabase, group.id);
 
-          const { data: attendance } = await supabase.from("attendance").select("directory_member_id").eq("group_id", group.id).eq("status", "present");
+          const { data: attendance } = await supabase
+            .from("attendance")
+            .select("person_id, directory_member_id")
+            .eq("group_id", group.id)
+            .eq("status", "present");
           const counts: Record<string, number> = {};
           attendance?.forEach(a => {
-            // Exclude leaders from climbing candidates
-            if (!leaderDirIds.has(a.directory_member_id)) {
-              counts[a.directory_member_id] = (counts[a.directory_member_id] || 0) + 1;
+            const personId = a.person_id as string | null;
+            const directoryId = a.directory_member_id as string | null;
+            if (personId && leaderIdentities.personIds.has(personId)) return;
+            if (!personId && directoryId && leaderIdentities.legacyDirectoryIds.has(directoryId)) return;
+
+            const candidateKey = personId
+              ? `person:${personId}`
+              : directoryId
+                ? `directory:${directoryId}`
+                : null;
+            if (candidateKey) {
+              counts[candidateKey] = (counts[candidateKey] || 0) + 1;
             }
           });
           const targetThreshold = group.climbing_threshold - 1;
@@ -366,8 +438,7 @@ Deno.serve(async (req: Request) => {
           log.push(`[climbing] ${group.name}: ${attendance?.length || 0} attendance records, ${candidates.length} candidates at threshold ${targetThreshold}`);
 
           if (candidates.length > 0) {
-            const { data: names } = await supabase.from("member_directory").select("full_name").in("id", candidates.map(c => c[0]));
-            const memberNames = names?.map(n => n.full_name).join(", ");
+            const memberNames = await getCandidateDisplayNames(supabase, candidates.map(c => c[0]));
             const leaders = await getLeaderRowsByGroups(supabase, [group.id]);
             const leaderIds = (leaders || []).map(l => l.profile_id).filter(Boolean);
 
