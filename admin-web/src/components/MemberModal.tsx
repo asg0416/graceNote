@@ -21,6 +21,7 @@ export interface MemberProfile {
     notes: string | null;
     is_linked: boolean;
     person_id: string | null;
+    church_id?: string | null;
     is_active?: boolean;
     family_id?: string | null;
     departments?: { name: string; color_hex: string };

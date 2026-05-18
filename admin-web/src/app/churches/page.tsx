@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { ComponentType } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
     Plus,
@@ -22,12 +23,22 @@ import {
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
 
+type ChurchRow = {
+    id: string;
+    name: string;
+    address: string | null;
+    memberCount: number;
+    deptCount: number;
+    adminName: string;
+    status: 'active' | 'inactive';
+};
+
 export default function ChurchesPage() {
     const [loading, setLoading] = useState(true);
-    const [churches, setChurches] = useState<any[]>([]);
+    const [churches, setChurches] = useState<ChurchRow[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingChurch, setEditingChurch] = useState<any>(null);
+    const [editingChurch, setEditingChurch] = useState<ChurchRow | null>(null);
     const [newChurchName, setNewChurchName] = useState('');
     const [newChurchLocation, setNewChurchLocation] = useState('');
     const router = useRouter();
@@ -250,7 +261,7 @@ export default function ChurchesPage() {
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDelete(church.id)}
+                                                    onClick={handleDelete}
                                                     className="w-10 h-10 flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-100 dark:hover:border-red-500/20"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
@@ -318,7 +329,16 @@ export default function ChurchesPage() {
     );
 }
 
-function StatsSummaryCard({ title, value, unit, isPrimary, icon: Icon, color }: any) {
+type StatsSummaryCardProps = {
+    title: string;
+    value: string;
+    unit: string;
+    isPrimary?: boolean;
+    icon: ComponentType<{ className?: string }>;
+    color: string;
+};
+
+function StatsSummaryCard({ title, value, unit, isPrimary, icon: Icon }: StatsSummaryCardProps) {
     return (
         <div className={cn(
             "p-6 sm:p-8 rounded-2xl sm:rounded-3xl border relative overflow-hidden group transition-all duration-300 shadow-lg dark:shadow-none",

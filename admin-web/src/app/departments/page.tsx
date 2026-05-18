@@ -45,6 +45,7 @@ type DepartmentRecord = {
     id: string;
     name: string;
     color_hex?: string | null;
+    profile_mode?: 'individual' | 'couple' | null;
     groups?: GroupRecord[];
 };
 

@@ -44,7 +44,7 @@ interface RecentMembershipRow {
   created_at: string;
   people: {
     display_name: string | null;
-  } | null;
+  } | { display_name: string | null }[] | null;
 }
 
 type StatColor = 'indigo' | 'emerald' | 'rose' | 'amber' | 'slate';
@@ -202,18 +202,21 @@ export default function DashboardPage() {
       const { data: recentMemberships, error: recentMembershipsError } = await recentMembershipQuery;
       if (!recentMembershipsError) {
         const seenPeople = new Set<string>();
-        const phase2RecentMembers = ((recentMemberships || []) as RecentMembershipRow[])
+        const phase2RecentMembers = ((recentMemberships || []) as unknown as RecentMembershipRow[])
           .filter((membership) => {
             if (!membership.person_id || seenPeople.has(membership.person_id)) return false;
             seenPeople.add(membership.person_id);
             return true;
           })
           .slice(0, 5)
-          .map((membership) => ({
-            full_name: membership.people?.display_name || '이름 없음',
-            created_at: membership.created_at,
-            role_in_group: membership.role || 'member',
-          }));
+          .map((membership) => {
+            const people = Array.isArray(membership.people) ? membership.people[0] : membership.people;
+            return {
+              full_name: people?.display_name || '이름 없음',
+              created_at: membership.created_at,
+              role_in_group: membership.role || 'member',
+            };
+          });
         setRecentMembers(phase2RecentMembers);
       } else {
         const memberQuery = supabase
