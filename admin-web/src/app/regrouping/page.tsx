@@ -16,6 +16,7 @@ import {
     Download,
     FileDown,
     Image as ImageIcon,
+    CalendarDays,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import * as htmlToImage from 'html-to-image';
@@ -26,6 +27,34 @@ import { MemberModal } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
+
+const toDateInputValue = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const getCurrentSundayInputValue = () => {
+    const now = new Date();
+    const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    sunday.setDate(sunday.getDate() - sunday.getDay());
+    return toDateInputValue(sunday);
+};
+
+const snapDateInputToSunday = (value: string) => {
+    if (!value) return getCurrentSundayInputValue();
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return getCurrentSundayInputValue();
+    date.setDate(date.getDate() - date.getDay());
+    return toDateInputValue(date);
+};
+
+const formatRegroupingWeekLabel = (value: string) => {
+    if (!value) return '선택 안 됨';
+    const [, month, day] = value.split('-');
+    return `${Number(month)}월 ${Math.floor((Number(day) - 1) / 7) + 1}주차`;
+};
 
 const getRegroupingIdentityKey = (member: any) => {
     const normalizedPhone = (member.phone || '').replace(/[^0-9]/g, '');
@@ -190,6 +219,7 @@ function RegroupingPageInner() {
     const [autoMoveCouples, setAutoMoveCouples] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
+    const [effectiveWeekDate, setEffectiveWeekDate] = useState(getCurrentSundayInputValue);
     const [, setPhase2RegroupingCheck] = useState<{
         status: 'idle' | 'ok' | 'warning' | 'unavailable';
         legacyActiveCount: number;
@@ -1051,6 +1081,7 @@ function RegroupingPageInner() {
                     phase2_person_id: member.phase2_person_id || null,
                     profile_id: member.profile_id || null,
                 })),
+                effectiveWeekDate,
             });
 
             await assertPhase2MemberDirectorySync(
@@ -1062,7 +1093,7 @@ function RegroupingPageInner() {
             // 3. Refresh State
             await fetchData();
             setHasChanges(false);
-            alert('변경 사항이 성공적으로 저장되었습니다.');
+            alert(`변경 사항이 ${formatRegroupingWeekLabel(effectiveWeekDate)} 기준으로 저장되었습니다.`);
         } catch (err: any) {
             console.error('Save failed:', err);
             alert(`저장 중 오류가 발생했습니다: ${err.message || '알 수 없는 오류'}`);
@@ -1243,6 +1274,27 @@ function RegroupingPageInner() {
                     </div>
 
                     <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 h-11 px-4 bg-indigo-50/70 dark:bg-indigo-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 shadow-sm">
+                            <CalendarDays className="w-4 h-4 text-indigo-500" />
+                            <div className="flex flex-col leading-none">
+                                <span className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.18em]">적용 주차</span>
+                                <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300">{formatRegroupingWeekLabel(effectiveWeekDate)}</span>
+                            </div>
+                            <input
+                                type="date"
+                                value={effectiveWeekDate}
+                                max={getCurrentSundayInputValue()}
+                                onChange={(event) => {
+                                    setEffectiveWeekDate(snapDateInputToSunday(event.target.value));
+                                    setHasChanges(true);
+                                }}
+                                className="h-8 w-[128px] rounded-xl border border-indigo-100 dark:border-indigo-800 bg-white/80 dark:bg-slate-950 px-2 text-[11px] font-black text-slate-700 dark:text-slate-200 outline-none focus:ring-4 focus:ring-indigo-500/10"
+                            />
+                            <Tooltip content="이번 1차 적용은 현재/과거 주차 보정용입니다. 7월 조편성을 미리 저장하는 예약 기능은 다음 단계의 조편성 시즌/초안 기능으로 분리합니다.">
+                                <span className="text-[10px] font-black text-indigo-400 cursor-help">?</span>
+                            </Tooltip>
+                        </div>
+
                         {departments.find(d => d.id === selectedDeptId)?.profile_mode === 'couple' && (
                             <div className="flex items-center gap-2 h-11 px-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 mr-2">
                                 <label className="flex items-center gap-2 cursor-pointer group">

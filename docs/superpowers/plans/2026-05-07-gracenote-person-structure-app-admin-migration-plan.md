@@ -1079,3 +1079,43 @@ Operational note:
 - Attendance insights are report-style summaries, not authoritative accounting tables.
 - The authoritative denominator for admin reports remains `attendance_roster_snapshots` / `attendance_roster_snapshot_members`.
 - Any future change that merges admin snapshots into leader-submitted `attendance` rows needs a separate conflict policy.
+
+## 2026-05-19 Regrouping Effective Week Plan
+
+Problem:
+- Church regrouping is usually applied from a specific worship week, not from the timestamp when an admin saves the screen.
+- Example: an admin may save the new July arrangement in May, or may backfill an arrangement that started operating in the field two weeks ago.
+- Using `groups.created_at` / save time as the operating period makes app prayer tabs and attendance screens show the wrong groups for historical weeks.
+
+Decision:
+- Treat regrouping changes as period-based membership changes.
+- 1차 implementation supports current/past effective weeks only.
+- Future scheduled arrangements require a separate draft/season table so live app screens are not changed before the effective week.
+
+1차 implementation:
+- Add a 5-parameter overload of `save_regrouping_memberships` with `p_effective_week_date`.
+- Keep the existing 4-parameter RPC for compatibility.
+- Admin regrouping save passes the selected effective week.
+- Newly created groups get `groups.active_from = p_effective_week_date`.
+- Groups removed by that save get `groups.ended_at = p_effective_week_date - 1 second`.
+- Just-ended `member_directory.left_at` and `memberships.ends_at` are corrected to the effective boundary.
+- Active memberships saved in the regrouping batch have `starts_at` corrected back to the effective week when needed.
+
+Admin UI:
+- Add an `적용 주차` selector to 조편성 관리.
+- Dates are snapped to the Sunday of that week.
+- Future dates are intentionally blocked in 1차 because the current save path still writes live compatibility rows.
+
+2차 required for true future scheduling:
+- Add `regrouping_seasons` or `regrouping_drafts` tables.
+- Store future groups/assignments separately from live `groups/member_directory/group_members`.
+- Let admins edit scheduled seasons until activation.
+- On/after effective week, apply the draft to live groups/memberships in one controlled transition.
+- Allow archived/current group operating periods to be corrected from a management UI when needed.
+
+Smoke:
+- Save a regrouping with `적용 주차 = 2026-05-17`.
+- A removed old group should still appear before 2026-05-17 if it existed then.
+- That old group should not appear from 2026-05-17 onward unless it has actual historical records in that selected week.
+- A newly created group should appear from 2026-05-17 onward, not before.
+- App 기도소식 tabs, admin 출석현황, and member detail prayer timeline should agree on group names for the same selected week.
