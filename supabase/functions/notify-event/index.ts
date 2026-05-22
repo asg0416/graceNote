@@ -26,6 +26,33 @@ const profileBelongsToPerson = (memberProfile: any): boolean => {
   );
 };
 
+const matchingProfilesForMembership = (
+  membership: any,
+  profilesByPerson: Map<string, any[]>,
+): any[] => {
+  const profiles = profilesByPerson.get(membership.person_id) || [];
+  const directoryId = membership.legacy_member_directory_id;
+  const exactProfiles = directoryId
+    ? profiles.filter(profile => profile.member_directory_id === directoryId)
+    : [];
+
+  if (exactProfiles.length > 0) return exactProfiles;
+
+  return profiles.filter(profile => !profile.member_directory_id);
+};
+
+const buildProfilesByPerson = (memberProfiles: any[] = []): Map<string, any[]> => {
+  const profilesByPerson = new Map<string, any[]>();
+
+  for (const profile of memberProfiles.filter(profileBelongsToPerson)) {
+    const existing = profilesByPerson.get(profile.person_id) || [];
+    existing.push(profile);
+    profilesByPerson.set(profile.person_id, existing);
+  }
+
+  return profilesByPerson;
+};
+
 async function getLeaderProfileIdsByGroups(
   supabase: SupabaseClientLike,
   groupIds: string[],
@@ -34,7 +61,7 @@ async function getLeaderProfileIdsByGroups(
 
   const { data: phase2Memberships, error: phase2Error } = await supabase
     .from("memberships")
-    .select("person_id")
+    .select("person_id, legacy_member_directory_id")
     .in("group_id", groupIds)
     .eq("role", "leader")
     .eq("status", "active");
@@ -43,15 +70,14 @@ async function getLeaderProfileIdsByGroups(
     const personIds = uniqueStrings((phase2Memberships || []).map((leader: any) => leader.person_id));
     const { data: memberProfiles, error: profileError } = await supabase
       .from("member_profiles")
-      .select("person_id, profile_id, profiles(person_id)")
+      .select("person_id, profile_id, member_directory_id, profiles(person_id)")
       .in("person_id", personIds)
       .not("profile_id", "is", null);
 
-    const profileIds = uniqueStrings(
-      (memberProfiles || [])
-        .filter(profileBelongsToPerson)
-        .map((profile: any) => profile.profile_id),
-    );
+    const profilesByPerson = buildProfilesByPerson(memberProfiles || []);
+    const profileIds = uniqueStrings((phase2Memberships || []).flatMap((membership: any) =>
+      matchingProfilesForMembership(membership, profilesByPerson).map((profile: any) => profile.profile_id)
+    ));
     if (!profileError && profileIds.length > 0) {
       return profileIds;
     }
@@ -75,7 +101,7 @@ async function getActiveProfileIdsByGroups(
 
   const { data: phase2Memberships, error: phase2Error } = await supabase
     .from("memberships")
-    .select("person_id")
+    .select("person_id, legacy_member_directory_id")
     .in("group_id", groupIds)
     .eq("status", "active");
 
@@ -83,15 +109,14 @@ async function getActiveProfileIdsByGroups(
     const personIds = uniqueStrings((phase2Memberships || []).map((member: any) => member.person_id));
     const { data: memberProfiles, error: profileError } = await supabase
       .from("member_profiles")
-      .select("person_id, profile_id, profiles(person_id)")
+      .select("person_id, profile_id, member_directory_id, profiles(person_id)")
       .in("person_id", personIds)
       .not("profile_id", "is", null);
 
-    const profileIds = uniqueStrings(
-      (memberProfiles || [])
-        .filter(profileBelongsToPerson)
-        .map((profile: any) => profile.profile_id),
-    );
+    const profilesByPerson = buildProfilesByPerson(memberProfiles || []);
+    const profileIds = uniqueStrings((phase2Memberships || []).flatMap((membership: any) =>
+      matchingProfilesForMembership(membership, profilesByPerson).map((profile: any) => profile.profile_id)
+    ));
     if (!profileError && profileIds.length > 0) {
       return profileIds;
     }

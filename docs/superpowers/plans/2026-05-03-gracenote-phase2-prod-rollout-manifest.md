@@ -65,8 +65,9 @@ Preprod data audit package:
 - `supabase/preprod_identity_link_candidates_2026-05-22.sql`
 - `supabase/preprod_identity_link_auto_repair_2026-05-22.sql`
 - `supabase/preprod_membership_state_auto_repair_2026-05-22.sql`
+- `supabase/preprod_legacy_mirror_and_attendance_period_repair_2026-05-23.sql`
 
-운영 복제본/staging에는 migration dry-run 직후 위 audit SQL을 실행한다. 목적은 dev에서 이미 발견한 김보영/유성열류 legacy drift를 운영에서 다시 재현하는 것이 아니라, 같은 패턴을 적용 전 숫자와 후보 목록으로 잡아 자동 보정/수동 검토로 분류하는 것이다. 자동 보정은 운영 복제본에서 `scripts/preprod-identity-repair-psql.mjs --apply-auto-repair`와 `scripts/preprod-membership-state-repair-psql.mjs --apply-auto-repair`로 검증한 뒤 승인된 항목만 운영 maintenance window에서 다룬다.
+운영 복제본/staging에는 migration dry-run 직후 위 audit SQL을 실행한다. 목적은 dev에서 이미 발견한 김보영/유성열류 legacy drift를 운영에서 다시 재현하는 것이 아니라, 같은 패턴을 적용 전 숫자와 후보 목록으로 잡아 자동 보정/수동 검토로 분류하는 것이다. 자동 보정은 운영 복제본에서 `scripts/preprod-identity-repair-psql.mjs --apply-auto-repair`, `scripts/preprod-membership-state-repair-psql.mjs --apply-auto-repair`, `scripts/preprod-legacy-mirror-repair-psql.mjs --apply-auto-repair`로 검증한 뒤 승인된 항목만 운영 maintenance window에서 다룬다.
 
 | Audit Output | Meaning | Prod Rule |
 | --- | --- | --- |
@@ -432,6 +433,7 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-16 Edge notification profile ownership filter | `member_profiles.profile_id`가 다른 `profiles.person_id`에 명시 연결된 경우 알림 대상으로 쓰지 않도록 보정 | dev data에서 stale legacy profile link 2건이 있었지만 잘못된 profile로 알림을 보내지 않도록 `notify-event`, `notify-scheduler`, `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql` 보정. full psql gate all 0 |
 | 2026-05-18 Edge scheduler person-count refinement | 등반 예정자 알림이 legacy `directory_member_id` 기준으로 출석 횟수를 세면 같은 사람이 여러 legacy row를 가진 경우 중복/누락 가능 | `notify-scheduler` 등반 후보 계산을 `attendance.person_id` 우선으로 전환하고, person 없는 과거 row만 `directory_member_id` fallback 사용. 조장 제외도 person 기준 우선. `deno check notify-event notify-scheduler verify-sms` 통과. 운영 복제본 `preprod-verify-gates-psql`: all PASS. `preprod-data-audit`: blocking/auto-repair 0 |
 | 2026-05-18 Admin web prod build gate | 운영 적용 전 admin-web TypeScript/build 오류 제거 | `npx tsc --noEmit --pretty false`: PASS. `npm run build`: PASS after network-enabled Google Fonts fetch. targeted lint: 0 errors, existing warnings only. Node attendance tests: 12 passed |
+| 2026-05-23 Edge notification scoped profile targets + preprod local gate | 한 person에 scoped/global/orphan `member_profiles`가 섞이면 알림 대상이 같은 person의 다른 조 profile까지 퍼질 수 있음. 조편성 시즌 초안 테이블도 앱/운영 조회 경로에 섞이면 안 됨 | `notify-event`, `notify-scheduler`는 active membership의 `legacy_member_directory_id`에 matching되는 `member_profiles`를 우선 사용하고, matching row가 없을 때만 person-level profile fallback 사용. `preprod-verify-gates*`에 `verify-regrouping-season-boundary` local gate 포함. dev DB에서 `preprod-legacy-mirror-repair-psql --apply-auto-repair` 후 `preprod-verify-gates-psql`: all PASS |
 
 ## Pre-Prod UI Polish Backlog
 

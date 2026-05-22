@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { printLocalGateSummary, runLocalGates } from "./preprod-local-gates.mjs";
 
 const gates = [
   "supabase/verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql",
@@ -25,6 +26,15 @@ if (dbUrlFile && !existsSync(dbUrlFile)) {
   console.error(`DB URL file not found: ${dbUrlFile}`);
   console.error("Create it with: read -s GRACENOTE_VERIFY_DB_URL && printf '%s' \"$GRACENOTE_VERIFY_DB_URL\" > <path> && unset GRACENOTE_VERIFY_DB_URL");
   process.exit(2);
+}
+
+const summary = [];
+let hasFailure = false;
+
+const localGateSummary = runLocalGates();
+printLocalGateSummary(localGateSummary);
+if (localGateSummary.hasFailure) {
+  hasFailure = true;
 }
 
 const rawDbUrl = process.env.GRACENOTE_VERIFY_DB_URL
@@ -88,9 +98,6 @@ const runGate = (file) => {
   const failures = rows.filter((row) => row.count !== 0);
   return { file, rows, failures };
 };
-
-const summary = [];
-let hasFailure = false;
 
 for (const gate of gates) {
   try {

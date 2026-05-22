@@ -43,6 +43,22 @@ phase2_leader_profiles as (
    and (p.person_id is null or p.person_id = mp.person_id)
   where m.status = 'active'
     and m.role = 'leader'
+    and (
+      mp.member_directory_id = m.legacy_member_directory_id
+      or (
+        mp.member_directory_id is null
+        and not exists (
+          select 1
+          from public.member_profiles scoped_mp
+          join public.profiles scoped_p
+            on scoped_p.id = scoped_mp.profile_id
+           and (scoped_p.person_id is null or scoped_p.person_id = scoped_mp.person_id)
+          where scoped_mp.person_id = m.person_id
+            and scoped_mp.profile_id is not null
+            and scoped_mp.member_directory_id = m.legacy_member_directory_id
+        )
+      )
+    )
 ),
 legacy_active_profiles as (
   select distinct
@@ -75,6 +91,22 @@ phase2_active_profiles as (
     on p.id = mp.profile_id
    and (p.person_id is null or p.person_id = mp.person_id)
   where m.status = 'active'
+    and (
+      mp.member_directory_id = m.legacy_member_directory_id
+      or (
+        mp.member_directory_id is null
+        and not exists (
+          select 1
+          from public.member_profiles scoped_mp
+          join public.profiles scoped_p
+            on scoped_p.id = scoped_mp.profile_id
+           and (scoped_p.person_id is null or scoped_p.person_id = scoped_mp.person_id)
+          where scoped_mp.person_id = m.person_id
+            and scoped_mp.profile_id is not null
+            and scoped_mp.member_directory_id = m.legacy_member_directory_id
+        )
+      )
+    )
 ),
 legacy_leader_directory_ids as (
   select distinct
