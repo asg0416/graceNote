@@ -64,8 +64,9 @@ Preprod data audit package:
 - `supabase/preprod_manual_review_candidates_2026-05-15.sql`
 - `supabase/preprod_identity_link_candidates_2026-05-22.sql`
 - `supabase/preprod_identity_link_auto_repair_2026-05-22.sql`
+- `supabase/preprod_membership_state_auto_repair_2026-05-22.sql`
 
-운영 복제본/staging에는 migration dry-run 직후 위 audit SQL을 실행한다. 목적은 dev에서 이미 발견한 김보영/유성열류 legacy drift를 운영에서 다시 재현하는 것이 아니라, 같은 패턴을 적용 전 숫자와 후보 목록으로 잡아 자동 보정/수동 검토로 분류하는 것이다. 자동 보정은 운영 복제본에서 `scripts/preprod-identity-repair-psql.mjs --apply-auto-repair`로 검증한 뒤 승인된 항목만 운영 maintenance window에서 다룬다.
+운영 복제본/staging에는 migration dry-run 직후 위 audit SQL을 실행한다. 목적은 dev에서 이미 발견한 김보영/유성열류 legacy drift를 운영에서 다시 재현하는 것이 아니라, 같은 패턴을 적용 전 숫자와 후보 목록으로 잡아 자동 보정/수동 검토로 분류하는 것이다. 자동 보정은 운영 복제본에서 `scripts/preprod-identity-repair-psql.mjs --apply-auto-repair`와 `scripts/preprod-membership-state-repair-psql.mjs --apply-auto-repair`로 검증한 뒤 승인된 항목만 운영 maintenance window에서 다룬다.
 
 | Audit Output | Meaning | Prod Rule |
 | --- | --- | --- |

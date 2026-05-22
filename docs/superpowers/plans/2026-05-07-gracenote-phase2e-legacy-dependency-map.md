@@ -74,6 +74,7 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
    - `preprod_identity_link_candidates_2026-05-22.sql`
 4. `auto_repair_candidate`가 있으면 dev/staging/운영 복제본에서만 승인된 repair를 실행한다:
    - identity link repair: `node scripts/preprod-identity-repair-psql.mjs --db-url-file <clone-url-file> --apply-auto-repair`
+   - membership state repair: `node scripts/preprod-membership-state-repair-psql.mjs --db-url-file <clone-url-file> --apply-auto-repair`
    - repair 후 `scripts/preprod-data-audit-psql.mjs`를 다시 실행해 `blocking_gate=0`과 auto-repair count 감소를 확인한다.
    - 알려진 운영 DB ref는 기본적으로 repair runner가 거부한다. 운영 직접 실행은 별도 maintenance window와 명시 승인 없이는 금지한다.
 5. 운영 전 필수 gate를 한 번에 실행한다: Phase 2 summary, attendance/prayer snapshot, attendance roster snapshot integrity, edge notification targets.
@@ -92,6 +93,17 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 | 다른 교회 profile_id가 `member_directory`/`member_profiles`/`group_members`/`people.primary_profile_id`에 붙음 | `auto_repair_candidate` | 다른 교회 profile link는 항상 잘못된 소유권이므로 profile link만 detach. 사람 병합은 하지 않음 |
 | 같은 교회 같은 이름/전화번호 다중 person | `manual_review` | 부부/동명이인/테스트 데이터 가능성이 있어 자동 병합 금지 |
 | `member_profiles.person_id`와 `profiles.person_id`가 다름 | `manual_review` | 같은 교회 내부에서도 실제 계정 소유자 확인이 필요함 |
+
+## Membership State Repair Policy
+
+운영 적용 전 소속 상태 문제는 “active membership이 비활성 source를 가리키지 않는다”를 기준으로 처리한다.
+
+| Pattern | Handling | Reason |
+| --- | --- | --- |
+| inactive `member_directory` row에 active membership이 남음 | `auto_repair_candidate` 후 membership 종료 | 비활성 성도가 person 구조에서 다시 active로 보이면 안 됨 |
+| inactive `group_members` row에 active membership이 남음 | `auto_repair_candidate` 후 membership 종료 | legacy 조 배정과 memberships가 서로 다른 active 상태를 만들면 조편성/명부가 흔들림 |
+| inactive group/department를 active membership이 가리킴 | `auto_repair_candidate` 후 membership 종료 | 삭제/비활성 조직은 현재 소속으로 노출되면 안 됨 |
+| 같은 사람/이름/전화번호 병합 필요 | `manual_review` | 실제 동일인 여부를 자동 판단하지 않음 |
 
 ## Attendance Snapshot Dependency
 
