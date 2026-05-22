@@ -1146,6 +1146,8 @@ Progress:
 - 2026-05-23: Schema verifier passed: tables 3/3, indexes 9/9, RLS 3/3, policies 6/6.
 - 2026-05-23: Draft RPC migration created and applied to dev DB through Docker psql.
 - 2026-05-23: Draft verifier passed: draft function count 2/2, created season returned 1, plan group count 1, assignment count 1, live `groups/member_directory/group_members/memberships` counts unchanged 1.
+- 2026-05-23: Draft RPC plan group ID handling fixed. Plan rows no longer reuse live `groups.id`, so the same source group can appear in multiple future seasons without primary-key collision.
+- 2026-05-23: Multi-season verifier passed: two seasons for one source group produce 2 distinct plan group IDs and 1 distinct source group ID.
 - 2026-05-23: Admin-web `regroupingSeasonsRpc` wrapper added with Node test coverage for create/save/apply RPC payloads and error propagation.
 - 2026-05-23: RPC wrapper verification passed: `node --test admin-web/src/lib/regroupingSeasonsRpc.test.ts`, targeted admin-web lint, and `npx tsc --noEmit --pretty false`.
 - Next: connect the regrouping page to the season-first draft UI while keeping the current/past live correction path separate.

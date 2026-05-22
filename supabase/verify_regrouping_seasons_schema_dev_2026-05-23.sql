@@ -77,6 +77,7 @@ where pronamespace = 'public'::regnamespace;
 
 begin;
 
+create temporary table pg_temp.verify_regrouping_multi_season_target on commit drop as
 with target_department as (
   select
     d.id as department_id,
@@ -188,5 +189,199 @@ select
     then 1 else 0 end
     from live_before, live_after
   ) as live_counts_unchanged;
+
+rollback;
+
+begin;
+
+create temporary table pg_temp.verify_regrouping_multi_season_target on commit drop as
+with target_department as (
+  select
+    d.id as department_id,
+    d.church_id
+  from public.departments d
+  where d.is_active is distinct from false
+    and exists (
+      select 1
+      from public.profiles p
+      where p.church_id = d.church_id
+        and p.role = 'admin'
+        and p.admin_status = 'approved'
+    )
+    and exists (
+      select 1
+      from public.groups g
+      where g.department_id = d.id
+        and g.is_active is distinct from false
+    )
+    and exists (
+      select 1
+      from public.memberships m
+      where m.department_id = d.id
+        and m.status = 'active'
+        and m.person_id is not null
+    )
+  order by d.created_at desc nulls last
+  limit 1
+),
+target_admin as (
+  select p.id as profile_id
+  from public.profiles p
+  join target_department td
+    on td.church_id = p.church_id
+  where p.role = 'admin'
+    and p.admin_status = 'approved'
+  order by p.created_at desc nulls last
+  limit 1
+),
+auth_context as (
+  select set_config('request.jwt.claim.sub', profile_id::text, true)
+  from target_admin
+),
+target_group as (
+  select g.id, g.name
+  from public.groups g
+  join target_department td
+    on td.department_id = g.department_id
+  where g.is_active is distinct from false
+  order by g.created_at desc nulls last
+  limit 1
+),
+target_person as (
+  select
+    m.person_id,
+    m.id as source_membership_id,
+    m.legacy_member_directory_id as source_member_directory_id
+  from public.memberships m
+  join target_department td
+    on td.department_id = m.department_id
+  where m.status = 'active'
+    and m.person_id is not null
+  order by m.updated_at desc nulls last, m.created_at desc nulls last
+  limit 1
+)
+select
+  td.church_id,
+  td.department_id,
+  tg.id as group_id,
+  tg.name as group_name,
+  tp.person_id,
+  tp.source_membership_id,
+  tp.source_member_directory_id
+from target_department td
+cross join auth_context
+cross join target_group tg
+cross join target_person tp;
+
+create temporary table pg_temp.verify_regrouping_multi_season_saved (
+  label text primary key,
+  season_id uuid,
+  plan_group_count integer,
+  assignment_count integer
+) on commit drop;
+
+insert into pg_temp.verify_regrouping_multi_season_saved (label, season_id)
+select 'one', public.create_regrouping_season(
+  church_id,
+  department_id,
+  'verify same source group season one',
+  date '2026-06-07'
+)
+from pg_temp.verify_regrouping_multi_season_target;
+
+insert into pg_temp.verify_regrouping_multi_season_saved (label, season_id)
+select 'two', public.create_regrouping_season(
+  church_id,
+  department_id,
+  'verify same source group season two',
+  date '2026-06-14'
+)
+from pg_temp.verify_regrouping_multi_season_target;
+
+with result as (
+  select result.*
+  from pg_temp.verify_regrouping_multi_season_target target
+  cross join lateral public.save_regrouping_season_draft(
+    (select season_id from pg_temp.verify_regrouping_multi_season_saved where label = 'one'),
+    jsonb_build_array(
+      jsonb_build_object(
+        'id', target.group_id,
+        'source_group_id', target.group_id,
+        'name', target.group_name,
+        'sort_order', 1
+      )
+    ),
+    jsonb_build_array(
+      jsonb_build_object(
+        'group_id', target.group_id,
+        'person_id', target.person_id,
+        'source_membership_id', target.source_membership_id,
+        'source_member_directory_id', target.source_member_directory_id,
+        'role_in_group', 'member',
+        'sort_order', 1
+      )
+    )
+  ) result
+)
+update pg_temp.verify_regrouping_multi_season_saved saved
+set
+  plan_group_count = result.plan_group_count,
+  assignment_count = result.assignment_count
+from result
+where saved.label = 'one';
+
+with result as (
+  select result.*
+  from pg_temp.verify_regrouping_multi_season_target target
+  cross join lateral public.save_regrouping_season_draft(
+    (select season_id from pg_temp.verify_regrouping_multi_season_saved where label = 'two'),
+    jsonb_build_array(
+      jsonb_build_object(
+        'id', target.group_id,
+        'source_group_id', target.group_id,
+        'name', target.group_name,
+        'sort_order', 1
+      )
+    ),
+    jsonb_build_array(
+      jsonb_build_object(
+        'group_id', target.group_id,
+        'person_id', target.person_id,
+        'source_membership_id', target.source_membership_id,
+        'source_member_directory_id', target.source_member_directory_id,
+        'role_in_group', 'member',
+        'sort_order', 1
+      )
+    )
+  ) result
+)
+update pg_temp.verify_regrouping_multi_season_saved saved
+set
+  plan_group_count = result.plan_group_count,
+  assignment_count = result.assignment_count
+from result
+where saved.label = 'two';
+
+select
+  'regrouping_draft_same_source_group_multi_season' as check_name,
+  min(plan_group_count) as min_season_groups,
+  min(assignment_count) as min_season_assignments,
+  (
+    select count(distinct rpg.id)::integer
+    from public.regrouping_plan_groups rpg
+    where rpg.season_id in (
+      select season_id
+      from pg_temp.verify_regrouping_multi_season_saved
+    )
+  ) as distinct_plan_group_ids,
+  (
+    select count(distinct rpg.source_group_id)::integer
+    from public.regrouping_plan_groups rpg
+    where rpg.season_id in (
+      select season_id
+      from pg_temp.verify_regrouping_multi_season_saved
+    )
+  ) as distinct_source_group_ids
+from pg_temp.verify_regrouping_multi_season_saved;
 
 rollback;

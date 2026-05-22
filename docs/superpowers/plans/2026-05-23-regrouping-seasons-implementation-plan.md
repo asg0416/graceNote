@@ -17,6 +17,8 @@
   - Add constraints, indexes, RLS enablement, read/manage policies, grants.
 - Create: `supabase/migrations/20260523001000_phase3_regrouping_season_draft_rpc.sql`
   - Add `create_regrouping_season` and `save_regrouping_season_draft`.
+- Create: `supabase/migrations/20260523001500_phase3_regrouping_season_draft_plan_group_ids.sql`
+  - Ensure plan group rows use independent IDs instead of reusing live `groups.id`.
 - Create: `supabase/migrations/20260523002000_phase3_regrouping_season_apply_rpc.sql`
   - Add `apply_regrouping_season`.
 - Create: `supabase/verify_regrouping_seasons_schema_dev_2026-05-23.sql`
