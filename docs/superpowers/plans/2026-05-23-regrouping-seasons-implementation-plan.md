@@ -1099,6 +1099,7 @@ future_apply_rejected 1
 - Dev DB has the three additive season tables.
 - Draft save writes only `regrouping_*` plan tables.
 - Future draft groups do not appear in Flutter/admin operational screens before apply.
+  - Guard command: `node scripts/verify-regrouping-season-boundary.mjs`
 - Apply RPC updates live memberships and legacy compatibility rows in one transaction.
 - Admin UI clearly separates `시즌 초안` from `현재/과거 보정`.
 - Historical prayer/attendance still display recorded group names.
