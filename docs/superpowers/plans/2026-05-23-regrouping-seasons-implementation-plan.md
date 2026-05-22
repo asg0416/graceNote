@@ -1049,7 +1049,11 @@ The season toolbar now supports `새 시즌 초안` and existing saved seasons.
 
 Selecting an existing season loads plan groups and assignments without touching live group/membership rows.
 
-- [x] **Step 5: Run verification**
+- [x] **Step 5: Add status-aware controls**
+
+Applied seasons are read-only in the toolbar, future seasons show as 예약 초안, and the apply button is disabled until the effective week arrives.
+
+- [x] **Step 6: Run verification**
 
 ```bash
 node --test admin-web/src/lib/regroupingSeasonPayloads.test.ts admin-web/src/lib/regroupingSeasonsRpc.test.ts

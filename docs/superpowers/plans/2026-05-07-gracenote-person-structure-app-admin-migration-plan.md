@@ -1156,4 +1156,5 @@ Progress:
 - 2026-05-23: Apply verifier passed in rollback: season applied 1, active membership from effective week 1, planned rows preserved 1, created group active_from effective week 1.
 - 2026-05-23: Admin regrouping page apply button connected. It is enabled after a season draft is saved and calls `apply_regrouping_season`.
 - 2026-05-23: Admin regrouping page can now list saved season drafts for the selected church/department and reopen a draft into the Kanban board without touching live rows.
+- 2026-05-23: Season controls now show applied/future/current status. Applied seasons cannot be edited or re-applied, and future seasons cannot be applied before the effective week.
 - Next: run end-to-end smoke on dev for future draft save, reopen, blocked early apply, and current-week apply.
