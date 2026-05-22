@@ -1119,3 +1119,29 @@ Smoke:
 - That old group should not appear from 2026-05-17 onward unless it has actual historical records in that selected week.
 - A newly created group should appear from 2026-05-17 onward, not before.
 - App 기도소식 tabs, admin 출석현황, and member detail prayer timeline should agree on group names for the same selected week.
+
+## 2026-05-23 Regrouping Seasons Direction
+
+The 1st-stage `effective_week_date` implementation is useful for current/past correction, but it is not the final UX for future church regrouping.
+
+Decision:
+- Stop treating the temporary effective-week UI as the main smoke target.
+- Move the final feature toward a season/draft/apply model.
+- Future regrouping drafts must not mutate live `groups`, `member_directory`, `group_members`, or `memberships` before the effective week.
+- Normal Flutter prayer/attendance and admin attendance screens should continue reading live/snapshot group state, not draft rows.
+- Applying a season should be one controlled transaction that writes live memberships and legacy compatibility rows.
+
+Design document:
+- `docs/superpowers/specs/2026-05-23-regrouping-seasons-design.md`
+
+Implementation direction:
+1. Add additive `regrouping_seasons`, `regrouping_plan_groups`, and `regrouping_plan_assignments` tables.
+2. Add draft create/save RPCs that write only plan tables.
+3. Convert admin regrouping to season-first UX.
+4. Add `apply_regrouping_season` RPC after draft save/read is stable.
+5. Keep the existing `save_regrouping_memberships(..., p_effective_week_date)` path for past/current correction only.
+
+Progress:
+- 2026-05-23: Additive season schema migration created and applied to dev DB (`eftdfxmdiefdduksdpwg`) through Docker psql without printing DB URL.
+- 2026-05-23: Schema verifier passed: tables 3/3, indexes 9/9, RLS 3/3, policies 6/6.
+- Next: create `create_regrouping_season` and `save_regrouping_season_draft` RPCs. These must write only draft tables and must not touch live group/membership compatibility rows.
