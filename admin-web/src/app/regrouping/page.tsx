@@ -27,6 +27,14 @@ import { MemberModal } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
+import {
+    createRegroupingSeason,
+    saveRegroupingSeasonDraft,
+} from '@/lib/regroupingSeasonsRpc';
+import {
+    buildRegroupingSeasonAssignmentsPayload,
+    buildRegroupingSeasonGroupsPayload,
+} from '@/lib/regroupingSeasonPayloads';
 
 const toDateInputValue = (date: Date) => {
     const year = date.getFullYear();
@@ -220,6 +228,10 @@ function RegroupingPageInner() {
     const [isExporting, setIsExporting] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [effectiveWeekDate, setEffectiveWeekDate] = useState(getCurrentSundayInputValue);
+    const [regroupingMode, setRegroupingMode] = useState<'season' | 'live'>('season');
+    const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+    const [seasonTitle, setSeasonTitle] = useState('');
+    const [seasonEffectiveWeekDate, setSeasonEffectiveWeekDate] = useState(getCurrentSundayInputValue);
     const [, setPhase2RegroupingCheck] = useState<{
         status: 'idle' | 'ok' | 'warning' | 'unavailable';
         legacyActiveCount: number;
@@ -243,6 +255,14 @@ function RegroupingPageInner() {
     const exportTableRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
     const searchParams = useSearchParams();
+    const selectedChurch = useMemo(
+        () => churches.find(church => church.id === currentChurchId) || null,
+        [churches, currentChurchId]
+    );
+    const selectedDepartment = useMemo(
+        () => departments.find(department => department.id === selectedDeptId) || null,
+        [departments, selectedDeptId]
+    );
 
     // Calculate duplicate status for members (only show delete button if duplicated)
     const isDeletableMap = useMemo(() => {
@@ -1102,6 +1122,47 @@ function RegroupingPageInner() {
         }
     };
 
+    const handleSaveSeasonDraft = async () => {
+        if (!selectedChurch || !selectedDepartment) {
+            alert('교회와 부서를 먼저 선택하세요.');
+            return;
+        }
+
+        setSaving(true);
+
+        try {
+            const title = seasonTitle.trim() || `${selectedDepartment.name} ${formatRegroupingWeekLabel(seasonEffectiveWeekDate)} 조편성`;
+            const seasonId = selectedSeasonId ?? await createRegroupingSeason(supabase, {
+                churchId: selectedChurch.id,
+                departmentId: selectedDepartment.id,
+                title,
+                effectiveWeekDate: seasonEffectiveWeekDate,
+            });
+
+            if (!selectedSeasonId) {
+                setSelectedSeasonId(seasonId);
+            }
+
+            const membersToSave = autoMoveCouples
+                ? expandCoupleMovesBeforeSave(displayLocalMembers, members)
+                : displayLocalMembers;
+
+            const result = await saveRegroupingSeasonDraft(supabase, {
+                seasonId,
+                groups: buildRegroupingSeasonGroupsPayload(groups),
+                assignments: buildRegroupingSeasonAssignmentsPayload(membersToSave),
+            });
+
+            setHasChanges(false);
+            alert(`시즌 초안이 저장되었습니다. 조 ${result.planGroupCount}개, 소속 ${result.assignmentCount}개`);
+        } catch (error) {
+            console.error('Save regrouping season draft error:', error);
+            alert(error instanceof Error ? error.message : '시즌 초안 저장 중 오류가 발생했습니다.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleReset = () => {
         if (confirm('모든 변경 사항을 취소하고 초기화하시겠습니까?')) {
             setLocalMembers(JSON.parse(JSON.stringify(members)));
@@ -1261,6 +1322,67 @@ function RegroupingPageInner() {
 
             {/* Sticky Interaction Toolbar */}
             <div className="sticky top-16 sm:top-20 z-30 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 mb-12 shadow-sm transition-all">
+                <div className="mb-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+                    <div className="inline-flex w-fit rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-1 shadow-inner">
+                        <button
+                            type="button"
+                            onClick={() => setRegroupingMode('season')}
+                            className={cn(
+                                "h-9 rounded-xl px-4 text-[11px] font-black tracking-tight transition-all",
+                                regroupingMode === 'season'
+                                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"
+                                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
+                            )}
+                        >
+                            시즌 초안
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setRegroupingMode('live')}
+                            className={cn(
+                                "h-9 rounded-xl px-4 text-[11px] font-black tracking-tight transition-all",
+                                regroupingMode === 'live'
+                                    ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
+                            )}
+                        >
+                            현재/과거 보정
+                        </button>
+                    </div>
+
+                    {regroupingMode === 'season' ? (
+                        <div className="flex flex-col lg:flex-row lg:items-center gap-2 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/70 dark:bg-indigo-950/20 p-2">
+                            <input
+                                type="text"
+                                value={seasonTitle}
+                                onChange={(event) => setSeasonTitle(event.target.value)}
+                                placeholder={`${selectedDepartment?.name || '선택 부서'} 다음 시즌 조편성`}
+                                className="h-9 min-w-[220px] rounded-xl border border-indigo-100 dark:border-indigo-800 bg-white/90 dark:bg-slate-950 px-3 text-[12px] font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-4 focus:ring-indigo-500/10"
+                            />
+                            <div className="flex items-center gap-2">
+                                <CalendarDays className="w-4 h-4 text-indigo-500" />
+                                <span className="text-[10px] font-black text-indigo-500">적용 시작</span>
+                                <input
+                                    type="date"
+                                    value={seasonEffectiveWeekDate}
+                                    onChange={(event) => {
+                                        setSeasonEffectiveWeekDate(snapDateInputToSunday(event.target.value));
+                                        setHasChanges(true);
+                                    }}
+                                    className="h-9 w-[132px] rounded-xl border border-indigo-100 dark:border-indigo-800 bg-white/90 dark:bg-slate-950 px-2 text-[11px] font-black text-slate-700 dark:text-slate-200 outline-none focus:ring-4 focus:ring-indigo-500/10"
+                                />
+                                <span className="rounded-full bg-white/80 dark:bg-slate-950 px-2.5 py-1 text-[10px] font-black text-indigo-600 dark:text-indigo-300">
+                                    {formatRegroupingWeekLabel(seasonEffectiveWeekDate)}
+                                </span>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                            현재/과거 보정은 저장 즉시 실제 조편성과 호환 row를 변경합니다. 미래 조편성 준비는 시즌 초안을 사용하세요.
+                        </div>
+                    )}
+                </div>
+
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex-1 max-w-md relative group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
@@ -1277,7 +1399,7 @@ function RegroupingPageInner() {
                         <div className="flex items-center gap-3 h-11 px-4 bg-indigo-50/70 dark:bg-indigo-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 shadow-sm">
                             <CalendarDays className="w-4 h-4 text-indigo-500" />
                             <div className="flex flex-col leading-none">
-                                <span className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.18em]">적용 주차</span>
+                                <span className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.18em]">보정 주차</span>
                                 <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300">{formatRegroupingWeekLabel(effectiveWeekDate)}</span>
                             </div>
                             <input
@@ -1369,16 +1491,26 @@ function RegroupingPageInner() {
 
                         <button
                             onClick={handleSave}
-                            disabled={saving || !hasChanges}
+                            disabled={saving || !hasChanges || regroupingMode === 'season'}
                             className={cn(
                                 "flex items-center gap-2 px-6 h-11 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:scale-100 border",
-                                hasChanges
+                                hasChanges && regroupingMode === 'live'
                                     ? "bg-indigo-600 text-white border-indigo-600 shadow-indigo-600/20 hover:bg-indigo-500"
                                     : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 shadow-none"
                             )}
                         >
                             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            {saving ? '저장 중...' : '변경사항 확정'}
+                            {saving ? '저장 중...' : '보정 저장'}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleSaveSeasonDraft}
+                            disabled={saving || regroupingMode !== 'season' || !selectedChurch || !selectedDepartment}
+                            className="flex items-center gap-2 px-6 h-11 rounded-2xl bg-indigo-600 text-white border border-indigo-600 font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:border-slate-300 disabled:shadow-none"
+                        >
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            {selectedSeasonId ? '시즌 초안 갱신' : '시즌 초안 저장'}
                         </button>
                     </div>
                 </div>

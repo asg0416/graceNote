@@ -1150,4 +1150,6 @@ Progress:
 - 2026-05-23: Multi-season verifier passed: two seasons for one source group produce 2 distinct plan group IDs and 1 distinct source group ID.
 - 2026-05-23: Admin-web `regroupingSeasonsRpc` wrapper added with Node test coverage for create/save/apply RPC payloads and error propagation.
 - 2026-05-23: RPC wrapper verification passed: `node --test admin-web/src/lib/regroupingSeasonsRpc.test.ts`, targeted admin-web lint, and `npx tsc --noEmit --pretty false`.
-- Next: connect the regrouping page to the season-first draft UI while keeping the current/past live correction path separate.
+- 2026-05-23: Admin regrouping page now has separate `시즌 초안` and `현재/과거 보정` modes. Season draft save calls only `create_regrouping_season` / `save_regrouping_season_draft`; live correction save is disabled in season mode.
+- 2026-05-23: Regrouping season payload helpers added and tested so temp group IDs are preserved for RPC mapping while live source group IDs remain separate.
+- Next: add `apply_regrouping_season` RPC and connect explicit apply UI after draft read/list UX is stable.

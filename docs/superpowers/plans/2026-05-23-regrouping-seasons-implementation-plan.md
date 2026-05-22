@@ -602,7 +602,7 @@ git commit -m "admin: add regrouping season rpc client"
 **Files:**
 - Modify: `admin-web/src/app/regrouping/page.tsx`
 
-- [ ] **Step 1: Add state for season mode without removing live correction path**
+- [x] **Step 1: Add state for season mode without removing live correction path**
 
 In `admin-web/src/app/regrouping/page.tsx`, add state near existing regrouping state:
 
@@ -613,7 +613,7 @@ const [seasonTitle, setSeasonTitle] = useState('');
 const [seasonEffectiveWeekDate, setSeasonEffectiveWeekDate] = useState(getCurrentSundayInputValue);
 ```
 
-- [ ] **Step 2: Replace the current prominent `적용 주차` save control with mode-aware controls**
+- [x] **Step 2: Replace the current prominent `적용 주차` save control with mode-aware controls**
 
 The UI should show:
 
@@ -655,7 +655,7 @@ The UI should show:
 </div>
 ```
 
-- [ ] **Step 3: Keep live correction warning explicit**
+- [x] **Step 3: Keep live correction warning explicit**
 
 When `regroupingMode === 'live'`, show:
 
@@ -665,7 +665,7 @@ When `regroupingMode === 'live'`, show:
 </div>
 ```
 
-- [ ] **Step 4: Keep existing save button calling current `handleSave` only in live mode**
+- [x] **Step 4: Keep existing save button calling current `handleSave` only in live mode**
 
 Disable the current live save button when season mode is active:
 
@@ -686,7 +686,7 @@ Add a separate season draft save button that is visibly separate from live save 
 </button>
 ```
 
-- [ ] **Step 5: Run lint**
+- [x] **Step 5: Run lint**
 
 Run:
 
@@ -715,7 +715,7 @@ git commit -m "admin: add regrouping season mode shell"
 - Modify: `admin-web/src/app/regrouping/page.tsx`
 - Modify: `admin-web/src/lib/regroupingSeasonsRpc.ts`
 
-- [ ] **Step 1: Import RPCs**
+- [x] **Step 1: Import RPCs**
 
 In `admin-web/src/app/regrouping/page.tsx`:
 
@@ -726,9 +726,9 @@ import {
 } from '@/lib/regroupingSeasonsRpc';
 ```
 
-- [ ] **Step 2: Convert visible groups to draft payload**
+- [x] **Step 2: Convert visible groups to draft payload**
 
-Add helper in `page.tsx`:
+Added tested helper in `admin-web/src/lib/regroupingSeasonPayloads.ts`:
 
 ```tsx
 const buildRegroupingSeasonGroupsPayload = (groups: any[]) => groups.map((group, index) => ({
@@ -749,9 +749,9 @@ const isUuid = (value: unknown) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 ```
 
-- [ ] **Step 3: Convert display members to draft assignment payload**
+- [x] **Step 3: Convert display members to draft assignment payload**
 
-Add helper:
+Added tested helper in `admin-web/src/lib/regroupingSeasonPayloads.ts`:
 
 ```tsx
 const buildRegroupingSeasonAssignmentsPayload = (members: any[]) => members
@@ -766,7 +766,7 @@ const buildRegroupingSeasonAssignmentsPayload = (members: any[]) => members
   }));
 ```
 
-- [ ] **Step 4: Add draft save handler**
+- [x] **Step 4: Add draft save handler**
 
 Add:
 
@@ -807,7 +807,7 @@ const handleSaveSeasonDraft = async () => {
 };
 ```
 
-- [ ] **Step 5: Wire the season save button**
+- [x] **Step 5: Wire the season save button**
 
 Replace the temporary alert click:
 
@@ -815,7 +815,7 @@ Replace the temporary alert click:
 onClick={handleSaveSeasonDraft}
 ```
 
-- [ ] **Step 6: Run lint**
+- [x] **Step 6: Run lint**
 
 Run:
 
