@@ -1157,4 +1157,5 @@ Progress:
 - 2026-05-23: Admin regrouping page apply button connected. It is enabled after a season draft is saved and calls `apply_regrouping_season`.
 - 2026-05-23: Admin regrouping page can now list saved season drafts for the selected church/department and reopen a draft into the Kanban board without touching live rows.
 - 2026-05-23: Season controls now show applied/future/current status. Applied seasons cannot be edited or re-applied, and future seasons cannot be applied before the effective week.
+- 2026-05-23: Future draft safety verifier passed on dev: future draft save leaves live counts unchanged 1 and future apply rejection 1.
 - Next: run end-to-end smoke on dev for future draft save, reopen, blocked early apply, and current-week apply.

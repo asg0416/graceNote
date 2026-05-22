@@ -1062,6 +1062,38 @@ npx tsc --noEmit --pretty false
 git diff --check
 ```
 
+## Task 9: Verify Future Draft Safety
+
+**Files:**
+- Create: `supabase/verify_regrouping_future_draft_dev_2026-05-23.sql`
+
+- [x] **Step 1: Add rollback verifier**
+
+The verifier creates a future season draft, saves one plan group and assignment, and confirms live `groups`, `member_directory`, `group_members`, and `memberships` counts do not change.
+
+- [x] **Step 2: Verify future apply is rejected**
+
+The same verifier calls `apply_regrouping_season` and expects `future regrouping seasons cannot be applied before the effective week`.
+
+- [x] **Step 3: Run verifier on dev**
+
+```bash
+docker run --rm \
+  -v /private/tmp/gracenote_dev_db_url:/tmp/gracenote_dev_db_url:ro \
+  -v /Users/sujin/Documents/code_work/GraceNote:/work:ro \
+  postgres:16-alpine \
+  sh -c 'psql "$(cat /tmp/gracenote_dev_db_url)" -v ON_ERROR_STOP=1 -f /work/supabase/verify_regrouping_future_draft_dev_2026-05-23.sql'
+```
+
+Expected and observed:
+
+```plain text
+plan_group_count 1
+assignment_count 1
+live_counts_unchanged_after_draft 1
+future_apply_rejected 1
+```
+
 ## Completion Criteria
 
 - Dev DB has the three additive season tables.
