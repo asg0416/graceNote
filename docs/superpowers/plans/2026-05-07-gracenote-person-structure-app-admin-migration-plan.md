@@ -1161,4 +1161,5 @@ Progress:
 - 2026-05-23: Admin regrouping toolbar now separates `시즌 초안` actions from `현재/과거 보정` actions. Season mode no longer shows the live correction week/save control, and explicitly states that drafts do not affect app/attendance/prayer until applied.
 - 2026-05-23: Applied season boards are now read-only at the Kanban interaction level. Drag/drop, group edit, group delete, member add, leader toggle, and member remove controls are disabled after a season is applied.
 - 2026-05-23: Added `node scripts/verify-regrouping-season-boundary.mjs` to guard that regrouping season draft tables/RPCs are not referenced from Flutter/admin operational screens. This keeps future drafts out of high-traffic app/attendance/prayer read paths.
+- 2026-05-23: Added `update_regrouping_season` RPC so saved draft title/effective week changes persist. Admin season save now updates metadata before saving plan rows. Dev rollback verifiers still pass for schema, future draft safety, current-week apply, and preprod gates.
 - Next: run end-to-end smoke on dev for future draft save, reopen, blocked early apply, and current-week apply.

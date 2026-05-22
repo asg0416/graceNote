@@ -4,6 +4,7 @@ import {
   applyRegroupingSeason,
   createRegroupingSeason,
   saveRegroupingSeasonDraft,
+  updateRegroupingSeason,
 } from './regroupingSeasonsRpc.ts';
 
 const createRpcClient = (response: {
@@ -67,6 +68,27 @@ test('saveRegroupingSeasonDraft returns normalized saved counts', async () => {
         p_season_id: 'season-1',
         p_groups: [{ plan_group_id: 'group-1', name: 'A' }],
         p_assignments: [{ person_id: 'person-1', plan_group_id: 'group-1' }],
+      },
+    },
+  ]);
+});
+
+test('updateRegroupingSeason sends season metadata changes without live writes', async () => {
+  const { client, calls } = createRpcClient({ data: null, error: null });
+
+  await updateRegroupingSeason(client, {
+    seasonId: 'season-1',
+    title: '2026년 3분기 수정',
+    effectiveWeekDate: '2026-07-12',
+  });
+
+  assert.deepEqual(calls, [
+    {
+      functionName: 'update_regrouping_season',
+      args: {
+        p_season_id: 'season-1',
+        p_title: '2026년 3분기 수정',
+        p_effective_week_date: '2026-07-12',
       },
     },
   ]);

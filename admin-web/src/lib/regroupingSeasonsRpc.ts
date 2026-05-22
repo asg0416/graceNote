@@ -70,6 +70,23 @@ export const saveRegroupingSeasonDraft = async (
     };
 };
 
+export const updateRegroupingSeason = async (
+    supabase: RpcClientLike,
+    payload: {
+        seasonId: string;
+        title: string;
+        effectiveWeekDate: string;
+    }
+) => {
+    const { error } = await supabase.rpc('update_regrouping_season', {
+        p_season_id: payload.seasonId,
+        p_title: payload.title,
+        p_effective_week_date: payload.effectiveWeekDate,
+    });
+
+    assertNoRpcError(error, '조편성 계획 정보 수정에 실패했습니다.');
+};
+
 export const applyRegroupingSeason = async (
     supabase: RpcClientLike,
     payload: { seasonId: string }

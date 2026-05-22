@@ -31,6 +31,7 @@ import {
     applyRegroupingSeason,
     createRegroupingSeason,
     saveRegroupingSeasonDraft,
+    updateRegroupingSeason,
 } from '@/lib/regroupingSeasonsRpc';
 import {
     buildRegroupingSeasonAssignmentsPayload,
@@ -1184,8 +1185,17 @@ function RegroupingPageInner() {
                 effectiveWeekDate: seasonEffectiveWeekDate,
             });
 
+            if (selectedSeasonId) {
+                await updateRegroupingSeason(supabase, {
+                    seasonId: selectedSeasonId,
+                    title,
+                    effectiveWeekDate: seasonEffectiveWeekDate,
+                });
+            }
+
             if (!selectedSeasonId) {
                 setSelectedSeasonId(seasonId);
+                setSeasonTitle(title);
             }
 
             const membersToSave = autoMoveCouples

@@ -68,10 +68,11 @@ select
   count(*) filter (
     where proname in (
       'create_regrouping_season',
-      'save_regrouping_season_draft'
+      'save_regrouping_season_draft',
+      'update_regrouping_season'
     )
   ) as actual,
-  2 as expected
+  3 as expected
 from pg_proc
 where pronamespace = 'public'::regnamespace;
 
