@@ -218,7 +218,7 @@ git commit -m "phase3: add regrouping season draft schema"
 - Create: `supabase/migrations/20260523001000_phase3_regrouping_season_draft_rpc.sql`
 - Extend: `supabase/verify_regrouping_seasons_schema_dev_2026-05-23.sql`
 
-- [ ] **Step 1: Create draft RPC migration**
+- [x] **Step 1: Create draft RPC migration**
 
 Create `supabase/migrations/20260523001000_phase3_regrouping_season_draft_rpc.sql` with:
 
@@ -368,7 +368,7 @@ grant execute on function public.create_regrouping_season(uuid, uuid, text, date
 grant execute on function public.save_regrouping_season_draft(uuid, jsonb, jsonb) to authenticated, service_role;
 ```
 
-- [ ] **Step 2: Add rollback smoke SQL**
+- [x] **Step 2: Add rollback smoke SQL**
 
 Append to `supabase/verify_regrouping_seasons_schema_dev_2026-05-23.sql`:
 
@@ -407,7 +407,7 @@ saved as (
 )
 select
   'regrouping_draft_save_no_live_write' as check_name,
-  (select count(*) from public.regrouping_seasons where title = 'verify regrouping season draft') as season_count,
+  (select case when season_id is not null then 1 else 0 end from created) as created_season_returned,
   (select plan_group_count from saved) as plan_group_count,
   (select assignment_count from saved) as assignment_count;
 
@@ -417,23 +417,32 @@ rollback;
 Expected:
 
 ```plain text
-regrouping_draft_save_no_live_write | season_count 1 | plan_group_count 1 | assignment_count 0
+regrouping_draft_save_no_live_write | created_season_returned 1 | plan_group_count 1 | assignment_count 1 | live_counts_unchanged 1
 ```
 
-- [ ] **Step 3: Apply migration to dev and run verifier**
+- [x] **Step 3: Apply migration to dev and run verifier**
 
 Run:
 
 ```bash
-node scripts/apply-sql-file-psql.mjs --db-url-file /private/tmp/gracenote_dev_db_url --file supabase/migrations/20260523001000_phase3_regrouping_season_draft_rpc.sql
-node scripts/run-sql-file-psql.mjs --db-url-file /private/tmp/gracenote_dev_db_url --file supabase/verify_regrouping_seasons_schema_dev_2026-05-23.sql
+docker run --rm \
+  -v /private/tmp/gracenote_dev_db_url:/tmp/gracenote_dev_db_url:ro \
+  -v /Users/sujin/Documents/code_work/GraceNote:/work:ro \
+  postgres:16-alpine \
+  sh -c 'psql "$(cat /tmp/gracenote_dev_db_url)" -v ON_ERROR_STOP=1 -f /work/supabase/migrations/20260523001000_phase3_regrouping_season_draft_rpc.sql'
+
+docker run --rm \
+  -v /private/tmp/gracenote_dev_db_url:/tmp/gracenote_dev_db_url:ro \
+  -v /Users/sujin/Documents/code_work/GraceNote:/work:ro \
+  postgres:16-alpine \
+  sh -c 'psql "$(cat /tmp/gracenote_dev_db_url)" -v ON_ERROR_STOP=1 -f /work/supabase/verify_regrouping_seasons_schema_dev_2026-05-23.sql'
 ```
 
 Expected:
 
 ```plain text
 No SQL errors
-draft save returns one plan group and zero assignments in rollback
+draft save returns one plan group, one assignment, and live_counts_unchanged = 1 in rollback
 ```
 
 - [ ] **Step 4: Commit**
