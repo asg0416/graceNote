@@ -72,9 +72,26 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
    - `preprod_auto_repair_candidates_2026-05-15.sql`
    - `preprod_manual_review_candidates_2026-05-15.sql`
    - `preprod_identity_link_candidates_2026-05-22.sql`
-4. 운영 전 필수 gate를 한 번에 실행한다: Phase 2 summary, attendance/prayer snapshot, attendance roster snapshot integrity, edge notification targets.
-5. role별 smoke를 실행한다: master/admin/leader/member, admin-web/Flutter, 성도 추가/수정/비활성/복구, 조편성 저장, 출석/기도 저장.
-6. legacy FK 제거 계획은 별도 Phase 4로 둔다. 지금 운영 후보는 “person source-of-truth + legacy compatibility” 구조다.
+4. `auto_repair_candidate`가 있으면 dev/staging/운영 복제본에서만 승인된 repair를 실행한다:
+   - identity link repair: `node scripts/preprod-identity-repair-psql.mjs --db-url-file <clone-url-file> --apply-auto-repair`
+   - repair 후 `scripts/preprod-data-audit-psql.mjs`를 다시 실행해 `blocking_gate=0`과 auto-repair count 감소를 확인한다.
+   - 알려진 운영 DB ref는 기본적으로 repair runner가 거부한다. 운영 직접 실행은 별도 maintenance window와 명시 승인 없이는 금지한다.
+5. 운영 전 필수 gate를 한 번에 실행한다: Phase 2 summary, attendance/prayer snapshot, attendance roster snapshot integrity, edge notification targets.
+6. role별 smoke를 실행한다: master/admin/leader/member, admin-web/Flutter, 성도 추가/수정/비활성/복구, 조편성 저장, 출석/기도 저장.
+7. legacy FK 제거 계획은 별도 Phase 4로 둔다. 지금 운영 후보는 “person source-of-truth + legacy compatibility” 구조다.
+
+## Identity Link Repair Policy
+
+운영 적용 전 identity/link 문제는 다음 기준으로 분리한다.
+
+| Pattern | Handling | Reason |
+| --- | --- | --- |
+| `auth.users`가 있는데 `profiles.id = auth.users.id`가 없음 | `blocking_gate` | 앱 로그인/온보딩/권한 메뉴가 깨질 수 있어 운영 전 0이어야 함 |
+| email이 같은 orphan profile이 있고 auth uid profile이 없음 | `auto_repair_candidate` | source profile을 auth uid로 복사하고 같은 교회 reference만 옮길 수 있음 |
+| email이 같지만 auth uid profile이 이미 있음 | `manual_review` | 두 profile 중 어느 쪽이 진짜 소유자인지 자동 판단 불가 |
+| 다른 교회 profile_id가 `member_directory`/`member_profiles`/`group_members`/`people.primary_profile_id`에 붙음 | `auto_repair_candidate` | 다른 교회 profile link는 항상 잘못된 소유권이므로 profile link만 detach. 사람 병합은 하지 않음 |
+| 같은 교회 같은 이름/전화번호 다중 person | `manual_review` | 부부/동명이인/테스트 데이터 가능성이 있어 자동 병합 금지 |
+| `member_profiles.person_id`와 `profiles.person_id`가 다름 | `manual_review` | 같은 교회 내부에서도 실제 계정 소유자 확인이 필요함 |
 
 ## Attendance Snapshot Dependency
 

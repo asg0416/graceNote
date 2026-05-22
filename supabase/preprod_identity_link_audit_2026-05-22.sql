@@ -3,8 +3,8 @@
 --
 -- Severity policy:
 -- - blocking_gate: login or person ownership can break for an existing auth user.
--- - auto_repair_candidate: deterministic auth/profile drift that can be repaired
---   after clone/dev verification.
+-- - auto_repair_candidate: deterministic auth/profile drift or stale
+--   cross-church profile links that can be repaired after clone/dev verification.
 -- - manual_review: ambiguous identity data. Do not auto-merge.
 
 with checks as (
@@ -80,7 +80,7 @@ with checks as (
   union all
 
   select
-    'manual_review',
+    'auto_repair_candidate',
     'member_directory_profile_church_mismatch',
     count(*)::bigint
   from public.member_directory md
@@ -92,7 +92,7 @@ with checks as (
   union all
 
   select
-    'manual_review',
+    'auto_repair_candidate',
     'member_profiles_profile_church_mismatch',
     count(*)::bigint
   from public.member_profiles mp
@@ -105,7 +105,7 @@ with checks as (
   union all
 
   select
-    'manual_review',
+    'auto_repair_candidate',
     'group_members_profile_church_mismatch',
     count(*)::bigint
   from public.group_members gm
@@ -118,7 +118,7 @@ with checks as (
   union all
 
   select
-    'manual_review',
+    'auto_repair_candidate',
     'people_primary_profile_church_mismatch',
     count(*)::bigint
   from public.people pe

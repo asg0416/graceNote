@@ -82,28 +82,6 @@ cross_church_people_phone as (
   group by p.normalized_phone
   having count(distinct p.church_id) > 1
 ),
-profile_church_mismatch as (
-  select
-    'member_directory_profile_church_mismatch' as issue_type,
-    md.church_id,
-    md.id::text as phone_key,
-    jsonb_build_array(
-      jsonb_build_object(
-        'member_directory_id', md.id,
-        'full_name', md.full_name,
-        'phone', md.phone,
-        'member_directory_church_id', md.church_id,
-        'profile_id', pr.id,
-        'profile_church_id', pr.church_id,
-        'profile_name', pr.full_name
-      )
-    ) as details
-  from public.member_directory md
-  join public.profiles pr on pr.id = md.profile_id
-  where md.church_id is not null
-    and pr.church_id is not null
-    and md.church_id <> pr.church_id
-),
 all_candidates as (
   select * from same_church_people_phone
   union all
@@ -112,8 +90,6 @@ all_candidates as (
   select * from same_church_same_name_people
   union all
   select * from cross_church_people_phone
-  union all
-  select * from profile_church_mismatch
 )
 select
   c.issue_type,

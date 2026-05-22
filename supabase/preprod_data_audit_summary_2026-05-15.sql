@@ -229,7 +229,7 @@ with checks as (
   union all
 
   select
-    'manual_review',
+    'auto_repair_candidate',
     'member_directory_profile_church_mismatch',
     count(*)::bigint
   from public.member_directory md
