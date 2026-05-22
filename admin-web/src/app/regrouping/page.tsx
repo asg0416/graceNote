@@ -28,6 +28,7 @@ import { Tooltip } from '@/components/Tooltip';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
 import {
+    applyRegroupingSeason,
     createRegroupingSeason,
     saveRegroupingSeasonDraft,
 } from '@/lib/regroupingSeasonsRpc';
@@ -1163,6 +1164,31 @@ function RegroupingPageInner() {
         }
     };
 
+    const handleApplySeason = async () => {
+        if (!selectedSeasonId) {
+            alert('먼저 시즌 초안을 저장하세요.');
+            return;
+        }
+
+        if (!window.confirm('이 조편성 계획을 실제 소속으로 적용할까요? 적용 후에는 앱과 출석/기도 화면에 반영됩니다.')) {
+            return;
+        }
+
+        setSaving(true);
+
+        try {
+            await applyRegroupingSeason(supabase, { seasonId: selectedSeasonId });
+            alert('조편성 계획이 실제 소속으로 적용되었습니다.');
+            await fetchData();
+            setHasChanges(false);
+        } catch (error) {
+            console.error('Apply regrouping season error:', error);
+            alert(error instanceof Error ? error.message : '조편성 계획 적용 중 오류가 발생했습니다.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleReset = () => {
         if (confirm('모든 변경 사항을 취소하고 초기화하시겠습니까?')) {
             setLocalMembers(JSON.parse(JSON.stringify(members)));
@@ -1511,6 +1537,16 @@ function RegroupingPageInner() {
                         >
                             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                             {selectedSeasonId ? '시즌 초안 갱신' : '시즌 초안 저장'}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleApplySeason}
+                            disabled={saving || regroupingMode !== 'season' || !selectedSeasonId}
+                            className="flex items-center gap-2 px-6 h-11 rounded-2xl bg-emerald-600 text-white border border-emerald-600 font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-emerald-600/20 hover:bg-emerald-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:border-slate-300 disabled:shadow-none"
+                        >
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            실제 소속에 적용
                         </button>
                     </div>
                 </div>

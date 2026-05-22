@@ -936,7 +936,7 @@ git commit -m "phase3: apply regrouping seasons to live memberships"
 - Modify: `admin-web/src/app/regrouping/page.tsx`
 - Modify: `docs/superpowers/plans/2026-05-07-gracenote-person-structure-app-admin-migration-plan.md`
 
-- [ ] **Step 1: Import apply wrapper**
+- [x] **Step 1: Import apply wrapper**
 
 ```tsx
 import {
@@ -946,7 +946,7 @@ import {
 } from '@/lib/regroupingSeasonsRpc';
 ```
 
-- [ ] **Step 2: Add apply handler**
+- [x] **Step 2: Add apply handler**
 
 ```tsx
 const handleApplySeason = async () => {
@@ -973,7 +973,7 @@ const handleApplySeason = async () => {
 };
 ```
 
-- [ ] **Step 3: Add apply button near draft save**
+- [x] **Step 3: Add apply button near draft save**
 
 ```tsx
 <button
