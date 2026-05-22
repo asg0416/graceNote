@@ -35,6 +35,7 @@ import {
 import {
     buildRegroupingSeasonAssignmentsPayload,
     buildRegroupingSeasonGroupsPayload,
+    mapRegroupingSeasonDraftToBoard,
 } from '@/lib/regroupingSeasonPayloads';
 
 const toDateInputValue = (date: Date) => {
@@ -231,6 +232,7 @@ function RegroupingPageInner() {
     const [effectiveWeekDate, setEffectiveWeekDate] = useState(getCurrentSundayInputValue);
     const [regroupingMode, setRegroupingMode] = useState<'season' | 'live'>('season');
     const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+    const [regroupingSeasons, setRegroupingSeasons] = useState<any[]>([]);
     const [seasonTitle, setSeasonTitle] = useState('');
     const [seasonEffectiveWeekDate, setSeasonEffectiveWeekDate] = useState(getCurrentSundayInputValue);
     const [, setPhase2RegroupingCheck] = useState<{
@@ -363,6 +365,25 @@ function RegroupingPageInner() {
         }
     };
 
+    const fetchRegroupingSeasons = async (churchId: string, deptId: string) => {
+        const { data, error } = await supabase
+            .from('regrouping_seasons')
+            .select('id, title, status, effective_week_date, updated_at, created_at')
+            .eq('church_id', churchId)
+            .eq('department_id', deptId)
+            .in('status', ['draft', 'ready', 'applied'])
+            .order('effective_week_date', { ascending: false })
+            .order('updated_at', { ascending: false });
+
+        if (error) {
+            console.error('Fetch regrouping seasons error:', error);
+            setRegroupingSeasons([]);
+            return;
+        }
+
+        setRegroupingSeasons(data || []);
+    };
+
     const fetchDepartments = async (churchId: string, targetDeptId?: string | null) => {
         const { data } = await supabase
             .from('departments')
@@ -383,7 +404,8 @@ function RegroupingPageInner() {
                 // Fetch groups and members in parallel for visual smoothness
                 await Promise.all([
                     fetchGroups(dept.id),
-                    fetchMembers(churchId, dept.id)
+                    fetchMembers(churchId, dept.id),
+                    fetchRegroupingSeasons(churchId, dept.id)
                 ]);
             }
         }
@@ -393,7 +415,8 @@ function RegroupingPageInner() {
         if (currentChurchId && selectedDeptId) {
             await Promise.all([
                 fetchGroups(selectedDeptId),
-                fetchMembers(currentChurchId, selectedDeptId)
+                fetchMembers(currentChurchId, selectedDeptId),
+                fetchRegroupingSeasons(currentChurchId, selectedDeptId)
             ]);
         }
     };
@@ -1155,10 +1178,69 @@ function RegroupingPageInner() {
             });
 
             setHasChanges(false);
+            await fetchRegroupingSeasons(selectedChurch.id, selectedDepartment.id);
             alert(`시즌 초안이 저장되었습니다. 조 ${result.planGroupCount}개, 소속 ${result.assignmentCount}개`);
         } catch (error) {
             console.error('Save regrouping season draft error:', error);
             alert(error instanceof Error ? error.message : '시즌 초안 저장 중 오류가 발생했습니다.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleLoadSeasonDraft = async (seasonId: string) => {
+        const season = regroupingSeasons.find(item => item.id === seasonId);
+        if (!season) return;
+
+        if (hasChanges && !window.confirm('현재 화면의 저장되지 않은 변경 사항을 버리고 선택한 시즌 초안을 불러올까요?')) {
+            return;
+        }
+
+        setSaving(true);
+
+        try {
+            const [{ data: planGroups, error: groupsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
+                supabase
+                    .from('regrouping_plan_groups')
+                    .select('id, source_group_id, name, color_hex, sort_order, leader_person_id')
+                    .eq('season_id', seasonId)
+                    .order('sort_order', { ascending: true })
+                    .order('name', { ascending: true }),
+                supabase
+                    .from('regrouping_plan_assignments')
+                    .select(`
+                        id,
+                        plan_group_id,
+                        person_id,
+                        role_in_group,
+                        sort_order,
+                        source_membership_id,
+                        source_member_directory_id,
+                        people:person_id(display_name, normalized_phone),
+                        member_directory:source_member_directory_id(full_name, phone, family_name, spouse_name, children_info, birth_date, wedding_anniversary, notes, avatar_url, profile_id)
+                    `)
+                    .eq('season_id', seasonId)
+                    .order('sort_order', { ascending: true }),
+            ]);
+
+            if (groupsError) throw groupsError;
+            if (assignmentsError) throw assignmentsError;
+
+            const mapped = mapRegroupingSeasonDraftToBoard({
+                planGroups: planGroups || [],
+                assignments: assignments || [],
+            });
+
+            setSelectedSeasonId(seasonId);
+            setSeasonTitle(season.title || '');
+            setSeasonEffectiveWeekDate(season.effective_week_date || getCurrentSundayInputValue());
+            setGroups(mapped.groups);
+            setLocalMembers(mapped.members);
+            setHasChanges(false);
+            setRegroupingMode('season');
+        } catch (error) {
+            console.error('Load regrouping season draft error:', error);
+            alert(error instanceof Error ? error.message : '시즌 초안을 불러오는 중 오류가 발생했습니다.');
         } finally {
             setSaving(false);
         }
@@ -1331,9 +1413,12 @@ function RegroupingPageInner() {
                             onChange={(e) => {
                                 const newDeptId = e.target.value;
                                 setSelectedDeptId(newDeptId);
+                                setSelectedSeasonId(null);
+                                setSeasonTitle('');
                                 if (currentChurchId) {
                                     fetchGroups(newDeptId);
                                     fetchMembers(currentChurchId, newDeptId);
+                                    fetchRegroupingSeasons(currentChurchId, newDeptId);
                                 }
                             }}
                             className="appearance-none h-11 pl-5 pr-10 bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl font-bold text-xs text-slate-700 dark:text-slate-200 cursor-pointer focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm"
@@ -1378,6 +1463,26 @@ function RegroupingPageInner() {
 
                     {regroupingMode === 'season' ? (
                         <div className="flex flex-col lg:flex-row lg:items-center gap-2 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/70 dark:bg-indigo-950/20 p-2">
+                            <select
+                                value={selectedSeasonId || ''}
+                                onChange={(event) => {
+                                    if (event.target.value) {
+                                        handleLoadSeasonDraft(event.target.value);
+                                    } else {
+                                        setSelectedSeasonId(null);
+                                        setSeasonTitle('');
+                                        setSeasonEffectiveWeekDate(getCurrentSundayInputValue());
+                                    }
+                                }}
+                                className="h-9 min-w-[180px] rounded-xl border border-indigo-100 dark:border-indigo-800 bg-white/90 dark:bg-slate-950 px-3 text-[11px] font-black text-slate-700 dark:text-slate-200 outline-none focus:ring-4 focus:ring-indigo-500/10"
+                            >
+                                <option value="">새 시즌 초안</option>
+                                {regroupingSeasons.map(season => (
+                                    <option key={season.id} value={season.id}>
+                                        {season.title} · {season.status} · {formatRegroupingWeekLabel(season.effective_week_date)}
+                                    </option>
+                                ))}
+                            </select>
                             <input
                                 type="text"
                                 value={seasonTitle}

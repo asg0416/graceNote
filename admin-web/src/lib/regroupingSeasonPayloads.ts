@@ -62,3 +62,62 @@ export const buildRegroupingSeasonAssignmentsPayload = (members: Array<Record<st
             };
         })
         .filter((assignment): assignment is NonNullable<typeof assignment> => assignment !== null);
+
+const getNestedRecord = (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+};
+
+const getText = (...values: unknown[]) => {
+    for (const value of values) {
+        if (typeof value === 'string' && value.trim()) return value;
+    }
+    return '';
+};
+
+export const mapRegroupingSeasonDraftToBoard = ({
+    planGroups,
+    assignments,
+}: {
+    planGroups: Array<Record<string, unknown>>;
+    assignments: Array<Record<string, unknown>>;
+}) => {
+    const groups = [...planGroups]
+        .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0))
+        .map(group => {
+            const id = String(group.id || '');
+            return {
+                id,
+                plan_group_id: id,
+                source_group_id: typeof group.source_group_id === 'string' ? group.source_group_id : null,
+                name: String(group.name || ''),
+                color_hex: typeof group.color_hex === 'string' && group.color_hex ? group.color_hex : '#4f46e5',
+                sort_order: Number(group.sort_order || 0),
+            };
+        });
+
+    const members = [...assignments]
+        .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0))
+        .map(assignment => {
+            const person = getNestedRecord(assignment.people);
+            const directory = getNestedRecord(assignment.member_directory);
+            const sourceDirectoryId = typeof assignment.source_member_directory_id === 'string'
+                ? assignment.source_member_directory_id
+                : null;
+
+            return {
+                id: sourceDirectoryId || `season-${String(assignment.id || '')}`,
+                season_assignment_id: String(assignment.id || ''),
+                full_name: getText(directory.full_name, person.display_name, '이름 없음'),
+                phone: getText(directory.phone, person.normalized_phone),
+                group_id: typeof assignment.plan_group_id === 'string' ? assignment.plan_group_id : null,
+                role_in_group: typeof assignment.role_in_group === 'string' ? assignment.role_in_group : 'member',
+                person_id: String(assignment.person_id || ''),
+                phase2_person_id: String(assignment.person_id || ''),
+                phase2_membership_id: typeof assignment.source_membership_id === 'string' ? assignment.source_membership_id : null,
+                source_member_directory_id: sourceDirectoryId,
+            };
+        });
+
+    return { groups, members };
+};

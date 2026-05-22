@@ -986,7 +986,7 @@ const handleApplySeason = async () => {
 </button>
 ```
 
-- [ ] **Step 4: Add smoke checklist to migration plan**
+- [x] **Step 4: Add smoke checklist to migration plan**
 
 Append:
 
@@ -1024,6 +1024,38 @@ git diff --check has no output
 ```bash
 git add admin-web/src/app/regrouping/page.tsx docs/superpowers/plans/2026-05-07-gracenote-person-structure-app-admin-migration-plan.md
 git commit -m "admin: apply regrouping season drafts"
+```
+
+## Task 8: Reopen Saved Season Drafts
+
+**Files:**
+- Modify: `admin-web/src/app/regrouping/page.tsx`
+- Modify: `admin-web/src/lib/regroupingSeasonPayloads.ts`
+- Test: `admin-web/src/lib/regroupingSeasonPayloads.test.ts`
+
+- [x] **Step 1: Add draft-to-board mapper with tests**
+
+`mapRegroupingSeasonDraftToBoard` maps `regrouping_plan_groups` and `regrouping_plan_assignments` rows back into the Kanban board state.
+
+- [x] **Step 2: Fetch department season list**
+
+`regrouping_seasons` rows are fetched by selected church/department and scoped to `draft`, `ready`, and `applied` statuses.
+
+- [x] **Step 3: Add season select UI**
+
+The season toolbar now supports `새 시즌 초안` and existing saved seasons.
+
+- [x] **Step 4: Load selected draft**
+
+Selecting an existing season loads plan groups and assignments without touching live group/membership rows.
+
+- [x] **Step 5: Run verification**
+
+```bash
+node --test admin-web/src/lib/regroupingSeasonPayloads.test.ts admin-web/src/lib/regroupingSeasonsRpc.test.ts
+npm run lint -- src/app/regrouping/page.tsx src/lib/regroupingSeasonsRpc.ts src/lib/regroupingSeasonPayloads.ts src/lib/regroupingSeasonPayloads.test.ts
+npx tsc --noEmit --pretty false
+git diff --check
 ```
 
 ## Completion Criteria

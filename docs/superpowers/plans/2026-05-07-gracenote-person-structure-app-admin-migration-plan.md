@@ -1155,4 +1155,5 @@ Progress:
 - 2026-05-23: `apply_regrouping_season` RPC added and applied to dev DB. It rejects future effective weeks so drafts do not mutate live data before the target week.
 - 2026-05-23: Apply verifier passed in rollback: season applied 1, active membership from effective week 1, planned rows preserved 1, created group active_from effective week 1.
 - 2026-05-23: Admin regrouping page apply button connected. It is enabled after a season draft is saved and calls `apply_regrouping_season`.
-- Next: add season list/read UX so admins can reopen saved drafts before applying, then run end-to-end smoke.
+- 2026-05-23: Admin regrouping page can now list saved season drafts for the selected church/department and reopen a draft into the Kanban board without touching live rows.
+- Next: run end-to-end smoke on dev for future draft save, reopen, blocked early apply, and current-week apply.
