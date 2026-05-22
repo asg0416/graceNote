@@ -12,6 +12,7 @@ const gates = [
   "supabase/verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql",
   "supabase/verify_app_config_rls_dev_2026-05-15.sql",
   "supabase/verify_phase2d_edge_notification_targets_dev_2026-05-09.sql",
+  "supabase/verify_regrouping_season_summary_dev_2026-05-23.sql",
 ];
 
 const args = process.argv.slice(2);
