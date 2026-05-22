@@ -68,8 +68,10 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 2. fresh DB 또는 운영 복제본에서 migration 전체 dry-run을 실행한다.
 3. 운영 복제본 데이터 감사 패키지를 실행한다:
    - `preprod_data_audit_summary_2026-05-15.sql`
+   - `preprod_identity_link_audit_2026-05-22.sql`
    - `preprod_auto_repair_candidates_2026-05-15.sql`
    - `preprod_manual_review_candidates_2026-05-15.sql`
+   - `preprod_identity_link_candidates_2026-05-22.sql`
 4. 운영 전 필수 gate를 한 번에 실행한다: Phase 2 summary, attendance/prayer snapshot, attendance roster snapshot integrity, edge notification targets.
 5. role별 smoke를 실행한다: master/admin/leader/member, admin-web/Flutter, 성도 추가/수정/비활성/복구, 조편성 저장, 출석/기도 저장.
 6. legacy FK 제거 계획은 별도 Phase 4로 둔다. 지금 운영 후보는 “person source-of-truth + legacy compatibility” 구조다.
@@ -122,7 +124,7 @@ docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
 | Edge function smoke | 알림 대상 read-switch는 dev 함수 dry-run까지 확인됨 | 운영 전 prod env vars, scheduled trigger, 실제 FCM 발송 권한만 재확인 |
 | Attendance history/snapshot integrity | 삭제 조 과거 출석, unlinked attendance row, submitted attendance snapshot 반영은 운영 데이터에서 새로 드러날 수 있음 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`와 `verify_attendance_unlinked_rows_detail_dev_2026-05-16.sql` 실행. unlinked rows/detail이 있으면 운영 반영 전 cleanup 또는 수동 연결 |
 | Edge profile ownership integrity | 운영 데이터에도 stale `group_members.profile_id` 또는 `member_profiles.profile_id`가 있을 수 있음 | `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql` all 0. profile이 다른 person으로 명시 연결된 경우 알림 대상에서 제외 |
-| Preprod data audit | dev에서 발견한 legacy/person drift 패턴을 운영 복제본에서 사전 탐지해야 함 | `preprod_data_audit_summary_2026-05-15.sql` 실행. `blocking_gate=0`, `auto_repair_candidate`는 승인된 repair SQL 작성, `manual_review`는 자동 수정 금지 |
+| Preprod data audit | dev에서 발견한 legacy/person drift 패턴을 운영 복제본에서 사전 탐지해야 함 | `preprod_data_audit_summary_2026-05-15.sql`, `preprod_identity_link_audit_2026-05-22.sql` 실행. `blocking_gate=0`, `auto_repair_candidate`는 승인된 repair SQL 작성, `manual_review`는 자동 수정 금지 |
 | Role-based app/admin smoke | 권한별 메뉴가 다르므로 한 계정 smoke만으로 부족 | master/admin/leader/member 체크리스트 수행 |
 | Legacy cleanup decision | legacy 테이블 삭제는 아직 위험 | 운영 1차에서는 삭제 금지. 이후 Phase 4에서 FK/backfill/report 영향 재설계 |
 
