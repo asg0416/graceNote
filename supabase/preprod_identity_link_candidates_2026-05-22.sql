@@ -197,6 +197,50 @@ group_member_church_mismatch as (
     and p.church_id is not null
     and g.church_id <> p.church_id
 ),
+people_primary_profile_church_mismatch as (
+  select
+    'people_primary_profile_church_mismatch' as issue_type,
+    pe.church_id,
+    null::uuid as auth_user_id,
+    p.id as profile_id,
+    coalesce(p.email, '') as email,
+    jsonb_build_object(
+      'person_id', pe.id,
+      'display_name', pe.display_name,
+      'person_church_id', pe.church_id,
+      'primary_profile_id', p.id,
+      'profile_name', p.full_name,
+      'profile_church_id', p.church_id
+    ) as details
+  from public.people pe
+  join public.profiles p on p.id = pe.primary_profile_id
+  where pe.church_id is not null
+    and p.church_id is not null
+    and pe.church_id <> p.church_id
+),
+member_profile_person_mismatch as (
+  select
+    'member_profiles_profile_person_mismatch' as issue_type,
+    md.church_id,
+    null::uuid as auth_user_id,
+    p.id as profile_id,
+    coalesce(p.email, '') as email,
+    jsonb_build_object(
+      'member_profile_id', mp.id,
+      'member_directory_id', mp.member_directory_id,
+      'member_name', mp.full_name,
+      'member_profile_person_id', mp.person_id,
+      'profile_id', p.id,
+      'profile_name', p.full_name,
+      'profile_person_id', p.person_id
+    ) as details
+  from public.member_profiles mp
+  left join public.member_directory md on md.id = mp.member_directory_id
+  join public.profiles p on p.id = mp.profile_id
+  where p.person_id is not null
+    and mp.person_id is not null
+    and p.person_id <> mp.person_id
+),
 all_candidates as (
   select * from auth_missing_profile
   union all select * from profile_without_auth
@@ -207,6 +251,8 @@ all_candidates as (
   union all select * from directory_profile_church_mismatch
   union all select * from member_profile_church_mismatch
   union all select * from group_member_church_mismatch
+  union all select * from people_primary_profile_church_mismatch
+  union all select * from member_profile_person_mismatch
 )
 select
   c.issue_type,
