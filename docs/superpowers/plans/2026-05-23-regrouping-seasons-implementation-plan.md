@@ -844,7 +844,7 @@ git commit -m "admin: save regrouping season drafts"
 - Create: `supabase/migrations/20260523002000_phase3_regrouping_season_apply_rpc.sql`
 - Create: `supabase/verify_regrouping_season_apply_dev_2026-05-23.sql`
 
-- [ ] **Step 1: Create apply RPC migration**
+- [x] **Step 1: Create apply RPC migration**
 
 Create `supabase/migrations/20260523002000_phase3_regrouping_season_apply_rpc.sql`.
 
@@ -865,6 +865,7 @@ Implementation requirements:
 
 - Lock the season row `for update`.
 - Reject missing, cancelled, archived, or already applied seasons.
+- Reject future `effective_week_date` so drafts do not mutate live data before the effective week.
 - End active memberships in the department at `effective_week_date - 1 second`.
 - End active groups in the department that are not continued by planned groups.
 - Create new `groups` rows for planned groups with `source_group_id is null`.
@@ -875,7 +876,7 @@ Implementation requirements:
 
 The implementation must not call the old 4-arg `save_regrouping_memberships` blindly because that function assumes the client payload is the current live state. If shared behavior is required, extract a dedicated helper in the same migration before `apply_regrouping_season` is created.
 
-- [ ] **Step 2: Add rollback verifier**
+- [x] **Step 2: Add rollback verifier**
 
 Create `supabase/verify_regrouping_season_apply_dev_2026-05-23.sql` with a transaction that:
 
@@ -904,7 +905,7 @@ active_membership_from_effective_week | 1
 planned_rows_preserved | 1
 ```
 
-- [ ] **Step 3: Apply migration and run verifier on dev**
+- [x] **Step 3: Apply migration and run verifier on dev**
 
 Run:
 

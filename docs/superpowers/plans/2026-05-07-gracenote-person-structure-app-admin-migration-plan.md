@@ -1152,4 +1152,6 @@ Progress:
 - 2026-05-23: RPC wrapper verification passed: `node --test admin-web/src/lib/regroupingSeasonsRpc.test.ts`, targeted admin-web lint, and `npx tsc --noEmit --pretty false`.
 - 2026-05-23: Admin regrouping page now has separate `시즌 초안` and `현재/과거 보정` modes. Season draft save calls only `create_regrouping_season` / `save_regrouping_season_draft`; live correction save is disabled in season mode.
 - 2026-05-23: Regrouping season payload helpers added and tested so temp group IDs are preserved for RPC mapping while live source group IDs remain separate.
-- Next: add `apply_regrouping_season` RPC and connect explicit apply UI after draft read/list UX is stable.
+- 2026-05-23: `apply_regrouping_season` RPC added and applied to dev DB. It rejects future effective weeks so drafts do not mutate live data before the target week.
+- 2026-05-23: Apply verifier passed in rollback: season applied 1, active membership from effective week 1, planned rows preserved 1, created group active_from effective week 1.
+- Next: connect explicit apply UI and add season list/read UX so admins can reopen saved drafts before applying.
