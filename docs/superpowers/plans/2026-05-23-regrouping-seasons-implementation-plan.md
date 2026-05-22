@@ -458,90 +458,37 @@ git commit -m "phase3: add regrouping season draft rpc"
 - Create: `admin-web/src/lib/regroupingSeasonsRpc.ts`
 - Test: `admin-web/src/lib/regroupingSeasonsRpc.test.ts`
 
-- [ ] **Step 1: Add test for payload shape and errors**
+- [x] **Step 1: Add test for payload shape and errors**
 
-Create `admin-web/src/lib/regroupingSeasonsRpc.test.ts`:
+Create `admin-web/src/lib/regroupingSeasonsRpc.test.ts`.
 
 ```ts
-import { describe, expect, it, vi } from 'vitest';
+import assert from 'node:assert/strict';
+import test from 'node:test';
 import {
   applyRegroupingSeason,
   createRegroupingSeason,
   saveRegroupingSeasonDraft,
-} from './regroupingSeasonsRpc';
+} from './regroupingSeasonsRpc.ts';
 
-const createClient = (response: unknown) => {
-  const rpc = vi.fn().mockResolvedValue(response);
-  return { rpc };
-};
-
-describe('regroupingSeasonsRpc', () => {
-  it('creates a season with explicit params', async () => {
-    const client = createClient({ data: 'season-1', error: null });
-
-    const result = await createRegroupingSeason(client, {
-      churchId: 'church-1',
-      departmentId: 'department-1',
-      title: '2026 Q3',
-      effectiveWeekDate: '2026-07-05',
-    });
-
-    expect(result).toBe('season-1');
-    expect(client.rpc).toHaveBeenCalledWith('create_regrouping_season', {
-      p_church_id: 'church-1',
-      p_department_id: 'department-1',
-      p_title: '2026 Q3',
-      p_effective_week_date: '2026-07-05',
-    });
-  });
-
-  it('saves draft groups and assignments', async () => {
-    const client = createClient({
-      data: [{ plan_group_count: 2, assignment_count: 5 }],
-      error: null,
-    });
-
-    const result = await saveRegroupingSeasonDraft(client, {
-      seasonId: 'season-1',
-      groups: [{ plan_group_id: 'group-1', name: 'A' }],
-      assignments: [{ person_id: 'person-1', plan_group_id: 'group-1' }],
-    });
-
-    expect(result).toEqual({ planGroupCount: 2, assignmentCount: 5 });
-    expect(client.rpc).toHaveBeenCalledWith('save_regrouping_season_draft', {
-      p_season_id: 'season-1',
-      p_groups: [{ plan_group_id: 'group-1', name: 'A' }],
-      p_assignments: [{ person_id: 'person-1', plan_group_id: 'group-1' }],
-    });
-  });
-
-  it('throws a useful rpc error', async () => {
-    const client = createClient({ data: null, error: { message: 'not editable' } });
-
-    await expect(applyRegroupingSeason(client, { seasonId: 'season-1' }))
-      .rejects
-      .toThrow('not editable');
-  });
-});
+// Uses Node's built-in test runner so this repo does not need an extra Vitest dependency.
 ```
 
-- [ ] **Step 2: Run test and confirm it fails before implementation**
+- [x] **Step 2: Run test and confirm it fails before implementation**
 
 Run:
 
 ```bash
-cd admin-web
-npx vitest run src/lib/regroupingSeasonsRpc.test.ts
+node --test admin-web/src/lib/regroupingSeasonsRpc.test.ts
 ```
 
 Expected:
 
 ```plain text
-FAIL src/lib/regroupingSeasonsRpc.test.ts
-Cannot find module './regroupingSeasonsRpc'
+ERR_MODULE_NOT_FOUND for ./regroupingSeasonsRpc.ts
 ```
 
-- [ ] **Step 3: Implement wrapper**
+- [x] **Step 3: Implement wrapper**
 
 Create `admin-web/src/lib/regroupingSeasonsRpc.ts`:
 
@@ -623,21 +570,22 @@ export const applyRegroupingSeason = async (
 };
 ```
 
-- [ ] **Step 4: Run test and lint**
+- [x] **Step 4: Run test and lint**
 
 Run:
 
 ```bash
-cd admin-web
-npx vitest run src/lib/regroupingSeasonsRpc.test.ts
-npm run lint -- src/lib/regroupingSeasonsRpc.ts
+node --test admin-web/src/lib/regroupingSeasonsRpc.test.ts
+cd admin-web && npm run lint -- src/lib/regroupingSeasonsRpc.ts src/lib/regroupingSeasonsRpc.test.ts
+cd admin-web && npx tsc --noEmit --pretty false
 ```
 
 Expected:
 
 ```plain text
-PASS src/lib/regroupingSeasonsRpc.test.ts
-0 errors
+3 tests pass
+lint 0 errors
+tsc 0 errors
 ```
 
 - [ ] **Step 5: Commit**
