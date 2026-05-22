@@ -24,7 +24,6 @@ interface KanbanColumnProps {
     onAddMembers?: () => void;
     onDelete?: () => void;
     onUpdate?: (updates: { name?: string, color_hex?: string }) => void;
-    onQuickAdd?: (name: string) => void;
     autoFocusRename?: boolean;
     profileMode?: string;
     activeId?: string | null;
@@ -33,6 +32,7 @@ interface KanbanColumnProps {
     onDeleteMember?: (id: string) => void;
     isDeletableMap?: Record<string, boolean>;
     autoMoveCouples?: boolean;
+    readOnly?: boolean;
 }
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({
@@ -46,7 +46,6 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     onAddMembers,
     onDelete,
     onUpdate,
-    onQuickAdd,
     autoFocusRename = false,
     profileMode,
     activeId,
@@ -54,14 +53,13 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     onToggleLeader,
     onDeleteMember,
     isDeletableMap,
-    autoMoveCouples = true
+    autoMoveCouples = true,
+    readOnly = false
 }) => {
     const { setNodeRef, isOver } = useDroppable({ id });
     const [isRenaming, setIsRenaming] = useState(autoFocusRename);
     const [newName, setNewName] = useState(title);
     const [newColor, setNewColor] = useState(color);
-    const [isAdding, setIsAdding] = useState(false);
-    const [quickAddName, setQuickAddName] = useState('');
     const [showMenu, setShowMenu] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const menuRef = useRef<HTMLDivElement>(null);
@@ -128,7 +126,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
             units.push(unit);
         });
         return units;
-    }, [filteredMembers, profileMode]);
+    }, [autoMoveCouples, filteredMembers, profileMode]);
 
     return (
         <div className="flex flex-col w-96 shrink-0 max-h-[820px] bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800/60 transition-all group/column shadow-sm hover:shadow-xl hover:shadow-slate-200/40 dark:hover:shadow-none">
@@ -140,7 +138,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                         style={{ backgroundColor: color }}
                     />
                     <div className="flex-1 min-w-0">
-                        {isRenaming ? (
+                        {isRenaming && !readOnly ? (
                             <div className="flex flex-col gap-2 flex-1 pr-2">
                                 <div className="flex items-center gap-1">
                                     <input
@@ -195,7 +193,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                 </div>
                             </div>
                         ) : (
-                            <div onDoubleClick={() => setIsRenaming(true)} className="cursor-text group/title">
+                            <div onDoubleClick={() => !readOnly && setIsRenaming(true)} className={cn("group/title", readOnly ? "cursor-default" : "cursor-text")}>
                                 <h3 className="font-black text-slate-900 dark:text-white text-sm tracking-tight leading-none uppercase truncate group-hover/title:text-indigo-600 transition-colors">
                                     {title}
                                 </h3>
@@ -210,7 +208,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                     </div>
                 </div>
                 <div className="flex items-center gap-1 relative">
-                    {onAddMembers && (
+                    {onAddMembers && !readOnly && (
                         <button
                             onClick={onAddMembers}
                             className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all"
@@ -218,17 +216,19 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                             <Plus className="w-4 h-4" />
                         </button>
                     )}
-                    <button
-                        onClick={() => setShowMenu(!showMenu)}
-                        className={cn(
-                            "p-1.5 text-slate-300 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors",
-                            showMenu && "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200"
-                        )}
-                    >
-                        <MoreVertical className="w-4 h-4" />
-                    </button>
+                    {!readOnly && (
+                        <button
+                            onClick={() => setShowMenu(!showMenu)}
+                            className={cn(
+                                "p-1.5 text-slate-300 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors",
+                                showMenu && "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200"
+                            )}
+                        >
+                            <MoreVertical className="w-4 h-4" />
+                        </button>
+                    )}
 
-                    {showMenu && (
+                    {showMenu && !readOnly && (
                         <div
                             ref={menuRef}
                             className="absolute top-full right-0 mt-2 w-40 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-1"
@@ -319,6 +319,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                     profileMode={profileMode}
                                     isDraggingElsewhere={isBeingDragged}
                                     movingMembersCount={movingMembersCount}
+                                    readOnly={readOnly}
                                 />
                             );
                         })}
@@ -328,13 +329,19 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
 
             {/* Footer - Full Member Addition Trigger */}
             <div className="p-4 border-t border-slate-200/60 dark:border-slate-800/60 bg-white/30 dark:bg-slate-900/30 shrink-0 rounded-b-[32px]">
-                <button
-                    onClick={() => onAddMembers?.()}
-                    className="w-full flex items-center justify-center gap-2 h-11 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-indigo-600 hover:border-indigo-500/50 hover:bg-white dark:hover:bg-slate-900 transition-all group active:scale-95 shadow-sm"
-                >
-                    <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-black uppercase tracking-widest">성도 추가</span>
-                </button>
+                {readOnly ? (
+                    <div className="w-full flex items-center justify-center gap-2 h-11 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-slate-400 border border-slate-100 dark:border-slate-800">
+                        <span className="text-xs font-black uppercase tracking-widest">읽기 전용</span>
+                    </div>
+                ) : (
+                    <button
+                        onClick={() => onAddMembers?.()}
+                        className="w-full flex items-center justify-center gap-2 h-11 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-indigo-600 hover:border-indigo-500/50 hover:bg-white dark:hover:bg-slate-900 transition-all group active:scale-95 shadow-sm"
+                    >
+                        <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                        <span className="text-xs font-black uppercase tracking-widest">성도 추가</span>
+                    </button>
+                )}
             </div>
         </div>
     );

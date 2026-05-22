@@ -18,10 +18,7 @@ import {
 } from '@dnd-kit/core';
 import { Plus } from 'lucide-react';
 import {
-    arrayMove,
-    SortableContext,
     sortableKeyboardCoordinates,
-    verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { KanbanColumn } from './KanbanColumn';
 import { MemberBadge } from '../MemberBadge';
@@ -39,14 +36,13 @@ interface KanbanBoardProps {
     groups: any[];
     members: any[];
     onMoveMembers: (memberIds: string[], targetGroupId: string | null, isCopy?: boolean, targetIndex?: number) => void;
-    onReorderMembers: (memberIds: string[], targetGroupId: string | null) => void;
+    onReorderMembers?: (memberIds: string[], targetGroupId: string | null) => void;
     selectedMemberIds: string[];
     onMemberClick: (id: string) => void;
     onMemberDoubleClick?: (id: string) => void;
     onAddGroup?: (name: string, color: string) => void;
     onDeleteGroup?: (id: string) => void;
     onUpdateGroup?: (id: string, updates: { name?: string, color_hex?: string }) => void;
-    onQuickAddMember?: (groupId: string | null, name: string) => void;
     onAddMembers?: (groupId: string | null) => void;
     lastAddedGroupId?: string | null;
     profileMode?: string;
@@ -54,13 +50,13 @@ interface KanbanBoardProps {
     onToggleLeader?: (id: string) => void;
     onDeleteMember?: (id: string) => void;
     isDeletableMap?: Record<string, boolean>;
+    readOnly?: boolean;
 }
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     groups,
     members,
     onMoveMembers,
-    onReorderMembers,
     onToggleLeader,
     onDeleteMember,
     isDeletableMap,
@@ -70,11 +66,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     onAddGroup,
     onDeleteGroup,
     onUpdateGroup,
-    onQuickAddMember,
     onAddMembers,
     lastAddedGroupId,
     profileMode,
-    autoMoveCouples = true
+    autoMoveCouples = true,
+    readOnly = false
 }) => {
     const [activeId, setActiveId] = useState<string | null>(null);
     const [dragSessionMembers, setDragSessionMembers] = useState<any[] | null>(null);
@@ -88,7 +84,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
     // Use local session members if dragging, otherwise use props
     const currentMembers = dragSessionMembers || members;
-    const activeMember = currentMembers.find(m => m.id === activeId);
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -102,12 +97,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     );
 
     const handleDragStart = React.useCallback((event: DragStartEvent) => {
+        if (readOnly) return;
         setActiveId(event.active.id as string);
         // Start a local session with a deep copy of members
         setDragSessionMembers([...members]);
-    }, [members]);
+    }, [members, readOnly]);
 
     const handleDragOver = React.useCallback((event: DragOverEvent) => {
+        if (readOnly) return;
         const { active, over } = event;
         if (!over || !dragSessionMembers) return;
 
@@ -164,9 +161,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 });
             });
         }
-    }, [autoMoveCouples, dragSessionMembers, groups, profileMode]);
+    }, [autoMoveCouples, dragSessionMembers, groups, profileMode, readOnly]);
 
     const handleDragEnd = React.useCallback((event: DragEndEvent) => {
+        if (readOnly) {
+            setActiveId(null);
+            setDragSessionMembers(null);
+            lastMoveRequestRef.current = null;
+            return;
+        }
         const { active, over } = event;
         const finalSessionMembers = dragSessionMembers;
 
@@ -231,7 +234,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
         const isCopy = (event.activatorEvent as any)?.shiftKey;
         onMoveMembers(Array.from(idsToMoveSet), targetGroupId, isCopy, targetIndex);
-    }, [autoMoveCouples, dragSessionMembers, groups, members, profileMode, selectedMemberIds, onMoveMembers]);
+    }, [autoMoveCouples, dragSessionMembers, groups, members, profileMode, selectedMemberIds, onMoveMembers, readOnly]);
 
     const getMembersByGroup = (groupId: string | null) => {
         return currentMembers.filter((m: any) => (m.group_id || null) === groupId);
@@ -297,6 +300,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             <div className="flex gap-8 px-2 items-start pb-20">
                 {/* Unassigned Column */}
                 <KanbanColumn
+                    key={`unassigned-${readOnly ? 'readonly' : 'editable'}`}
                     id="unassigned"
                     title="미편성 인원"
                     members={getMembersByGroup(null)}
@@ -307,18 +311,18 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     onDeleteMember={onDeleteMember}
                     isDeletableMap={isDeletableMap}
                     color="#94a3b8"
-                    onQuickAdd={onQuickAddMember ? (name) => onQuickAddMember(null, name) : undefined}
-                    onAddMembers={onAddMembers ? () => onAddMembers(null) : undefined}
+                    onAddMembers={!readOnly && onAddMembers ? () => onAddMembers(null) : undefined}
                     profileMode={profileMode}
                     activeId={activeId}
                     movingMembersCount={movingMembersCount}
                     autoMoveCouples={autoMoveCouples}
+                    readOnly={readOnly}
                 />
 
                 {/* Group Columns */}
                 {groups.map(group => (
                     <KanbanColumn
-                        key={group.id}
+                        key={`${group.id}-${readOnly ? 'readonly' : 'editable'}`}
                         id={group.id}
                         title={group.name}
                         color={group.color_hex || '#4f46e5'}
@@ -329,20 +333,24 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         onToggleLeader={onToggleLeader}
                         onDeleteMember={onDeleteMember}
                         isDeletableMap={isDeletableMap}
-                        onDelete={onDeleteGroup ? () => onDeleteGroup(group.id) : undefined}
-                        onUpdate={onUpdateGroup ? (updates) => onUpdateGroup(group.id, updates) : undefined}
-                        onQuickAdd={onQuickAddMember ? (name) => onQuickAddMember(group.id, name) : undefined}
-                        onAddMembers={onAddMembers ? () => onAddMembers(group.id) : undefined}
-                        autoFocusRename={lastAddedGroupId === group.id}
+                        onDelete={!readOnly && onDeleteGroup ? () => onDeleteGroup(group.id) : undefined}
+                        onUpdate={!readOnly && onUpdateGroup ? (updates) => onUpdateGroup(group.id, updates) : undefined}
+                        onAddMembers={!readOnly && onAddMembers ? () => onAddMembers(group.id) : undefined}
+                        autoFocusRename={!readOnly && lastAddedGroupId === group.id}
                         profileMode={profileMode}
                         activeId={activeId}
                         movingMembersCount={movingMembersCount}
                         autoMoveCouples={autoMoveCouples}
+                        readOnly={readOnly}
                     />
                 ))}
 
                 {/* Add Group Placeholder / Button */}
-                {!isAddingNew ? (
+                {readOnly ? (
+                    <div className="w-96 shrink-0 h-24 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 text-slate-400 shadow-sm">
+                        <span className="font-black text-xs uppercase tracking-widest">적용 완료 시즌은 읽기 전용입니다</span>
+                    </div>
+                ) : !isAddingNew ? (
                     <button
                         onClick={() => setIsAddingNew(true)}
                         className="w-96 shrink-0 h-24 border-2 border-dashed border-slate-300 dark:border-slate-800 rounded-2xl flex items-center justify-center group cursor-pointer hover:border-indigo-500/50 hover:bg-white dark:hover:bg-slate-900 transition-all active:scale-[0.98] shadow-sm"

@@ -37,6 +37,7 @@ import {
     buildRegroupingSeasonGroupsPayload,
     mapRegroupingSeasonDraftToBoard,
 } from '@/lib/regroupingSeasonPayloads';
+import { isRegroupingBoardReadonly } from '@/lib/regroupingSeasonUiState';
 
 const toDateInputValue = (date: Date) => {
     const year = date.getFullYear();
@@ -271,6 +272,7 @@ function RegroupingPageInner() {
         [regroupingSeasons, selectedSeasonId]
     );
     const isSelectedSeasonApplied = selectedSeason?.status === 'applied';
+    const isBoardReadonly = isRegroupingBoardReadonly(regroupingMode, selectedSeason?.status);
     const isSeasonEffectiveFuture = seasonEffectiveWeekDate > toDateInputValue(new Date());
     const canSaveSeasonDraft = regroupingMode === 'season' &&
         Boolean(selectedChurch) &&
@@ -1581,26 +1583,39 @@ function RegroupingPageInner() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-3 h-11 px-4 bg-indigo-50/70 dark:bg-indigo-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 shadow-sm">
-                            <CalendarDays className="w-4 h-4 text-indigo-500" />
-                            <div className="flex flex-col leading-none">
-                                <span className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.18em]">보정 주차</span>
-                                <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300">{formatRegroupingWeekLabel(effectiveWeekDate)}</span>
+                        {regroupingMode === 'live' ? (
+                            <div className="flex items-center gap-3 h-11 px-4 bg-amber-50/80 dark:bg-amber-950/20 rounded-2xl border border-amber-200 dark:border-amber-900/50 shadow-sm">
+                                <CalendarDays className="w-4 h-4 text-amber-500" />
+                                <div className="flex flex-col leading-none">
+                                    <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.18em]">보정 주차</span>
+                                    <span className="text-[10px] font-black text-amber-700 dark:text-amber-300">{formatRegroupingWeekLabel(effectiveWeekDate)}</span>
+                                </div>
+                                <input
+                                    type="date"
+                                    value={effectiveWeekDate}
+                                    max={getCurrentSundayInputValue()}
+                                    onChange={(event) => {
+                                        setEffectiveWeekDate(snapDateInputToSunday(event.target.value));
+                                        setHasChanges(true);
+                                    }}
+                                    className="h-8 w-[128px] rounded-xl border border-amber-100 dark:border-amber-800 bg-white/80 dark:bg-slate-950 px-2 text-[11px] font-black text-slate-700 dark:text-slate-200 outline-none focus:ring-4 focus:ring-amber-500/10"
+                                />
+                                <Tooltip content="현재/과거 보정은 저장 즉시 실제 소속과 호환 row를 변경합니다. 미래 조편성 준비는 시즌 초안에서 처리하세요.">
+                                    <span className="text-[10px] font-black text-amber-500 cursor-help">?</span>
+                                </Tooltip>
                             </div>
-                            <input
-                                type="date"
-                                value={effectiveWeekDate}
-                                max={getCurrentSundayInputValue()}
-                                onChange={(event) => {
-                                    setEffectiveWeekDate(snapDateInputToSunday(event.target.value));
-                                    setHasChanges(true);
-                                }}
-                                className="h-8 w-[128px] rounded-xl border border-indigo-100 dark:border-indigo-800 bg-white/80 dark:bg-slate-950 px-2 text-[11px] font-black text-slate-700 dark:text-slate-200 outline-none focus:ring-4 focus:ring-indigo-500/10"
-                            />
-                            <Tooltip content="이번 1차 적용은 현재/과거 주차 보정용입니다. 7월 조편성을 미리 저장하는 예약 기능은 다음 단계의 조편성 시즌/초안 기능으로 분리합니다.">
-                                <span className="text-[10px] font-black text-indigo-400 cursor-help">?</span>
-                            </Tooltip>
-                        </div>
+                        ) : (
+                            <div className="flex items-center gap-3 h-11 px-4 bg-indigo-50/80 dark:bg-indigo-950/20 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 shadow-sm">
+                                <CalendarDays className="w-4 h-4 text-indigo-500" />
+                                <div className="flex flex-col leading-none">
+                                    <span className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.18em]">시즌 적용 주차</span>
+                                    <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300">{formatRegroupingWeekLabel(seasonEffectiveWeekDate)}</span>
+                                </div>
+                                <span className="rounded-full bg-white/80 dark:bg-slate-950 px-2.5 py-1 text-[10px] font-black text-indigo-600 dark:text-indigo-300">
+                                    초안은 적용 전까지 앱/출석/기도에 반영되지 않음
+                                </span>
+                            </div>
+                        )}
 
                         {departments.find(d => d.id === selectedDeptId)?.profile_mode === 'couple' && (
                             <div className="flex items-center gap-2 h-11 px-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 mr-2">
@@ -1674,39 +1689,43 @@ function RegroupingPageInner() {
                             초기화
                         </button>
 
-                        <button
-                            onClick={handleSave}
-                            disabled={saving || !hasChanges || regroupingMode === 'season'}
-                            className={cn(
-                                "flex items-center gap-2 px-6 h-11 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:scale-100 border",
-                                hasChanges && regroupingMode === 'live'
-                                    ? "bg-indigo-600 text-white border-indigo-600 shadow-indigo-600/20 hover:bg-indigo-500"
-                                    : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 shadow-none"
-                            )}
-                        >
-                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            {saving ? '저장 중...' : '보정 저장'}
-                        </button>
+                        {regroupingMode === 'live' ? (
+                            <button
+                                onClick={handleSave}
+                                disabled={saving || !hasChanges}
+                                className={cn(
+                                    "flex items-center gap-2 px-6 h-11 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:scale-100 border",
+                                    hasChanges
+                                        ? "bg-amber-500 text-white border-amber-500 shadow-amber-500/20 hover:bg-amber-400"
+                                        : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 shadow-none"
+                                )}
+                            >
+                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                {saving ? '저장 중...' : '보정 저장'}
+                            </button>
+                        ) : (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveSeasonDraft}
+                                    disabled={saving || !canSaveSeasonDraft}
+                                    className="flex items-center gap-2 px-6 h-11 rounded-2xl bg-indigo-600 text-white border border-indigo-600 font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:border-slate-300 disabled:shadow-none"
+                                >
+                                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                    {selectedSeasonId ? '시즌 초안 갱신' : '시즌 초안 저장'}
+                                </button>
 
-                        <button
-                            type="button"
-                            onClick={handleSaveSeasonDraft}
-                            disabled={saving || !canSaveSeasonDraft}
-                            className="flex items-center gap-2 px-6 h-11 rounded-2xl bg-indigo-600 text-white border border-indigo-600 font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:border-slate-300 disabled:shadow-none"
-                        >
-                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            {selectedSeasonId ? '시즌 초안 갱신' : '시즌 초안 저장'}
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={handleApplySeason}
-                            disabled={saving || !canApplySeason}
-                            className="flex items-center gap-2 px-6 h-11 rounded-2xl bg-emerald-600 text-white border border-emerald-600 font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-emerald-600/20 hover:bg-emerald-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:border-slate-300 disabled:shadow-none"
-                        >
-                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            {isSelectedSeasonApplied ? '적용 완료' : isSeasonEffectiveFuture ? '적용 주차 대기' : '실제 소속에 적용'}
-                        </button>
+                                <button
+                                    type="button"
+                                    onClick={handleApplySeason}
+                                    disabled={saving || !canApplySeason}
+                                    className="flex items-center gap-2 px-6 h-11 rounded-2xl bg-emerald-600 text-white border border-emerald-600 font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-emerald-600/20 hover:bg-emerald-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:border-slate-300 disabled:shadow-none"
+                                >
+                                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                    {isSelectedSeasonApplied ? '적용 완료' : isSeasonEffectiveFuture ? '적용 주차 대기' : '실제 소속에 적용'}
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
@@ -1726,12 +1745,12 @@ function RegroupingPageInner() {
                         onAddGroup={handleAddGroup}
                         onDeleteGroup={handleDeleteGroup}
                         onUpdateGroup={handleUpdateGroup}
-                        onQuickAddMember={handleOpenAddMemberModal}
                         onAddMembers={handleOpenAddMemberModal}
                         profileMode={departments.find(d => d.id === selectedDeptId)?.profile_mode}
                         autoMoveCouples={autoMoveCouples}
                         onDeleteMember={handleDeleteMember}
                         isDeletableMap={isDeletableMap}
+                        readOnly={isBoardReadonly}
                     />
                 </div>
 

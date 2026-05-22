@@ -8,7 +8,15 @@ import { cn } from '@/lib/utils';
 
 interface DraggableCardProps {
     id: string; // unit id
-    members: any[];
+    members: Array<{
+        id: string;
+        full_name?: string | null;
+        role_in_group?: string;
+        is_linked?: boolean;
+        phone?: string | null;
+        avatar_url?: string;
+        spouse_name?: string | null;
+    }>;
     isSelected?: boolean;
     onClick: (memberId: string) => void;
     onDoubleClick?: (memberId: string) => void;
@@ -18,9 +26,10 @@ interface DraggableCardProps {
     onToggleLeader?: (id: string) => void;
     onDeleteMember?: (id: string) => void;
     isDeletableMap?: Record<string, boolean>;
+    readOnly?: boolean;
 }
 
-export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSelected, onClick, onDoubleClick, profileMode, isDraggingElsewhere, movingMembersCount = 1, onToggleLeader, onDeleteMember, isDeletableMap }) => {
+export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSelected, onClick, onDoubleClick, profileMode, isDraggingElsewhere, movingMembersCount = 1, onToggleLeader, onDeleteMember, isDeletableMap, readOnly = false }) => {
     const {
         attributes,
         listeners,
@@ -28,7 +37,7 @@ export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSel
         transform,
         transition,
         isDragging,
-    } = useSortable({ id });
+    } = useSortable({ id, disabled: readOnly });
 
     const isGhost = isDragging;
     const isHidden = isDraggingElsewhere;
@@ -55,10 +64,11 @@ export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSel
         <div
             ref={setNodeRef}
             style={style}
-            {...attributes}
-            {...listeners}
+            {...(readOnly ? {} : attributes)}
+            {...(readOnly ? {} : listeners)}
             className={cn(
-                "touch-none flex flex-col gap-2 relative",
+                "flex flex-col gap-2 relative",
+                readOnly ? "touch-auto cursor-default" : "touch-none",
                 isGhost && "border-2 border-dashed border-indigo-500/20 bg-indigo-500/5 dark:bg-indigo-400/5 rounded-2xl",
                 isHidden && "invisible"
             )}
@@ -70,12 +80,17 @@ export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSel
                 {members.map(member => (
                     <MemberBadge
                         key={member.id}
-                        member={member}
+                        member={{
+                            ...member,
+                            full_name: member.full_name || '이름 없음',
+                            phone: member.phone || undefined,
+                            spouse_name: member.spouse_name || undefined,
+                        }}
                         isSelected={isSelected}
                         onClick={() => onClick(member.id)}
                         onDoubleClick={() => onDoubleClick?.(member.id)}
-                        onToggleLeader={onToggleLeader}
-                        onDeleteMember={onDeleteMember}
+                        onToggleLeader={readOnly ? undefined : onToggleLeader}
+                        onDeleteMember={readOnly ? undefined : onDeleteMember}
                         isDeletable={isDeletableMap?.[member.id]}
                         profileMode={profileMode}
                     />
