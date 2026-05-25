@@ -2,6 +2,9 @@ export const isUuid = (value: unknown) =>
     typeof value === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
+const getDateText = (value: unknown) =>
+    typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+
 export const buildRegroupingSeasonGroupsPayload = (groups: Array<Record<string, unknown>>) =>
     groups.map((group, index) => {
         const id = typeof group.id === 'string' ? group.id : null;
@@ -24,6 +27,8 @@ export const buildRegroupingSeasonGroupsPayload = (groups: Array<Record<string, 
             leader_person_id: typeof group.leader_person_id === 'string' && isUuid(group.leader_person_id)
                 ? group.leader_person_id
                 : null,
+            starts_week_date: getDateText(group.starts_week_date),
+            ends_week_date: getDateText(group.ends_week_date),
         };
     });
 
@@ -59,6 +64,8 @@ export const buildRegroupingSeasonAssignmentsPayload = (members: Array<Record<st
                 source_member_directory_id: typeof member.id === 'string' && isUuid(member.id)
                     ? member.id
                     : null,
+                starts_week_date: getDateText(member.starts_week_date),
+                ends_week_date: getDateText(member.ends_week_date),
             };
         })
         .filter((assignment): assignment is NonNullable<typeof assignment> => assignment !== null);
@@ -93,6 +100,8 @@ export const mapRegroupingSeasonDraftToBoard = ({
                 name: String(group.name || ''),
                 color_hex: typeof group.color_hex === 'string' && group.color_hex ? group.color_hex : '#4f46e5',
                 sort_order: Number(group.sort_order || 0),
+                starts_week_date: getDateText(group.starts_week_date),
+                ends_week_date: getDateText(group.ends_week_date),
             };
         });
 
@@ -124,6 +133,8 @@ export const mapRegroupingSeasonDraftToBoard = ({
                 phase2_person_id: String(assignment.person_id || ''),
                 phase2_membership_id: typeof assignment.source_membership_id === 'string' ? assignment.source_membership_id : null,
                 source_member_directory_id: sourceDirectoryId,
+                starts_week_date: getDateText(assignment.starts_week_date),
+                ends_week_date: getDateText(assignment.ends_week_date),
             };
         });
 

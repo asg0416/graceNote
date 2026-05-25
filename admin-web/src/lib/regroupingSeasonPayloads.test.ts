@@ -12,8 +12,8 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
 
   assert.deepEqual(
     buildRegroupingSeasonGroupsPayload([
-      { id: existingGroupId, name: '기존 조', color_hex: '#123456' },
-      { id: planGroupId, plan_group_id: planGroupId, name: '초안 신규 조', color_hex: '#abcdef' },
+      { id: existingGroupId, name: '기존 조', color_hex: '#123456', starts_week_date: '2026-07-05' },
+      { id: planGroupId, plan_group_id: planGroupId, name: '초안 신규 조', color_hex: '#abcdef', ends_week_date: '2026-12-27' },
       { id: 'temp-1', name: '신규 조', color_hex: '#654321' },
     ]),
     [
@@ -25,6 +25,8 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
         color_hex: '#123456',
         sort_order: 0,
         leader_person_id: null,
+        starts_week_date: '2026-07-05',
+        ends_week_date: null,
       },
       {
         id: planGroupId,
@@ -34,6 +36,8 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
         color_hex: '#abcdef',
         sort_order: 1,
         leader_person_id: null,
+        starts_week_date: null,
+        ends_week_date: '2026-12-27',
       },
       {
         id: 'temp-1',
@@ -43,6 +47,8 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
         color_hex: '#654321',
         sort_order: 2,
         leader_person_id: null,
+        starts_week_date: null,
+        ends_week_date: null,
       },
     ]
   );
@@ -57,6 +63,8 @@ test('buildRegroupingSeasonAssignmentsPayload maps temp group ids and phase2 ids
         phase2_person_id: '33333333-3333-4333-8333-333333333333',
         phase2_membership_id: '44444444-4444-4444-8444-444444444444',
         role_in_group: 'leader',
+        starts_week_date: '2026-07-12',
+        ends_week_date: '2026-11-29',
       },
       {
         id: 'temp-new',
@@ -73,6 +81,8 @@ test('buildRegroupingSeasonAssignmentsPayload maps temp group ids and phase2 ids
         sort_order: 0,
         source_membership_id: '44444444-4444-4444-8444-444444444444',
         source_member_directory_id: '22222222-2222-4222-8222-222222222222',
+        starts_week_date: '2026-07-12',
+        ends_week_date: '2026-11-29',
       },
     ]
   );
@@ -87,6 +97,8 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
         name: '기존 조',
         color_hex: '#111111',
         sort_order: 1,
+        starts_week_date: '2026-01-04',
+        ends_week_date: '2026-06-28',
       },
       {
         id: '77777777-7777-4777-8777-777777777777',
@@ -94,6 +106,8 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
         name: '신규 조',
         color_hex: '#222222',
         sort_order: 2,
+        starts_week_date: '2026-07-05',
+        ends_week_date: null,
       },
     ],
     assignments: [
@@ -105,6 +119,8 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
         sort_order: 3,
         source_membership_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         source_member_directory_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        starts_week_date: '2026-07-05',
+        ends_week_date: '2026-12-27',
         people: { display_name: '김시즌', normalized_phone: '01011112222' },
         member_directory: {
           full_name: '김레거시',
@@ -130,6 +146,8 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
       name: '기존 조',
       color_hex: '#111111',
       sort_order: 1,
+      starts_week_date: '2026-01-04',
+      ends_week_date: '2026-06-28',
     },
     {
       id: '77777777-7777-4777-8777-777777777777',
@@ -138,6 +156,8 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
       name: '신규 조',
       color_hex: '#222222',
       sort_order: 2,
+      starts_week_date: '2026-07-05',
+      ends_week_date: null,
     },
   ]);
   assert.deepEqual(result.members, [
@@ -160,6 +180,8 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
       phase2_person_id: '99999999-9999-4999-8999-999999999999',
       phase2_membership_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       source_member_directory_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      starts_week_date: '2026-07-05',
+      ends_week_date: '2026-12-27',
     },
   ]);
 });

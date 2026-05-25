@@ -1448,7 +1448,7 @@ function RegroupingPageInner() {
             const [{ data: planGroups, error: groupsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
                 supabase
                     .from('regrouping_plan_groups')
-                    .select('id, source_group_id, name, color_hex, sort_order, leader_person_id')
+                    .select('id, source_group_id, name, color_hex, sort_order, leader_person_id, starts_week_date, ends_week_date')
                     .eq('season_id', seasonId)
                     .order('sort_order', { ascending: true })
                     .order('name', { ascending: true }),
@@ -1462,6 +1462,8 @@ function RegroupingPageInner() {
                         sort_order,
                         source_membership_id,
                         source_member_directory_id,
+                        starts_week_date,
+                        ends_week_date,
                         people:person_id(display_name, normalized_phone),
                         member_directory:source_member_directory_id(full_name, phone, family_name, spouse_name, children_info, birth_date, wedding_anniversary, notes, avatar_url, profile_id)
                     `)
@@ -2123,43 +2125,56 @@ function RegroupingPageInner() {
                                             </div>
                                         </label>
                                     ) : (
-                                        <div className="grid gap-2 sm:grid-cols-2">
-                                            <label className="space-y-1">
-                                                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">시작 주차</span>
-                                                <input
-                                                    type="date"
-                                                    value={seasonEffectiveWeekDate}
-                                                    disabled={isSelectedSeasonLocked}
-                                                    onChange={(event) => {
-                                                        const nextStart = snapDateInputToSunday(event.target.value);
-                                                        setSeasonEffectiveWeekDate(nextStart);
-                                                        if (seasonEndWeekDate < nextStart) {
-                                                            setSeasonEndWeekDate(addWeeksToDateInput(nextStart, 24));
-                                                        }
-                                                        setHasChanges(true);
-                                                    }}
-                                                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                                                />
-                                            </label>
-                                            <label className="space-y-1">
-                                                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">마지막 주차</span>
-                                                <input
-                                                    type="date"
-                                                    value={seasonEndWeekDate}
-                                                    min={seasonEffectiveWeekDate}
-                                                    disabled={isSelectedSeasonLocked}
-                                                    onChange={(event) => {
-                                                        setSeasonEndWeekDate(snapDateInputToSunday(event.target.value));
-                                                        setHasChanges(true);
-                                                    }}
-                                                    className={cn(
-                                                        "h-9 w-full rounded-lg border bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 disabled:bg-slate-100 disabled:text-slate-400 dark:bg-slate-950 dark:text-slate-100",
-                                                        isSeasonPeriodInvalid
-                                                            ? "border-rose-200 focus:ring-rose-500/10"
-                                                            : "border-slate-200 focus:ring-blue-500/10 dark:border-slate-800"
-                                                    )}
-                                                />
-                                            </label>
+                                        <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="mb-2 flex items-center justify-between gap-3">
+                                                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">기간 설정</span>
+                                                <span className="truncate text-[11px] font-black text-blue-600 dark:text-blue-300">{editorPeriodSummary}</span>
+                                            </div>
+                                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                                <label className="space-y-1.5">
+                                                    <span className="text-[11px] font-black text-slate-500">시작</span>
+                                                    <input
+                                                        type="date"
+                                                        value={seasonEffectiveWeekDate}
+                                                        disabled={isSelectedSeasonLocked}
+                                                        onChange={(event) => {
+                                                            const nextStart = snapDateInputToSunday(event.target.value);
+                                                            setSeasonEffectiveWeekDate(nextStart);
+                                                            if (seasonEndWeekDate < nextStart) {
+                                                                setSeasonEndWeekDate(addWeeksToDateInput(nextStart, 24));
+                                                            }
+                                                            setHasChanges(true);
+                                                        }}
+                                                        className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-700 outline-none transition focus:bg-white focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+                                                    />
+                                                    <span className="block text-[10px] font-black text-blue-600 dark:text-blue-300">{formatRegroupingWeekLabel(seasonEffectiveWeekDate)}</span>
+                                                </label>
+                                                <label className="space-y-1.5">
+                                                    <span className="text-[11px] font-black text-slate-500">종료</span>
+                                                    <input
+                                                        type="date"
+                                                        value={seasonEndWeekDate}
+                                                        min={seasonEffectiveWeekDate}
+                                                        disabled={isSelectedSeasonLocked}
+                                                        onChange={(event) => {
+                                                            setSeasonEndWeekDate(snapDateInputToSunday(event.target.value));
+                                                            setHasChanges(true);
+                                                        }}
+                                                        className={cn(
+                                                            "h-9 w-full rounded-lg border bg-slate-50 px-3 text-xs font-black text-slate-700 outline-none transition focus:bg-white focus:ring-4 disabled:bg-slate-100 disabled:text-slate-400 dark:bg-slate-900 dark:text-slate-100",
+                                                            isSeasonPeriodInvalid
+                                                                ? "border-rose-200 focus:ring-rose-500/10"
+                                                                : "border-slate-200 focus:ring-blue-500/10 dark:border-slate-800"
+                                                        )}
+                                                    />
+                                                    <span className={cn(
+                                                        "block text-[10px] font-black",
+                                                        isSeasonPeriodInvalid ? "text-rose-600" : "text-blue-600 dark:text-blue-300"
+                                                    )}>
+                                                        {isSeasonPeriodInvalid ? '기간 확인 필요' : `${formatRegroupingWeekLabel(seasonEndWeekDate)} · ${formatRegroupingDateLabel(addDaysToDateInput(seasonEndWeekDate, 6))}까지`}
+                                                    </span>
+                                                </label>
+                                            </div>
                                         </div>
                                     )}
                                     {!selectedSeasonId && !isSelectedCurrentAppliedSeason && (
@@ -2224,7 +2239,7 @@ function RegroupingPageInner() {
                                         </div>
                                         <label className="space-y-1.5">
                                             <span className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">이번 변경 적용 주차</span>
-                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                            <div className="space-y-1.5">
                                                 <input
                                                     type="date"
                                                     value={currentSeasonChangeWeekDate}
@@ -2234,9 +2249,9 @@ function RegroupingPageInner() {
                                                         setCurrentSeasonChangeWeekDate(snapDateInputToSunday(event.target.value));
                                                         setHasChanges(true);
                                                     }}
-                                                    className="h-10 w-full rounded-xl border border-blue-100 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 sm:w-[150px] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                                                    className="h-10 w-full rounded-xl border border-blue-100 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                                 />
-                                                <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-blue-600 dark:bg-slate-950 dark:text-blue-300">
+                                                <span className="block text-xs font-black text-blue-600 dark:text-blue-300">
                                                     {formatRegroupingWeekLabel(currentSeasonChangeWeekDate)}
                                                 </span>
                                             </div>
@@ -2252,7 +2267,7 @@ function RegroupingPageInner() {
                                     <>
                                         <label className="space-y-1.5">
                                             <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">적용 시작 주차</span>
-                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                            <div className="space-y-1.5">
                                                 <input
                                                     type="date"
                                                     value={seasonEffectiveWeekDate}
@@ -2265,16 +2280,16 @@ function RegroupingPageInner() {
                                                         }
                                                         setHasChanges(true);
                                                     }}
-                                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 sm:w-[150px] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                                 />
-                                                <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-blue-600 dark:bg-slate-950 dark:text-blue-300">
+                                                <span className="block text-xs font-black text-blue-600 dark:text-blue-300">
                                                     {formatRegroupingWeekLabel(seasonEffectiveWeekDate)}
                                                 </span>
                                             </div>
                                         </label>
                                         <label className="space-y-1.5">
                                             <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">마지막 적용 주차</span>
-                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                            <div className="space-y-1.5">
                                                 <input
                                                     type="date"
                                                     value={seasonEndWeekDate}
@@ -2285,14 +2300,14 @@ function RegroupingPageInner() {
                                                         setHasChanges(true);
                                                     }}
                                                     className={cn(
-                                                        "h-10 w-full rounded-xl border bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 disabled:bg-slate-100 disabled:text-slate-400 sm:w-[150px] dark:bg-slate-950 dark:text-slate-100",
+                                                        "h-10 w-full rounded-xl border bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 disabled:bg-slate-100 disabled:text-slate-400 dark:bg-slate-950 dark:text-slate-100",
                                                         isSeasonPeriodInvalid
                                                             ? "border-rose-200 focus:ring-rose-500/10"
                                                             : "border-slate-200 focus:ring-blue-500/10 dark:border-slate-800"
                                                     )}
                                                 />
                                                 <span className={cn(
-                                                    "rounded-full bg-white px-3 py-2 text-xs font-black dark:bg-slate-950",
+                                                    "block text-xs font-black",
                                                     isSeasonPeriodInvalid ? "text-rose-600" : "text-blue-600 dark:text-blue-300"
                                                 )}>
                                                     {isSeasonPeriodInvalid ? '기간 확인 필요' : `${formatRegroupingWeekLabel(seasonEndWeekDate)} · ${formatRegroupingDateLabel(addDaysToDateInput(seasonEndWeekDate, 6))}까지`}
