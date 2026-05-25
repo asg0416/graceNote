@@ -1986,8 +1986,8 @@ function RegroupingPageInner() {
                     </div>
                 </section>
             ) : (
-                <section className="sticky top-16 sm:top-20 z-30 space-y-4 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95">
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <section className="z-30 space-y-3 rounded-3xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur-xl md:sticky md:top-20 md:space-y-4 md:p-4 dark:border-slate-800 dark:bg-slate-950/95">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div className="min-w-0">
                             <button
                                 type="button"
@@ -2011,13 +2011,14 @@ function RegroupingPageInner() {
                                     </span>
                                 )}
                             </div>
-                            <p className="mt-1 text-sm font-semibold text-slate-500">{viewDescription}</p>
+                            <p className="mt-1 hidden text-sm font-semibold text-slate-500 md:block">{viewDescription}</p>
+                            <p className="mt-1 text-xs font-semibold text-slate-500 md:hidden">필수 항목만 먼저 설정하고 저장하세요.</p>
                         </div>
 
-                        <div className="flex flex-col gap-2 sm:flex-row">
+                        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row">
                             <button
                                 onClick={handleReset}
-                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:border-rose-200 hover:text-rose-600 active:scale-95 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:border-rose-200 hover:text-rose-600 active:scale-95 sm:px-4 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                             >
                                 <RotateCcw className="h-4 w-4" />
                                 변경 취소
@@ -2027,7 +2028,7 @@ function RegroupingPageInner() {
                                     onClick={handleSave}
                                     disabled={saving || !hasChanges}
                                     className={cn(
-                                        "inline-flex h-10 items-center justify-center gap-2 rounded-xl px-5 text-xs font-black text-white transition active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300",
+                                        "inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black text-white transition active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 sm:px-5",
                                         hasChanges ? "bg-amber-500 hover:bg-amber-400" : "bg-slate-300"
                                     )}
                                 >
@@ -2040,7 +2041,7 @@ function RegroupingPageInner() {
                                         type="button"
                                         onClick={handleSaveSeasonDraft}
                                         disabled={saving || !canSaveSeasonDraft}
-                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-xs font-black text-white transition hover:bg-blue-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-black text-white transition hover:bg-blue-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 sm:px-5"
                                     >
                                         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                         {isSelectedCurrentAppliedSeason ? '현재 시즌 저장' : '초안 저장'}
@@ -2049,7 +2050,7 @@ function RegroupingPageInner() {
                                         type="button"
                                         onClick={handleApplySeason}
                                         disabled={saving || !canApplySeason}
-                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-xs font-black text-white transition hover:bg-emerald-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white transition hover:bg-emerald-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 sm:px-5"
                                     >
                                         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                                         {isSelectedSeasonApplied ? '적용 완료' : isSeasonEffectiveFuture ? '적용 주차 대기' : '실제 소속에 적용'}
@@ -2060,14 +2061,14 @@ function RegroupingPageInner() {
                     </div>
 
                     <div className={cn(
-                        "grid gap-3 rounded-2xl border p-3 lg:grid-cols-[minmax(220px,1fr)_minmax(200px,0.75fr)_minmax(200px,0.75fr)_auto]",
+                        "grid gap-3 rounded-2xl border p-3 md:p-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(200px,0.75fr)_minmax(200px,0.75fr)_auto]",
                         regroupingMode === 'live'
                             ? "border-amber-200 bg-amber-50/70"
                             : "border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/60"
                     )}>
                         {regroupingMode === 'season' ? (
                             <>
-                                <label className="space-y-1.5">
+                                <label className="space-y-1.5 md:col-span-2 xl:col-span-1">
                                     <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">시즌 이름</span>
                                     <input
                                         type="text"
@@ -2088,7 +2089,7 @@ function RegroupingPageInner() {
                                         </div>
                                         <label className="space-y-1.5">
                                             <span className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">이번 변경 적용 주차</span>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                                 <input
                                                     type="date"
                                                     value={currentSeasonChangeWeekDate}
@@ -2098,14 +2099,14 @@ function RegroupingPageInner() {
                                                         setCurrentSeasonChangeWeekDate(snapDateInputToSunday(event.target.value));
                                                         setHasChanges(true);
                                                     }}
-                                                    className="h-10 w-[150px] rounded-xl border border-blue-100 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                                                    className="h-10 w-full rounded-xl border border-blue-100 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 sm:w-[150px] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                                 />
                                                 <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-blue-600 dark:bg-slate-950 dark:text-blue-300">
                                                     {formatRegroupingWeekLabel(currentSeasonChangeWeekDate)}
                                                 </span>
                                             </div>
                                         </label>
-                                        <div className="flex items-center rounded-xl bg-white px-4 py-3 text-xs font-semibold leading-5 text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                                        <div className="hidden items-center rounded-xl bg-white px-4 py-3 text-xs font-semibold leading-5 text-slate-600 md:flex dark:bg-slate-950 dark:text-slate-300">
                                             현재 시즌에서 조를 새로 만들거나 종료하고, 성도를 이동한 내용은 선택한 주차부터 실제 소속에 반영됩니다.
                                         </div>
                                     </>
@@ -2113,7 +2114,7 @@ function RegroupingPageInner() {
                                     <>
                                         <label className="space-y-1.5">
                                             <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">적용 시작 주차</span>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                                 <input
                                                     type="date"
                                                     value={seasonEffectiveWeekDate}
@@ -2126,7 +2127,7 @@ function RegroupingPageInner() {
                                                         }
                                                         setHasChanges(true);
                                                     }}
-                                                    className="h-10 w-[150px] rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                                                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 sm:w-[150px] dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                                 />
                                                 <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-blue-600 dark:bg-slate-950 dark:text-blue-300">
                                                     {formatRegroupingWeekLabel(seasonEffectiveWeekDate)}
@@ -2135,7 +2136,7 @@ function RegroupingPageInner() {
                                         </label>
                                         <label className="space-y-1.5">
                                             <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">마지막 적용 주차</span>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                                 <input
                                                     type="date"
                                                     value={seasonEndWeekDate}
@@ -2146,7 +2147,7 @@ function RegroupingPageInner() {
                                                         setHasChanges(true);
                                                     }}
                                                     className={cn(
-                                                        "h-10 w-[150px] rounded-xl border bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 disabled:bg-slate-100 disabled:text-slate-400 dark:bg-slate-950 dark:text-slate-100",
+                                                        "h-10 w-full rounded-xl border bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 disabled:bg-slate-100 disabled:text-slate-400 sm:w-[150px] dark:bg-slate-950 dark:text-slate-100",
                                                         isSeasonPeriodInvalid
                                                             ? "border-rose-200 focus:ring-rose-500/10"
                                                             : "border-slate-200 focus:ring-blue-500/10 dark:border-slate-800"
@@ -2160,7 +2161,7 @@ function RegroupingPageInner() {
                                                 </span>
                                             </div>
                                         </label>
-                                        <div className="flex flex-col gap-2 rounded-xl bg-white px-4 py-3 text-xs font-semibold leading-5 text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                                        <div className="hidden flex-col gap-2 rounded-xl bg-white px-4 py-3 text-xs font-semibold leading-5 text-slate-600 md:flex xl:col-span-2 dark:bg-slate-950 dark:text-slate-300">
                                             <span>미래 시즌은 조와 구성원 모두 이 시즌 기간 전체에 적용됩니다. 시즌 중간 변동은 현재 시즌에서 변경 주차를 정해 처리합니다.</span>
                                             {!selectedSeasonId && (
                                                 <button
@@ -2172,14 +2173,31 @@ function RegroupingPageInner() {
                                                 </button>
                                             )}
                                         </div>
+                                        <details className="rounded-xl border border-slate-200 bg-white px-3 py-2 md:hidden">
+                                            <summary className="cursor-pointer list-none text-[11px] font-black text-slate-600">
+                                                시즌 적용 설명 보기
+                                            </summary>
+                                            <p className="mt-2 text-[11px] font-semibold leading-5 text-slate-500">
+                                                미래 시즌은 조와 구성원 모두 시즌 기간 전체에 적용됩니다. 시즌 중간 변동은 현재 시즌 화면에서 변경 주차를 지정해 처리합니다.
+                                            </p>
+                                            {!selectedSeasonId && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleLoadCurrentBoardIntoSeason}
+                                                    className="mt-2 inline-flex h-8 w-fit items-center justify-center rounded-lg border border-slate-200 px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95"
+                                                >
+                                                    현재 조편성 불러오기
+                                                </button>
+                                            )}
+                                        </details>
                                     </>
                                 )}
                             </>
                         ) : (
                             <>
-                                <label className="space-y-1.5">
+                                <label className="space-y-1.5 md:col-span-2 xl:col-span-1">
                                     <span className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-600">보정 기준 주차</span>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                         <input
                                             type="date"
                                             value={effectiveWeekDate}
@@ -2188,14 +2206,14 @@ function RegroupingPageInner() {
                                                 setEffectiveWeekDate(snapDateInputToSunday(event.target.value));
                                                 setHasChanges(true);
                                             }}
-                                            className="h-10 w-[150px] rounded-xl border border-amber-100 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-amber-500/10"
+                                            className="h-10 w-full rounded-xl border border-amber-100 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-amber-500/10 sm:w-[150px]"
                                         />
                                         <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-amber-700">
                                             {formatRegroupingWeekLabel(effectiveWeekDate)}
                                         </span>
                                     </div>
                                 </label>
-                                <div className="lg:col-span-3 flex items-center rounded-xl bg-white px-4 py-3 text-xs font-semibold leading-5 text-amber-800">
+                                <div className="hidden md:flex md:col-span-2 xl:col-span-3 items-center rounded-xl bg-white px-4 py-3 text-xs font-semibold leading-5 text-amber-800">
                                     현재/과거 보정은 저장 즉시 실제 소속과 호환 row를 변경합니다. 미래 조편성 준비는 시즌 초안을 사용하세요.
                                 </div>
                             </>
