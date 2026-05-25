@@ -8,10 +8,12 @@ import {
 
 test('buildRegroupingSeasonGroupsPayload keeps client id and separates source group id', () => {
   const existingGroupId = '11111111-1111-4111-8111-111111111111';
+  const planGroupId = '55555555-5555-4555-8555-555555555555';
 
   assert.deepEqual(
     buildRegroupingSeasonGroupsPayload([
       { id: existingGroupId, name: '기존 조', color_hex: '#123456' },
+      { id: planGroupId, plan_group_id: planGroupId, name: '초안 신규 조', color_hex: '#abcdef' },
       { id: 'temp-1', name: '신규 조', color_hex: '#654321' },
     ]),
     [
@@ -25,12 +27,21 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
         leader_person_id: null,
       },
       {
+        id: planGroupId,
+        plan_group_id: planGroupId,
+        source_group_id: null,
+        name: '초안 신규 조',
+        color_hex: '#abcdef',
+        sort_order: 1,
+        leader_person_id: null,
+      },
+      {
         id: 'temp-1',
         plan_group_id: null,
         source_group_id: null,
         name: '신규 조',
         color_hex: '#654321',
-        sort_order: 1,
+        sort_order: 2,
         leader_person_id: null,
       },
     ]
@@ -95,7 +106,18 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
         source_membership_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         source_member_directory_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         people: { display_name: '김시즌', normalized_phone: '01011112222' },
-        member_directory: { full_name: '김레거시', phone: '01033334444' },
+        member_directory: {
+          full_name: '김레거시',
+          phone: '01033334444',
+          family_name: '김',
+          spouse_name: '이배우',
+          children_info: '자녀 1',
+          birth_date: '1990-01-01',
+          wedding_anniversary: '2015-05-05',
+          notes: '메모',
+          avatar_url: 'https://example.test/avatar.png',
+          profile_id: 'profile-1',
+        },
       },
     ],
   });
@@ -126,6 +148,14 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
       phone: '01033334444',
       group_id: '77777777-7777-4777-8777-777777777777',
       role_in_group: 'leader',
+      family_name: '김',
+      spouse_name: '이배우',
+      children_info: '자녀 1',
+      birth_date: '1990-01-01',
+      wedding_anniversary: '2015-05-05',
+      notes: '메모',
+      avatar_url: 'https://example.test/avatar.png',
+      profile_id: 'profile-1',
       person_id: '99999999-9999-4999-8999-999999999999',
       phase2_person_id: '99999999-9999-4999-8999-999999999999',
       phase2_membership_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',

@@ -29,6 +29,7 @@ const isSameKanbanGroup = (left: any, right: any) => {
     if (left.group_id && right.group_id && left.group_id === right.group_id) return true;
     const leftGroupName = (left.group_name || '').trim();
     const rightGroupName = (right.group_name || '').trim();
+    if (!left.group_id && !right.group_id && !leftGroupName && !rightGroupName) return true;
     return Boolean(leftGroupName) && leftGroupName === rightGroupName;
 };
 
@@ -221,11 +222,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         idsToMoveSet.add(activeUnitId);
 
         if (autoMoveCouples && profileMode === 'couple' && finalActiveMember.spouse_name) {
-            const originalActiveMember = members.find(m => m.id === activeUnitId);
-            const spouse = members.find(s => // Use members prop to find original spouse
+            const spouse = finalSessionMembers.find(s =>
                 s.full_name === finalActiveMember.spouse_name &&
                 s.spouse_name === finalActiveMember.full_name &&
-                isSameKanbanGroup(s, originalActiveMember)
+                isSameKanbanGroup(s, finalActiveMember)
             );
             if (spouse) idsToMoveSet.add(spouse.id);
         }
@@ -234,7 +234,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
         const isCopy = (event.activatorEvent as any)?.shiftKey;
         onMoveMembers(Array.from(idsToMoveSet), targetGroupId, isCopy, targetIndex);
-    }, [autoMoveCouples, dragSessionMembers, groups, members, profileMode, selectedMemberIds, onMoveMembers, readOnly]);
+    }, [autoMoveCouples, dragSessionMembers, groups, profileMode, selectedMemberIds, onMoveMembers, readOnly]);
 
     const getMembersByGroup = (groupId: string | null) => {
         return currentMembers.filter((m: any) => (m.group_id || null) === groupId);

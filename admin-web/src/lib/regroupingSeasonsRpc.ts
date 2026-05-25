@@ -27,6 +27,7 @@ export const createRegroupingSeason = async (
         departmentId: string;
         title: string;
         effectiveWeekDate: string;
+        endWeekDate?: string | null;
     }
 ) => {
     const { data, error } = await supabase.rpc<string>('create_regrouping_season', {
@@ -34,11 +35,38 @@ export const createRegroupingSeason = async (
         p_department_id: payload.departmentId,
         p_title: payload.title,
         p_effective_week_date: payload.effectiveWeekDate,
+        p_end_week_date: payload.endWeekDate || null,
     });
 
     assertNoRpcError(error, '조편성 계획 생성에 실패했습니다.');
     if (!data) {
         throw new Error('조편성 계획 ID를 받지 못했습니다.');
+    }
+
+    return data;
+};
+
+export const registerCurrentRegroupingSeason = async (
+    supabase: RpcClientLike,
+    payload: {
+        churchId: string;
+        departmentId: string;
+        title: string;
+        effectiveWeekDate: string;
+        endWeekDate?: string | null;
+    }
+) => {
+    const { data, error } = await supabase.rpc<string>('register_current_regrouping_season', {
+        p_church_id: payload.churchId,
+        p_department_id: payload.departmentId,
+        p_title: payload.title,
+        p_effective_week_date: payload.effectiveWeekDate,
+        p_end_week_date: payload.endWeekDate || null,
+    });
+
+    assertNoRpcError(error, '현재 조편성 시즌 등록에 실패했습니다.');
+    if (!data) {
+        throw new Error('현재 조편성 시즌 ID를 받지 못했습니다.');
     }
 
     return data;
@@ -76,12 +104,14 @@ export const updateRegroupingSeason = async (
         seasonId: string;
         title: string;
         effectiveWeekDate: string;
+        endWeekDate?: string | null;
     }
 ) => {
     const { error } = await supabase.rpc('update_regrouping_season', {
         p_season_id: payload.seasonId,
         p_title: payload.title,
         p_effective_week_date: payload.effectiveWeekDate,
+        p_end_week_date: payload.endWeekDate || null,
     });
 
     assertNoRpcError(error, '조편성 계획 정보 수정에 실패했습니다.');
@@ -98,4 +128,24 @@ export const applyRegroupingSeason = async (
     assertNoRpcError(error, '조편성 계획 적용에 실패했습니다.');
 
     return data;
+};
+
+export const syncCurrentRegroupingSeasonPlanFromLive = async (
+    supabase: RpcClientLike,
+    payload: { seasonId: string }
+) => {
+    const { data, error } = await supabase.rpc<Array<{
+        plan_group_count: number;
+        assignment_count: number;
+    }>>('sync_current_regrouping_season_plan_from_live', {
+        p_season_id: payload.seasonId,
+    });
+
+    assertNoRpcError(error, '현재 시즌 조편성 동기화에 실패했습니다.');
+
+    const first = Array.isArray(data) ? data[0] : null;
+    return {
+        planGroupCount: first?.plan_group_count ?? 0,
+        assignmentCount: first?.assignment_count ?? 0,
+    };
 };

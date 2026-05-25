@@ -3,7 +3,9 @@ import test from 'node:test';
 import {
   applyRegroupingSeason,
   createRegroupingSeason,
+  registerCurrentRegroupingSeason,
   saveRegroupingSeasonDraft,
+  syncCurrentRegroupingSeasonPlanFromLive,
   updateRegroupingSeason,
 } from './regroupingSeasonsRpc.ts';
 
@@ -32,6 +34,7 @@ test('createRegroupingSeason sends the season creation payload', async () => {
     departmentId: 'department-1',
     title: '2026년 3분기 조편성',
     effectiveWeekDate: '2026-07-05',
+    endWeekDate: '2026-12-27',
   });
 
   assert.equal(result, 'season-1');
@@ -43,6 +46,7 @@ test('createRegroupingSeason sends the season creation payload', async () => {
         p_department_id: 'department-1',
         p_title: '2026년 3분기 조편성',
         p_effective_week_date: '2026-07-05',
+        p_end_week_date: '2026-12-27',
       },
     },
   ]);
@@ -73,6 +77,32 @@ test('saveRegroupingSeasonDraft returns normalized saved counts', async () => {
   ]);
 });
 
+test('registerCurrentRegroupingSeason sends the current live season registration payload', async () => {
+  const { client, calls } = createRpcClient({ data: 'season-live-1', error: null });
+
+  const result = await registerCurrentRegroupingSeason(client, {
+    churchId: 'church-1',
+    departmentId: 'department-1',
+    title: '예닮부 현재 조편성',
+    effectiveWeekDate: '2026-05-03',
+    endWeekDate: '2026-06-28',
+  });
+
+  assert.equal(result, 'season-live-1');
+  assert.deepEqual(calls, [
+    {
+      functionName: 'register_current_regrouping_season',
+      args: {
+        p_church_id: 'church-1',
+        p_department_id: 'department-1',
+        p_title: '예닮부 현재 조편성',
+        p_effective_week_date: '2026-05-03',
+        p_end_week_date: '2026-06-28',
+      },
+    },
+  ]);
+});
+
 test('updateRegroupingSeason sends season metadata changes without live writes', async () => {
   const { client, calls } = createRpcClient({ data: null, error: null });
 
@@ -80,6 +110,7 @@ test('updateRegroupingSeason sends season metadata changes without live writes',
     seasonId: 'season-1',
     title: '2026년 3분기 수정',
     effectiveWeekDate: '2026-07-12',
+    endWeekDate: '2026-12-27',
   });
 
   assert.deepEqual(calls, [
@@ -89,6 +120,7 @@ test('updateRegroupingSeason sends season metadata changes without live writes',
         p_season_id: 'season-1',
         p_title: '2026년 3분기 수정',
         p_effective_week_date: '2026-07-12',
+        p_end_week_date: '2026-12-27',
       },
     },
   ]);
@@ -104,4 +136,25 @@ test('applyRegroupingSeason surfaces rpc errors', async () => {
     () => applyRegroupingSeason(client, { seasonId: 'season-1' }),
     /season already applied/
   );
+});
+
+test('syncCurrentRegroupingSeasonPlanFromLive returns normalized synced counts', async () => {
+  const { client, calls } = createRpcClient({
+    data: [{ plan_group_count: 3, assignment_count: 12 }],
+    error: null,
+  });
+
+  const result = await syncCurrentRegroupingSeasonPlanFromLive(client, {
+    seasonId: 'season-current',
+  });
+
+  assert.deepEqual(result, { planGroupCount: 3, assignmentCount: 12 });
+  assert.deepEqual(calls, [
+    {
+      functionName: 'sync_current_regrouping_season_plan_from_live',
+      args: {
+        p_season_id: 'season-current',
+      },
+    },
+  ]);
 });

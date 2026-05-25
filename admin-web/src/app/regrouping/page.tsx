@@ -17,6 +17,12 @@ import {
     FileDown,
     Image as ImageIcon,
     CalendarDays,
+    ArrowLeft,
+    Plus,
+    CheckCircle2,
+    Clock3,
+    ShieldAlert,
+    PencilLine,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import * as htmlToImage from 'html-to-image';
@@ -30,7 +36,9 @@ import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
 import {
     applyRegroupingSeason,
     createRegroupingSeason,
+    registerCurrentRegroupingSeason,
     saveRegroupingSeasonDraft,
+    syncCurrentRegroupingSeasonPlanFromLive,
     updateRegroupingSeason,
 } from '@/lib/regroupingSeasonsRpc';
 import {
@@ -38,7 +46,6 @@ import {
     buildRegroupingSeasonGroupsPayload,
     mapRegroupingSeasonDraftToBoard,
 } from '@/lib/regroupingSeasonPayloads';
-import { isRegroupingBoardReadonly } from '@/lib/regroupingSeasonUiState';
 
 const toDateInputValue = (date: Date) => {
     const year = date.getFullYear();
@@ -54,6 +61,19 @@ const getCurrentSundayInputValue = () => {
     return toDateInputValue(sunday);
 };
 
+const addWeeksToDateInput = (value: string, weekCount: number) => {
+    const base = new Date(`${snapDateInputToSunday(value)}T00:00:00`);
+    base.setDate(base.getDate() + weekCount * 7);
+    return toDateInputValue(base);
+};
+
+const addDaysToDateInput = (value: string, dayCount: number) => {
+    const base = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(base.getTime())) return value;
+    base.setDate(base.getDate() + dayCount);
+    return toDateInputValue(base);
+};
+
 const snapDateInputToSunday = (value: string) => {
     if (!value) return getCurrentSundayInputValue();
     const date = new Date(`${value}T00:00:00`);
@@ -66,6 +86,63 @@ const formatRegroupingWeekLabel = (value: string) => {
     if (!value) return '선택 안 됨';
     const [, month, day] = value.split('-');
     return `${Number(month)}월 ${Math.floor((Number(day) - 1) / 7) + 1}주차`;
+};
+
+const formatRegroupingPeriodLabel = (startValue?: string | null, endValue?: string | null) => {
+    const start = startValue ? formatRegroupingDateLabel(startValue) : '시작 미정';
+    const end = endValue ? formatRegroupingDateLabel(addDaysToDateInput(endValue, 6)) : '종료 미정';
+    return `${start} ~ ${end}`;
+};
+
+const formatRegroupingDateLabel = (value?: string | null) => {
+    if (!value) return '날짜 미정';
+    const [year, month, day] = value.split('-');
+    return `${year}.${Number(month)}.${Number(day)}.`;
+};
+
+const isSeasonCoveringDate = (season: any, dateInputValue: string) => {
+    if (!season?.effective_week_date || season.effective_week_date > dateInputValue) {
+        return false;
+    }
+
+    if (!season.end_week_date) return true;
+    return addDaysToDateInput(season.end_week_date, 6) >= dateInputValue;
+};
+
+const getSeasonStatusMeta = (season: any, todayInputValue: string) => {
+    if (season?.status === 'applied') {
+        if (!isSeasonCoveringDate(season, todayInputValue)) {
+            return {
+                label: '적용 이력',
+                description: '기간이 지난 조편성 기록입니다.',
+                icon: CheckCircle2,
+                className: 'bg-slate-50 text-slate-600 border-slate-200',
+            };
+        }
+
+        return {
+            label: '현재 적용',
+            description: '현재 날짜에 사용하는 조편성입니다.',
+            icon: CheckCircle2,
+            className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        };
+    }
+
+    if (season?.effective_week_date && season.effective_week_date > todayInputValue) {
+        return {
+            label: '적용 대기',
+            description: '적용 주차 전까지 앱과 출석/기도에는 반영되지 않습니다.',
+            icon: Clock3,
+            className: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+        };
+    }
+
+    return {
+        label: '초안',
+        description: '검토 후 실제 소속에 적용할 수 있습니다.',
+        icon: PencilLine,
+        className: 'bg-amber-50 text-amber-700 border-amber-200',
+    };
 };
 
 const getRegroupingIdentityKey = (member: any) => {
@@ -123,6 +200,7 @@ const isSameRegroupingGroup = (left: any, right: any) => {
     if (left.group_id && right.group_id && left.group_id === right.group_id) return true;
     const leftGroupName = (left.group_name || '').trim();
     const rightGroupName = (right.group_name || '').trim();
+    if (!left.group_id && !right.group_id && !leftGroupName && !rightGroupName) return true;
     return Boolean(leftGroupName) && leftGroupName === rightGroupName;
 };
 
@@ -196,6 +274,15 @@ const applyCanonicalFamilyInfo = (sourceMembers: any[]) => {
     });
 };
 
+const buildUnassignedRegroupingMembers = (sourceMembers: any[]) => {
+    return normalizeRegroupingDisplayMembers(sourceMembers).map(member => ({
+        ...member,
+        group_id: null,
+        group_name: null,
+        role_in_group: 'member',
+    }));
+};
+
 export default function RegroupingPage() {
     return (
         <Suspense fallback={
@@ -215,6 +302,8 @@ function RegroupingPageInner() {
     const [members, setMembers] = useState<any[]>([]);
     const [localMembers, setLocalMembers] = useState<any[]>([]); // Draft state
     const [groups, setGroups] = useState<any[]>([]);
+    const [boardBaselineMembers, setBoardBaselineMembers] = useState<any[]>([]);
+    const [boardBaselineGroups, setBoardBaselineGroups] = useState<any[]>([]);
     const [departments, setDepartments] = useState<any[]>([]);
     const [churches, setChurches] = useState<any[]>([]);
 
@@ -232,11 +321,16 @@ function RegroupingPageInner() {
     const [isExporting, setIsExporting] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [effectiveWeekDate, setEffectiveWeekDate] = useState(getCurrentSundayInputValue);
+    const [regroupingView, setRegroupingView] = useState<'list' | 'seasonEditor' | 'liveCorrection'>('list');
     const [regroupingMode, setRegroupingMode] = useState<'season' | 'live'>('season');
     const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
     const [regroupingSeasons, setRegroupingSeasons] = useState<any[]>([]);
     const [seasonTitle, setSeasonTitle] = useState('');
     const [seasonEffectiveWeekDate, setSeasonEffectiveWeekDate] = useState(getCurrentSundayInputValue);
+    const [seasonEndWeekDate, setSeasonEndWeekDate] = useState(() => addWeeksToDateInput(getCurrentSundayInputValue(), 24));
+    const [currentSeasonChangeWeekDate, setCurrentSeasonChangeWeekDate] = useState(getCurrentSundayInputValue);
+    const [currentRegistrationStartWeek, setCurrentRegistrationStartWeek] = useState(getCurrentSundayInputValue);
+    const [currentRegistrationEndWeek, setCurrentRegistrationEndWeek] = useState(() => addWeeksToDateInput(getCurrentSundayInputValue(), 24));
     const [, setPhase2RegroupingCheck] = useState<{
         status: 'idle' | 'ok' | 'warning' | 'unavailable';
         legacyActiveCount: number;
@@ -272,17 +366,49 @@ function RegroupingPageInner() {
         () => regroupingSeasons.find(season => season.id === selectedSeasonId) || null,
         [regroupingSeasons, selectedSeasonId]
     );
+    const todayInputValue = toDateInputValue(new Date());
+    const currentAppliedSeason = useMemo(() => {
+        const appliedSeasons = regroupingSeasons
+            .filter(season => season.status === 'applied' && season.effective_week_date <= todayInputValue)
+            .sort((left, right) => String(right.effective_week_date).localeCompare(String(left.effective_week_date)));
+        return appliedSeasons.find(season => isSeasonCoveringDate(season, todayInputValue)) || appliedSeasons[0] || null;
+    }, [regroupingSeasons, todayInputValue]);
+    const isCurrentAppliedSeasonExpired = Boolean(currentAppliedSeason) && !isSeasonCoveringDate(currentAppliedSeason, todayInputValue);
     const isSelectedSeasonApplied = selectedSeason?.status === 'applied';
-    const isBoardReadonly = isRegroupingBoardReadonly(regroupingMode, selectedSeason?.status);
+    const isSelectedCurrentAppliedSeason = Boolean(
+        selectedSeason &&
+        currentAppliedSeason &&
+        selectedSeason.status === 'applied' &&
+        selectedSeason.id === currentAppliedSeason.id &&
+        !isCurrentAppliedSeasonExpired
+    );
+    const isSelectedSeasonLocked = isSelectedSeasonApplied && !isSelectedCurrentAppliedSeason;
+    const isBoardReadonly = regroupingMode === 'season' && isSelectedSeasonLocked;
     const isSeasonEffectiveFuture = seasonEffectiveWeekDate > toDateInputValue(new Date());
+    const isSeasonPeriodInvalid = Boolean(seasonEndWeekDate) && seasonEndWeekDate < seasonEffectiveWeekDate;
+    const isCurrentRegistrationPeriodInvalid = Boolean(currentRegistrationEndWeek) && currentRegistrationEndWeek < currentRegistrationStartWeek;
     const canSaveSeasonDraft = regroupingMode === 'season' &&
         Boolean(selectedChurch) &&
         Boolean(selectedDepartment) &&
-        !isSelectedSeasonApplied;
+        !isSelectedSeasonLocked &&
+        !isSeasonPeriodInvalid;
     const canApplySeason = regroupingMode === 'season' &&
         Boolean(selectedSeasonId) &&
         !isSelectedSeasonApplied &&
-        !isSeasonEffectiveFuture;
+        !isSeasonEffectiveFuture &&
+        !isSeasonPeriodInvalid;
+    const viewTitle = regroupingView === 'list'
+        ? '조편성 시즌'
+        : regroupingMode === 'live'
+            ? '현재/과거 조편성 보정'
+            : selectedSeasonId
+                ? '시즌 조편성 편집'
+                : '새 조편성 만들기';
+    const viewDescription = regroupingView === 'list'
+        ? '시즌을 선택하거나 새 조편성을 만들어 적용 주차별 소속을 관리합니다.'
+        : regroupingMode === 'live'
+            ? '저장 즉시 실제 소속과 호환 데이터가 변경되는 예외 작업입니다.'
+            : '초안은 저장해도 적용 전까지 앱, 출석, 기도 화면에 반영되지 않습니다.';
 
     // Calculate duplicate status for members (only show delete button if duplicated)
     const isDeletableMap = useMemo(() => {
@@ -385,7 +511,7 @@ function RegroupingPageInner() {
     const fetchRegroupingSeasons = async (churchId: string, deptId: string) => {
         const { data, error } = await supabase
             .from('regrouping_seasons')
-            .select('id, title, status, effective_week_date, updated_at, created_at')
+            .select('id, title, status, effective_week_date, end_week_date, updated_at, created_at')
             .eq('church_id', churchId)
             .eq('department_id', deptId)
             .in('status', ['draft', 'ready', 'applied'])
@@ -446,6 +572,7 @@ function RegroupingPageInner() {
             .eq('is_active', true)
             .order('name');
         setGroups(data || []);
+        setBoardBaselineGroups(data || []);
     };
 
     const fetchPhase2PersonMap = async (directoryIds: string[]) => {
@@ -517,6 +644,7 @@ function RegroupingPageInner() {
         await refreshPhase2RegroupingCheck(membersWithGroupId, churchId, deptId);
         setMembers(membersWithGroupId);
         setLocalMembers(JSON.parse(JSON.stringify(membersWithGroupId)));
+        setBoardBaselineMembers(JSON.parse(JSON.stringify(membersWithGroupId)));
         setHasChanges(false);
         setLoading(false);
     };
@@ -1169,9 +1297,26 @@ function RegroupingPageInner() {
             return;
         }
 
-        if (isSelectedSeasonApplied) {
-            alert('이미 실제 소속에 적용된 시즌은 수정할 수 없습니다.');
+        if (isSelectedSeasonLocked) {
+            alert('기간이 지난 적용 시즌은 수정할 수 없습니다.');
             return;
+        }
+
+        if (isSeasonPeriodInvalid) {
+            alert('종료 주차는 시작 주차보다 빠를 수 없습니다.');
+            return;
+        }
+
+        if (isSelectedCurrentAppliedSeason) {
+            if (currentSeasonChangeWeekDate > getCurrentSundayInputValue()) {
+                alert('현재 시즌 변경 적용 주차는 미래로 설정할 수 없습니다. 미래 조편성은 새 시즌 초안으로 준비하세요.');
+                return;
+            }
+
+            if (currentSeasonChangeWeekDate < seasonEffectiveWeekDate) {
+                alert('현재 시즌 변경 적용 주차는 시즌 시작 주차보다 빠를 수 없습니다.');
+                return;
+            }
         }
 
         setSaving(true);
@@ -1183,6 +1328,7 @@ function RegroupingPageInner() {
                 departmentId: selectedDepartment.id,
                 title,
                 effectiveWeekDate: seasonEffectiveWeekDate,
+                endWeekDate: seasonEndWeekDate,
             });
 
             if (selectedSeasonId) {
@@ -1190,6 +1336,7 @@ function RegroupingPageInner() {
                     seasonId: selectedSeasonId,
                     title,
                     effectiveWeekDate: seasonEffectiveWeekDate,
+                    endWeekDate: seasonEndWeekDate,
                 });
             }
 
@@ -1202,6 +1349,60 @@ function RegroupingPageInner() {
                 ? expandCoupleMovesBeforeSave(displayLocalMembers, members)
                 : displayLocalMembers;
 
+            if (isSelectedCurrentAppliedSeason) {
+                const liveGroupIdByBoardGroupId = new Map(
+                    groups.map(group => [
+                        group.id,
+                        group.source_group_id || group.id
+                    ])
+                );
+
+                const savedDirectoryIds = await saveRegroupingMemberships(supabase, {
+                    churchId: selectedChurch.id,
+                    departmentId: selectedDepartment.id,
+                    groups: groups.map(group => ({
+                        id: group.source_group_id || group.id,
+                        name: group.name,
+                        color_hex: group.color_hex,
+                    })),
+                    assignments: membersToSave.map(member => ({
+                        id: member.source_member_directory_id || member.id,
+                        full_name: member.full_name,
+                        phone: member.phone || '',
+                        group_id: member.group_id
+                            ? liveGroupIdByBoardGroupId.get(member.group_id) || member.group_id
+                            : null,
+                        role_in_group: member.role_in_group || 'member',
+                        family_name: member.family_name || null,
+                        spouse_name: member.spouse_name || null,
+                        children_info: member.children_info || null,
+                        birth_date: member.birth_date || null,
+                        wedding_anniversary: member.wedding_anniversary || null,
+                        notes: member.notes || null,
+                        avatar_url: member.avatar_url || null,
+                        person_id: member.person_id || null,
+                        phase2_person_id: member.phase2_person_id || null,
+                        profile_id: member.profile_id || null,
+                    })),
+                    effectiveWeekDate: currentSeasonChangeWeekDate,
+                });
+
+                await assertPhase2MemberDirectorySync(
+                    supabase,
+                    savedDirectoryIds,
+                    '현재 시즌 조편성 저장'
+                );
+
+                await syncCurrentRegroupingSeasonPlanFromLive(supabase, { seasonId });
+                setHasChanges(false);
+                await Promise.all([
+                    fetchData(),
+                    fetchRegroupingSeasons(selectedChurch.id, selectedDepartment.id),
+                ]);
+                alert('현재 시즌 조편성을 저장했습니다.');
+                return;
+            }
+
             const result = await saveRegroupingSeasonDraft(supabase, {
                 seasonId,
                 groups: buildRegroupingSeasonGroupsPayload(groups),
@@ -1209,6 +1410,8 @@ function RegroupingPageInner() {
             });
 
             setHasChanges(false);
+            setBoardBaselineGroups(JSON.parse(JSON.stringify(groups)));
+            setBoardBaselineMembers(JSON.parse(JSON.stringify(localMembers)));
             await fetchRegroupingSeasons(selectedChurch.id, selectedDepartment.id);
             alert(`시즌 초안이 저장되었습니다. 조 ${result.planGroupCount}개, 소속 ${result.assignmentCount}개`);
         } catch (error) {
@@ -1265,10 +1468,15 @@ function RegroupingPageInner() {
             setSelectedSeasonId(seasonId);
             setSeasonTitle(season.title || '');
             setSeasonEffectiveWeekDate(season.effective_week_date || getCurrentSundayInputValue());
+            setSeasonEndWeekDate(season.end_week_date || addWeeksToDateInput(season.effective_week_date || getCurrentSundayInputValue(), 24));
+            setCurrentSeasonChangeWeekDate(getCurrentSundayInputValue());
             setGroups(mapped.groups);
             setLocalMembers(mapped.members);
+            setBoardBaselineGroups(JSON.parse(JSON.stringify(mapped.groups)));
+            setBoardBaselineMembers(JSON.parse(JSON.stringify(mapped.members)));
             setHasChanges(false);
             setRegroupingMode('season');
+            setRegroupingView('seasonEditor');
         } catch (error) {
             console.error('Load regrouping season draft error:', error);
             alert(error instanceof Error ? error.message : '시즌 초안을 불러오는 중 오류가 발생했습니다.');
@@ -1312,14 +1520,107 @@ function RegroupingPageInner() {
         }
     };
 
+    const handleStartBlankSeason = async () => {
+        if (hasChanges && !window.confirm('현재 화면의 저장되지 않은 변경 사항을 버리고 새 조편성을 시작할까요?')) {
+            return;
+        }
+
+        const defaultStartWeek = getCurrentSundayInputValue();
+        const unassignedMembers = buildUnassignedRegroupingMembers(members.length > 0 ? members : localMembers);
+        setRegroupingMode('season');
+        setRegroupingView('seasonEditor');
+        setSelectedSeasonId(null);
+        setSeasonTitle('');
+        setSeasonEffectiveWeekDate(defaultStartWeek);
+        setSeasonEndWeekDate(addWeeksToDateInput(defaultStartWeek, 24));
+        setCurrentSeasonChangeWeekDate(defaultStartWeek);
+        setGroups([]);
+        setLocalMembers(unassignedMembers);
+        setBoardBaselineGroups([]);
+        setBoardBaselineMembers(JSON.parse(JSON.stringify(unassignedMembers)));
+        setHasChanges(false);
+    };
+
+    const handleRegisterCurrentSeason = async () => {
+        if (!selectedChurch || !selectedDepartment) {
+            alert('교회와 부서를 먼저 선택하세요.');
+            return;
+        }
+
+        if (!hasActiveBoard) {
+            await handleStartBlankSeason();
+            return;
+        }
+
+        if (isCurrentRegistrationPeriodInvalid) {
+            alert('현재 조편성 시즌 종료 주차는 시작 주차보다 빠를 수 없습니다.');
+            return;
+        }
+
+        const title = `${selectedDepartment.name} 현재 조편성`;
+        if (!window.confirm(`${title}을(를) 시즌으로 등록할까요? 실제 조/성도 소속은 다시 저장하지 않고, 현재 상태를 시즌 기록으로만 남깁니다.`)) {
+            return;
+        }
+
+        setSaving(true);
+
+        try {
+            await registerCurrentRegroupingSeason(supabase, {
+                churchId: selectedChurch.id,
+                departmentId: selectedDepartment.id,
+                title,
+                effectiveWeekDate: currentRegistrationStartWeek,
+                endWeekDate: currentRegistrationEndWeek,
+            });
+            await fetchRegroupingSeasons(selectedChurch.id, selectedDepartment.id);
+            alert('현재 조편성을 시즌으로 등록했습니다.');
+        } catch (error) {
+            console.error('Register current regrouping season error:', error);
+            alert(error instanceof Error ? error.message : '현재 조편성 시즌 등록 중 오류가 발생했습니다.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleLoadCurrentBoardIntoSeason = async () => {
+        if (!window.confirm('현재 조편성을 이 시즌 초안의 시작점으로 불러올까요? 지금 편집 중인 배치는 현재 소속 기준으로 덮어씁니다.')) {
+            return;
+        }
+
+        await fetchData();
+        setBoardBaselineGroups(JSON.parse(JSON.stringify(groups)));
+        setBoardBaselineMembers(JSON.parse(JSON.stringify(localMembers)));
+        setHasChanges(true);
+    };
+
+    const handleBackToSeasonList = async () => {
+        if (hasChanges && !window.confirm('저장되지 않은 변경 사항을 버리고 시즌 목록으로 돌아갈까요?')) {
+            return;
+        }
+
+        setRegroupingView('list');
+        setRegroupingMode('season');
+        setSelectedSeasonId(null);
+        setSeasonTitle('');
+        setSeasonEffectiveWeekDate(getCurrentSundayInputValue());
+        setSeasonEndWeekDate(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
+        setCurrentSeasonChangeWeekDate(getCurrentSundayInputValue());
+        setHasChanges(false);
+        if (currentChurchId && selectedDeptId) {
+            await fetchData();
+        }
+    };
+
     const handleReset = () => {
         if (confirm('모든 변경 사항을 취소하고 초기화하시겠습니까?')) {
-            setLocalMembers(JSON.parse(JSON.stringify(members)));
+            setGroups(JSON.parse(JSON.stringify(boardBaselineGroups)));
+            setLocalMembers(JSON.parse(JSON.stringify(boardBaselineMembers)));
             setHasChanges(false);
         }
     };
 
     const displayLocalMembers = useMemo(() => normalizeRegroupingDisplayMembers(localMembers), [localMembers]);
+    const hasActiveBoard = groups.length > 0 || displayLocalMembers.some(member => Boolean(member.group_id));
 
     const filteredLocalMembers = useMemo(() => {
         if (!searchTerm) return displayLocalMembers;
@@ -1394,33 +1695,30 @@ function RegroupingPageInner() {
     return (
         <div className="space-y-8 sm:space-y-10 max-w-7xl mx-auto">
             {/* Page Header */}
-            <header className="space-y-8 px-2">
+            <header className="space-y-6 px-2">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                    <div className="space-y-1.5">
-                        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">조편성 관리</h1>
-                        <p className="text-slate-500 dark:text-slate-500 font-bold text-xs sm:text-sm tracking-tight">
+                    <div className="space-y-2">
+                        <h1 className="text-3xl font-black text-slate-950 dark:text-white tracking-tight">조편성 관리</h1>
+                        <p className="text-slate-500 dark:text-slate-500 font-semibold text-sm tracking-tight">
                             {isMaster
-                                ? <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName || '교회 선택'}</span> · 시각적인 드래그 앤 드롭 방식으로 성도들의 소속 조를 관리합니다.</>
-                                : <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || '부서'}</span> 조편성 관리 페이지입니다. 성도들의 조 분배를 관리합니다.</>
+                                ? <><span className="font-bold text-slate-900 dark:text-white">{currentChurchName || '교회 선택'}</span> · 시즌별 조편성과 현재 소속을 관리합니다.</>
+                                : <><span className="font-bold text-slate-900 dark:text-white">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || '부서'}</span> 시즌별 조편성과 현재 소속을 관리합니다.</>
                             }
                         </p>
                     </div>
 
-                    {/* Stats Summary Integrated into Header */}
-                    <div className="flex items-center gap-4 sm:gap-6 px-5 h-[44px] bg-white dark:bg-slate-900/60 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-                        <div className="flex items-center gap-2">
-                            <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest">실제 인원</span>
-                            <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-none">{stats.total}</span>
+                    <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <div className="px-4 py-3">
+                            <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">전체</span>
+                            <span className="mt-1 block text-lg font-black text-slate-950 dark:text-white">{stats.total}</span>
                         </div>
-                        <div className="w-[1px] h-3 bg-slate-200 dark:bg-slate-800" />
-                        <div className="flex items-center gap-2">
-                            <span className="text-[9px] sm:text-[10px] font-black text-indigo-500 uppercase tracking-widest leading-none">편성 인원</span>
-                            <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 leading-none">{stats.assigned}</span>
+                        <div className="border-x border-slate-100 px-4 py-3 dark:border-slate-800">
+                            <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">편성</span>
+                            <span className="mt-1 block text-lg font-black text-blue-600">{stats.assigned}</span>
                         </div>
-                        <div className="w-[1px] h-3 bg-slate-200 dark:bg-slate-800" />
-                        <div className="flex items-center gap-2">
-                            <span className="text-[9px] sm:text-[10px] font-black text-rose-500 uppercase tracking-widest leading-none">미편성</span>
-                            <span className="text-xs sm:text-sm font-black text-rose-600 dark:text-rose-400 leading-none">{stats.unassigned}</span>
+                        <div className="px-4 py-3">
+                            <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">미편성</span>
+                            <span className="mt-1 block text-lg font-black text-rose-600">{stats.unassigned}</span>
                         </div>
                     </div>
                 </div>
@@ -1441,9 +1739,15 @@ function RegroupingPageInner() {
                                 setSelectedSeasonId(null);
                                 setRegroupingSeasons([]);
                                 setSeasonTitle('');
+                                setSeasonEffectiveWeekDate(getCurrentSundayInputValue());
+                                setSeasonEndWeekDate(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
+                                setCurrentSeasonChangeWeekDate(getCurrentSundayInputValue());
+                                setCurrentRegistrationStartWeek(getCurrentSundayInputValue());
+                                setCurrentRegistrationEndWeek(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
+                                setRegroupingView('list');
                                 await fetchDepartments(newChurchId);
                             }}
-                            className="appearance-none h-11 pl-10 pr-10 bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl font-bold text-xs text-slate-700 dark:text-slate-200 cursor-pointer focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm"
+                            className="appearance-none h-10 pl-10 pr-10 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl font-bold text-xs text-slate-700 dark:text-slate-200 cursor-pointer focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
                         >
                             <option value="" disabled>교회 선택</option>
                             {churches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -1459,13 +1763,19 @@ function RegroupingPageInner() {
                                 setSelectedDeptId(newDeptId);
                                 setSelectedSeasonId(null);
                                 setSeasonTitle('');
+                                setSeasonEffectiveWeekDate(getCurrentSundayInputValue());
+                                setSeasonEndWeekDate(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
+                                setCurrentSeasonChangeWeekDate(getCurrentSundayInputValue());
+                                setCurrentRegistrationStartWeek(getCurrentSundayInputValue());
+                                setCurrentRegistrationEndWeek(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
+                                setRegroupingView('list');
                                 if (currentChurchId) {
                                     fetchGroups(newDeptId);
                                     fetchMembers(currentChurchId, newDeptId);
                                     fetchRegroupingSeasons(currentChurchId, newDeptId);
                                 }
                             }}
-                            className="appearance-none h-11 pl-5 pr-10 bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl font-bold text-xs text-slate-700 dark:text-slate-200 cursor-pointer focus:outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm"
+                            className="appearance-none h-10 pl-5 pr-10 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl font-bold text-xs text-slate-700 dark:text-slate-200 cursor-pointer focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
                         >
                             <option value="" disabled>부서 선택</option>
                             {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -1475,161 +1785,438 @@ function RegroupingPageInner() {
                 </div>
             )}
 
-            {/* Sticky Interaction Toolbar */}
-            <div className="sticky top-16 sm:top-20 z-30 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 mb-12 shadow-sm transition-all">
-                <div className="mb-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-                    <div className="inline-flex w-fit rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-1 shadow-inner">
-                        <button
-                            type="button"
-                            onClick={() => setRegroupingMode('season')}
-                            className={cn(
-                                "h-9 rounded-xl px-4 text-[11px] font-black tracking-tight transition-all",
-                                regroupingMode === 'season'
-                                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"
-                                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
-                            )}
-                        >
-                            시즌 초안
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setRegroupingMode('live')}
-                            className={cn(
-                                "h-9 rounded-xl px-4 text-[11px] font-black tracking-tight transition-all",
-                                regroupingMode === 'live'
-                                    ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
-                                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
-                            )}
-                        >
-                            현재/과거 보정
-                        </button>
+            {regroupingView === 'list' ? (
+                <section className="space-y-6">
+                    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="min-w-0">
+                                <span className={cn(
+                                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-black",
+                                    isCurrentAppliedSeasonExpired
+                                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                                        : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                )}>
+                                    {isCurrentAppliedSeasonExpired ? <AlertCircle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                                    {isCurrentAppliedSeasonExpired ? '다음 시즌 필요' : '현재 사용 중'}
+                                </span>
+                                <h2 className="mt-3 text-xl font-black tracking-tight text-slate-950 dark:text-white">
+                                    {currentAppliedSeason?.title || `${selectedDepartment?.name || '선택 부서'} 현재 조편성`}
+                                </h2>
+                                <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">
+                                    {isCurrentAppliedSeasonExpired
+                                        ? '다음 시즌이 없어 마지막 적용 시즌을 임시 기준으로 사용합니다. 새 시즌을 만들어 적용하세요.'
+                                        : '현재 날짜에 앱, 출석, 기도 화면에서 사용되는 실제 조편성입니다.'}
+                                </p>
+                                <p className="mt-2 text-xs font-bold text-slate-400">
+                                    {currentAppliedSeason
+                                        ? formatRegroupingPeriodLabel(currentAppliedSeason.effective_week_date, currentAppliedSeason.end_week_date)
+                                        : hasActiveBoard
+                                            ? '시즌 기록은 아직 없지만 현재 활성 조편성 명단이 있습니다. 이 명단을 기준으로 시즌을 만들 수 있습니다.'
+                                            : '아직 현재 날짜가 포함된 시즌이 없습니다. 현재 명단을 기준으로 새 시즌을 만들 수 있습니다.'}
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-3 xl:items-end">
+                                {!currentAppliedSeason && hasActiveBoard && (
+                                    <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-2 dark:border-slate-800 dark:bg-slate-950/40">
+                                        <label className="space-y-1">
+                                            <span className="block text-[10px] font-black text-slate-400">시즌 시작</span>
+                                            <input
+                                                type="date"
+                                                value={currentRegistrationStartWeek}
+                                                onChange={(event) => {
+                                                    const nextStart = snapDateInputToSunday(event.target.value);
+                                                    setCurrentRegistrationStartWeek(nextStart);
+                                                    if (currentRegistrationEndWeek < nextStart) {
+                                                        setCurrentRegistrationEndWeek(addWeeksToDateInput(nextStart, 24));
+                                                    }
+                                                }}
+                                                className="h-9 w-[148px] rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+                                            />
+                                        </label>
+                                        <label className="space-y-1">
+                                            <span className="block text-[10px] font-black text-slate-400">마지막 주차</span>
+                                            <input
+                                                type="date"
+                                                value={currentRegistrationEndWeek}
+                                                min={currentRegistrationStartWeek}
+                                                onChange={(event) => setCurrentRegistrationEndWeek(snapDateInputToSunday(event.target.value))}
+                                                className={cn(
+                                                    "h-9 w-[148px] rounded-xl border bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 dark:bg-slate-900 dark:text-slate-100",
+                                                    isCurrentRegistrationPeriodInvalid
+                                                        ? "border-rose-200 focus:ring-rose-500/10"
+                                                    : "border-slate-200 focus:ring-blue-500/10 dark:border-slate-800"
+                                            )}
+                                        />
+                                            <span className="block text-[10px] font-black text-slate-400">
+                                                실제 종료 {formatRegroupingDateLabel(addDaysToDateInput(currentRegistrationEndWeek, 6))}
+                                            </span>
+                                        </label>
+                                    </div>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (currentAppliedSeason && !isCurrentAppliedSeasonExpired) {
+                                            handleLoadSeasonDraft(currentAppliedSeason.id);
+                                            return;
+                                        }
+                                        if (hasActiveBoard) {
+                                            if (isCurrentAppliedSeasonExpired) {
+                                                handleStartBlankSeason();
+                                            } else {
+                                                handleRegisterCurrentSeason();
+                                            }
+                                            return;
+                                        }
+                                        handleStartBlankSeason();
+                                    }}
+                                    disabled={!selectedChurch || !selectedDepartment || saving || (!currentAppliedSeason && isCurrentRegistrationPeriodInvalid)}
+                                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-slate-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-white dark:text-slate-950"
+                                >
+                                    {saving && !currentAppliedSeason ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                    {currentAppliedSeason
+                                        ? isCurrentAppliedSeasonExpired ? '다음 시즌 만들기' : '현재 시즌 열기'
+                                        : hasActiveBoard ? '현재 조편성을 시즌으로 등록' : '빈 시즌 만들기'}
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
-                    {regroupingMode === 'season' ? (
-                        <div className="flex flex-col lg:flex-row lg:items-center gap-2 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/70 dark:bg-indigo-950/20 p-2">
-                            <select
-                                value={selectedSeasonId || ''}
-                                onChange={(event) => {
-                                    if (event.target.value) {
-                                        handleLoadSeasonDraft(event.target.value);
-                                    } else {
-                                        setSelectedSeasonId(null);
-                                        setSeasonTitle('');
-                                        setSeasonEffectiveWeekDate(getCurrentSundayInputValue());
-                                        setHasChanges(false);
-                                        if (currentChurchId && selectedDeptId) {
-                                            fetchData();
-                                        }
-                                    }
-                                }}
-                                className="h-9 min-w-[180px] rounded-xl border border-indigo-100 dark:border-indigo-800 bg-white/90 dark:bg-slate-950 px-3 text-[11px] font-black text-slate-700 dark:text-slate-200 outline-none focus:ring-4 focus:ring-indigo-500/10"
+                    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <div className="flex flex-col gap-5 border-b border-slate-100 px-6 py-5 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+                            <div>
+                                <h2 className="text-xl font-black tracking-tight text-slate-950 dark:text-white">{viewTitle}</h2>
+                                <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{viewDescription}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleStartBlankSeason}
+                                disabled={!selectedChurch || !selectedDepartment || saving}
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-black text-white transition hover:bg-blue-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300"
                             >
-                                <option value="">새 시즌 초안</option>
-                                {regroupingSeasons.map(season => (
-                                    <option key={season.id} value={season.id}>
-                                        {season.title} · {season.status} · {formatRegroupingWeekLabel(season.effective_week_date)}
-                                    </option>
-                                ))}
-                            </select>
-                            <input
-                                type="text"
-                                value={seasonTitle}
-                                onChange={(event) => setSeasonTitle(event.target.value)}
-                                disabled={isSelectedSeasonApplied}
-                                placeholder={`${selectedDepartment?.name || '선택 부서'} 다음 시즌 조편성`}
-                                className="h-9 min-w-[220px] rounded-xl border border-indigo-100 dark:border-indigo-800 bg-white/90 dark:bg-slate-950 px-3 text-[12px] font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-4 focus:ring-indigo-500/10 disabled:bg-slate-100 disabled:text-slate-400"
-                            />
-                            <div className="flex items-center gap-2">
-                                <CalendarDays className="w-4 h-4 text-indigo-500" />
-                                <span className="text-[10px] font-black text-indigo-500">적용 시작</span>
-                                <input
-                                    type="date"
-                                    value={seasonEffectiveWeekDate}
-                                    disabled={isSelectedSeasonApplied}
-                                    onChange={(event) => {
-                                        setSeasonEffectiveWeekDate(snapDateInputToSunday(event.target.value));
-                                        setHasChanges(true);
-                                    }}
-                                    className="h-9 w-[132px] rounded-xl border border-indigo-100 dark:border-indigo-800 bg-white/90 dark:bg-slate-950 px-2 text-[11px] font-black text-slate-700 dark:text-slate-200 outline-none focus:ring-4 focus:ring-indigo-500/10 disabled:bg-slate-100 disabled:text-slate-400"
-                                />
-                                <span className="rounded-full bg-white/80 dark:bg-slate-950 px-2.5 py-1 text-[10px] font-black text-indigo-600 dark:text-indigo-300">
-                                    {formatRegroupingWeekLabel(seasonEffectiveWeekDate)}
-                                </span>
-                                {selectedSeason && (
-                                    <span className={cn(
-                                        "rounded-full px-2.5 py-1 text-[10px] font-black",
-                                        selectedSeason.status === 'applied'
-                                            ? "bg-emerald-100 text-emerald-700"
-                                            : isSeasonEffectiveFuture
-                                                ? "bg-amber-100 text-amber-700"
-                                                : "bg-indigo-100 text-indigo-700"
-                                    )}>
-                                        {selectedSeason.status === 'applied'
-                                            ? '적용 완료'
-                                            : isSeasonEffectiveFuture
-                                                ? '예약 초안'
-                                                : '적용 가능'}
+                                <Plus className="h-4 w-4" />
+                                새 조편성 만들기
+                            </button>
+                        </div>
+
+                        {regroupingSeasons.length === 0 ? (
+                            <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-12 text-center">
+                                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-500">
+                                    <CalendarDays className="h-6 w-6" />
+                                </div>
+                                <h3 className="mt-5 text-xl font-black text-slate-900 dark:text-white">아직 저장된 조편성 시즌이 없습니다</h3>
+                                <p className="mt-2 max-w-md text-sm font-semibold leading-6 text-slate-500">
+                                    새 조편성을 만들고 적용 시작 주차를 정하면, 적용 전까지는 초안으로 보관됩니다.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={handleStartBlankSeason}
+                                    className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-black text-white transition hover:bg-blue-500 active:scale-95"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                    빈 조편성 만들기
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[760px] text-left">
+                                    <thead className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-black uppercase tracking-widest text-slate-400 dark:border-slate-800 dark:bg-slate-950/40">
+                                        <tr>
+                                            <th className="px-6 py-3">시즌</th>
+                                            <th className="px-4 py-3">상태</th>
+                                            <th className="px-4 py-3">적용 기간</th>
+                                            <th className="px-4 py-3">수정일</th>
+                                            <th className="px-6 py-3 text-right">작업</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {regroupingSeasons.map((season) => {
+                                            const statusMeta = getSeasonStatusMeta(season, todayInputValue);
+                                            const StatusIcon = statusMeta.icon;
+                                            const canApplyThisSeason = season.status !== 'applied' && season.effective_week_date <= todayInputValue;
+
+                                            return (
+                                                <tr key={season.id} className="transition hover:bg-slate-50/80 dark:hover:bg-slate-950/40">
+                                                    <td className="px-6 py-4">
+                                                        <p className="font-black text-slate-950 dark:text-white">{season.title}</p>
+                                                        <p className="mt-1 text-xs font-semibold text-slate-500">{statusMeta.description}</p>
+                                                    </td>
+                                                    <td className="px-4 py-4">
+                                                        <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-black", statusMeta.className)}>
+                                                            <StatusIcon className="h-3.5 w-3.5" />
+                                                            {statusMeta.label}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-4">
+                                                        <p className="text-sm font-black text-slate-800 dark:text-slate-100">{formatRegroupingWeekLabel(season.effective_week_date)}</p>
+                                                        <p className="mt-1 text-xs font-semibold text-slate-400">{formatRegroupingPeriodLabel(season.effective_week_date, season.end_week_date)}</p>
+                                                    </td>
+                                                    <td className="px-4 py-4 text-xs font-semibold text-slate-500">
+                                                        {formatRegroupingDateLabel((season.updated_at || season.created_at || '').slice(0, 10))}
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex justify-end gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleLoadSeasonDraft(season.id)}
+                                                                className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:border-blue-200 hover:text-blue-600 active:scale-95 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                                                            >
+                                                                열기
+                                                            </button>
+                                                            {canApplyThisSeason && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={async () => {
+                                                                        await handleLoadSeasonDraft(season.id);
+                                                                    }}
+                                                                    className="inline-flex h-9 items-center justify-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white transition hover:bg-emerald-500 active:scale-95"
+                                                                >
+                                                                    적용 검토
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </section>
+            ) : (
+                <section className="sticky top-16 sm:top-20 z-30 space-y-4 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="min-w-0">
+                            <button
+                                type="button"
+                                onClick={handleBackToSeasonList}
+                                className="mb-2 inline-flex items-center gap-2 text-xs font-black text-slate-400 transition hover:text-blue-600"
+                            >
+                                <ArrowLeft className="h-4 w-4" />
+                                시즌 목록으로
+                            </button>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <h2 className="text-xl font-black tracking-tight text-slate-950 dark:text-white">{viewTitle}</h2>
+                                {regroupingMode === 'season' && selectedSeason && (
+                                    <span className={cn("inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-black", getSeasonStatusMeta(selectedSeason, todayInputValue).className)}>
+                                        {getSeasonStatusMeta(selectedSeason, todayInputValue).label}
+                                    </span>
+                                )}
+                                {regroupingMode === 'live' && (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-black text-amber-700">
+                                        <ShieldAlert className="h-3.5 w-3.5" />
+                                        즉시 반영
                                     </span>
                                 )}
                             </div>
+                            <p className="mt-1 text-sm font-semibold text-slate-500">{viewDescription}</p>
                         </div>
-                    ) : (
-                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
-                            현재/과거 보정은 저장 즉시 실제 조편성과 호환 row를 변경합니다. 미래 조편성 준비는 시즌 초안을 사용하세요.
-                        </div>
-                    )}
-                </div>
 
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex-1 max-w-md relative group">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-                        <input
-                            type="text"
-                            placeholder="성도 이름으로 검색..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-11 pr-4 h-11 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all shadow-sm"
-                        />
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                            <button
+                                onClick={handleReset}
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:border-rose-200 hover:text-rose-600 active:scale-95 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                            >
+                                <RotateCcw className="h-4 w-4" />
+                                변경 취소
+                            </button>
+                            {regroupingMode === 'live' ? (
+                                <button
+                                    onClick={handleSave}
+                                    disabled={saving || !hasChanges}
+                                    className={cn(
+                                        "inline-flex h-10 items-center justify-center gap-2 rounded-xl px-5 text-xs font-black text-white transition active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300",
+                                        hasChanges ? "bg-amber-500 hover:bg-amber-400" : "bg-slate-300"
+                                    )}
+                                >
+                                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                    {saving ? '저장 중...' : '보정 저장'}
+                                </button>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveSeasonDraft}
+                                        disabled={saving || !canSaveSeasonDraft}
+                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-xs font-black text-white transition hover:bg-blue-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                    >
+                                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                        {isSelectedCurrentAppliedSeason ? '현재 시즌 저장' : '초안 저장'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleApplySeason}
+                                        disabled={saving || !canApplySeason}
+                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-xs font-black text-white transition hover:bg-emerald-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                    >
+                                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                                        {isSelectedSeasonApplied ? '적용 완료' : isSeasonEffectiveFuture ? '적용 주차 대기' : '실제 소속에 적용'}
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        {regroupingMode === 'live' ? (
-                            <div className="flex items-center gap-3 h-11 px-4 bg-amber-50/80 dark:bg-amber-950/20 rounded-2xl border border-amber-200 dark:border-amber-900/50 shadow-sm">
-                                <CalendarDays className="w-4 h-4 text-amber-500" />
-                                <div className="flex flex-col leading-none">
-                                    <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.18em]">보정 주차</span>
-                                    <span className="text-[10px] font-black text-amber-700 dark:text-amber-300">{formatRegroupingWeekLabel(effectiveWeekDate)}</span>
-                                </div>
-                                <input
-                                    type="date"
-                                    value={effectiveWeekDate}
-                                    max={getCurrentSundayInputValue()}
-                                    onChange={(event) => {
-                                        setEffectiveWeekDate(snapDateInputToSunday(event.target.value));
-                                        setHasChanges(true);
-                                    }}
-                                    className="h-8 w-[128px] rounded-xl border border-amber-100 dark:border-amber-800 bg-white/80 dark:bg-slate-950 px-2 text-[11px] font-black text-slate-700 dark:text-slate-200 outline-none focus:ring-4 focus:ring-amber-500/10"
-                                />
-                                <Tooltip content="현재/과거 보정은 저장 즉시 실제 소속과 호환 row를 변경합니다. 미래 조편성 준비는 시즌 초안에서 처리하세요.">
-                                    <span className="text-[10px] font-black text-amber-500 cursor-help">?</span>
-                                </Tooltip>
-                            </div>
+                    <div className={cn(
+                        "grid gap-3 rounded-2xl border p-3 lg:grid-cols-[minmax(220px,1fr)_minmax(200px,0.75fr)_minmax(200px,0.75fr)_auto]",
+                        regroupingMode === 'live'
+                            ? "border-amber-200 bg-amber-50/70"
+                            : "border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/60"
+                    )}>
+                        {regroupingMode === 'season' ? (
+                            <>
+                                <label className="space-y-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">시즌 이름</span>
+                                    <input
+                                        type="text"
+                                        value={seasonTitle}
+                                        onChange={(event) => setSeasonTitle(event.target.value)}
+                                        disabled={isSelectedSeasonLocked}
+                                        placeholder={`${selectedDepartment?.name || '선택 부서'} 다음 시즌 조편성`}
+                                        className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                                    />
+                                </label>
+                                {isSelectedCurrentAppliedSeason ? (
+                                    <>
+                                        <div className="space-y-1.5">
+                                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">시즌 기간</span>
+                                            <div className="flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
+                                                {formatRegroupingPeriodLabel(seasonEffectiveWeekDate, seasonEndWeekDate)}
+                                            </div>
+                                        </div>
+                                        <label className="space-y-1.5">
+                                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">이번 변경 적용 주차</span>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="date"
+                                                    value={currentSeasonChangeWeekDate}
+                                                    min={seasonEffectiveWeekDate}
+                                                    max={getCurrentSundayInputValue()}
+                                                    onChange={(event) => {
+                                                        setCurrentSeasonChangeWeekDate(snapDateInputToSunday(event.target.value));
+                                                        setHasChanges(true);
+                                                    }}
+                                                    className="h-10 w-[150px] rounded-xl border border-blue-100 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                                                />
+                                                <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-blue-600 dark:bg-slate-950 dark:text-blue-300">
+                                                    {formatRegroupingWeekLabel(currentSeasonChangeWeekDate)}
+                                                </span>
+                                            </div>
+                                        </label>
+                                        <div className="flex items-center rounded-xl bg-white px-4 py-3 text-xs font-semibold leading-5 text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                                            현재 시즌에서 조를 새로 만들거나 종료하고, 성도를 이동한 내용은 선택한 주차부터 실제 소속에 반영됩니다.
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <label className="space-y-1.5">
+                                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">적용 시작 주차</span>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="date"
+                                                    value={seasonEffectiveWeekDate}
+                                                    disabled={isSelectedSeasonLocked}
+                                                    onChange={(event) => {
+                                                        const nextStart = snapDateInputToSunday(event.target.value);
+                                                        setSeasonEffectiveWeekDate(nextStart);
+                                                        if (seasonEndWeekDate < nextStart) {
+                                                            setSeasonEndWeekDate(addWeeksToDateInput(nextStart, 24));
+                                                        }
+                                                        setHasChanges(true);
+                                                    }}
+                                                    className="h-10 w-[150px] rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                                                />
+                                                <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-blue-600 dark:bg-slate-950 dark:text-blue-300">
+                                                    {formatRegroupingWeekLabel(seasonEffectiveWeekDate)}
+                                                </span>
+                                            </div>
+                                        </label>
+                                        <label className="space-y-1.5">
+                                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">마지막 적용 주차</span>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="date"
+                                                    value={seasonEndWeekDate}
+                                                    min={seasonEffectiveWeekDate}
+                                                    disabled={isSelectedSeasonLocked}
+                                                    onChange={(event) => {
+                                                        setSeasonEndWeekDate(snapDateInputToSunday(event.target.value));
+                                                        setHasChanges(true);
+                                                    }}
+                                                    className={cn(
+                                                        "h-10 w-[150px] rounded-xl border bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 disabled:bg-slate-100 disabled:text-slate-400 dark:bg-slate-950 dark:text-slate-100",
+                                                        isSeasonPeriodInvalid
+                                                            ? "border-rose-200 focus:ring-rose-500/10"
+                                                            : "border-slate-200 focus:ring-blue-500/10 dark:border-slate-800"
+                                                    )}
+                                                />
+                                                <span className={cn(
+                                                    "rounded-full bg-white px-3 py-2 text-xs font-black dark:bg-slate-950",
+                                                    isSeasonPeriodInvalid ? "text-rose-600" : "text-blue-600 dark:text-blue-300"
+                                                )}>
+                                                    {isSeasonPeriodInvalid ? '기간 확인 필요' : `${formatRegroupingWeekLabel(seasonEndWeekDate)} · ${formatRegroupingDateLabel(addDaysToDateInput(seasonEndWeekDate, 6))}까지`}
+                                                </span>
+                                            </div>
+                                        </label>
+                                        <div className="flex flex-col gap-2 rounded-xl bg-white px-4 py-3 text-xs font-semibold leading-5 text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                                            <span>미래 시즌은 조와 구성원 모두 이 시즌 기간 전체에 적용됩니다. 시즌 중간 변동은 현재 시즌에서 변경 주차를 정해 처리합니다.</span>
+                                            {!selectedSeasonId && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleLoadCurrentBoardIntoSeason}
+                                                    className="inline-flex h-8 w-fit items-center justify-center rounded-lg border border-slate-200 px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800"
+                                                >
+                                                    현재 조편성 불러오기
+                                                </button>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                            </>
                         ) : (
-                            <div className="flex items-center gap-3 h-11 px-4 bg-indigo-50/80 dark:bg-indigo-950/20 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 shadow-sm">
-                                <CalendarDays className="w-4 h-4 text-indigo-500" />
-                                <div className="flex flex-col leading-none">
-                                    <span className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.18em]">시즌 적용 주차</span>
-                                    <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300">{formatRegroupingWeekLabel(seasonEffectiveWeekDate)}</span>
+                            <>
+                                <label className="space-y-1.5">
+                                    <span className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-600">보정 기준 주차</span>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="date"
+                                            value={effectiveWeekDate}
+                                            max={getCurrentSundayInputValue()}
+                                            onChange={(event) => {
+                                                setEffectiveWeekDate(snapDateInputToSunday(event.target.value));
+                                                setHasChanges(true);
+                                            }}
+                                            className="h-10 w-[150px] rounded-xl border border-amber-100 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-amber-500/10"
+                                        />
+                                        <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-amber-700">
+                                            {formatRegroupingWeekLabel(effectiveWeekDate)}
+                                        </span>
+                                    </div>
+                                </label>
+                                <div className="lg:col-span-3 flex items-center rounded-xl bg-white px-4 py-3 text-xs font-semibold leading-5 text-amber-800">
+                                    현재/과거 보정은 저장 즉시 실제 소속과 호환 row를 변경합니다. 미래 조편성 준비는 시즌 초안을 사용하세요.
                                 </div>
-                                <span className="rounded-full bg-white/80 dark:bg-slate-950 px-2.5 py-1 text-[10px] font-black text-indigo-600 dark:text-indigo-300">
-                                    초안은 적용 전까지 앱/출석/기도에 반영되지 않음
-                                </span>
-                            </div>
+                            </>
                         )}
+                    </div>
 
-                        {departments.find(d => d.id === selectedDeptId)?.profile_mode === 'couple' && (
-                            <div className="flex items-center gap-2 h-11 px-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 mr-2">
-                                <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="relative max-w-md flex-1 group">
+                            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition group-focus-within:text-indigo-500" />
+                            <input
+                                type="text"
+                                placeholder="성도 이름으로 검색..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm font-bold outline-none transition focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900"
+                            />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                            {departments.find(d => d.id === selectedDeptId)?.profile_mode === 'couple' && (
+                                <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900">
                                     <div className="relative">
                                         <input
                                             type="checkbox"
@@ -1637,110 +2224,56 @@ function RegroupingPageInner() {
                                             checked={autoMoveCouples}
                                             onChange={(e) => setAutoMoveCouples(e.target.checked)}
                                         />
-                                        <div className={cn(
-                                            "w-9 h-5 rounded-full transition-colors",
-                                            autoMoveCouples ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-700"
-                                        )} />
-                                        <div className={cn(
-                                            "absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-transform",
-                                            autoMoveCouples && "translate-x-4"
-                                        )} />
+                                        <div className={cn("h-5 w-9 rounded-full transition", autoMoveCouples ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-700")} />
+                                        <div className={cn("absolute left-1 top-1 h-3 w-3 rounded-full bg-white transition", autoMoveCouples && "translate-x-4")} />
                                     </div>
                                     <Tooltip content="같은 조에 함께 있는 배우자만 같이 이동합니다. 다른 조에 떨어져 있는 배우자는 자동으로 끌고 오지 않습니다.">
-                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors">부부 동시 이동</span>
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">부부 동시 이동</span>
                                     </Tooltip>
                                 </label>
-                            </div>
-                        )}
+                            )}
 
-                        <div className="relative group/export">
-                            <Tooltip content="현재 조편성 화면을 이미지(.png)나 엑셀(.xlsx) 파일로 저장합니다.">
+                            <div className="relative">
                                 <button
                                     onClick={() => setShowExportMenu(!showExportMenu)}
-                                    className="flex items-center gap-2 px-5 h-11 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black text-xs uppercase tracking-widest hover:border-indigo-500/30 transition-all shadow-sm"
+                                    className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 transition hover:border-blue-200 hover:text-blue-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
                                 >
-                                    <Download className="w-4 h-4 text-slate-500" />
+                                    <Download className="h-4 w-4" />
                                     내보내기
                                 </button>
-                            </Tooltip>
 
-                            {showExportMenu && (
-                                <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
-                                    <button
-                                        onClick={() => {
-                                            handleExportExcel();
-                                            setShowExportMenu(false);
-                                        }}
-                                        className="w-full flex items-center gap-3 px-5 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b border-slate-100 dark:border-slate-800 text-left"
-                                    >
-                                        <FileDown className="w-4 h-4 text-green-500" />
-                                        엑셀 파일로 저장 (.xlsx)
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            handleExportImage();
-                                            setShowExportMenu(false);
-                                        }}
-                                        disabled={isExporting}
-                                        className="w-full flex items-center gap-3 px-5 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 text-left"
-                                    >
-                                        <ImageIcon className="w-4 h-4 text-indigo-500" />
-                                        {isExporting ? '추출 중...' : '이미지 파일로 저장 (.png)'}
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        <button
-                            onClick={handleReset}
-                            className="flex items-center gap-2 px-5 h-11 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black text-xs uppercase tracking-widest hover:border-rose-500/30 transition-all shadow-sm"
-                        >
-                            <RotateCcw className="w-4 h-4 text-slate-500" />
-                            초기화
-                        </button>
-
-                        {regroupingMode === 'live' ? (
-                            <button
-                                onClick={handleSave}
-                                disabled={saving || !hasChanges}
-                                className={cn(
-                                    "flex items-center gap-2 px-6 h-11 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:scale-100 border",
-                                    hasChanges
-                                        ? "bg-amber-500 text-white border-amber-500 shadow-amber-500/20 hover:bg-amber-400"
-                                        : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 shadow-none"
+                                {showExportMenu && (
+                                    <div className="absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                                        <button
+                                            onClick={() => {
+                                                handleExportExcel();
+                                                setShowExportMenu(false);
+                                            }}
+                                            className="flex w-full items-center gap-3 border-b border-slate-100 px-5 py-3 text-left text-xs font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
+                                        >
+                                            <FileDown className="h-4 w-4 text-emerald-500" />
+                                            엑셀 파일로 저장
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                handleExportImage();
+                                                setShowExportMenu(false);
+                                            }}
+                                            disabled={isExporting}
+                                            className="flex w-full items-center gap-3 px-5 py-3 text-left text-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                                        >
+                                            <ImageIcon className="h-4 w-4 text-indigo-500" />
+                                            {isExporting ? '추출 중...' : '이미지 파일로 저장'}
+                                        </button>
+                                    </div>
                                 )}
-                            >
-                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                {saving ? '저장 중...' : '보정 저장'}
-                            </button>
-                        ) : (
-                            <>
-                                <button
-                                    type="button"
-                                    onClick={handleSaveSeasonDraft}
-                                    disabled={saving || !canSaveSeasonDraft}
-                                    className="flex items-center gap-2 px-6 h-11 rounded-2xl bg-indigo-600 text-white border border-indigo-600 font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:border-slate-300 disabled:shadow-none"
-                                >
-                                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                    {selectedSeasonId ? '시즌 초안 갱신' : '시즌 초안 저장'}
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={handleApplySeason}
-                                    disabled={saving || !canApplySeason}
-                                    className="flex items-center gap-2 px-6 h-11 rounded-2xl bg-emerald-600 text-white border border-emerald-600 font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-emerald-600/20 hover:bg-emerald-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:border-slate-300 disabled:shadow-none"
-                                >
-                                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                    {isSelectedSeasonApplied ? '적용 완료' : isSeasonEffectiveFuture ? '적용 주차 대기' : '실제 소속에 적용'}
-                                </button>
-                            </>
-                        )}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
+                </section>
+            )}
 
-            {/* Kanban Board Container - Brightened background for a premium white theme (Photo ref) */}
+            {regroupingView !== 'list' && (
             <div className="bg-white/50 dark:bg-slate-900/10 rounded-3xl border border-slate-200/50 dark:border-slate-800/50 p-1 sm:p-2 shadow-inner overflow-hidden">
                 <div ref={boardRef} className="relative w-full overflow-x-auto custom-scrollbar p-5 sm:p-8 bg-white/30">
                     <KanbanBoard
@@ -1788,8 +2321,9 @@ function RegroupingPageInner() {
                     </div>
                 </div>
             </div>
+            )}
 
-            {isMemberModalOpen && currentChurchId && (
+            {regroupingView !== 'list' && isMemberModalOpen && currentChurchId && (
                 <MemberModal
                     isOpen={isMemberModalOpen}
                     onClose={() => setIsMemberModalOpen(false)}

@@ -40,6 +40,55 @@ class GraceNoteRepository {
     return true;
   }
 
+  List<Map<String, dynamic>> _groupsForWeekWithLastKnownFallback(
+    List<Map<String, dynamic>> allGroups,
+    DateTime? weekDate, {
+    Set<String> recordGroupIds = const {},
+  }) {
+    final groupsForWeek = allGroups
+        .where((group) =>
+            _groupWasInUseOnWeek(group, weekDate) ||
+            recordGroupIds.contains(group['id']?.toString()))
+        .toList();
+
+    if (groupsForWeek.isNotEmpty || weekDate == null) return groupsForWeek;
+
+    final weekEnd =
+        DateTime(weekDate.year, weekDate.month, weekDate.day).add(const Duration(days: 1));
+    DateTime? latestKnownBoundary;
+
+    for (final group in allGroups) {
+      final activeFrom =
+          DateTime.tryParse(group['active_from']?.toString() ?? '') ??
+              DateTime.tryParse(group['created_at']?.toString() ?? '');
+      if (activeFrom != null && !activeFrom.isBefore(weekEnd)) continue;
+
+      final endedAt = DateTime.tryParse(group['ended_at']?.toString() ?? '');
+      final boundary = endedAt ?? activeFrom;
+      if (boundary == null) continue;
+
+      if (latestKnownBoundary == null || boundary.isAfter(latestKnownBoundary)) {
+        latestKnownBoundary = boundary;
+      }
+    }
+
+    if (latestKnownBoundary == null) return groupsForWeek;
+
+    return allGroups.where((group) {
+      final activeFrom =
+          DateTime.tryParse(group['active_from']?.toString() ?? '') ??
+              DateTime.tryParse(group['created_at']?.toString() ?? '');
+      if (activeFrom != null && !activeFrom.isBefore(weekEnd)) return false;
+
+      final endedAt = DateTime.tryParse(group['ended_at']?.toString() ?? '');
+      final boundary = endedAt ?? activeFrom;
+      return boundary != null &&
+          boundary.year == latestKnownBoundary!.year &&
+          boundary.month == latestKnownBoundary.month &&
+          boundary.day == latestKnownBoundary.day;
+    }).toList();
+  }
+
   Future<Set<String>> _getRelatedDirectoryIdsByPhase2Person(
       String directoryMemberId) async {
     try {
@@ -668,11 +717,11 @@ class GraceNoteRepository {
         .map((prayer) => prayer['group_id']?.toString())
         .whereType<String>()
         .toSet();
-    final groups = allGroups
-        .where((group) =>
-            _groupWasInUseOnWeek(group, weekDate) ||
-            prayerGroupIds.contains(group['id']?.toString()))
-        .toList();
+    final groups = _groupsForWeekWithLastKnownFallback(
+      allGroups,
+      weekDate,
+      recordGroupIds: prayerGroupIds,
+    );
 
     return {
       'groups': groups,
@@ -1496,11 +1545,11 @@ class GraceNoteRepository {
         .map((row) => row['group_id']?.toString())
         .whereType<String>()
         .toSet();
-    final groups = allGroups
-        .where((group) =>
-            _groupWasInUseOnWeek(group, weekDate) ||
-            attendanceGroupIds.contains(group['id']?.toString()))
-        .toList();
+    final groups = _groupsForWeekWithLastKnownFallback(
+      allGroups,
+      weekDate,
+      recordGroupIds: attendanceGroupIds,
+    );
 
     // 5. 데이터를 조별로 가공
     final resultGroups = groups.map((group) {

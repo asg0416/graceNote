@@ -10,7 +10,7 @@ export const buildRegroupingSeasonGroupsPayload = (groups: Array<Record<string, 
             : null;
         const sourceGroupId = typeof group.source_group_id === 'string' && isUuid(group.source_group_id)
             ? group.source_group_id
-            : isUuid(id)
+            : !planGroupId && isUuid(id)
                 ? id
                 : null;
 
@@ -112,6 +112,14 @@ export const mapRegroupingSeasonDraftToBoard = ({
                 phone: getText(directory.phone, person.normalized_phone),
                 group_id: typeof assignment.plan_group_id === 'string' ? assignment.plan_group_id : null,
                 role_in_group: typeof assignment.role_in_group === 'string' ? assignment.role_in_group : 'member',
+                family_name: getText(directory.family_name) || null,
+                spouse_name: getText(directory.spouse_name) || null,
+                children_info: getText(directory.children_info) || null,
+                birth_date: getText(directory.birth_date) || null,
+                wedding_anniversary: getText(directory.wedding_anniversary) || null,
+                notes: getText(directory.notes) || null,
+                avatar_url: getText(directory.avatar_url) || null,
+                profile_id: getText(directory.profile_id) || null,
                 person_id: String(assignment.person_id || ''),
                 phase2_person_id: String(assignment.person_id || ''),
                 phase2_membership_id: typeof assignment.source_membership_id === 'string' ? assignment.source_membership_id : null,
