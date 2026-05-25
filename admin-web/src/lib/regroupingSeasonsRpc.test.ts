@@ -6,6 +6,7 @@ import {
   registerCurrentRegroupingSeason,
   saveRegroupingSeasonDraft,
   syncCurrentRegroupingSeasonPlanFromLive,
+  updateCurrentRegroupingGroupPeriods,
   updateRegroupingSeason,
 } from './regroupingSeasonsRpc.ts';
 
@@ -154,6 +155,40 @@ test('syncCurrentRegroupingSeasonPlanFromLive returns normalized synced counts',
       functionName: 'sync_current_regrouping_season_plan_from_live',
       args: {
         p_season_id: 'season-current',
+      },
+    },
+  ]);
+});
+
+test('updateCurrentRegroupingGroupPeriods sends current season group period payload', async () => {
+  const { client, calls } = createRpcClient({ data: 2, error: null });
+
+  const result = await updateCurrentRegroupingGroupPeriods(client, {
+    seasonId: 'season-current',
+    groups: [
+      {
+        source_group_id: 'group-1',
+        starts_week_date: '2026-01-04',
+        ends_week_date: '2026-05-17',
+        plan_status: 'ended',
+      },
+    ],
+  });
+
+  assert.equal(result, 2);
+  assert.deepEqual(calls, [
+    {
+      functionName: 'update_current_regrouping_group_periods',
+      args: {
+        p_season_id: 'season-current',
+        p_groups: [
+          {
+            source_group_id: 'group-1',
+            starts_week_date: '2026-01-04',
+            ends_week_date: '2026-05-17',
+            plan_status: 'ended',
+          },
+        ],
       },
     },
   ]);

@@ -13,7 +13,7 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
   assert.deepEqual(
     buildRegroupingSeasonGroupsPayload([
       { id: existingGroupId, name: '기존 조', color_hex: '#123456', starts_week_date: '2026-07-05' },
-      { id: planGroupId, plan_group_id: planGroupId, name: '초안 신규 조', color_hex: '#abcdef', ends_week_date: '2026-12-27' },
+      { id: planGroupId, plan_group_id: planGroupId, name: '초안 신규 조', color_hex: '#abcdef', ends_week_date: '2026-12-27', plan_status: 'ended' },
       { id: 'temp-1', name: '신규 조', color_hex: '#654321' },
     ]),
     [
@@ -27,6 +27,7 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
         leader_person_id: null,
         starts_week_date: '2026-07-05',
         ends_week_date: null,
+        plan_status: 'active',
       },
       {
         id: planGroupId,
@@ -38,6 +39,7 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
         leader_person_id: null,
         starts_week_date: null,
         ends_week_date: '2026-12-27',
+        plan_status: 'ended',
       },
       {
         id: 'temp-1',
@@ -49,6 +51,7 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
         leader_person_id: null,
         starts_week_date: null,
         ends_week_date: null,
+        plan_status: 'active',
       },
     ]
   );
@@ -99,6 +102,7 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
         sort_order: 1,
         starts_week_date: '2026-01-04',
         ends_week_date: '2026-06-28',
+        plan_status: 'active',
       },
       {
         id: '77777777-7777-4777-8777-777777777777',
@@ -108,6 +112,7 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
         sort_order: 2,
         starts_week_date: '2026-07-05',
         ends_week_date: null,
+        plan_status: 'ended',
       },
     ],
     assignments: [
@@ -148,6 +153,7 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
       sort_order: 1,
       starts_week_date: '2026-01-04',
       ends_week_date: '2026-06-28',
+      plan_status: 'active',
     },
     {
       id: '77777777-7777-4777-8777-777777777777',
@@ -158,6 +164,7 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
       sort_order: 2,
       starts_week_date: '2026-07-05',
       ends_week_date: null,
+      plan_status: 'ended',
     },
   ]);
   assert.deepEqual(result.members, [

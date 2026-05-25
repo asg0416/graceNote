@@ -149,3 +149,20 @@ export const syncCurrentRegroupingSeasonPlanFromLive = async (
         assignmentCount: first?.assignment_count ?? 0,
     };
 };
+
+export const updateCurrentRegroupingGroupPeriods = async (
+    supabase: RpcClientLike,
+    payload: {
+        seasonId: string;
+        groups: Array<Record<string, unknown>>;
+    }
+) => {
+    const { data, error } = await supabase.rpc<number>('update_current_regrouping_group_periods', {
+        p_season_id: payload.seasonId,
+        p_groups: payload.groups,
+    });
+
+    assertNoRpcError(error, '현재 시즌 조 활동 기간 보정에 실패했습니다.');
+
+    return typeof data === 'number' ? data : 0;
+};

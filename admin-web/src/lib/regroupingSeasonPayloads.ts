@@ -29,6 +29,7 @@ export const buildRegroupingSeasonGroupsPayload = (groups: Array<Record<string, 
                 : null,
             starts_week_date: getDateText(group.starts_week_date),
             ends_week_date: getDateText(group.ends_week_date),
+            plan_status: group.plan_status === 'ended' ? 'ended' : 'active',
         };
     });
 
@@ -102,6 +103,7 @@ export const mapRegroupingSeasonDraftToBoard = ({
                 sort_order: Number(group.sort_order || 0),
                 starts_week_date: getDateText(group.starts_week_date),
                 ends_week_date: getDateText(group.ends_week_date),
+                plan_status: group.plan_status === 'ended' ? 'ended' : 'active',
             };
         });
 
