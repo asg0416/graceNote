@@ -84,20 +84,31 @@ export function SeasonChangeHistoryPanel({
                         <>
                             {archivedGroups.length > 0 && (
                                 <div className="space-y-2">
-                                    <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-500">종료된 조</h3>
+                                    <div>
+                                        <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-500">종료된 조</h3>
+                                        <p className="mt-1 text-[11px] font-bold text-slate-400">
+                                            시즌 안에서 이 조들이 활동한 기간을 보정합니다.
+                                        </p>
+                                    </div>
                                     {archivedGroups.map(group => (
-                                        <div key={group.id} className="grid gap-3 rounded-2xl border border-rose-100 bg-rose-50/50 p-3 dark:border-rose-500/20 dark:bg-rose-500/10 lg:grid-cols-[1fr_160px_190px_auto] lg:items-center">
+                                        <div key={group.id} className="grid gap-3 rounded-2xl border border-rose-100 bg-rose-50/50 p-3 dark:border-rose-500/20 dark:bg-rose-500/10 lg:grid-cols-[1fr_160px_190px] lg:items-center">
                                             <div className="min-w-0">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex flex-wrap items-center gap-2">
                                                     <span
                                                         className="h-2.5 w-2.5 rounded-full"
                                                         style={{ backgroundColor: group.color_hex || '#64748b' }}
                                                     />
                                                     <span className="truncate text-sm font-black text-slate-900 dark:text-white">{group.name}</span>
+                                                    {!readOnly && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => onRestoreArchivedGroup(group.id)}
+                                                            className="inline-flex h-7 items-center justify-center rounded-full border border-rose-100 bg-white px-3 text-[10px] font-black text-rose-600 transition hover:border-blue-200 hover:text-blue-600 dark:border-rose-500/20 dark:bg-slate-950 dark:text-rose-300"
+                                                        >
+                                                            다시 편성
+                                                        </button>
+                                                    )}
                                                 </div>
-                                                <p className="mt-1 text-[11px] font-bold text-slate-500">
-                                                    시즌 안에서 이 조가 활동한 기간을 보정합니다.
-                                                </p>
                                             </div>
                                             <label className="space-y-1">
                                                 <span className="text-[10px] font-black text-slate-400">시작 주차</span>
@@ -123,22 +134,6 @@ export function SeasonChangeHistoryPanel({
                                                     className="h-9 w-full rounded-lg border border-rose-100 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-rose-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                                 />
                                             </label>
-                                            <div className="space-y-1">
-                                                <span className="text-[10px] font-black text-slate-400">상태</span>
-                                                {!readOnly ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => onRestoreArchivedGroup(group.id)}
-                                                        className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-black text-slate-600 transition hover:border-blue-200 hover:text-blue-600 dark:border-slate-800 dark:bg-slate-950"
-                                                    >
-                                                        다시 편성
-                                                    </button>
-                                                ) : (
-                                                    <span className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-rose-100 bg-white px-3 text-[11px] font-black text-rose-600 dark:border-rose-500/20 dark:bg-slate-950 dark:text-rose-300">
-                                                        종료
-                                                    </span>
-                                                )}
-                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -146,10 +141,15 @@ export function SeasonChangeHistoryPanel({
 
                             {newGroups.length > 0 && (
                                 <div className="space-y-2">
-                                    <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-500">새로 생긴 조</h3>
+                                    <div>
+                                        <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-500">새로 생긴 조</h3>
+                                        <p className="mt-1 text-[11px] font-bold text-slate-400">
+                                            시즌 안에서 새 조들이 활동할 기간을 보정합니다.
+                                        </p>
+                                    </div>
                                     <div className="space-y-2">
                                         {newGroups.map(group => (
-                                            <div key={group.id} className="grid gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3 dark:border-blue-500/20 dark:bg-blue-500/10 lg:grid-cols-[1fr_160px_190px_auto] lg:items-center">
+                                            <div key={group.id} className="grid gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3 dark:border-blue-500/20 dark:bg-blue-500/10 lg:grid-cols-[1fr_160px_190px] lg:items-center">
                                                 <div className="min-w-0">
                                                     <div className="flex items-center gap-2">
                                                         <span
@@ -158,9 +158,6 @@ export function SeasonChangeHistoryPanel({
                                                         />
                                                         <span className="truncate text-sm font-black text-slate-900 dark:text-white">{group.name}</span>
                                                     </div>
-                                                    <p className="mt-1 text-[11px] font-bold text-blue-600 dark:text-blue-300">
-                                                        시즌 안에서 이 조가 활동할 기간을 보정합니다.
-                                                    </p>
                                                 </div>
                                                 <label className="space-y-1">
                                                     <span className="text-[10px] font-black text-slate-400">시작 주차</span>
@@ -186,12 +183,6 @@ export function SeasonChangeHistoryPanel({
                                                         className="h-9 w-full rounded-lg border border-blue-100 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                                     />
                                                 </label>
-                                                <div className="space-y-1">
-                                                    <span className="text-[10px] font-black text-slate-400">상태</span>
-                                                    <span className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-blue-100 bg-white px-3 text-[11px] font-black text-blue-600 dark:border-blue-500/20 dark:bg-slate-950 dark:text-blue-300">
-                                                        신규
-                                                    </span>
-                                                </div>
                                             </div>
                                         ))}
                                     </div>
