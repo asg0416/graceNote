@@ -2371,17 +2371,11 @@ function RegroupingPageInner() {
                                 </label>
                                 {isSelectedCurrentAppliedSeason ? (
                                     <>
-                                        <div className="space-y-1.5">
+                                        <div className="space-y-1.5 xl:col-span-2">
                                             <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">시즌 기간</span>
                                             <div className="flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
                                                 {formatRegroupingPeriodLabel(seasonEffectiveWeekDate, seasonEndWeekDate)}
                                             </div>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-xs font-black text-slate-600 xl:col-span-2 dark:bg-slate-950 dark:text-slate-300">
-                                            <span>각 조/성도별 기간은 아래 기간 조정 패널에서 수정합니다</span>
-                                            <Tooltip content="현재 시즌 편집은 저장 전체의 적용 주차를 하나로 정하지 않습니다. 조와 성도 소속마다 시즌 안에서 유효한 시작·마지막 주차를 관리합니다.">
-                                                <HelpCircle className="h-4 w-4 text-slate-400" />
-                                            </Tooltip>
                                         </div>
                                     </>
                                 ) : (
