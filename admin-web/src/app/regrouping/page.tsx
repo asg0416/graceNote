@@ -40,7 +40,6 @@ import {
     createRegroupingSeason,
     registerCurrentRegroupingSeason,
     saveRegroupingSeasonDraft,
-    syncCurrentRegroupingSeasonPlanFromLive,
     updateCurrentRegroupingGroupPeriods,
     updateRegroupingSeason,
 } from '@/lib/regroupingSeasonsRpc';
@@ -49,6 +48,7 @@ import {
     buildRegroupingSeasonGroupsPayload,
     mapRegroupingSeasonDraftToBoard,
 } from '@/lib/regroupingSeasonPayloads';
+import { SeasonChangeHistoryPanel } from './SeasonChangeHistoryPanel';
 
 const toDateInputValue = (date: Date) => {
     const year = date.getFullYear();
@@ -338,7 +338,6 @@ function RegroupingPageInner() {
     const [seasonTitle, setSeasonTitle] = useState('');
     const [seasonEffectiveWeekDate, setSeasonEffectiveWeekDate] = useState(getCurrentSundayInputValue);
     const [seasonEndWeekDate, setSeasonEndWeekDate] = useState(() => addWeeksToDateInput(getCurrentSundayInputValue(), 24));
-    const [currentSeasonChangeWeekDate, setCurrentSeasonChangeWeekDate] = useState(getCurrentSundayInputValue);
     const [currentRegistrationStartWeek, setCurrentRegistrationStartWeek] = useState(getCurrentSundayInputValue);
     const [currentRegistrationEndWeek, setCurrentRegistrationEndWeek] = useState(() => addWeeksToDateInput(getCurrentSundayInputValue(), 24));
     const [, setPhase2RegroupingCheck] = useState<{
@@ -415,19 +414,19 @@ function RegroupingPageInner() {
                 ? '시즌 조편성 편집'
                 : '새 조편성 만들기';
     const viewDescription = regroupingView === 'list'
-        ? '시즌을 선택하거나 새 조편성을 만들어 적용 주차별 소속을 관리합니다.'
+        ? '시즌을 선택하거나 새 조편성을 만들어 시즌별 소속 기간을 관리합니다.'
         : regroupingMode === 'live'
             ? '저장 즉시 실제 소속과 호환 데이터가 변경되는 예외 작업입니다.'
             : '초안은 저장해도 적용 전까지 앱, 출석, 기도 화면에 반영되지 않습니다.';
     const editorHelpText = regroupingMode === 'live'
         ? '현재/과거 보정은 저장 즉시 실제 소속에 반영됩니다. 미래 조편성은 시즌 초안에서 준비하세요.'
         : isSelectedCurrentAppliedSeason
-            ? '현재 시즌 변경은 선택한 주차부터 실제 소속에 반영됩니다.'
+            ? '현재 시즌은 각 조와 성도 소속의 시즌 내 유효기간을 조정합니다. 같은 성도가 여러 조에 동시에 속할 수 있으며, 같은 조 중복 기간만 피하면 됩니다.'
             : '미래 시즌은 조와 구성원 모두 시즌 기간 전체에 적용됩니다. 시즌 중간 변동은 현재 시즌에서 처리합니다.';
     const editorPeriodSummary = regroupingMode === 'live'
         ? formatRegroupingWeekLabel(effectiveWeekDate)
         : isSelectedCurrentAppliedSeason
-            ? `${formatRegroupingWeekLabel(currentSeasonChangeWeekDate)}부터`
+            ? formatRegroupingPeriodLabel(seasonEffectiveWeekDate, seasonEndWeekDate)
             : `${formatRegroupingWeekLabel(seasonEffectiveWeekDate)} - ${formatRegroupingWeekLabel(seasonEndWeekDate)}`;
 
     // Calculate duplicate status for members (only show delete button if duplicated)
@@ -1214,7 +1213,7 @@ function RegroupingPageInner() {
             department_id: selectedDeptId,
             church_id: currentChurchId,
             plan_status: 'active',
-            starts_week_date: isSelectedCurrentAppliedSeason ? currentSeasonChangeWeekDate : seasonEffectiveWeekDate,
+            starts_week_date: isSelectedCurrentAppliedSeason ? getCurrentSundayInputValue() : seasonEffectiveWeekDate,
             ends_week_date: seasonEndWeekDate || null,
         };
 
@@ -1225,6 +1224,20 @@ function RegroupingPageInner() {
 
     const handleUpdateGroup = (id: string, updates: { name?: string, color_hex?: string }) => {
         setGroups(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g));
+        setHasChanges(true);
+    };
+
+    const handleUpdateSeasonGroupPeriod = (id: string, updates: Record<string, unknown>) => {
+        setGroups(prev => prev.map(group => (
+            group.id === id ? { ...group, ...updates } : group
+        )));
+        setHasChanges(true);
+    };
+
+    const handleUpdateSeasonMemberPeriod = (id: string, updates: Record<string, unknown>) => {
+        setLocalMembers(prev => prev.map(member => (
+            member.id === id ? { ...member, ...updates } : member
+        )));
         setHasChanges(true);
     };
 
@@ -1239,7 +1252,7 @@ function RegroupingPageInner() {
         if (regroupingMode === 'season' && isSelectedCurrentAppliedSeason) {
             const endedWeekDate = maxDateInput(
                 seasonEffectiveWeekDate,
-                getPreviousWeekStartInput(currentSeasonChangeWeekDate)
+                getPreviousWeekStartInput(getCurrentSundayInputValue())
             );
 
             setSeasonArchivedGroups(prev => {
@@ -1379,18 +1392,6 @@ function RegroupingPageInner() {
             return;
         }
 
-        if (isSelectedCurrentAppliedSeason) {
-            if (currentSeasonChangeWeekDate > getCurrentSundayInputValue()) {
-                alert('현재 시즌 변경 적용 주차는 미래로 설정할 수 없습니다. 미래 조편성은 새 시즌 초안으로 준비하세요.');
-                return;
-            }
-
-            if (currentSeasonChangeWeekDate < seasonEffectiveWeekDate) {
-                alert('현재 시즌 변경 적용 주차는 시즌 시작 주차보다 빠를 수 없습니다.');
-                return;
-            }
-        }
-
         setSaving(true);
 
         try {
@@ -1470,7 +1471,7 @@ function RegroupingPageInner() {
                         phase2_person_id: member.phase2_person_id || null,
                         profile_id: member.profile_id || null,
                     })),
-                    effectiveWeekDate: currentSeasonChangeWeekDate,
+                    effectiveWeekDate: getCurrentSundayInputValue(),
                 });
 
                 await assertPhase2MemberDirectorySync(
@@ -1479,14 +1480,15 @@ function RegroupingPageInner() {
                     '현재 시즌 조편성 저장'
                 );
 
-                if (seasonArchivedGroups.length > 0) {
-                    await updateCurrentRegroupingGroupPeriods(supabase, {
-                        seasonId,
-                        groups: buildRegroupingSeasonGroupsPayload(seasonArchivedGroups),
-                    });
-                }
-
-                await syncCurrentRegroupingSeasonPlanFromLive(supabase, { seasonId });
+                await updateCurrentRegroupingGroupPeriods(supabase, {
+                    seasonId,
+                    groups: buildRegroupingSeasonGroupsPayload(seasonArchivedGroups),
+                });
+                await saveRegroupingSeasonDraft(supabase, {
+                    seasonId,
+                    groups: buildRegroupingSeasonGroupsPayload(seasonPlanGroupsToSave),
+                    assignments: buildRegroupingSeasonAssignmentsPayload(membersToSave),
+                });
                 const reloaded = await fetchSeasonPlanBoard(seasonId);
 
                 setGroups(reloaded.activeGroups);
@@ -1543,7 +1545,6 @@ function RegroupingPageInner() {
             setSeasonTitle(season.title || '');
             setSeasonEffectiveWeekDate(season.effective_week_date || getCurrentSundayInputValue());
             setSeasonEndWeekDate(season.end_week_date || addWeeksToDateInput(season.effective_week_date || getCurrentSundayInputValue(), 24));
-            setCurrentSeasonChangeWeekDate(getCurrentSundayInputValue());
             setGroups(reloaded.activeGroups);
             setSeasonArchivedGroups(reloaded.endedGroups);
             setLocalMembers(reloaded.members);
@@ -1651,7 +1652,6 @@ function RegroupingPageInner() {
         setSeasonTitle('');
         setSeasonEffectiveWeekDate(defaultStartWeek);
         setSeasonEndWeekDate(addWeeksToDateInput(defaultStartWeek, 24));
-        setCurrentSeasonChangeWeekDate(defaultStartWeek);
         setGroups([]);
         setSeasonArchivedGroups([]);
         setLocalMembers(unassignedMembers);
@@ -1726,7 +1726,6 @@ function RegroupingPageInner() {
         setSeasonTitle('');
         setSeasonEffectiveWeekDate(getCurrentSundayInputValue());
         setSeasonEndWeekDate(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
-        setCurrentSeasonChangeWeekDate(getCurrentSundayInputValue());
         setSeasonArchivedGroups([]);
         setHasChanges(false);
         if (currentChurchId && selectedDeptId) {
@@ -1795,26 +1794,36 @@ function RegroupingPageInner() {
         return displayLocalMembers
             .map(member => {
                 const baseline = baselineById.get(member.id);
-                if (!baseline) return null;
-                const previousGroupId = baseline.group_id || null;
                 const nextGroupId = member.group_id || null;
+                if (!baseline) {
+                    if (!nextGroupId) return null;
+                    const nextGroup = groups.find(group => group.id === nextGroupId);
+                    return {
+                        id: member.id,
+                        full_name: member.full_name,
+                        changeType: 'added' as const,
+                        previousGroupName: '추가 소속',
+                        nextGroupName: nextGroup?.name || member.group_name || '미편성',
+                        starts_week_date: member.starts_week_date || seasonEffectiveWeekDate,
+                        ends_week_date: member.ends_week_date || seasonEndWeekDate || null,
+                    };
+                }
+                const previousGroupId = baseline.group_id || null;
                 if (previousGroupId === nextGroupId) return null;
                 const previousGroup = baselineGroups.find(group => group.id === previousGroupId);
                 const nextGroup = groups.find(group => group.id === nextGroupId);
                 return {
                     id: member.id,
                     full_name: member.full_name,
+                    changeType: 'moved' as const,
                     previousGroupName: previousGroup?.name || '미편성',
                     nextGroupName: nextGroup?.name || '미편성',
+                    starts_week_date: member.starts_week_date || seasonEffectiveWeekDate,
+                    ends_week_date: member.ends_week_date || seasonEndWeekDate || null,
                 };
             })
-            .filter((member): member is {
-                id: string;
-                full_name: string;
-                previousGroupName: string;
-                nextGroupName: string;
-            } => Boolean(member));
-    }, [boardBaselineArchivedGroups, boardBaselineGroups, boardBaselineMembers, displayLocalMembers, groups]);
+            .filter((member): member is NonNullable<typeof member> => Boolean(member));
+    }, [boardBaselineArchivedGroups, boardBaselineGroups, boardBaselineMembers, displayLocalMembers, groups, seasonEffectiveWeekDate, seasonEndWeekDate]);
 
     const currentChurchName = useMemo(() => {
         if (!currentChurchId) return null;
@@ -1896,7 +1905,6 @@ function RegroupingPageInner() {
                                 setSeasonTitle('');
                                 setSeasonEffectiveWeekDate(getCurrentSundayInputValue());
                                 setSeasonEndWeekDate(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
-                                setCurrentSeasonChangeWeekDate(getCurrentSundayInputValue());
                                 setCurrentRegistrationStartWeek(getCurrentSundayInputValue());
                                 setCurrentRegistrationEndWeek(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
                                 setRegroupingView('list');
@@ -1922,7 +1930,6 @@ function RegroupingPageInner() {
                                 setSeasonTitle('');
                                 setSeasonEffectiveWeekDate(getCurrentSundayInputValue());
                                 setSeasonEndWeekDate(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
-                                setCurrentSeasonChangeWeekDate(getCurrentSundayInputValue());
                                 setCurrentRegistrationStartWeek(getCurrentSundayInputValue());
                                 setCurrentRegistrationEndWeek(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
                                 setRegroupingView('list');
@@ -2248,25 +2255,15 @@ function RegroupingPageInner() {
                                         />
                                     </label>
                                     {isSelectedCurrentAppliedSeason ? (
-                                        <label className="space-y-1">
-                                            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-600">변경 적용 주차</span>
-                                            <div className="grid grid-cols-[1fr_auto] gap-2">
-                                                <input
-                                                    type="date"
-                                                    value={currentSeasonChangeWeekDate}
-                                                    min={seasonEffectiveWeekDate}
-                                                    max={getCurrentSundayInputValue()}
-                                                    onChange={(event) => {
-                                                        setCurrentSeasonChangeWeekDate(snapDateInputToSunday(event.target.value));
-                                                        setHasChanges(true);
-                                                    }}
-                                                    className="h-9 min-w-0 rounded-lg border border-blue-100 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                                                />
-                                                <span className="inline-flex h-9 items-center rounded-lg bg-white px-3 text-[11px] font-black text-blue-600 dark:bg-slate-950 dark:text-blue-300">
-                                                    {formatRegroupingWeekLabel(currentSeasonChangeWeekDate)}
-                                                </span>
-                                            </div>
-                                        </label>
+                                        <div className="rounded-xl border border-blue-100 bg-white p-3 dark:border-blue-500/20 dark:bg-slate-950">
+                                            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-600">현재 시즌 기간</span>
+                                            <p className="mt-1 text-xs font-black text-slate-700 dark:text-slate-100">
+                                                {formatRegroupingPeriodLabel(seasonEffectiveWeekDate, seasonEndWeekDate)}
+                                            </p>
+                                            <p className="mt-2 text-[11px] font-bold leading-5 text-slate-500">
+                                                조 생성/종료와 성도 이동은 아래 기간 조정 패널에서 각각의 시작·마지막 주차를 수정합니다.
+                                            </p>
+                                        </div>
                                     ) : (
                                         <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
                                             <div className="mb-2 flex items-center justify-between gap-3">
@@ -2380,28 +2377,9 @@ function RegroupingPageInner() {
                                                 {formatRegroupingPeriodLabel(seasonEffectiveWeekDate, seasonEndWeekDate)}
                                             </div>
                                         </div>
-                                        <label className="space-y-1.5">
-                                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">이번 변경 적용 주차</span>
-                                            <div className="space-y-1.5">
-                                                <input
-                                                    type="date"
-                                                    value={currentSeasonChangeWeekDate}
-                                                    min={seasonEffectiveWeekDate}
-                                                    max={getCurrentSundayInputValue()}
-                                                    onChange={(event) => {
-                                                        setCurrentSeasonChangeWeekDate(snapDateInputToSunday(event.target.value));
-                                                        setHasChanges(true);
-                                                    }}
-                                                    className="h-10 w-full rounded-xl border border-blue-100 bg-white px-3 text-xs font-black text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                                                />
-                                                <span className="block text-xs font-black text-blue-600 dark:text-blue-300">
-                                                    {formatRegroupingWeekLabel(currentSeasonChangeWeekDate)}
-                                                </span>
-                                            </div>
-                                        </label>
-                                        <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-xs font-black text-slate-600 dark:bg-slate-950 dark:text-slate-300">
-                                            <span>선택 주차부터 반영</span>
-                                            <Tooltip content="조 생성, 조 종료, 성도 이동은 이 주차부터 실제 소속에 적용됩니다.">
+                                        <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-xs font-black text-slate-600 xl:col-span-2 dark:bg-slate-950 dark:text-slate-300">
+                                            <span>각 조/성도별 기간은 아래 기간 조정 패널에서 수정합니다</span>
+                                            <Tooltip content="현재 시즌 편집은 저장 전체의 적용 주차를 하나로 정하지 않습니다. 조와 성도 소속마다 시즌 안에서 유효한 시작·마지막 주차를 관리합니다.">
                                                 <HelpCircle className="h-4 w-4 text-slate-400" />
                                             </Tooltip>
                                         </div>
@@ -2602,143 +2580,6 @@ function RegroupingPageInner() {
                     />
                 </div>
 
-                {regroupingMode === 'season' && (
-                    <div className="border-t border-slate-200/60 bg-white/70 px-5 py-4 dark:border-slate-800/60 dark:bg-slate-950/40 sm:px-8">
-                        <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-                            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 sm:px-5">
-                                <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-sm font-black text-slate-950 dark:text-white">시즌 변경 내역</span>
-                                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500 dark:bg-slate-800">
-                                            종료 조 {seasonArchivedGroups.length}
-                                        </span>
-                                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-black text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">
-                                            신규 조 {seasonNewGroups.length}
-                                        </span>
-                                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-                                            이동 {movedSeasonMembers.length}
-                                        </span>
-                                    </div>
-                                    <p className="mt-1 text-xs font-bold text-slate-400">
-                                        시즌 중간에 생긴 변경만 접어서 관리합니다.
-                                    </p>
-                                </div>
-                                <ChevronDown className="h-5 w-5 shrink-0 text-slate-400 transition group-open:rotate-180" />
-                            </summary>
-
-                            <div className="grid gap-3 border-t border-slate-100 p-4 dark:border-slate-800 sm:p-5">
-                                {seasonArchivedGroups.length === 0 && seasonNewGroups.length === 0 && movedSeasonMembers.length === 0 ? (
-                                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs font-black text-slate-400 dark:border-slate-800 dark:bg-slate-950/50">
-                                        아직 시즌 중간 변경 내역이 없습니다.
-                                    </div>
-                                ) : (
-                                    <>
-                                        {seasonArchivedGroups.length > 0 && (
-                                            <div className="space-y-2">
-                                                <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">종료된 조</h3>
-                                                {seasonArchivedGroups.map(group => (
-                                                    <div key={group.id} className="grid gap-3 rounded-xl border border-rose-100 bg-rose-50/50 p-3 dark:border-rose-500/20 dark:bg-rose-500/10 lg:grid-cols-[1fr_160px_190px_auto] lg:items-center">
-                                                        <div className="min-w-0">
-                                                            <div className="flex items-center gap-2">
-                                                                <span
-                                                                    className="h-2.5 w-2.5 rounded-full"
-                                                                    style={{ backgroundColor: group.color_hex || '#64748b' }}
-                                                                />
-                                                                <span className="truncate text-sm font-black text-slate-900 dark:text-white">{group.name}</span>
-                                                            </div>
-                                                            <p className="mt-1 text-[11px] font-bold text-slate-500">
-                                                                이 시즌에서 활동했던 조로 보관됩니다.
-                                                            </p>
-                                                        </div>
-                                                        <label className="space-y-1">
-                                                            <span className="text-[10px] font-black text-slate-400">시작</span>
-                                                            <input
-                                                                type="date"
-                                                                value={group.starts_week_date || seasonEffectiveWeekDate}
-                                                                min={seasonEffectiveWeekDate}
-                                                                max={group.ends_week_date || seasonEndWeekDate}
-                                                                disabled={isBoardReadonly}
-                                                                onChange={(event) => handleUpdateArchivedGroup(group.id, {
-                                                                    starts_week_date: snapDateInputToSunday(event.target.value),
-                                                                })}
-                                                                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-rose-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                                                            />
-                                                        </label>
-                                                        <label className="space-y-1">
-                                                            <span className="text-[10px] font-black text-slate-400">마지막 활동 주차</span>
-                                                            <input
-                                                                type="date"
-                                                                value={group.ends_week_date || seasonEndWeekDate}
-                                                                min={group.starts_week_date || seasonEffectiveWeekDate}
-                                                                max={seasonEndWeekDate}
-                                                                disabled={isBoardReadonly}
-                                                                onChange={(event) => handleUpdateArchivedGroup(group.id, {
-                                                                    ends_week_date: snapDateInputToSunday(event.target.value),
-                                                                })}
-                                                                className="h-9 w-full rounded-lg border border-rose-100 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-rose-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                                                            />
-                                                        </label>
-                                                        {!isBoardReadonly && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleRestoreArchivedGroup(group.id)}
-                                                                className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-black text-slate-600 transition hover:border-blue-200 hover:text-blue-600 dark:border-slate-800 dark:bg-slate-950"
-                                                            >
-                                                                다시 편성
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {seasonNewGroups.length > 0 && (
-                                            <div className="space-y-2">
-                                                <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-500">시즌 중 새로 생긴 조</h3>
-                                                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                                                    {seasonNewGroups.map(group => (
-                                                        <div key={group.id} className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 dark:border-blue-500/20 dark:bg-blue-500/10">
-                                                            <div className="flex items-center gap-2">
-                                                                <span
-                                                                    className="h-2.5 w-2.5 rounded-full"
-                                                                    style={{ backgroundColor: group.color_hex || '#2563eb' }}
-                                                                />
-                                                                <span className="truncate text-sm font-black text-slate-900 dark:text-white">{group.name}</span>
-                                                            </div>
-                                                            <p className="mt-1 text-[11px] font-bold text-blue-600 dark:text-blue-300">
-                                                                {formatRegroupingWeekLabel(group.starts_week_date || seasonEffectiveWeekDate)}부터
-                                                            </p>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {movedSeasonMembers.length > 0 && (
-                                            <div className="space-y-2">
-                                                <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-500">조 이동 성도</h3>
-                                                <div className="max-h-48 overflow-y-auto rounded-xl border border-amber-100 bg-amber-50/50 dark:border-amber-500/20 dark:bg-amber-500/10">
-                                                    {movedSeasonMembers.map(member => (
-                                                        <div key={member.id} className="flex items-center justify-between gap-3 border-b border-amber-100 px-3 py-2 last:border-b-0 dark:border-amber-500/10">
-                                                            <span className="text-xs font-black text-slate-800 dark:text-slate-100">{member.full_name}</span>
-                                                            <span className="truncate text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                                                                {member.previousGroupName} → {member.nextGroupName}
-                                                            </span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <p className="text-[11px] font-bold text-slate-400">
-                                                    성도별 이동 기간 직접 수정은 다음 단계에서 이 영역에 추가합니다.
-                                                </p>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        </details>
-                    </div>
-                )}
-
                 {/* Keyboard Shortcuts Legend */}
                 <div className="px-8 py-4 bg-slate-50/50 dark:bg-slate-900/40 border-t border-slate-200/50 dark:border-slate-800/50 flex items-center gap-8">
                     <div className="flex items-center gap-3">
@@ -2763,6 +2604,36 @@ function RegroupingPageInner() {
                     </div>
                 </div>
             </div>
+            )}
+
+            {regroupingView !== 'list' && regroupingMode === 'season' && isSelectedSeasonApplied && (
+                <SeasonChangeHistoryPanel
+                    archivedGroups={seasonArchivedGroups}
+                    newGroups={seasonNewGroups}
+                    movedMembers={movedSeasonMembers}
+                    seasonEffectiveWeekDate={seasonEffectiveWeekDate}
+                    seasonEndWeekDate={seasonEndWeekDate}
+                    readOnly={isBoardReadonly}
+                    onArchivedGroupStartChange={(groupId, value) => handleUpdateArchivedGroup(groupId, {
+                        starts_week_date: snapDateInputToSunday(value),
+                    })}
+                    onArchivedGroupEndChange={(groupId, value) => handleUpdateArchivedGroup(groupId, {
+                        ends_week_date: snapDateInputToSunday(value),
+                    })}
+                    onNewGroupStartChange={(groupId, value) => handleUpdateSeasonGroupPeriod(groupId, {
+                        starts_week_date: snapDateInputToSunday(value),
+                    })}
+                    onNewGroupEndChange={(groupId, value) => handleUpdateSeasonGroupPeriod(groupId, {
+                        ends_week_date: snapDateInputToSunday(value),
+                    })}
+                    onMovedMemberStartChange={(memberId, value) => handleUpdateSeasonMemberPeriod(memberId, {
+                        starts_week_date: snapDateInputToSunday(value),
+                    })}
+                    onMovedMemberEndChange={(memberId, value) => handleUpdateSeasonMemberPeriod(memberId, {
+                        ends_week_date: snapDateInputToSunday(value),
+                    })}
+                    onRestoreArchivedGroup={handleRestoreArchivedGroup}
+                />
             )}
 
             {regroupingView !== 'list' && isMemberModalOpen && currentChurchId && (
