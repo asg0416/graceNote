@@ -499,14 +499,15 @@ function MembersPageInner() {
     };
 
     const refreshPhase2ListCheck = async (fetchedMembers: RosterMember[], churchId: string, deptId: string = 'all') => {
-        // '미정'(unassigned)은 아직 조에 배정되지 않은 대기 상태 — Phase 2 group membership이 없어도 정상이므로 진단에서 제외
         const activeLegacyMembers = fetchedMembers.filter(member =>
-            member.is_active !== false &&
-            Boolean(member.group_name) &&
-            member.group_name !== '미정'
+            member.is_active !== false
         );
-        const activeLegacyDirectoryIds = new Set(activeLegacyMembers.map(member => member.id));
         const activeLegacyPersonIds = new Set(activeLegacyMembers.map(getRosterPersonKey));
+        const activeLegacyPhase2PersonIds = new Set(
+            activeLegacyMembers
+                .map(member => member.phase2_person_id)
+                .filter(Boolean)
+        );
         const personIds = Array.from(new Set(fetchedMembers.map(member => member.phase2_person_id).filter(Boolean)));
 
         if (fetchedMembers.length === 0) {
@@ -552,15 +553,12 @@ function MembersPageInner() {
                 return true;
             });
             const phase2ActivePersonIds = new Set(relevantActiveMemberships.map(membership => membership.person_id).filter(Boolean));
-            const phase2ActiveDirectoryIds = new Set(
-                relevantActiveMemberships
-                    .map(membership => membership.legacy_member_directory_id)
-                    .filter(Boolean)
-            );
 
-            const missingPhase2Count = activeLegacyMembers.filter(member => !phase2ActiveDirectoryIds.has(member.id)).length;
+            const missingPhase2Count = activeLegacyMembers.filter(member => (
+                !member.phase2_person_id || !phase2ActivePersonIds.has(member.phase2_person_id)
+            )).length;
             const extraPhase2Count = relevantActiveMemberships.filter(membership => (
-                !membership.legacy_member_directory_id || !activeLegacyDirectoryIds.has(membership.legacy_member_directory_id)
+                !membership.person_id || !activeLegacyPhase2PersonIds.has(membership.person_id)
             )).length;
             const issueCount = missingPhase2Count + extraPhase2Count;
 
