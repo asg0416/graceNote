@@ -1447,11 +1447,24 @@ function RegroupingPageInner() {
                 const savedDirectoryIds = await saveRegroupingMemberships(supabase, {
                     churchId: selectedChurch.id,
                     departmentId: selectedDepartment.id,
-                    groups: groups.map(group => ({
-                        id: group.source_group_id || group.id,
-                        name: group.name,
-                        color_hex: group.color_hex,
-                    })),
+                    groups: [
+                        ...groups.map(group => ({
+                            id: group.source_group_id || group.id,
+                            name: group.name,
+                            color_hex: group.color_hex,
+                            plan_status: group.plan_status || 'active',
+                            starts_week_date: group.starts_week_date || seasonEffectiveWeekDate,
+                            ends_week_date: group.ends_week_date || seasonEndWeekDate || null,
+                        })),
+                        ...seasonArchivedGroups.map(group => ({
+                            id: group.source_group_id || group.id,
+                            name: group.name,
+                            color_hex: group.color_hex,
+                            plan_status: 'ended',
+                            starts_week_date: group.starts_week_date || seasonEffectiveWeekDate,
+                            ends_week_date: group.ends_week_date || seasonEndWeekDate || null,
+                        })),
+                    ],
                     assignments: membersToSave.map(member => ({
                         id: member.source_member_directory_id || member.id,
                         full_name: member.full_name,
@@ -1470,6 +1483,8 @@ function RegroupingPageInner() {
                         person_id: member.person_id || null,
                         phase2_person_id: member.phase2_person_id || null,
                         profile_id: member.profile_id || null,
+                        starts_week_date: member.starts_week_date || seasonEffectiveWeekDate,
+                        ends_week_date: member.ends_week_date || seasonEndWeekDate || null,
                     })),
                     effectiveWeekDate: getCurrentSundayInputValue(),
                 });
