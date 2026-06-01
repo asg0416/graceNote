@@ -6,6 +6,11 @@ import { useRouter } from 'next/navigation';
 import { Mail, Lock, Loader2, ArrowRight, ShieldCheck, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
+import AdminSocialAuthButtons from '@/components/AdminSocialAuthButtons';
+
+function getErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+}
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -64,8 +69,9 @@ export default function LoginPage() {
 
                 router.push('/');
             }
-        } catch (err: any) {
-            setError(err.message === 'Invalid login credentials' ? '이메일 또는 비밀번호가 잘못되었습니다.' : err.message);
+        } catch (err) {
+            const message = getErrorMessage(err);
+            setError(message === 'Invalid login credentials' ? '이메일 또는 비밀번호가 잘못되었습니다.' : message);
         } finally {
             setLoading(false);
         }
@@ -85,8 +91,8 @@ export default function LoginPage() {
 
             setForgotMessage('비밀번호 재설정 링크가 이메일로 전송되었습니다.');
             setForgotEmail('');
-        } catch (err: any) {
-            setForgotMessage(`오류: ${err.message}`);
+        } catch (err) {
+            setForgotMessage(`오류: ${getErrorMessage(err)}`);
         } finally {
             setForgotLoading(false);
         }
@@ -225,6 +231,10 @@ export default function LoginPage() {
                                 </div>
                             </button>
                         </form>
+
+                        <div className="mt-8">
+                            <AdminSocialAuthButtons disabled={loading} onError={setError} />
+                        </div>
 
                         <div className="mt-10 pt-8 border-t border-slate-100 dark:border-slate-800/60 text-center">
                             <p className="text-xs font-bold text-slate-500 dark:text-slate-500 mb-4">아직 관리자 계정이 없으신가요?</p>

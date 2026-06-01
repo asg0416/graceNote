@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Church, Mail, Lock, Loader2, ArrowRight, User, ShieldCheck, Moon, Sun, ChevronLeft } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
+import AdminSocialAuthButtons from '@/components/AdminSocialAuthButtons';
 
 export default function RegisterPage() {
     const [fullName, setFullName] = useState('');
@@ -391,7 +392,14 @@ export default function RegisterPage() {
                                 </div>
                             </form>
                         ) : (
-                            <form onSubmit={handleRegister} className="space-y-6">
+                            <div className="space-y-8">
+                                <AdminSocialAuthButtons
+                                    disabled={loading}
+                                    label="앱 소셜 계정으로 계속하기"
+                                    onError={setError}
+                                />
+
+                                <form onSubmit={handleRegister} className="space-y-6">
                                 {error && (
                                     <div className="space-y-4">
                                         <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-600 dark:text-red-400 text-xs font-black text-center flex items-center justify-center gap-2">
@@ -562,7 +570,8 @@ export default function RegisterPage() {
                                         </>
                                     )}
                                 </button>
-                            </form>
+                                </form>
+                            </div>
                         )}
                     </div>
 
