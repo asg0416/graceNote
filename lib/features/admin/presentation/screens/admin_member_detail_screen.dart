@@ -591,6 +591,35 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
   String? _selectedGroupId;
   bool _isSaving = false;
   String _groupSearchQuery = '';
+  late DateTime _effectiveWeekDate;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _effectiveWeekDate = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday % 7));
+  }
+
+  DateTime _weekStart(DateTime date) {
+    return DateTime(date.year, date.month, date.day)
+        .subtract(Duration(days: date.weekday % 7));
+  }
+
+  Future<void> _pickEffectiveWeek() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _effectiveWeekDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: '적용 시작 주차 선택',
+      locale: const Locale('ko', 'KR'),
+      selectableDayPredicate: (date) => date.weekday == DateTime.sunday,
+    );
+    if (picked != null) {
+      setState(() => _effectiveWeekDate = _weekStart(picked));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -727,6 +756,52 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
               loading: () => Center(child: ShadcnSpinner()),
               error: (e, _) => Text('조 목록 로딩 실패: $e'),
             ),
+            const SizedBox(height: 18),
+            const Text('적용 시작 주차',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textSub,
+                    fontFamily: 'Pretendard',
+                    letterSpacing: -0.2)),
+            const SizedBox(height: 10),
+            InkWell(
+              onTap: _isSaving ? null : _pickEffectiveWeek,
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppTheme.background,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(LucideIcons.calendarDays,
+                        size: 18, color: AppTheme.primaryViolet),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        DateFormat('yyyy. M. d.').format(_effectiveWeekDate),
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.textMain,
+                            fontFamily: 'Pretendard'),
+                      ),
+                    ),
+                    const Text('이 주차부터 반영',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textSub,
+                            fontFamily: 'Pretendard')),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -767,26 +842,17 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
           .single();
 
       final String? profileId = memberRes['profile_id'];
-      final String churchId = memberRes['church_id'];
 
-      if (profileId != null) {
-        // 2-A. 프로필이 있는 경우: completeOnboarding 등으로 전체 업데이트
-        await repo.completeOnboarding(
-          profileId: profileId,
-          fullName: memberRes['full_name'],
-          churchId: churchId,
-          groupId: _selectedGroupId,
-        );
-      }
-
-      // 2-B. Directory 정보 업데이트
       final groups =
           await ref.read(departmentGroupsProvider(widget.departmentId).future);
       final targetGroup = groups.firstWhere((g) => g['id'] == _selectedGroupId);
 
-      await repo.updateDirectoryMember(widget.directoryMemberId, {
-        'group_name': targetGroup['name'],
-      });
+      await repo.moveDirectoryMemberToGroup(
+        memberDirectoryId: widget.directoryMemberId,
+        sourceGroupId: widget.currentGroupId,
+        targetGroupId: _selectedGroupId!,
+        effectiveWeekDate: _effectiveWeekDate,
+      );
 
       // Refresh providers — invalidate both old and new group member lists
       ref.invalidate(departmentGroupsProvider(widget.departmentId));

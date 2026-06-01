@@ -40,6 +40,34 @@ class GraceNoteRepository {
     return true;
   }
 
+  bool _membershipWasInUseOnWeek(
+    Map<String, dynamic> membership,
+    DateTime? weekDate,
+  ) {
+    if (weekDate == null) return membership['status'] == 'active';
+
+    final weekStart = DateTime(weekDate.year, weekDate.month, weekDate.day);
+    final weekEnd = weekStart.add(const Duration(days: 1));
+    final group = membership['groups'] is Map<String, dynamic>
+        ? membership['groups'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final startsAt =
+        DateTime.tryParse(membership['starts_at']?.toString() ?? '') ??
+            DateTime.tryParse(group['active_from']?.toString() ?? '');
+    final endsAt = DateTime.tryParse(membership['ends_at']?.toString() ?? '');
+    final groupActiveFrom =
+        DateTime.tryParse(group['active_from']?.toString() ?? '');
+    final groupEndedAt = DateTime.tryParse(group['ended_at']?.toString() ?? '');
+
+    if (startsAt != null && !startsAt.isBefore(weekEnd)) return false;
+    if (groupActiveFrom != null && !groupActiveFrom.isBefore(weekEnd)) {
+      return false;
+    }
+    if (endsAt != null && endsAt.isBefore(weekStart)) return false;
+    if (groupEndedAt != null && groupEndedAt.isBefore(weekStart)) return false;
+    return true;
+  }
+
   List<Map<String, dynamic>> _groupsForWeekWithLastKnownFallback(
     List<Map<String, dynamic>> allGroups,
     DateTime? weekDate, {
@@ -53,8 +81,8 @@ class GraceNoteRepository {
 
     if (groupsForWeek.isNotEmpty || weekDate == null) return groupsForWeek;
 
-    final weekEnd =
-        DateTime(weekDate.year, weekDate.month, weekDate.day).add(const Duration(days: 1));
+    final weekEnd = DateTime(weekDate.year, weekDate.month, weekDate.day)
+        .add(const Duration(days: 1));
     DateTime? latestKnownBoundary;
 
     for (final group in allGroups) {
@@ -67,7 +95,8 @@ class GraceNoteRepository {
       final boundary = endedAt ?? activeFrom;
       if (boundary == null) continue;
 
-      if (latestKnownBoundary == null || boundary.isAfter(latestKnownBoundary)) {
+      if (latestKnownBoundary == null ||
+          boundary.isAfter(latestKnownBoundary)) {
         latestKnownBoundary = boundary;
       }
     }
@@ -554,7 +583,9 @@ class GraceNoteRepository {
     List<Map<String, dynamic>>? preloadedMembers,
   }) async {
     // 1. 조원 명단 정보 먼저 확보
-    final members = preloadedMembers ?? await getGroupMembers(groupId);
+    final weekDate = await _getWeekDate(weekId);
+    final members =
+        preloadedMembers ?? await getGroupMembers(groupId, weekDate: weekDate);
 
     // 2. 출석 및 기도제목 데이터 별도 조회
     // Attendance: No Join (Safest)
@@ -835,7 +866,8 @@ class GraceNoteRepository {
   }
 
   // 특정 조의 멤버 목록 가져오기 (성도 명부 기준 - 메모리 조인 방식)
-  Future<List<Map<String, dynamic>>> getGroupMembers(String groupId) async {
+  Future<List<Map<String, dynamic>>> getGroupMembers(String groupId,
+      {DateTime? weekDate}) async {
     // 1. 조 정보 가져오기
     final groupResponse = await _supabase
         .from('groups')
@@ -849,18 +881,21 @@ class GraceNoteRepository {
     final departmentId = groupResponse['department_id'];
 
     // 2. 명부 데이터 가져오기: Phase 2 memberships 우선, legacy group_name fallback.
-    final phase2Members = await _getGroupMembersFromMemberships(groupId);
+    final phase2Members =
+        await _getGroupMembersFromMemberships(groupId, weekDate: weekDate);
     final directoryResponse = phase2Members.isNotEmpty
         ? phase2Members
-        : await _supabase
-            .from('member_directory')
-            .select()
-            .eq('church_id', churchId)
-            .eq('department_id', departmentId)
-            .eq('group_name', groupName)
-            .eq('is_active', true)
-            .order('family_name', ascending: true, nullsFirst: false)
-            .order('full_name', ascending: true);
+        : weekDate != null
+            ? <Map<String, dynamic>>[]
+            : await _supabase
+                .from('member_directory')
+                .select()
+                .eq('church_id', churchId)
+                .eq('department_id', departmentId)
+                .eq('group_name', groupName)
+                .eq('is_active', true)
+                .order('family_name', ascending: true, nullsFirst: false)
+                .order('full_name', ascending: true);
 
     final membersList = List<Map<String, dynamic>>.from(directoryResponse);
     if (membersList.isEmpty) return [];
@@ -988,17 +1023,23 @@ class GraceNoteRepository {
   }
 
   Future<List<Map<String, dynamic>>> _getGroupMembersFromMemberships(
-      String groupId) async {
+      String groupId,
+      {DateTime? weekDate}) async {
     try {
       final membershipsResponse = await _supabase
           .from('memberships')
           .select(
-              'person_id, legacy_member_directory_id, legacy_group_member_id, role')
+              'id, person_id, legacy_member_directory_id, legacy_group_member_id, role, status, starts_at, ends_at, groups(active_from, ended_at)')
           .eq('group_id', groupId)
-          .eq('status', 'active')
-          .not('legacy_member_directory_id', 'is', null);
+          .inFilter('status', ['active', 'ended']).not(
+              'legacy_member_directory_id', 'is', null);
 
-      final memberships = List<Map<String, dynamic>>.from(membershipsResponse);
+      final memberships = List<Map<String, dynamic>>.from(membershipsResponse)
+          .where((membership) => _membershipWasInUseOnWeek(
+                membership,
+                weekDate,
+              ))
+          .toList();
       if (memberships.isEmpty) return [];
 
       final directoryIds = memberships
@@ -1030,6 +1071,9 @@ class GraceNoteRepository {
             'person_id': membership!['person_id'],
           'group_member_id': membership?['legacy_group_member_id'],
           'role_in_group': membership?['role'] ?? dir['role_in_group'],
+          'membership_id': membership?['id'],
+          'membership_starts_at': membership?['starts_at']?.toString(),
+          'membership_ends_at': membership?['ends_at']?.toString(),
           'phase2_membership_source': 'memberships',
         };
       }).toList();
@@ -1254,6 +1298,35 @@ class GraceNoteRepository {
     );
   }
 
+  Future<void> moveDirectoryMemberToGroup({
+    required String memberDirectoryId,
+    required String sourceGroupId,
+    required String targetGroupId,
+    required DateTime effectiveWeekDate,
+  }) async {
+    final result = await _supabase.rpc(
+      'move_member_directory_to_group',
+      params: {
+        'p_member_directory_id': memberDirectoryId,
+        'p_source_group_id': sourceGroupId,
+        'p_target_group_id': targetGroupId,
+        'p_effective_week_date':
+            effectiveWeekDate.toIso8601String().split('T').first,
+      },
+    );
+
+    final updated = result is Map
+        ? Map<String, dynamic>.from(result)
+        : result is List && result.isNotEmpty && result.first is Map
+            ? Map<String, dynamic>.from(result.first as Map)
+            : <String, dynamic>{'id': memberDirectoryId};
+
+    await _assertPhase2MemberDirectorySync(
+      [updated['id']?.toString() ?? memberDirectoryId],
+      '성도 조 편성',
+    );
+  }
+
   Future<Map<String, dynamic>> _upsertMemberPersonMembership(
     Map<String, dynamic> data, {
     String? memberDirectoryId,
@@ -1344,7 +1417,7 @@ class GraceNoteRepository {
     // 1. 조 정보 가져오기
     final group = await _supabase
         .from('groups')
-        .select('church_id')
+        .select('church_id, is_active, created_at, active_from, ended_at')
         .eq('id', groupId)
         .single();
 
@@ -1368,7 +1441,12 @@ class GraceNoteRepository {
     final weeksResponse =
         await query.order('week_date', ascending: false).limit(limit);
 
-    final weeks = List<Map<String, dynamic>>.from(weeksResponse);
+    final weeks = List<Map<String, dynamic>>.from(weeksResponse)
+        .where((week) => _groupWasInUseOnWeek(
+              group,
+              DateTime.tryParse(week['week_date']?.toString() ?? ''),
+            ))
+        .toList();
     final weekIds = weeks.map((w) => w['id'] as String).toList();
 
     if (weekIds.isEmpty) return [];

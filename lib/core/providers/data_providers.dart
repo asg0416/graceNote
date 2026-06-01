@@ -321,7 +321,7 @@ Future<List<Map<String, dynamic>>> _fetchUserGroupsFromMemberships(
   final response = await Supabase.instance.client
       .from('memberships')
       .select(
-          'id, group_id, role, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, departments(name, profile_mode))')
+          'id, group_id, role, starts_at, ends_at, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, active_from, ended_at, departments(name, profile_mode))')
       .eq('person_id', personId)
       .eq('status', 'active')
       .not('group_id', 'is', null)
@@ -339,7 +339,7 @@ Future<List<Map<String, dynamic>>> _fetchUserGroupsFromGroupMembers(
   final response = await Supabase.instance.client
       .from('group_members')
       .select(
-          'group_id, role_in_group, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, departments(name, profile_mode))')
+          'group_id, role_in_group, joined_at, left_at, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, active_from, ended_at, departments(name, profile_mode))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
       .order('joined_at', ascending: false);
@@ -374,6 +374,14 @@ List<Map<String, dynamic>> _normalizeUserGroupRows(
       'is_new_member_group': e['groups']?['is_new_member_group'] ?? false,
       'climbing_threshold': e['groups']?['climbing_threshold'],
       'phase2_membership_id': source == 'phase2' ? e['id']?.toString() : null,
+      'membership_starts_at': source == 'phase2'
+          ? e['starts_at']?.toString()
+          : e['joined_at']?.toString(),
+      'membership_ends_at': source == 'phase2'
+          ? e['ends_at']?.toString()
+          : e['left_at']?.toString(),
+      'group_active_from': e['groups']?['active_from']?.toString(),
+      'group_ended_at': e['groups']?['ended_at']?.toString(),
       'membership_source': source,
     };
   }).toList();

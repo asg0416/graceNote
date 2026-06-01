@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
+import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:grace_note/core/utils/route_util.dart';
 import 'package:grace_note/features/attendance/presentation/screens/attendance_check_screen.dart';
@@ -31,6 +32,55 @@ class _AttendanceDashboardScreenState
   late int _viewYear;
   late int _viewMonth;
   List<Map<String, dynamic>>? _cachedHistory;
+
+  DateTime? _monthStartFromMembership() {
+    final membership = ref.read(activeMembershipProvider);
+    final candidates = [
+      membership?.groupActiveFrom,
+      membership?.membershipStartsAt,
+    ]
+        .map((value) => DateTime.tryParse(value ?? ''))
+        .whereType<DateTime>()
+        .toList();
+    if (candidates.isEmpty) return null;
+    candidates.sort();
+    final first = candidates.first;
+    return DateTime(first.year, first.month, 1);
+  }
+
+  DateTime? _monthEndFromMembership() {
+    final membership = ref.read(activeMembershipProvider);
+    final candidates = [
+      membership?.groupEndedAt,
+      membership?.membershipEndsAt,
+    ]
+        .map((value) => DateTime.tryParse(value ?? ''))
+        .whereType<DateTime>()
+        .toList();
+    if (candidates.isEmpty) return null;
+    candidates.sort();
+    final last = candidates.last;
+    return DateTime(last.year, last.month, 1);
+  }
+
+  bool _canGoPreviousMonth() {
+    final firstMonth = _monthStartFromMembership();
+    if (firstMonth == null) return true;
+    final currentMonth = DateTime(_viewYear, _viewMonth, 1);
+    return currentMonth.isAfter(firstMonth);
+  }
+
+  bool _canGoNextMonth() {
+    final now = DateTime.now();
+    final currentRealMonth = DateTime(now.year, now.month, 1);
+    final lastMembershipMonth = _monthEndFromMembership();
+    final lastMonth = lastMembershipMonth != null &&
+            lastMembershipMonth.isBefore(currentRealMonth)
+        ? lastMembershipMonth
+        : currentRealMonth;
+    final currentMonth = DateTime(_viewYear, _viewMonth, 1);
+    return currentMonth.isBefore(lastMonth);
+  }
 
   @override
   void initState() {
@@ -395,6 +445,8 @@ class _AttendanceDashboardScreenState
   }
 
   void _previousMonth() {
+    if (!_canGoPreviousMonth()) return;
+
     setState(() {
       if (_viewMonth == 1) {
         _viewYear--;
@@ -406,8 +458,7 @@ class _AttendanceDashboardScreenState
   }
 
   void _nextMonth() {
-    final now = DateTime.now();
-    if (_viewYear == now.year && _viewMonth == now.month) return;
+    if (!_canGoNextMonth()) return;
 
     setState(() {
       if (_viewMonth == 12) {
@@ -430,7 +481,11 @@ class _AttendanceDashboardScreenState
     if (churchId.isEmpty) return;
 
     // 1. 멤버 목록 및 기존 출석 데이터 가져오기
-    final membersData = await repo.getGroupMembers(widget.groupId);
+    final selectedWeekDate = DateTime.tryParse(weekDateStr);
+    final membersData = await repo.getGroupMembers(
+      widget.groupId,
+      weekDate: selectedWeekDate,
+    );
     final weeklyData = await repo.getWeeklyData(
       widget.groupId,
       weekId,
@@ -492,7 +547,7 @@ class _AttendanceDashboardScreenState
     final hasExistingData = existingAttendance.isNotEmpty;
 
     // 3. 과거 주차 여부 판단
-    final weekDate = DateTime.parse(weekDateStr);
+    final weekDate = selectedWeekDate ?? DateTime.parse(weekDateStr);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final isPastWeek = weekDate.isBefore(today);
@@ -585,17 +640,14 @@ class _AttendanceDashboardScreenState
                     IconButton(
                       icon: Icon(lucide.LucideIcons.chevronLeft,
                           size: 18, color: AppTheme.textSub),
-                      onPressed: _previousMonth,
+                      onPressed: _canGoPreviousMonth() ? _previousMonth : null,
                       tooltip: '이전 달',
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
                       icon: Icon(lucide.LucideIcons.chevronRight,
                           size: 18, color: AppTheme.textSub),
-                      onPressed: (_viewYear == DateTime.now().year &&
-                              _viewMonth == DateTime.now().month)
-                          ? null
-                          : _nextMonth,
+                      onPressed: _canGoNextMonth() ? _nextMonth : null,
                       tooltip: '다음 달',
                       visualDensity: VisualDensity.compact,
                     ),

@@ -269,7 +269,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       final weekId = weekIdResult;
 
       // [FIX] weekId가 없더라도 멤버 목록은 항상 가져옴 (빈 화면 방지)
-      final membersData = await repo.getGroupMembers(groupId);
+      final membersData = await repo.getGroupMembers(
+        groupId,
+        weekDate: selectedDate,
+      );
 
       final List<Map<String, dynamic>> existingAttendance;
       final List<Map<String, dynamic>> existingPrayers;
@@ -414,8 +417,24 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     return 'single_$directoryId';
   }
 
+  bool _isActiveMembershipWeek(DateTime date) {
+    final activeMembership = ref.read(activeMembershipProvider);
+    if (activeMembership == null ||
+        activeMembership.groupId == 'global_admin') {
+      return true;
+    }
+    return activeMembership.isActiveOnWeek(date);
+  }
+
   Future<void> _launchAttendanceCheck() async {
     final selectedDate = ref.read(attendanceSelectedWeekProvider);
+    if (!_isActiveMembershipWeek(selectedDate)) {
+      if (mounted) {
+        SnackBarUtil.showSnackBar(context,
+            message: '선택한 주차에는 이 조가 활동 중이 아니어서 출석체크를 할 수 없습니다.', isError: true);
+      }
+      return;
+    }
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     // 선택된 날짜와 오늘 날짜를 비교하여 과거 주차 여부 확인 (일요일 기준이므로 < 오늘)
@@ -1128,6 +1147,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       _syncMembersFromControllers();
       final repo = ref.read(repositoryProvider);
       final selectedDate = ref.read(attendanceSelectedWeekProvider);
+      if (!_isActiveMembershipWeek(selectedDate)) {
+        if (mounted && !silent) {
+          setState(() => _isLoading = false);
+        }
+        if (mounted && !silent) {
+          SnackBarUtil.showSnackBar(context,
+              message: '선택한 주차에는 이 조가 활동 중이 아니어서 저장할 수 없습니다.', isError: true);
+        }
+        return;
+      }
       final weekIdResult = await repo.getOrCreateWeek(
           _currentChurchId!, selectedDate,
           createIfMissing: true);
@@ -1594,7 +1623,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                         final now = DateTime.now();
                         final today = DateTime(now.year, now.month, now.day);
                         return date.weekday == DateTime.sunday &&
-                            !date.isAfter(today);
+                            !date.isAfter(today) &&
+                            _isActiveMembershipWeek(date);
                       },
                       onChanged: (date) {
                         if (date != null) {
