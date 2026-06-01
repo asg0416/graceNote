@@ -410,6 +410,12 @@ const isLinkedAttendanceRow = (row: AttendanceRow) => (
     Boolean(row.person_id || row.directory_member_id || row.membership_id)
 );
 
+const hasMeaningfulSnapshotEvidence = (member: AttendanceRosterSnapshotMember) => (
+    member.attendanceStatus !== 'unknown' ||
+    member.source !== 'auto_membership' ||
+    Boolean(member.reason)
+);
+
 const getCompactAttendanceLabel = (status?: SnapshotAttendanceStatus | null) => {
     switch (status) {
         case 'present':
@@ -1118,13 +1124,15 @@ export default function AttendancePage() {
             if (deptGroupsError) throw buildQueryError('attendance week groups query failed', deptGroupsError);
             if (latestAttendanceRequestKey.current !== requestKey) return;
 
+            const snapshotMembersWithGroupEvidence = snapshotMembersWithAttendance
+                .filter(hasMeaningfulSnapshotEvidence);
             const snapshotGroupIds = new Set(
-                snapshotMembersWithAttendance
+                snapshotMembersWithGroupEvidence
                     .map((member) => member.groupId)
                     .filter((groupId): groupId is string => Boolean(groupId))
             );
             const snapshotGroupNames = new Set(
-                snapshotMembersWithAttendance
+                snapshotMembersWithGroupEvidence
                     .map((member) => member.groupName)
                     .filter((groupName): groupName is string => Boolean(groupName && groupName !== '조 없음'))
             );
@@ -1145,7 +1153,14 @@ export default function AttendancePage() {
                     );
                 });
 
-            const orderedGroups = ((deptGroups || []) as AttendanceGroupRow[])
+            const departmentGroupRows = (deptGroups || []) as AttendanceGroupRow[];
+            const groupActiveById = new Map(
+                departmentGroupRows.map((group) => [group.id, isGroupActiveOnWeek(group, selectedWeek.week_date)])
+            );
+            const groupActiveByName = new Map(
+                departmentGroupRows.map((group) => [group.name, isGroupActiveOnWeek(group, selectedWeek.week_date)])
+            );
+            const orderedGroups = departmentGroupRows
                 .filter((group) => (
                     isGroupActiveOnWeek(group, selectedWeek.week_date) ||
                     snapshotGroupIds.has(group.id) ||
@@ -1180,10 +1195,17 @@ export default function AttendancePage() {
             const finalMerged = sortAttendanceItemsForDisplay(
                 snapshotMembersWithAttendance
                     .filter((member) => (
-                        member.included ||
-                        Boolean(
-                            member.legacyMemberDirectoryId &&
-                            submittedAttendanceByDirectoryId.has(member.legacyMemberDirectoryId)
+                        (
+                            member.included ||
+                            Boolean(
+                                member.legacyMemberDirectoryId &&
+                                submittedAttendanceByDirectoryId.has(member.legacyMemberDirectoryId)
+                            )
+                        ) && (
+                            !member.groupId ||
+                            groupActiveById.get(member.groupId) ||
+                            (member.groupName ? groupActiveByName.get(member.groupName) : false) ||
+                            hasMeaningfulSnapshotEvidence(member)
                         )
                     ))
                     .map((member) => {
