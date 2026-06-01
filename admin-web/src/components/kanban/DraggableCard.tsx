@@ -16,6 +16,10 @@ interface DraggableCardProps {
         phone?: string | null;
         avatar_url?: string;
         spouse_name?: string | null;
+        starts_week_date?: string | null;
+        ends_week_date?: string | null;
+        group_starts_week_date?: string | null;
+        group_ends_week_date?: string | null;
     }>;
     isSelected?: boolean;
     onClick: (memberId: string) => void;
@@ -25,11 +29,12 @@ interface DraggableCardProps {
     movingMembersCount?: number;
     onToggleLeader?: (id: string) => void;
     onDeleteMember?: (id: string) => void;
+    onUpdateMemberPeriod?: (id: string, updates: { starts_week_date: string | null; ends_week_date: string | null }) => void;
     isDeletableMap?: Record<string, boolean>;
     readOnly?: boolean;
 }
 
-export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSelected, onClick, onDoubleClick, profileMode, isDraggingElsewhere, movingMembersCount = 1, onToggleLeader, onDeleteMember, isDeletableMap, readOnly = false }) => {
+export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSelected, onClick, onDoubleClick, profileMode, isDraggingElsewhere, movingMembersCount = 1, onToggleLeader, onDeleteMember, onUpdateMemberPeriod, isDeletableMap, readOnly = false }) => {
     const {
         attributes,
         listeners,
@@ -91,6 +96,7 @@ export const DraggableCard: React.FC<DraggableCardProps> = ({ id, members, isSel
                         onDoubleClick={() => onDoubleClick?.(member.id)}
                         onToggleLeader={readOnly ? undefined : onToggleLeader}
                         onDeleteMember={readOnly ? undefined : onDeleteMember}
+                        onUpdateMemberPeriod={readOnly ? undefined : onUpdateMemberPeriod}
                         isDeletable={isDeletableMap?.[member.id]}
                         profileMode={profileMode}
                     />

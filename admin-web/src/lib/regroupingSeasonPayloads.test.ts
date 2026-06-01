@@ -13,7 +13,7 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
   assert.deepEqual(
     buildRegroupingSeasonGroupsPayload([
       { id: existingGroupId, name: '기존 조', color_hex: '#123456', starts_week_date: '2026-07-05' },
-      { id: planGroupId, plan_group_id: planGroupId, name: '초안 신규 조', color_hex: '#abcdef', ends_week_date: '2026-12-27', plan_status: 'ended' },
+      { id: planGroupId, plan_group_id: planGroupId, name: '초안 신규 조', color_hex: '#abcdef', ends_week_date: '2026-12-27', plan_status: 'ended', is_new_member_group: true, climbing_threshold: 5 },
       { id: 'temp-1', name: '신규 조', color_hex: '#654321' },
     ]),
     [
@@ -28,6 +28,8 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
         starts_week_date: '2026-07-05',
         ends_week_date: null,
         plan_status: 'active',
+        is_new_member_group: false,
+        climbing_threshold: null,
       },
       {
         id: planGroupId,
@@ -40,6 +42,8 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
         starts_week_date: null,
         ends_week_date: '2026-12-27',
         plan_status: 'ended',
+        is_new_member_group: true,
+        climbing_threshold: 5,
       },
       {
         id: 'temp-1',
@@ -52,6 +56,8 @@ test('buildRegroupingSeasonGroupsPayload keeps client id and separates source gr
         starts_week_date: null,
         ends_week_date: null,
         plan_status: 'active',
+        is_new_member_group: false,
+        climbing_threshold: null,
       },
     ]
   );
@@ -103,6 +109,7 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
         starts_week_date: '2026-01-04',
         ends_week_date: '2026-06-28',
         plan_status: 'active',
+        source_group: { is_new_member_group: true, climbing_threshold: 3 },
       },
       {
         id: '77777777-7777-4777-8777-777777777777',
@@ -154,6 +161,8 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
       starts_week_date: '2026-01-04',
       ends_week_date: '2026-06-28',
       plan_status: 'active',
+      is_new_member_group: true,
+      climbing_threshold: 3,
     },
     {
       id: '77777777-7777-4777-8777-777777777777',
@@ -165,11 +174,13 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
       starts_week_date: '2026-07-05',
       ends_week_date: null,
       plan_status: 'ended',
+      is_new_member_group: false,
+      climbing_threshold: null,
     },
   ]);
   assert.deepEqual(result.members, [
     {
-      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      id: 'season-88888888-8888-4888-8888-888888888888',
       season_assignment_id: '88888888-8888-4888-8888-888888888888',
       full_name: '김레거시',
       phone: '01033334444',
@@ -186,9 +197,62 @@ test('mapRegroupingSeasonDraftToBoard restores plan groups and assignments for k
       person_id: '99999999-9999-4999-8999-999999999999',
       phase2_person_id: '99999999-9999-4999-8999-999999999999',
       phase2_membership_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      source_membership_group_id: null,
+      source_membership_group_name: null,
       source_member_directory_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       starts_week_date: '2026-07-05',
       ends_week_date: '2026-12-27',
     },
   ]);
+});
+
+test('mapRegroupingSeasonDraftToBoard keeps duplicate person assignments as separate cards', () => {
+  const sourceDirectoryId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+  const result = mapRegroupingSeasonDraftToBoard({
+    planGroups: [],
+    assignments: [
+      {
+        id: '88888888-8888-4888-8888-888888888881',
+        plan_group_id: '77777777-7777-4777-8777-777777777771',
+        person_id: '99999999-9999-4999-8999-999999999999',
+        role_in_group: 'member',
+        sort_order: 1,
+        source_member_directory_id: sourceDirectoryId,
+        people: { display_name: '이다중' },
+      },
+      {
+        id: '88888888-8888-4888-8888-888888888882',
+        plan_group_id: '77777777-7777-4777-8777-777777777772',
+        person_id: '99999999-9999-4999-8999-999999999999',
+        role_in_group: 'leader',
+        sort_order: 2,
+        source_member_directory_id: sourceDirectoryId,
+        people: { display_name: '이다중' },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.members.map(member => ({
+      id: member.id,
+      source_member_directory_id: member.source_member_directory_id,
+      group_id: member.group_id,
+      role_in_group: member.role_in_group,
+    })),
+    [
+      {
+        id: 'season-88888888-8888-4888-8888-888888888881',
+        source_member_directory_id: sourceDirectoryId,
+        group_id: '77777777-7777-4777-8777-777777777771',
+        role_in_group: 'member',
+      },
+      {
+        id: 'season-88888888-8888-4888-8888-888888888882',
+        source_member_directory_id: sourceDirectoryId,
+        group_id: '77777777-7777-4777-8777-777777777772',
+        role_in_group: 'leader',
+      },
+    ],
+  );
 });

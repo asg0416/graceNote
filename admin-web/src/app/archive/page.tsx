@@ -111,6 +111,14 @@ const formatDate = (value?: string | null) => {
     return new Date(value).toLocaleDateString('ko-KR');
 };
 
+const isGroupCleanupCandidate = (value?: string | null) => {
+    if (!value) return false;
+    const endedAt = new Date(value).getTime();
+    if (Number.isNaN(endedAt)) return false;
+    const retentionDays = 180;
+    return Date.now() - endedAt > retentionDays * 24 * 60 * 60 * 1000;
+};
+
 export default function ArchivePage() {
     const router = useRouter();
     const [profile, setProfile] = useState<Profile | null>(null);
@@ -518,21 +526,12 @@ export default function ArchivePage() {
         }
     };
 
-    const restoreGroup = async (group: ArchivedGroup) => {
-        if (!confirm(`${group.name} 조를 복구하시겠습니까?`)) return;
-        setRestoringId(group.id);
-        try {
-            const { error } = await supabase
-                .from('groups')
-                .update({ is_active: true, ended_at: null })
-                .eq('id', group.id);
-            if (error) throw error;
-            await refresh();
-        } catch (error) {
-            alert(error instanceof Error ? error.message : '조 복구 중 오류가 발생했습니다.');
-        } finally {
-            setRestoringId(null);
-        }
+    const openRegroupingForGroup = (group: ArchivedGroup) => {
+        const params = new URLSearchParams();
+        if (group.church_id) params.set('churchId', group.church_id);
+        if (group.department_id) params.set('deptId', group.department_id);
+        params.set('restoreGroupId', group.id);
+        router.push(`/regrouping?${params.toString()}`);
     };
 
     const tabClass = (tab: ArchiveTab) => cn(
@@ -699,18 +698,29 @@ export default function ArchivePage() {
                         {filteredDepartments.length === 0 && <EmptyState label="종료된 부서가 없습니다." />}
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="space-y-4">
+                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-xs font-bold leading-relaxed text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                            종료된 조는 직접 복구하지 않습니다. 현재 시즌 안에서 다시 사용할 조만 조편성 관리에서 다시 편성하세요. 시즌이 지나 오래된 조는 정리 대상으로 관리합니다.
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         {filteredGroups.map(group => (
                             <ArchiveRow
                                 key={group.id}
                                 title={group.name}
-                                subtitle={`${group.departments?.name || '부서 없음'} / 종료일: ${formatDate(group.ended_at)}`}
+                                subtitle=""
+                                badges={[
+                                    { label: group.departments?.name || '부서 없음' },
+                                    { label: `종료일 ${formatDate(group.ended_at)}` },
+                                    ...(isGroupCleanupCandidate(group.ended_at) ? [{ label: '정리 대상', tone: 'danger' as const }] : []),
+                                ]}
                                 icon={<Users className="w-5 h-5" />}
                                 isLoading={restoringId === group.id}
-                                onRestore={() => restoreGroup(group)}
+                                onRestore={() => openRegroupingForGroup(group)}
+                                actionLabel="현재 시즌에서 편성"
                             />
                         ))}
                         {filteredGroups.length === 0 && <EmptyState label="종료된 조가 없습니다." />}
+                        </div>
                     </div>
                 )}
             </section>
@@ -721,15 +731,19 @@ export default function ArchivePage() {
 function ArchiveRow({
     title,
     subtitle,
+    badges = [],
     icon,
     isLoading,
     onRestore,
+    actionLabel = '복구',
 }: {
     title: string;
     subtitle: string;
+    badges?: Array<{ label: string; tone?: 'default' | 'danger' }>;
     icon: React.ReactNode;
     isLoading: boolean;
     onRestore: () => void;
+    actionLabel?: string;
 }) {
     return (
         <article className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/30 flex items-center justify-between gap-4">
@@ -739,7 +753,24 @@ function ArchiveRow({
                 </div>
                 <div>
                     <h3 className="text-lg font-black text-slate-900 dark:text-white">{title}</h3>
-                    <p className="text-xs font-bold text-slate-400">{subtitle}</p>
+                    {badges.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                            {badges.map((badge) => (
+                                <span
+                                    key={badge.label}
+                                    className={cn(
+                                        'rounded-full border px-2.5 py-1 text-[10px] font-black',
+                                        badge.tone === 'danger'
+                                            ? 'border-rose-100 bg-rose-50 text-rose-600 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300'
+                                            : 'border-slate-200 bg-white text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                                    )}
+                                >
+                                    {badge.label}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    {subtitle ? <p className="mt-2 text-xs font-bold leading-relaxed text-slate-400">{subtitle}</p> : null}
                 </div>
             </div>
             <button
@@ -748,7 +779,7 @@ function ArchiveRow({
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black hover:bg-emerald-500 transition-all disabled:opacity-50"
             >
                 {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                복구
+                {actionLabel}
             </button>
         </article>
     );

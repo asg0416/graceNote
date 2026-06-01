@@ -12,9 +12,11 @@ interface ModalProps {
     children: React.ReactNode;
     maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
     className?: string;
+    hideHeader?: boolean;
+    contentClassName?: string;
 }
 
-export function Modal({ isOpen, onClose, title, subtitle, children, maxWidth = 'xl', className }: ModalProps) {
+export function Modal({ isOpen, onClose, title, subtitle, children, maxWidth = 'xl', className, hideHeader = false, contentClassName }: ModalProps) {
     useEffect(() => {
         if (isOpen) {
             document.body.style.overflow = 'hidden';
@@ -46,19 +48,28 @@ export function Modal({ isOpen, onClose, title, subtitle, children, maxWidth = '
                 maxWidthClasses[maxWidth],
                 className
             )}>
-                {/* Header */}
-                <div className="p-6 sm:p-8 border-b border-slate-100 dark:border-slate-800/60 flex items-center justify-between bg-white dark:bg-[#0d1221] shrink-0">
-                    <div className="flex flex-col">
-                        <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight">{title}</h3>
-                        {subtitle && <p className="text-slate-400 dark:text-slate-500 text-[10px] font-black mt-1 uppercase tracking-widest">{subtitle}</p>}
-                    </div>
-                    <button onClick={onClose} className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-slate-50 dark:bg-slate-800 rounded-xl sm:rounded-2xl transition-all group hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700 shrink-0">
-                        <X className="w-5 sm:w-6 h-5 sm:h-6 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-white" />
+                {hideHeader ? (
+                    <button
+                        onClick={onClose}
+                        className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-100 bg-slate-50 transition-all hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
+                        aria-label="닫기"
+                    >
+                        <X className="h-5 w-5 text-slate-400 dark:text-slate-300" />
                     </button>
-                </div>
+                ) : (
+                    <div className="p-6 sm:p-8 border-b border-slate-100 dark:border-slate-800/60 flex items-center justify-between bg-white dark:bg-[#0d1221] shrink-0">
+                        <div className="flex flex-col">
+                            <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight">{title}</h3>
+                            {subtitle && <p className="text-slate-400 dark:text-slate-500 text-[10px] font-black mt-1 uppercase tracking-widest">{subtitle}</p>}
+                        </div>
+                        <button onClick={onClose} className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center bg-slate-50 dark:bg-slate-800 rounded-xl sm:rounded-2xl transition-all group hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700 shrink-0">
+                            <X className="w-5 sm:w-6 h-5 sm:h-6 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-white" />
+                        </button>
+                    </div>
+                )}
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 sm:p-8">
+                <div className={cn("flex-1 overflow-y-auto custom-scrollbar p-6 sm:p-8", hideHeader && "pt-6 sm:pt-6", contentClassName)}>
                     {children}
                 </div>
             </div>

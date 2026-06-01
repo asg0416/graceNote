@@ -1,6 +1,9 @@
 'use client';
 
+import { useMemo, useState } from 'react';
+import type { ClipboardEvent, DragEvent, KeyboardEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { clampDateToRange } from '@/lib/regroupingPeriodBulk';
 
 type SeasonGroup = {
     id: string;
@@ -13,11 +16,14 @@ type SeasonGroup = {
 type MovedSeasonMember = {
     id: string;
     full_name: string;
-    changeType: 'moved' | 'added';
+    changeType: 'moved' | 'added' | 'removed' | 'period';
     previousGroupName: string;
     nextGroupName: string;
     starts_week_date?: string | null;
     ends_week_date?: string | null;
+    recommended_starts_week_date?: string | null;
+    recommended_ends_week_date?: string | null;
+    selectableForBulkNormalize?: boolean;
 };
 
 interface SeasonChangeHistoryPanelProps {
@@ -33,6 +39,7 @@ interface SeasonChangeHistoryPanelProps {
     onNewGroupEndChange: (groupId: string, value: string) => void;
     onMovedMemberStartChange: (memberId: string, value: string) => void;
     onMovedMemberEndChange: (memberId: string, value: string) => void;
+    onBulkUpdateMovedMemberPeriods: (memberIds: string[], updates: { starts_week_date?: string | null; ends_week_date?: string | null }) => void;
     onRestoreArchivedGroup: (groupId: string) => void;
 }
 
@@ -49,15 +56,127 @@ export function SeasonChangeHistoryPanel({
     onNewGroupEndChange,
     onMovedMemberStartChange,
     onMovedMemberEndChange,
+    onBulkUpdateMovedMemberPeriods,
     onRestoreArchivedGroup,
 }: SeasonChangeHistoryPanelProps) {
+    const [memberTab, setMemberTab] = useState<'all' | MovedSeasonMember['changeType']>('all');
+    const [selectedPeriodMemberIds, setSelectedPeriodMemberIds] = useState<string[]>([]);
+    const [bulkStartsWeekDate, setBulkStartsWeekDate] = useState(seasonEffectiveWeekDate);
+    const [bulkEndsWeekDate, setBulkEndsWeekDate] = useState(seasonEndWeekDate);
+    const [bulkDateScope, setBulkDateScope] = useState(`${seasonEffectiveWeekDate}:${seasonEndWeekDate}`);
+    const memberTabOptions = useMemo(() => {
+        const labelByType: Record<'all' | MovedSeasonMember['changeType'], string> = {
+            all: '전체',
+            moved: '소속 이동',
+            added: '새 소속',
+            removed: '소속 종료',
+            period: '기간 보정',
+        };
+        const types: Array<'all' | MovedSeasonMember['changeType']> = ['all', 'moved', 'added', 'removed', 'period'];
+        return types.map(type => ({
+            type,
+            label: labelByType[type],
+            count: type === 'all'
+                ? movedMembers.length
+            : movedMembers.filter(member => member.changeType === type).length,
+        })).filter(option => option.type === 'all' || option.count > 0);
+    }, [movedMembers]);
+    const effectiveMemberTab = memberTabOptions.some(option => option.type === memberTab) ? memberTab : 'all';
+    const visibleMovedMembers = effectiveMemberTab === 'all'
+        ? movedMembers
+        : movedMembers.filter(member => member.changeType === effectiveMemberTab);
+    const isPeriodTab = effectiveMemberTab === 'period';
+    const periodAdjustmentMemberIds = movedMembers
+        .filter(member => member.changeType === 'period' && member.selectableForBulkNormalize !== false)
+        .map(member => member.id);
+    const selectedValidPeriodMemberIds = selectedPeriodMemberIds.filter(id => periodAdjustmentMemberIds.includes(id));
+    const selectedPeriodMemberIdSet = new Set(selectedValidPeriodMemberIds);
+    const allPeriodMembersSelected = periodAdjustmentMemberIds.length > 0
+        && periodAdjustmentMemberIds.every(id => selectedPeriodMemberIdSet.has(id));
+    const currentBulkDateScope = `${seasonEffectiveWeekDate}:${seasonEndWeekDate}`;
+    const isBulkDateScopeCurrent = bulkDateScope === currentBulkDateScope;
+    const resolvedBulkStartsWeekDate = isBulkDateScopeCurrent ? bulkStartsWeekDate : seasonEffectiveWeekDate;
+    const resolvedBulkEndsWeekDate = isBulkDateScopeCurrent ? bulkEndsWeekDate : seasonEndWeekDate;
+    const hasSelectedPeriodMembers = selectedValidPeriodMemberIds.length > 0;
+    const isBulkPeriodRangeValid = Boolean(resolvedBulkStartsWeekDate)
+        && Boolean(resolvedBulkEndsWeekDate)
+        && resolvedBulkStartsWeekDate <= resolvedBulkEndsWeekDate;
+
+    const togglePeriodMember = (id: string) => {
+        setSelectedPeriodMemberIds(prev => (
+            prev.includes(id)
+                ? prev.filter(item => item !== id)
+                : [...prev, id]
+        ));
+    };
+
+    const toggleAllPeriodMembers = () => {
+        setSelectedPeriodMemberIds(allPeriodMembersSelected ? [] : periodAdjustmentMemberIds);
+    };
+
+    const applyBulkPeriodDates = () => {
+        if (!hasSelectedPeriodMembers || !isBulkPeriodRangeValid) return;
+
+        onBulkUpdateMovedMemberPeriods(selectedValidPeriodMemberIds, {
+            starts_week_date: resolvedBulkStartsWeekDate,
+            ends_week_date: resolvedBulkEndsWeekDate,
+        });
+    };
+
+    const updateBulkStartsWeekDate = (value: string) => {
+        setBulkDateScope(currentBulkDateScope);
+        setBulkStartsWeekDate(value);
+    };
+
+    const updateBulkEndsWeekDate = (value: string) => {
+        setBulkDateScope(currentBulkDateScope);
+        setBulkEndsWeekDate(value);
+    };
+
+    const getMemberPeriodBounds = (member: MovedSeasonMember) => ({
+        min: member.recommended_starts_week_date || seasonEffectiveWeekDate,
+        max: member.recommended_ends_week_date || seasonEndWeekDate,
+    });
+
+    const handleMemberStartChange = (member: MovedSeasonMember, value: string) => {
+        const bounds = getMemberPeriodBounds(member);
+        onMovedMemberStartChange(member.id, clampDateToRange(value, bounds.min, bounds.max));
+    };
+
+    const handleMemberEndChange = (member: MovedSeasonMember, value: string) => {
+        const bounds = getMemberPeriodBounds(member);
+        onMovedMemberEndChange(member.id, clampDateToRange(value, bounds.min, bounds.max));
+    };
+
+    const preventManualDateEntry = (event: KeyboardEvent<HTMLInputElement>) => {
+        const allowedKeys = new Set([
+            'Tab',
+            'Escape',
+            'Enter',
+            'ArrowLeft',
+            'ArrowRight',
+            'ArrowUp',
+            'ArrowDown',
+            'Home',
+            'End',
+        ]);
+
+        if (!allowedKeys.has(event.key)) {
+            event.preventDefault();
+        }
+    };
+
+    const preventDateTextInput = (event: ClipboardEvent<HTMLInputElement> | DragEvent<HTMLInputElement>) => {
+        event.preventDefault();
+    };
+
     return (
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <details className="group">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-base font-black text-slate-950 dark:text-white">기간 조정 패널</span>
+                            <span className="text-base font-black text-slate-950 dark:text-white">시즌 변경 내역</span>
                             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500 dark:bg-slate-800">
                                 종료 조 {archivedGroups.length}
                             </span>
@@ -69,7 +188,7 @@ export function SeasonChangeHistoryPanel({
                             </span>
                         </div>
                         <p className="mt-1 text-xs font-bold text-slate-400">
-                            현재/과거 시즌 안에서 각 조와 성도-조 소속 row가 유효한 기간을 확인하고 보정합니다. 미래 시즌은 시즌 전체 기간으로 편성합니다.
+                            현재/과거 시즌 안에서 조와 성도 소속이 언제부터 언제까지 유효한지 확인하고 필요한 기간만 보정합니다.
                         </p>
                     </div>
                     <ChevronDown className="h-5 w-5 shrink-0 text-slate-400 transition group-open:rotate-180" />
@@ -86,9 +205,7 @@ export function SeasonChangeHistoryPanel({
                                 <div className="space-y-2">
                                     <div>
                                         <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-500">종료된 조</h3>
-                                        <p className="mt-1 text-[11px] font-bold text-slate-400">
-                                            시즌 안에서 이 조들이 활동한 기간을 보정합니다.
-                                        </p>
+                                        <p className="mt-1 text-[11px] font-bold text-slate-400">종료된 조의 실제 활동 기간입니다. 현재 시즌 안에서만 다시 편성할 수 있습니다.</p>
                                     </div>
                                     {archivedGroups.map(group => (
                                         <div key={group.id} className="grid gap-3 rounded-2xl border border-rose-100 bg-rose-50/50 p-3 dark:border-rose-500/20 dark:bg-rose-500/10 lg:grid-cols-[1fr_160px_190px] lg:items-center">
@@ -105,13 +222,13 @@ export function SeasonChangeHistoryPanel({
                                                             onClick={() => onRestoreArchivedGroup(group.id)}
                                                             className="inline-flex h-7 items-center justify-center rounded-full border border-rose-100 bg-white px-3 text-[10px] font-black text-rose-600 transition hover:border-blue-200 hover:text-blue-600 dark:border-rose-500/20 dark:bg-slate-950 dark:text-rose-300"
                                                         >
-                                                            다시 편성
+                                                            현재 시즌에 다시 편성
                                                         </button>
                                                     )}
                                                 </div>
                                             </div>
                                             <label className="space-y-1">
-                                                <span className="text-[10px] font-black text-slate-400">시작 주차</span>
+                                                <span className="text-[10px] font-black text-slate-400">시즌 내 시작 주차</span>
                                                 <input
                                                     type="date"
                                                     value={group.starts_week_date || seasonEffectiveWeekDate}
@@ -123,7 +240,7 @@ export function SeasonChangeHistoryPanel({
                                                 />
                                             </label>
                                             <label className="space-y-1">
-                                                <span className="text-[10px] font-black text-slate-400">마지막 활동 주차</span>
+                                                <span className="text-[10px] font-black text-slate-400">시즌 내 마지막 주차</span>
                                                 <input
                                                     type="date"
                                                     value={group.ends_week_date || seasonEndWeekDate}
@@ -143,9 +260,7 @@ export function SeasonChangeHistoryPanel({
                                 <div className="space-y-2">
                                     <div>
                                         <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-500">새로 생긴 조</h3>
-                                        <p className="mt-1 text-[11px] font-bold text-slate-400">
-                                            시즌 안에서 새 조들이 활동할 기간을 보정합니다.
-                                        </p>
+                                        <p className="mt-1 text-[11px] font-bold text-slate-400">새로 생긴 조의 실제 활동 기간입니다. 새 조에 들어간 성도 소속은 기본적으로 이 기간을 따라갑니다.</p>
                                     </div>
                                     <div className="space-y-2">
                                         {newGroups.map(group => (
@@ -160,7 +275,7 @@ export function SeasonChangeHistoryPanel({
                                                     </div>
                                                 </div>
                                                 <label className="space-y-1">
-                                                    <span className="text-[10px] font-black text-slate-400">시작 주차</span>
+                                                    <span className="text-[10px] font-black text-slate-400">시즌 내 시작 주차</span>
                                                     <input
                                                         type="date"
                                                         value={group.starts_week_date || seasonEffectiveWeekDate}
@@ -172,7 +287,7 @@ export function SeasonChangeHistoryPanel({
                                                     />
                                                 </label>
                                                 <label className="space-y-1">
-                                                    <span className="text-[10px] font-black text-slate-400">마지막 활동 주차</span>
+                                                    <span className="text-[10px] font-black text-slate-400">시즌 내 마지막 주차</span>
                                                     <input
                                                         type="date"
                                                         value={group.ends_week_date || seasonEndWeekDate}
@@ -191,52 +306,166 @@ export function SeasonChangeHistoryPanel({
 
                             {movedMembers.length > 0 && (
                                 <div className="space-y-2">
-                                    <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-500">성도 소속 기간</h3>
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-500">성도 소속 기간</h3>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {memberTabOptions.map(option => (
+                                                <button
+                                                    key={option.type}
+                                                    type="button"
+                                                    onClick={() => setMemberTab(option.type)}
+                                                    className={`rounded-full px-3 py-1 text-[10px] font-black transition ${effectiveMemberTab === option.type
+                                                        ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/20'
+                                                        : 'bg-white text-slate-500 ring-1 ring-slate-200 hover:text-amber-700 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-800'
+                                                        }`}
+                                                >
+                                                    {option.label} {option.count}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    {periodAdjustmentMemberIds.length > 0 && !readOnly && isPeriodTab && (
+                                        <div className="space-y-3 rounded-2xl border border-amber-100 bg-white px-3 py-3 dark:border-amber-500/20 dark:bg-slate-950">
+                                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                                <label className="inline-flex items-center gap-2 text-[11px] font-black text-slate-700 dark:text-slate-200">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={allPeriodMembersSelected}
+                                                        onChange={toggleAllPeriodMembers}
+                                                        className="h-4 w-4 rounded border-amber-300 text-amber-500 focus:ring-amber-500"
+                                                    />
+                                                    전체 선택
+                                                    <span className="font-bold text-slate-400">
+                                                        {selectedValidPeriodMemberIds.length}/{periodAdjustmentMemberIds.length}
+                                                    </span>
+                                                </label>
+                                                <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                                    선택한 성도에 날짜를 입력한 뒤 상단 현재 시즌 저장을 눌러야 실제 반영됩니다.
+                                                </p>
+                                            </div>
+                                            <div className="grid gap-2 lg:grid-cols-[150px_150px_auto] lg:items-end">
+                                                <label className="space-y-1">
+                                                    <span className="text-[10px] font-black text-slate-400">일괄 시작 주차</span>
+                                                    <input
+                                                        type="date"
+                                                        value={resolvedBulkStartsWeekDate}
+                                                        min={seasonEffectiveWeekDate}
+                                                        max={resolvedBulkEndsWeekDate || seasonEndWeekDate}
+                                                        onChange={(event) => updateBulkStartsWeekDate(event.target.value)}
+                                                        className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-amber-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                                                    />
+                                                </label>
+                                                <label className="space-y-1">
+                                                    <span className="text-[10px] font-black text-slate-400">일괄 마지막 주차</span>
+                                                    <input
+                                                        type="date"
+                                                        value={resolvedBulkEndsWeekDate}
+                                                        min={resolvedBulkStartsWeekDate || seasonEffectiveWeekDate}
+                                                        max={seasonEndWeekDate}
+                                                        onChange={(event) => updateBulkEndsWeekDate(event.target.value)}
+                                                        className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-amber-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                                                    />
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    disabled={!hasSelectedPeriodMembers || !isBulkPeriodRangeValid}
+                                                    onClick={applyBulkPeriodDates}
+                                                    className="inline-flex h-9 items-center justify-center rounded-xl bg-amber-500 px-4 text-[11px] font-black text-white shadow-sm shadow-amber-500/20 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                                                >
+                                                    선택한 {selectedValidPeriodMemberIds.length}명에 날짜 입력
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                     <div className="max-h-72 overflow-y-auto rounded-2xl border border-amber-100 bg-amber-50/50 dark:border-amber-500/20 dark:bg-amber-500/10">
-                                        {movedMembers.map(member => (
+                                        {visibleMovedMembers.map(member => (
                                             <div key={member.id} className="grid gap-3 border-b border-amber-100 px-3 py-3 last:border-b-0 dark:border-amber-500/10 lg:grid-cols-[1fr_160px_190px] lg:items-center">
                                                 <div className="min-w-0">
                                                     <div className="flex flex-wrap items-center gap-2">
+                                                        {member.changeType === 'period' && !readOnly && isPeriodTab && (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedPeriodMemberIdSet.has(member.id)}
+                                                                onChange={() => togglePeriodMember(member.id)}
+                                                                className="h-4 w-4 rounded border-amber-300 text-amber-500 focus:ring-amber-500"
+                                                            />
+                                                        )}
                                                         <span className="text-xs font-black text-slate-800 dark:text-slate-100">{member.full_name}</span>
                                                         <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-amber-700 shadow-sm dark:bg-slate-950 dark:text-amber-300">
-                                                            {member.changeType === 'added' ? '추가 소속' : '이동 소속'}
+                                                            {member.changeType === 'added'
+                                                                ? '새 소속'
+                                                                : member.changeType === 'removed'
+                                                                    ? '소속 종료'
+                                                                    : member.changeType === 'period'
+                                                                        ? '기간 보정'
+                                                                        : '소속 이동'}
                                                         </span>
                                                     </div>
                                                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
-                                                        <span className="text-slate-400">
-                                                            {member.nextGroupName === '미편성' ? '편집 대상' : '편집 대상 조'}
-                                                        </span>
                                                         <span className="rounded-lg bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">
-                                                            {member.nextGroupName === '미편성' ? '미편성 기간' : member.nextGroupName}
+                                                            {member.changeType === 'removed' ? member.previousGroupName : member.nextGroupName}
                                                         </span>
-                                                        {member.changeType === 'moved' && (
-                                                            <span className="truncate text-slate-500 dark:text-slate-400">
-                                                                이전 {member.previousGroupName}
-                                                            </span>
-                                                        )}
+                                                        <span className="truncate text-slate-500 dark:text-slate-400">
+                                                            {member.changeType === 'added'
+                                                                ? '새로 추가된 소속'
+                                                                : member.changeType === 'removed'
+                                                                    ? '선택한 조 소속만 종료. 다른 조 소속은 유지'
+                                                                    : member.changeType === 'period'
+                                                                        ? '조/시즌 기간과 맞지 않아 보정 필요'
+                                                                    : `${member.previousGroupName}에서 이동`}
+                                                        </span>
                                                     </div>
+                                                    {member.changeType === 'period' && (
+                                                        <p className="mt-1 text-[10px] font-bold text-amber-700/80 dark:text-amber-200/80">
+                                                            권장 기간: {member.recommended_starts_week_date || seasonEffectiveWeekDate} ~ {member.recommended_ends_week_date || seasonEndWeekDate}
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <label className="space-y-1">
-                                                    <span className="text-[10px] font-black text-slate-400">소속 시작 주차</span>
+                                                    <span className="text-[10px] font-black text-slate-400">{member.changeType === 'removed' ? '종료 처리 시작 주차' : '소속 시작 주차'}</span>
                                                     <input
                                                         type="date"
-                                                        value={member.starts_week_date || seasonEffectiveWeekDate}
-                                                        min={seasonEffectiveWeekDate}
-                                                        max={member.ends_week_date || seasonEndWeekDate}
+                                                        value={clampDateToRange(
+                                                            member.starts_week_date || getMemberPeriodBounds(member).min,
+                                                            getMemberPeriodBounds(member).min,
+                                                            member.ends_week_date || getMemberPeriodBounds(member).max
+                                                        )}
+                                                        min={getMemberPeriodBounds(member).min}
+                                                        max={clampDateToRange(
+                                                            member.ends_week_date || getMemberPeriodBounds(member).max,
+                                                            getMemberPeriodBounds(member).min,
+                                                            getMemberPeriodBounds(member).max
+                                                        )}
                                                         disabled={readOnly}
-                                                        onChange={(event) => onMovedMemberStartChange(member.id, event.target.value)}
+                                                        inputMode="none"
+                                                        onKeyDown={preventManualDateEntry}
+                                                        onPaste={preventDateTextInput}
+                                                        onDrop={preventDateTextInput}
+                                                        onChange={(event) => handleMemberStartChange(member, event.target.value)}
                                                         className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-amber-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                                     />
                                                 </label>
                                                 <label className="space-y-1">
-                                                    <span className="text-[10px] font-black text-slate-400">소속 마지막 주차</span>
+                                                    <span className="text-[10px] font-black text-slate-400">{member.changeType === 'removed' ? '이전 소속 마지막 주차' : '소속 마지막 주차'}</span>
                                                     <input
                                                         type="date"
-                                                        value={member.ends_week_date || seasonEndWeekDate}
-                                                        min={member.starts_week_date || seasonEffectiveWeekDate}
-                                                        max={seasonEndWeekDate}
+                                                        value={clampDateToRange(
+                                                            member.ends_week_date || getMemberPeriodBounds(member).max,
+                                                            member.starts_week_date || getMemberPeriodBounds(member).min,
+                                                            getMemberPeriodBounds(member).max
+                                                        )}
+                                                        min={clampDateToRange(
+                                                            member.starts_week_date || getMemberPeriodBounds(member).min,
+                                                            getMemberPeriodBounds(member).min,
+                                                            getMemberPeriodBounds(member).max
+                                                        )}
+                                                        max={getMemberPeriodBounds(member).max}
                                                         disabled={readOnly}
-                                                        onChange={(event) => onMovedMemberEndChange(member.id, event.target.value)}
+                                                        inputMode="none"
+                                                        onKeyDown={preventManualDateEntry}
+                                                        onPaste={preventDateTextInput}
+                                                        onDrop={preventDateTextInput}
+                                                        onChange={(event) => handleMemberEndChange(member, event.target.value)}
                                                         className="h-9 w-full rounded-lg border border-amber-100 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-amber-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                                     />
                                                 </label>

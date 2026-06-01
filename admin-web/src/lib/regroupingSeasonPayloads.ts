@@ -30,6 +30,10 @@ export const buildRegroupingSeasonGroupsPayload = (groups: Array<Record<string, 
             starts_week_date: getDateText(group.starts_week_date),
             ends_week_date: getDateText(group.ends_week_date),
             plan_status: group.plan_status === 'ended' ? 'ended' : 'active',
+            is_new_member_group: Boolean(group.is_new_member_group),
+            climbing_threshold: group.is_new_member_group
+                ? Number(group.climbing_threshold || 4)
+                : null,
         };
     });
 
@@ -62,9 +66,11 @@ export const buildRegroupingSeasonAssignmentsPayload = (members: Array<Record<st
                     : typeof member.membership_id === 'string' && isUuid(member.membership_id)
                         ? member.membership_id
                         : null,
-                source_member_directory_id: typeof member.id === 'string' && isUuid(member.id)
-                    ? member.id
-                    : null,
+                source_member_directory_id: typeof member.source_member_directory_id === 'string' && isUuid(member.source_member_directory_id)
+                    ? member.source_member_directory_id
+                    : typeof member.id === 'string' && isUuid(member.id)
+                        ? member.id
+                        : null,
                 starts_week_date: getDateText(member.starts_week_date),
                 ends_week_date: getDateText(member.ends_week_date),
             };
@@ -94,6 +100,7 @@ export const mapRegroupingSeasonDraftToBoard = ({
         .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0))
         .map(group => {
             const id = String(group.id || '');
+            const sourceGroup = getNestedRecord(group.source_group);
             return {
                 id,
                 plan_group_id: id,
@@ -104,6 +111,8 @@ export const mapRegroupingSeasonDraftToBoard = ({
                 starts_week_date: getDateText(group.starts_week_date),
                 ends_week_date: getDateText(group.ends_week_date),
                 plan_status: group.plan_status === 'ended' ? 'ended' : 'active',
+                is_new_member_group: Boolean(group.is_new_member_group ?? sourceGroup.is_new_member_group),
+                climbing_threshold: group.climbing_threshold ?? sourceGroup.climbing_threshold ?? null,
             };
         });
 
@@ -112,12 +121,14 @@ export const mapRegroupingSeasonDraftToBoard = ({
         .map(assignment => {
             const person = getNestedRecord(assignment.people);
             const directory = getNestedRecord(assignment.member_directory);
+            const sourceMembership = getNestedRecord(assignment.source_membership);
+            const sourceMembershipGroup = getNestedRecord(sourceMembership.group);
             const sourceDirectoryId = typeof assignment.source_member_directory_id === 'string'
                 ? assignment.source_member_directory_id
                 : null;
 
             return {
-                id: sourceDirectoryId || `season-${String(assignment.id || '')}`,
+                id: `season-${String(assignment.id || '')}`,
                 season_assignment_id: String(assignment.id || ''),
                 full_name: getText(directory.full_name, person.display_name, '이름 없음'),
                 phone: getText(directory.phone, person.normalized_phone),
@@ -134,6 +145,8 @@ export const mapRegroupingSeasonDraftToBoard = ({
                 person_id: String(assignment.person_id || ''),
                 phase2_person_id: String(assignment.person_id || ''),
                 phase2_membership_id: typeof assignment.source_membership_id === 'string' ? assignment.source_membership_id : null,
+                source_membership_group_id: typeof sourceMembership.group_id === 'string' ? sourceMembership.group_id : null,
+                source_membership_group_name: getText(sourceMembershipGroup.name) || null,
                 source_member_directory_id: sourceDirectoryId,
                 starts_week_date: getDateText(assignment.starts_week_date),
                 ends_week_date: getDateText(assignment.ends_week_date),
