@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildAdminOAuthRedirectTo,
   decideAdminAuthRedirect,
+  getAdminOAuthQueryParams,
   normalizeAdminNextPath,
 } from './adminAuth.ts';
 
@@ -27,6 +28,16 @@ test('member profiles from social login can continue to admin upgrade request', 
     ),
     { path: '/upgrade', shouldSignOut: false }
   );
+});
+
+test('new social auth users without a profile continue to admin upgrade request', () => {
+  assert.deepEqual(decideAdminAuthRedirect(null), { path: '/upgrade', shouldSignOut: false });
+});
+
+test('kakao social auth uses only enabled basic profile scopes', () => {
+  assert.deepEqual(getAdminOAuthQueryParams('kakao'), {
+    scope: 'profile_nickname,profile_image',
+  });
 });
 
 test('member upgrade redirect ignores external next path', () => {

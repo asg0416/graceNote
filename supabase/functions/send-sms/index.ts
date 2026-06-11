@@ -9,6 +9,7 @@ const corsHeaders = {
 
 interface RequestBody {
     phone?: string;
+    purpose?: 'admin_upgrade';
 }
 
 interface DuplicateCheckResult {
@@ -29,7 +30,8 @@ serve(async (req) => {
         )
 
         const body: RequestBody = await req.json();
-        const { phone } = body;
+        const { phone, purpose } = body;
+        const allowExistingPhone = purpose === 'admin_upgrade';
 
         if (!phone) {
             throw new Error('전화번호가 필요합니다.');
@@ -83,7 +85,7 @@ serve(async (req) => {
             }
 
             // Only block if it is NOT self
-            if (!isSelf) {
+            if (!isSelf && !allowExistingPhone) {
                 return new Response(
                     JSON.stringify({
                         error: 'account_exists',

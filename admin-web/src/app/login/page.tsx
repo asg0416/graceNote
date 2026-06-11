@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Mail, Lock, Loader2, ArrowRight, ShieldCheck, Moon, Sun } from 'lucide-react';
@@ -10,6 +10,13 @@ import AdminSocialAuthButtons from '@/components/AdminSocialAuthButtons';
 
 function getErrorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
+}
+
+function getAuthQueryErrorMessage(errorCode: string | null) {
+    if (errorCode === 'callback_failed') return '소셜 로그인 인증 처리 중 오류가 발생했습니다. 다시 시도해 주세요.';
+    if (errorCode === 'rejected') return '관리자 권한 신청이 반려되었습니다. 교회 관리자에게 문의해 주세요.';
+    if (errorCode === 'profile_not_found') return '계정 정보를 찾지 못했습니다. 다시 로그인하거나 관리자 권한을 신청해 주세요.';
+    return null;
 }
 
 export default function LoginPage() {
@@ -25,6 +32,12 @@ export default function LoginPage() {
     const [forgotEmail, setForgotEmail] = useState('');
     const [forgotLoading, setForgotLoading] = useState(false);
     const [forgotMessage, setForgotMessage] = useState<string | null>(null);
+
+    useEffect(() => {
+        const errorCode = new URL(window.location.href).searchParams.get('error');
+        const queryError = getAuthQueryErrorMessage(errorCode);
+        if (queryError) setError(queryError);
+    }, []);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();

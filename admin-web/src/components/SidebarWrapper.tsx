@@ -3,16 +3,17 @@
 import { usePathname } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: ClassValue[]) {
-    return twMerge(clsx(inputs));
-}
 
 export default function SidebarWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
-    const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/upgrade' || pathname === '/update-password';
+    const authPagePrefixes = [
+        '/auth/callback',
+        '/login',
+        '/register',
+        '/upgrade',
+        '/update-password',
+    ];
+    const isAuthPage = authPagePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 
     if (isAuthPage) {
         return <main className="min-h-screen w-full bg-slate-50 dark:bg-[#0a0f1d] transition-colors duration-300">{children}</main>;

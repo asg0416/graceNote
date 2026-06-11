@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
@@ -8,16 +8,31 @@ import { decideAdminAuthRedirect, type AdminAuthProfile } from '@/lib/adminAuth'
 
 export default function AuthCallbackPage() {
     const router = useRouter();
+    const hasHandledCallbackRef = useRef(false);
 
     useEffect(() => {
         const handleAuthCallback = async () => {
-            const nextPath = new URL(window.location.href).searchParams.get('next');
-            // Supabase handles the hash/query params and exchanges code for session automatically
+            if (hasHandledCallbackRef.current) return;
+            hasHandledCallbackRef.current = true;
+
+            const callbackUrl = new URL(window.location.href);
+            const nextPath = callbackUrl.searchParams.get('next');
+            const code = callbackUrl.searchParams.get('code');
+
+            if (code) {
+                const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+                if (exchangeError) {
+                    console.error('Auth callback exchange error:', exchangeError.message);
+                    router.replace('/login?error=callback_failed');
+                    return;
+                }
+            }
+
             const { data: { session }, error } = await supabase.auth.getSession();
 
             if (error) {
                 console.error('Auth callback error:', error.message);
-                router.push('/login?error=callback_failed');
+                router.replace('/login?error=callback_failed');
                 return;
             }
 
@@ -33,7 +48,7 @@ export default function AuthCallbackPage() {
                         .from('profiles')
                         .select('role, admin_status, is_master')
                         .eq('id', session.user.id)
-                        .single();
+                        .maybeSingle();
 
                     if (data) {
                         profile = data;
@@ -53,14 +68,15 @@ export default function AuthCallbackPage() {
 
                 const decision = decideAdminAuthRedirect(profile, {
                     approvedPath: '/members',
+                    missingProfilePath: '/upgrade',
                     upgradePath: nextPath,
                 });
                 if (decision.shouldSignOut) {
                     await supabase.auth.signOut();
                 }
-                router.push(decision.path);
+                router.replace(decision.path);
             } else {
-                router.push('/login');
+                router.replace('/login');
             }
         };
 

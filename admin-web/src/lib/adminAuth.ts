@@ -57,10 +57,10 @@ export function getAdminOAuthQueryParams(provider: AdminSocialAuthProvider) {
 
 export function decideAdminAuthRedirect(
   profile: AdminAuthProfile | null | undefined,
-  options: { approvedPath?: string; upgradePath?: string | null } = {}
+  options: { approvedPath?: string; missingProfilePath?: string; upgradePath?: string | null } = {}
 ): AdminAuthDecision {
   if (!profile) {
-    return { path: '/login?error=profile_not_found', shouldSignOut: true };
+    return { path: options.missingProfilePath ?? DEFAULT_UPGRADE_PATH, shouldSignOut: false };
   }
 
   const isApprovedAdmin =
