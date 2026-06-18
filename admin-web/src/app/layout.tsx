@@ -65,9 +65,12 @@ export default function RootLayout({
 
           {/* DEV MODE INDICATOR */}
           {process.env.NEXT_PUBLIC_SUPABASE_URL?.includes('eftdf') && (
-            <div className="fixed bottom-4 right-4 bg-red-500/90 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg z-50 pointer-events-none border-2 border-white/20 animate-pulse">
+            <a
+              href="/dev-tools/social-auth"
+              className="fixed bottom-4 right-4 bg-red-500/90 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg z-50 border-2 border-white/20 animate-pulse hover:bg-red-400"
+            >
               🚧 DEV MODE 🚧
-            </div>
+            </a>
           )}
         </ThemeProvider>
       </body>

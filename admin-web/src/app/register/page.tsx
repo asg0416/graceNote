@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { Church, Mail, Lock, Loader2, ArrowRight, User, ShieldCheck, Moon, Sun, ChevronLeft } from 'lucide-react';
+import { Church, Mail, Lock, Loader2, ArrowRight, User, ShieldCheck, Moon, Sun, ChevronLeft, RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import AdminSocialAuthButtons from '@/components/AdminSocialAuthButtons';
@@ -22,9 +22,9 @@ export default function RegisterPage() {
     const [fetchingChurches, setFetchingChurches] = useState(true);
     const [fetchingDepartments, setFetchingDepartments] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState(false);
     const [otpSent, setOtpSent] = useState(false);
-    const [otp, setOtp] = useState('');
+    const [otpCode, setOtpCode] = useState('');
+    const [devOtpCode, setDevOtpCode] = useState<string | null>(null);
     const [resendCooldown, setResendCooldown] = useState(0);
 
     // Password validation states
@@ -60,6 +60,10 @@ export default function RegisterPage() {
 
     const { theme, setTheme } = useTheme();
     const router = useRouter();
+    const otpInputRef = useRef<HTMLInputElement>(null);
+    const isDevOtpMode =
+        process.env.NODE_ENV !== 'production' &&
+        (process.env.NEXT_PUBLIC_SUPABASE_URL || '').includes('eftdf');
 
     useEffect(() => {
         const fetchChurches = async () => {
@@ -173,25 +177,47 @@ export default function RegisterPage() {
                 return;
             }
 
-            const { data, error: signUpError } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: {
-                        full_name: fullName,
-                        role_request: 'admin',
-                        church_id: selectedChurchId,
-                        department_id: selectedDepartmentId,
-                        phone: sanitizedPhone,
+            const metadata = {
+                full_name: fullName,
+                role_request: 'admin',
+                church_id: selectedChurchId,
+                department_id: selectedDepartmentId,
+                phone: sanitizedPhone,
+            };
+
+            if (isDevOtpMode) {
+                const { data, error: devOtpError } = await supabase.functions.invoke('dev-auth-signup-otp', {
+                    body: {
+                        email,
+                        password,
+                        metadata,
                     },
-                    emailRedirectTo: 'https://admin.gracenote.io.kr/auth/callback'
-                }
-            });
+                });
 
-            if (signUpError) throw signUpError;
+                if (devOtpError) throw devOtpError;
+                if (data?.error) throw new Error(data.error);
 
-            if (data.user) {
+                setDevOtpCode(typeof data?.email_otp === 'string' ? data.email_otp : null);
                 setOtpSent(true);
+                setOtpCode('');
+                setResendCooldown(60);
+            } else {
+                const { data, error: signUpError } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: metadata,
+                    }
+                });
+
+                if (signUpError) throw signUpError;
+
+                if (data.user) {
+                    setDevOtpCode(null);
+                    setOtpSent(true);
+                    setOtpCode('');
+                    setResendCooldown(60);
+                }
             }
         } catch (err) {
             const error = err as { message: string };
@@ -206,44 +232,36 @@ export default function RegisterPage() {
         }
     };
 
-    const handleVerifyOTP = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError(null);
-
-        try {
-            const { error: verifyError } = await supabase.auth.verifyOtp({
-                email,
-                token: otp,
-                type: 'signup'
-            });
-
-            if (verifyError) throw verifyError;
-
-            await supabase.auth.signOut();
-            setSuccess(true);
-        } catch (err) {
-            const error = err as { message: string };
-            setError(error.message || '인증 번호가 올바르지 않습니다.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const handleResendOTP = async () => {
         if (resendCooldown > 0) return;
 
         setError(null);
         setLoading(true);
         try {
-            const { error: resendError } = await supabase.auth.resend({
-                type: 'signup',
-                email: email,
-                options: {
-                    emailRedirectTo: 'https://admin.gracenote.io.kr/auth/callback'
-                }
-            });
-            if (resendError) throw resendError;
+            if (isDevOtpMode) {
+                const { data, error: devOtpError } = await supabase.functions.invoke('dev-auth-signup-otp', {
+                    body: {
+                        email,
+                        password,
+                        metadata: {
+                            full_name: fullName,
+                            role_request: 'admin',
+                            church_id: selectedChurchId,
+                            department_id: selectedDepartmentId,
+                            phone: phone.replace(/[^0-9]/g, ''),
+                        },
+                    },
+                });
+                if (devOtpError) throw devOtpError;
+                if (data?.error) throw new Error(data.error);
+                setDevOtpCode(typeof data?.email_otp === 'string' ? data.email_otp : null);
+            } else {
+                const { error: resendError } = await supabase.auth.resend({
+                    type: 'signup',
+                    email: email
+                });
+                if (resendError) throw resendError;
+            }
             setResendCooldown(60);
         } catch (err) {
             const error = err as { message: string };
@@ -253,28 +271,41 @@ export default function RegisterPage() {
         }
     };
 
-    if (success) {
-        return (
-            <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 dark:bg-[#0a0f1d]">
-                <div className="w-full max-w-md text-center space-y-8 bg-white dark:bg-[#111827]/60 backdrop-blur-2xl p-10 rounded-3xl border border-white dark:border-slate-800/80 shadow-2xl">
-                    <div className="inline-flex items-center justify-center w-20 h-20 bg-emerald-500 rounded-2xl shadow-2xl shadow-emerald-500/20 mb-4">
-                        <ShieldCheck className="w-10 h-10 text-white" />
-                    </div>
-                    <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">신청 완료!</h2>
-                    <p className="text-slate-500 dark:text-slate-400 font-bold leading-relaxed">
-                        관리자 승인 요청이 성공적으로 접수되었습니다.<br />
-                        마스터 관리자의 승인 후 로그인이 가능합니다.
-                    </p>
-                    <button
-                        onClick={() => router.push('/login')}
-                        className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 py-4 rounded-2xl font-black text-sm transition-all hover:scale-105 active:scale-95"
-                    >
-                        로그인 화면으로 돌아가기
-                    </button>
-                </div>
-            </div>
-        );
-    }
+    const handleVerifyOTP = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const trimmedOtp = otpCode.replace(/[^0-9]/g, '');
+
+        if (trimmedOtp.length !== 6) {
+            setError('이메일로 받은 인증 번호 6자리를 입력해 주세요.');
+            return;
+        }
+
+        setError(null);
+        setLoading(true);
+
+        try {
+            const { error: verifyError } = await supabase.auth.verifyOtp({
+                email,
+                token: trimmedOtp,
+                type: 'signup',
+            });
+
+            if (verifyError) throw verifyError;
+
+            await supabase.auth.signOut();
+            router.push('/register/success');
+        } catch (err) {
+            const error = err as { message?: string };
+            const msg = error.message || '인증 번호 확인 중 오류가 발생했습니다.';
+            if (msg.toLowerCase().includes('token')) {
+                setError('인증 번호가 올바르지 않거나 만료되었습니다. 다시 확인해 주세요.');
+            } else {
+                setError(msg);
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
         <div className="min-h-screen flex flex-col lg:flex-row bg-slate-50 dark:bg-[#0a0f1d] transition-colors duration-500 overflow-hidden">
@@ -336,50 +367,108 @@ export default function RegisterPage() {
                     <div className="hidden lg:block space-y-2">
                         <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">{otpSent ? '인증 번호 입력' : '관리자 신청'}</h1>
                         <p className="text-slate-500 dark:text-slate-500 font-bold text-sm tracking-tight">
-                            {otpSent ? '이메일로 발송된 6자리 번호를 입력해 주세요.' : '교회 운영을 위한 관리자 권한을 신청합니다.'}
+                            {otpSent ? '이메일로 받은 6자리 인증 번호를 입력해 주세요.' : '교회 운영을 위한 관리자 권한을 신청합니다.'}
                         </p>
                     </div>
 
                     <div className="bg-white/80 dark:bg-[#111827]/60 backdrop-blur-2xl p-8 sm:p-10 rounded-3xl border border-white dark:border-slate-800/80 shadow-2xl dark:shadow-none relative">
                         {otpSent ? (
-                            <form onSubmit={handleVerifyOTP} className="space-y-6">
+                            <div className="space-y-6">
                                 {error && (
                                     <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-600 dark:text-red-400 text-xs font-black text-center flex items-center justify-center gap-2">
                                         <ShieldCheck className="w-4 h-4" />
                                         {error}
                                     </div>
                                 )}
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">인증 번호 (6자리)</label>
-                                    <div className="relative group">
-                                        <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
-                                        <input
-                                            type="text"
-                                            required
-                                            value={otp}
-                                            onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ''))}
-                                            maxLength={6}
-                                            className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-black text-center tracking-[1em] placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-xl"
-                                            placeholder="000000"
-                                        />
+                                <form onSubmit={handleVerifyOTP} className="rounded-3xl border border-indigo-100 dark:border-indigo-500/20 bg-indigo-50/70 dark:bg-indigo-500/10 p-6 space-y-5">
+                                    <div className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-xl shadow-indigo-600/20">
+                                        <Mail className="w-7 h-7" />
                                     </div>
-                                </div>
-                                <button
-                                    type="submit"
-                                    disabled={loading || otp.length < 6}
-                                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600"
-                                >
-                                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : '인증 완료 및 가입 승인 대기'}
-                                </button>
+                                    <div className="space-y-2">
+                                        <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">인증 번호를 보냈습니다</h2>
+                                        <p className="text-sm font-bold leading-relaxed text-slate-500 dark:text-slate-400">
+                                            <span className="text-indigo-600 dark:text-indigo-300">{email}</span> 메일함에서 6자리 인증 번호를 확인해 주세요.<br />
+                                            인증이 완료되면 관리자 승인 대기 화면으로 이동합니다.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">이메일 인증 번호</label>
+                                        <div
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => otpInputRef.current?.focus()}
+                                            onKeyDown={(event) => {
+                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                    event.preventDefault();
+                                                    otpInputRef.current?.focus();
+                                                }
+                                            }}
+                                            className="relative"
+                                        >
+                                            <input
+                                                ref={otpInputRef}
+                                                type="text"
+                                                inputMode="numeric"
+                                                autoComplete="one-time-code"
+                                                value={otpCode}
+                                                onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                                                className="absolute inset-0 h-full w-full opacity-0"
+                                                aria-label="이메일 인증 번호 6자리"
+                                            />
+                                            <div className="grid grid-cols-6 gap-2 sm:gap-3">
+                                                {Array.from({ length: 6 }).map((_, index) => {
+                                                    const char = otpCode[index] || '';
+                                                    const isFocused = otpCode.length === index;
+                                                    const isFilled = Boolean(char);
+
+                                                    return (
+                                                        <div
+                                                            key={index}
+                                                            className={`flex h-14 items-center justify-center rounded-2xl border bg-white text-xl font-black text-indigo-600 shadow-sm transition-all dark:bg-slate-950/40 sm:h-16 sm:text-2xl ${
+                                                                isFocused
+                                                                    ? 'border-indigo-500 ring-4 ring-indigo-500/10'
+                                                                    : isFilled
+                                                                        ? 'border-indigo-200 dark:border-indigo-500/30'
+                                                                        : 'border-slate-200 dark:border-slate-800'
+                                                            }`}
+                                                        >
+                                                            {char}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="submit"
+                                        disabled={loading || otpCode.length !== 6}
+                                        className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600"
+                                    >
+                                        {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : '인증 완료'}
+                                    </button>
+                                    <div className="rounded-2xl bg-white/80 dark:bg-slate-950/30 border border-white dark:border-slate-800/80 p-4 text-xs font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                                        메일이 보이지 않으면 스팸함을 확인해 주세요. 인증 번호는 일정 시간이 지나면 만료됩니다.
+                                    </div>
+                                    {isDevOtpMode && devOtpCode && (
+                                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center dark:border-amber-500/20 dark:bg-amber-500/10">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-600 dark:text-amber-300">DEV ONLY EMAIL OTP</p>
+                                            <p className="mt-2 text-3xl font-black tracking-[0.35em] text-slate-950 dark:text-white">{devOtpCode}</p>
+                                            <p className="mt-2 text-[11px] font-bold text-amber-700 dark:text-amber-200">
+                                                개발 서버에서만 표시됩니다. 운영 빌드에서는 노출되지 않습니다.
+                                            </p>
+                                        </div>
+                                    )}
+                                </form>
 
                                 <div className="flex flex-col gap-4">
                                     <button
                                         type="button"
                                         onClick={handleResendOTP}
                                         disabled={loading || resendCooldown > 0}
-                                        className="w-full text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest hover:underline disabled:text-slate-300 dark:disabled:text-slate-700 disabled:no-underline"
+                                        className="w-full py-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-sm font-black text-slate-700 dark:text-slate-200 hover:border-indigo-300 hover:text-indigo-600 dark:hover:text-indigo-300 transition-all disabled:text-slate-300 dark:disabled:text-slate-700 disabled:hover:border-slate-200 dark:disabled:hover:border-slate-800 flex items-center justify-center gap-2"
                                     >
-                                        {resendCooldown > 0 ? `인증 번호 재전송 (${resendCooldown}초)` : '인증 번호를 받지 못하셨나요? 재전송하기'}
+                                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                                        {resendCooldown > 0 ? `인증 번호 재전송 (${resendCooldown}초)` : '인증 번호 다시 보내기'}
                                     </button>
 
                                     <button
@@ -390,7 +479,7 @@ export default function RegisterPage() {
                                         이메일 주소 수정하기
                                     </button>
                                 </div>
-                            </form>
+                            </div>
                         ) : (
                             <div className="space-y-8">
                                 <AdminSocialAuthButtons

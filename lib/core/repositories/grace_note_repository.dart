@@ -602,7 +602,7 @@ class GraceNoteRepository {
         .from('prayer_entries')
         .select()
         .eq('week_id', weekId)
-        .eq('group_id', groupId);
+        .or('group_id.eq.$groupId,recorded_group_id.eq.$groupId');
     if (!includeDrafts) {
       prayersQuery = prayersQuery.eq('status', 'published');
     }
@@ -734,7 +734,12 @@ class GraceNoteRepository {
             '*, member_directory!directory_member_id(family_name, full_name, person_id, spouse_name)') // [FIX] 없는 컬럼 family_id 제거
         .eq('status', 'published')
         .eq('week_id', weekId)
-        .inFilter('group_id', groupIds)
+        .or(
+          [
+            'group_id.in.(${groupIds.join(',')})',
+            'recorded_group_id.in.(${groupIds.join(',')})',
+          ].join(','),
+        )
         .order('family_name',
             referencedTable: 'member_directory',
             ascending: true,
@@ -745,7 +750,9 @@ class GraceNoteRepository {
     final enrichedPrayers = await _enrichPrayerRowsWithPhase2MemberInfo(
         List<Map<String, dynamic>>.from(prayersResponse));
     final prayerGroupIds = enrichedPrayers
-        .map((prayer) => prayer['group_id']?.toString())
+        .map((prayer) =>
+            prayer['recorded_group_id']?.toString() ??
+            prayer['group_id']?.toString())
         .whereType<String>()
         .toSet();
     final groups = _groupsForWeekWithLastKnownFallback(
@@ -1156,9 +1163,10 @@ class GraceNoteRepository {
 
   // 소셜 로그인 (Kakao, Google)
   Future<void> signInWithOAuth(OAuthProvider provider) async {
-    // [WEB FIX] Use actual location for Web, deep link for Mobile
-    final String? redirectTo = kIsWeb
-        ? null // Uses Site URL configured in Supabase (e.g., localhost:8080)
+    // Web must not fall back to the Supabase Site URL because the dev project
+    // can point to admin-web. Keep app OAuth callbacks on the current app origin.
+    final String redirectTo = kIsWeb
+        ? '${Uri.base.origin}/login'
         : 'io.supabase.flutter://login-callback';
 
     // 카카오 로그인 시 비즈앱 등록 전이므로 account_email 제외

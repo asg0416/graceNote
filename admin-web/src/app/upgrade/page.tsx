@@ -6,15 +6,15 @@ import { useRouter } from 'next/navigation';
 import { Church, User, ShieldCheck, Moon, Sun, ArrowRight, Loader2, Lock } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
-type PhoneCheckResult = {
-    p_exists: boolean;
-    p_masked_email: string | null;
-    p_full_name: string | null;
-};
-
 type SelectOption = {
     id: string;
     name: string;
+};
+
+type ExistingLoginCheck = {
+    p_exists: boolean;
+    p_provider: string | null;
+    p_message: string | null;
 };
 
 function normalizePhone(phone: string) {
@@ -43,7 +43,23 @@ async function getFunctionErrorMessage(error: unknown, fallback: string) {
 }
 
 function getErrorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error);
+    if (error instanceof Error) return error.message;
+    if (error && typeof error === 'object') {
+        const maybeError = error as {
+            message?: unknown;
+            error?: unknown;
+            details?: unknown;
+            hint?: unknown;
+            code?: unknown;
+        };
+        for (const value of [maybeError.message, maybeError.error, maybeError.details, maybeError.hint]) {
+            if (typeof value === 'string' && value.trim()) return value;
+        }
+        if (typeof maybeError.code === 'string' && maybeError.code.trim()) {
+            return `요청 처리 중 오류가 발생했습니다. (${maybeError.code})`;
+        }
+    }
+    return String(error);
 }
 
 export default function UpgradePage() {
@@ -65,6 +81,7 @@ export default function UpgradePage() {
     const [isCodeSent, setIsCodeSent] = useState(false);
     const [verifiedPhone, setVerifiedPhone] = useState('');
     const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
+    const [existingLoginMessage, setExistingLoginMessage] = useState<string | null>(null);
     const [sendingCode, setSendingCode] = useState(false);
     const [verifyingCode, setVerifyingCode] = useState(false);
 
@@ -162,13 +179,38 @@ export default function UpgradePage() {
             setVerificationCode('');
             setIsCodeSent(false);
             setVerificationMessage('휴대폰 번호가 변경되었습니다. 다시 인증해 주세요.');
+            setExistingLoginMessage(null);
         }
     }, [phone, verifiedPhone]);
+
+    useEffect(() => {
+        setExistingLoginMessage(null);
+    }, [fullName, selectedChurchId]);
+
+    const checkExistingLogin = async (sanitizedPhone: string) => {
+        if (!fullName.trim() || !selectedChurchId || !sanitizedPhone) return null;
+
+        const { data, error: checkError } = await supabase.rpc('check_admin_existing_login', {
+            p_full_name: fullName.trim(),
+            p_church_id: selectedChurchId,
+            p_phone: sanitizedPhone,
+        });
+
+        if (checkError) throw checkError;
+
+        const result = Array.isArray(data) ? data[0] as ExistingLoginCheck | undefined : null;
+        if (result?.p_exists) {
+            return result.p_message || '이미 가입된 계정이 있습니다. 기존 로그인 방식으로 로그인해 주세요.';
+        }
+
+        return null;
+    };
 
     const handleSendSms = async () => {
         const sanitizedPhone = normalizePhone(phone);
         setError(null);
         setVerificationMessage(null);
+        setExistingLoginMessage(null);
 
         if (!sanitizedPhone || sanitizedPhone.length < 10) {
             setError('올바른 휴대폰 번호를 입력해 주세요.');
@@ -229,6 +271,14 @@ export default function UpgradePage() {
             }
 
             setVerifiedPhone(sanitizedPhone);
+            const existingLogin = await checkExistingLogin(sanitizedPhone);
+            if (existingLogin) {
+                setVerifiedPhone('');
+                setExistingLoginMessage(existingLogin);
+                setVerificationMessage(null);
+                return;
+            }
+
             setVerificationMessage('휴대폰 인증이 완료되었습니다.');
         } catch (err) {
             setError(getErrorMessage(err));
@@ -241,6 +291,7 @@ export default function UpgradePage() {
         e.preventDefault();
         setLoading(true);
         setError(null);
+        setExistingLoginMessage(null);
 
         if (!selectedChurchId) {
             setError('관리할 교회를 선택해 주세요.');
@@ -269,30 +320,16 @@ export default function UpgradePage() {
         }
 
         try {
+            const existingLogin = await checkExistingLogin(sanitizedPhone);
+            if (existingLogin) {
+                setExistingLoginMessage(existingLogin);
+                setLoading(false);
+                return;
+            }
+
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) {
                 router.replace('/login');
-                return;
-            }
-
-            const { data: phoneCheckData, error: phoneCheckError } = await supabase.rpc('check_phone_exists', {
-                p_phone: sanitizedPhone,
-                p_user_id: session.user.id,
-            });
-
-            if (phoneCheckError && phoneCheckError.code !== 'PGRST202') {
-                setError('본인 인증 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
-                return;
-            }
-
-            const result = (phoneCheckData as PhoneCheckResult[] | null)?.[0];
-            if (result?.p_exists) {
-                const masked = result.p_masked_email;
-                setError(
-                    masked
-                        ? `이미 등록된 전화번호입니다: ${result.p_full_name ?? '기존 사용자'} (${masked}). 기존 앱 계정에서 사용하던 로그인 방식으로 로그인한 뒤 관리자 권한을 신청해 주세요.`
-                        : `이미 등록된 전화번호입니다: ${result.p_full_name ?? '기존 사용자'}. 기존 앱 계정에서 사용하던 로그인 방식으로 로그인한 뒤 관리자 권한을 신청해 주세요.`
-                );
                 return;
             }
 
@@ -400,8 +437,8 @@ export default function UpgradePage() {
                             <span className="text-xs font-black uppercase tracking-widest">휴대폰 본인 확인</span>
                         </div>
                         <p className="text-[13px] text-slate-600 dark:text-slate-400 font-bold leading-relaxed">
-                            입력한 휴대폰 번호로 인증을 완료한 뒤 관리자 권한을 신청합니다.<br />
-                            인증된 번호가 기존 계정과 연결되어 있으면 기존 로그인 방식으로 안내합니다.
+                            입력한 휴대폰 번호로 본인 확인을 완료한 뒤 관리자 권한을 신청합니다.<br />
+                            같은 이름과 인증 번호로 이미 가입된 계정이 있으면 기존 로그인 방식을 안내합니다.
                         </p>
                     </div>
 
@@ -411,6 +448,30 @@ export default function UpgradePage() {
                                 <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-600 dark:text-red-400 text-xs font-black text-center flex items-center justify-center gap-2">
                                     <ShieldCheck className="w-4 h-4" />
                                     {error}
+                                </div>
+                            )}
+
+                            {existingLoginMessage && (
+                                <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-500/20 dark:bg-amber-500/10">
+                                    <div className="flex items-start gap-3">
+                                        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" />
+                                        <div className="space-y-1">
+                                            <p className="text-sm font-black text-amber-900 dark:text-amber-100">기존 계정이 있습니다</p>
+                                            <p className="text-xs font-bold leading-5 text-amber-800 dark:text-amber-200">
+                                                {existingLoginMessage}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            await supabase.auth.signOut();
+                                            router.push('/login');
+                                        }}
+                                        className="w-full rounded-xl bg-amber-900 px-4 py-3 text-xs font-black text-white transition hover:bg-amber-800 dark:bg-amber-300 dark:text-amber-950"
+                                    >
+                                        기존 방식으로 로그인하기
+                                    </button>
                                 </div>
                             )}
 

@@ -321,7 +321,7 @@ Future<List<Map<String, dynamic>>> _fetchUserGroupsFromMemberships(
   final response = await Supabase.instance.client
       .from('memberships')
       .select(
-          'id, group_id, role, starts_at, ends_at, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, active_from, ended_at, departments(name, profile_mode))')
+          'id, group_id, role, starts_at, ends_at, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, is_active, active_from, ended_at, departments(name, profile_mode))')
       .eq('person_id', personId)
       .eq('status', 'active')
       .not('group_id', 'is', null)
@@ -339,7 +339,7 @@ Future<List<Map<String, dynamic>>> _fetchUserGroupsFromGroupMembers(
   final response = await Supabase.instance.client
       .from('group_members')
       .select(
-          'group_id, role_in_group, joined_at, left_at, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, active_from, ended_at, departments(name, profile_mode))')
+          'group_id, role_in_group, joined_at, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, is_active, active_from, ended_at, departments(name, profile_mode))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
       .order('joined_at', ascending: false);
@@ -356,35 +356,41 @@ List<Map<String, dynamic>> _normalizeUserGroupRows(
   required String roleKey,
   required String source,
 }) {
-  final List<Map<String, dynamic>> rawGroups =
-      rows.map<Map<String, dynamic>>((e) {
-    return {
-      'group_id': e['group_id']?.toString() ?? '',
-      'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
-      'church_id': e['groups']?['church_id']?.toString() ?? '',
-      'department_id': e['groups']?['department_id']
-          ?.toString(), // [NEW] Added department_id
-      'color_hex': e['groups']?['color_hex']?.toString() ?? '', // [NEW] 조 색상 추가
-      'department_name':
-          e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
-      'profile_mode':
-          e['groups']?['departments']?['profile_mode']?.toString() ??
-              'individual',
-      'role_in_group': (e[roleKey] ?? 'member').toString(),
-      'is_new_member_group': e['groups']?['is_new_member_group'] ?? false,
-      'climbing_threshold': e['groups']?['climbing_threshold'],
-      'phase2_membership_id': source == 'phase2' ? e['id']?.toString() : null,
-      'membership_starts_at': source == 'phase2'
-          ? e['starts_at']?.toString()
-          : e['joined_at']?.toString(),
-      'membership_ends_at': source == 'phase2'
-          ? e['ends_at']?.toString()
-          : e['left_at']?.toString(),
-      'group_active_from': e['groups']?['active_from']?.toString(),
-      'group_ended_at': e['groups']?['ended_at']?.toString(),
-      'membership_source': source,
-    };
-  }).toList();
+  final today = _dateOnly(DateTime.now());
+
+  final List<Map<String, dynamic>> rawGroups = rows
+      .map<Map<String, dynamic>>((e) {
+        return {
+          'group_id': e['group_id']?.toString() ?? '',
+          'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
+          'church_id': e['groups']?['church_id']?.toString() ?? '',
+          'department_id': e['groups']?['department_id']
+              ?.toString(), // [NEW] Added department_id
+          'color_hex':
+              e['groups']?['color_hex']?.toString() ?? '', // [NEW] 조 색상 추가
+          'department_name':
+              e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
+          'profile_mode':
+              e['groups']?['departments']?['profile_mode']?.toString() ??
+                  'individual',
+          'role_in_group': (e[roleKey] ?? 'member').toString(),
+          'is_new_member_group': e['groups']?['is_new_member_group'] ?? false,
+          'climbing_threshold': e['groups']?['climbing_threshold'],
+          'phase2_membership_id':
+              source == 'phase2' ? e['id']?.toString() : null,
+          'membership_starts_at': source == 'phase2'
+              ? e['starts_at']?.toString()
+              : e['joined_at']?.toString(),
+          'membership_ends_at':
+              source == 'phase2' ? e['ends_at']?.toString() : null,
+          'group_is_active': e['groups']?['is_active'],
+          'group_active_from': e['groups']?['active_from']?.toString(),
+          'group_ended_at': e['groups']?['ended_at']?.toString(),
+          'membership_source': source,
+        };
+      })
+      .where((g) => _isGroupMembershipActiveOn(g, today))
+      .toList();
 
   // [UNIQUE] 중복 데이터 제거 (group_id와 role_in_group의 조합이 동일한 경우 제거)
   final Set<String> seen = {};
@@ -410,6 +416,35 @@ List<Map<String, dynamic>> _normalizeUserGroupRows(
   });
 
   return groups;
+}
+
+DateTime _dateOnly(DateTime value) =>
+    DateTime(value.year, value.month, value.day);
+
+DateTime? _parseDateOnly(dynamic value) {
+  if (value == null) return null;
+  final parsed = DateTime.tryParse(value.toString());
+  if (parsed == null) return null;
+  final local = parsed.toLocal();
+  return DateTime(local.year, local.month, local.day);
+}
+
+bool _startsOnOrBeforeToday(dynamic value, DateTime today) {
+  final date = _parseDateOnly(value);
+  return date == null || !date.isAfter(today);
+}
+
+bool _endsOnOrAfterToday(dynamic value, DateTime today) {
+  final date = _parseDateOnly(value);
+  return date == null || !date.isBefore(today);
+}
+
+bool _isGroupMembershipActiveOn(Map<String, dynamic> group, DateTime today) {
+  return group['group_is_active'] != false &&
+      _startsOnOrBeforeToday(group['membership_starts_at'], today) &&
+      _endsOnOrAfterToday(group['membership_ends_at'], today) &&
+      _startsOnOrBeforeToday(group['group_active_from'], today) &&
+      _endsOnOrAfterToday(group['group_ended_at'], today);
 }
 
 // Selected Week Provider (Current context for app — 기도소식 화면용)

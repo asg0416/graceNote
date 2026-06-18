@@ -12,6 +12,7 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
         '/register',
         '/upgrade',
         '/update-password',
+        '/dev-tools',
     ];
     const isAuthPage = authPagePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 

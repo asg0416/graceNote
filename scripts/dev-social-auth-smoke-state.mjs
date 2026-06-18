@@ -15,8 +15,11 @@ const hasFlag = (flag) => args.includes(flag);
 const dbUrlFile = getFlagValue("--db-url-file");
 const targetName = getFlagValue("--name") || "이수진";
 const targetPhone = getFlagValue("--phone") || "";
+const withdrawEmail = getFlagValue("--withdraw-email") || "";
+const withdrawUserId = getFlagValue("--withdraw-user-id") || "";
 const applyKakaoReset = hasFlag("--apply-reset-kakao");
 const confirmedDevReset = hasFlag("--confirm-dev-reset");
+const confirmedDevWithdraw = hasFlag("--confirm-dev-withdraw");
 
 if (dbUrlFile && !existsSync(dbUrlFile)) {
   console.error(`DB URL file not found: ${dbUrlFile}`);
@@ -34,6 +37,22 @@ if (!rawDbUrl) {
 if (applyKakaoReset && !confirmedDevReset) {
   console.error("--apply-reset-kakao requires --confirm-dev-reset.");
   console.error("This tool is intended for the dev DB only.");
+  process.exit(2);
+}
+
+if ((withdrawEmail || withdrawUserId) && !confirmedDevWithdraw) {
+  console.error("--withdraw-email/--withdraw-user-id requires --confirm-dev-withdraw.");
+  console.error("This tool is intended for the dev DB only.");
+  process.exit(2);
+}
+
+if (withdrawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(withdrawEmail)) {
+  console.error("--withdraw-email must be a valid email address.");
+  process.exit(2);
+}
+
+if (withdrawUserId && !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(withdrawUserId)) {
+  console.error("--withdraw-user-id must be a valid UUID.");
   process.exit(2);
 }
 
@@ -199,6 +218,111 @@ commit;
 \\echo 'Reset kakao smoke auth/profile rows only. Church-owned person records were not deleted.'
 `;
 
+const withdrawSql = `
+begin;
+
+create temporary table pg_temp.withdraw_target as
+select
+  u.id,
+  u.email as original_email,
+  ('withdrawn+' || left(u.id::text, 8) || '@dev.local') as withdrawn_email,
+  exists (
+    select 1
+    from auth.identities i
+    where i.user_id = u.id
+      and i.provider <> 'email'
+  ) as has_social_identity
+from auth.users u
+where (
+  ${withdrawUserId ? `u.id = ${sqlString(withdrawUserId)}::uuid` : "false"}
+  or (
+    ${withdrawEmail ? "true" : "false"}
+    and lower(coalesce(u.email, '')) = lower(${sqlString(withdrawEmail)})
+  )
+)
+limit 1;
+
+do $$
+begin
+  if not exists (select 1 from pg_temp.withdraw_target) then
+    raise exception 'Target auth user not found for smoke withdrawal.';
+  end if;
+end $$;
+
+update public.people pe
+set
+  primary_profile_id = null,
+  updated_at = now()
+where pe.primary_profile_id in (select id from pg_temp.withdraw_target);
+
+update public.profiles p
+set
+  email = wt.withdrawn_email,
+  phone = null,
+  person_id = null,
+  church_id = null,
+  department_id = null,
+  role = 'member',
+  admin_status = 'none',
+  is_master = false,
+  is_onboarding_complete = false,
+  full_name = '탈퇴 테스트 계정'
+from pg_temp.withdraw_target wt
+where p.id = wt.id;
+
+update auth.users u
+set
+  email = wt.withdrawn_email,
+  banned_until = '9999-12-31 23:59:59+00'::timestamptz,
+  raw_user_meta_data = coalesce(u.raw_user_meta_data, '{}'::jsonb)
+    || jsonb_build_object(
+      'withdrawn_for_smoke', true,
+      'withdrawn_at', now()::text,
+      'previous_email_masked', case
+        when wt.original_email is null or wt.original_email = '' then '(no email)'
+        else left(wt.original_email, 1) || '***@' || split_part(wt.original_email, '@', 2)
+      end
+    ),
+  updated_at = now()
+from pg_temp.withdraw_target wt
+where u.id = wt.id;
+
+update auth.identities i
+set
+  identity_data = coalesce(i.identity_data, '{}'::jsonb)
+    || jsonb_build_object(
+      'email', wt.withdrawn_email,
+      'email_verified', false,
+      'withdrawn_for_smoke', true
+    ),
+  updated_at = now()
+from pg_temp.withdraw_target wt
+where i.user_id = wt.id
+  and not wt.has_social_identity;
+
+delete from auth.identities i
+using pg_temp.withdraw_target wt
+where i.user_id = wt.id
+  and wt.has_social_identity
+  and i.provider <> 'email';
+
+select
+  left(wt.id::text, 8) as auth_user,
+  case
+    when wt.original_email is null or wt.original_email = '' then '(no email)'
+    else left(wt.original_email, 1) || '***@' || split_part(wt.original_email, '@', 2)
+  end as previous_email,
+  case
+    when wt.has_social_identity then 'withdrawn smoke state applied; social identity detached for re-login'
+    else 'withdrawn smoke state applied'
+  end as result
+from pg_temp.withdraw_target wt;
+
+commit;
+
+\\echo 'Smoke withdrawal applied. Auth/profile identifiers were isolated; church-owned records were not deleted.'
+`;
+
 const result = spawnSync("docker", [
   "run",
   "--rm",
@@ -213,7 +337,11 @@ const result = spawnSync("docker", [
 ], {
   cwd: process.cwd(),
   encoding: "utf8",
-  input: applyKakaoReset ? `${auditSql}\n${resetSql}\n${auditSql}` : auditSql,
+  input: (withdrawEmail || withdrawUserId)
+    ? `${withdrawSql}\n${auditSql}`
+    : applyKakaoReset
+      ? `${auditSql}\n${resetSql}\n${auditSql}`
+      : auditSql,
   stdio: ["pipe", "pipe", "pipe"],
 });
 

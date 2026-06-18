@@ -30,15 +30,23 @@ export default function AdminSocialAuthButtons({
     onError?.(null);
 
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo: buildAdminOAuthRedirectTo(window.location.origin, nextPath),
           queryParams: getAdminOAuthQueryParams(provider),
+          skipBrowserRedirect: true,
         },
       });
 
       if (error) throw error;
+
+      if (data?.url) {
+        window.location.assign(data.url);
+        return;
+      }
+
+      throw new Error('소셜 로그인 이동 URL을 만들지 못했습니다. Supabase OAuth 설정을 확인해 주세요.');
     } catch (err) {
       const error = err as { message?: string };
       onError?.(error.message || '소셜 로그인 중 오류가 발생했습니다.');
