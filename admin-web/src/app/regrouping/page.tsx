@@ -160,8 +160,42 @@ const getRegroupingIdentityKey = (member: any) => {
     return member.phase2_person_id || member.person_id || `${member.full_name}|${normalizedPhone}`;
 };
 
+const isRegroupingRemovedMembershipRow = (member: any) => {
+    const changeType = member.plan_change_type || member.change_type;
+    if (changeType) return changeType === 'removed';
+    if (member.group_id) return false;
+
+    return Boolean(
+        member.previous_source_group_id ||
+        member.previous_group_name ||
+        member.source_membership_group_id ||
+        member.source_membership_group_name
+    );
+};
+
+const getValidRegroupingGroupLabel = (value?: string | null) => {
+    const label = typeof value === 'string' ? value.trim() : '';
+    if (!label || label === '추가 소속') return null;
+    return label;
+};
+
+const getRegroupingSourceMembershipKey = (member: any) =>
+    member.phase2_membership_id || member.membership_id || member.season_assignment_id || member.id || '';
+
+const getRegroupingRemovedAssignmentKey = (member: any) =>
+    member.previous_source_group_id ||
+    member.source_membership_group_id ||
+    getRegroupingSourceMembershipKey(member) ||
+    getValidRegroupingGroupLabel(member.previous_group_name) ||
+    getValidRegroupingGroupLabel(member.source_membership_group_name) ||
+    '';
+
 const getRegroupingAssignmentTargetKey = (member: any) => [
-    member.group_id || 'unassigned',
+    member.group_id || (
+        isRegroupingRemovedMembershipRow(member)
+            ? `removed:${getRegroupingRemovedAssignmentKey(member)}`
+            : 'unassigned'
+    ),
     member.role_in_group || member.role || 'member',
     member.starts_week_date || '',
     member.ends_week_date || '',
@@ -179,6 +213,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
     const visibleRows: any[] = [];
     rowsByPerson.forEach((rows) => {
         const visibleTargetKeys = new Set<string>();
+        let hasCurrentAssignmentRow = false;
         const pushVisibleRow = (row: any) => {
             const targetKey = getRegroupingAssignmentTargetKey(row);
             if (visibleTargetKeys.has(targetKey)) return;
@@ -189,10 +224,20 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
         const draftRows = rows.filter(row => String(row.id || '').startsWith('temp-') || row.is_new);
         if (draftRows.length > 0) {
             draftRows.forEach(pushVisibleRow);
+            hasCurrentAssignmentRow = true;
+        }
+
+        const removedMembershipRows = rows.filter(row =>
+            !draftRows.includes(row) &&
+            isRegroupingRemovedMembershipRow(row)
+        );
+        if (removedMembershipRows.length > 0) {
+            removedMembershipRows.forEach(pushVisibleRow);
         }
 
         const activeMembershipRows = rows.filter(row =>
             !draftRows.includes(row) &&
+            !removedMembershipRows.includes(row) &&
             Boolean(row.phase2_person_id) &&
             Boolean(row.phase2_membership_id) &&
             Boolean(row.group_id) &&
@@ -200,26 +245,50 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
         );
         if (activeMembershipRows.length > 0) {
             activeMembershipRows.forEach(pushVisibleRow);
+            hasCurrentAssignmentRow = true;
         }
 
         const assignedLegacyRows = rows.filter(row =>
             !draftRows.includes(row) &&
+            !removedMembershipRows.includes(row) &&
             !activeMembershipRows.includes(row) &&
             Boolean(row.group_id) &&
             row.is_active !== false
         );
         if (assignedLegacyRows.length > 0) {
             assignedLegacyRows.forEach(pushVisibleRow);
+            hasCurrentAssignmentRow = true;
             return;
         }
 
-        if (visibleTargetKeys.size > 0) return;
+        if (hasCurrentAssignmentRow) return;
 
-        const preferredUnassignedRow = rows.find(row => row.is_active !== false) || rows[0];
+        const preferredUnassignedRow =
+            rows.find(row => !removedMembershipRows.includes(row) && !row.group_id && row.is_active !== false) ||
+            rows.find(row => !removedMembershipRows.includes(row) && row.is_active !== false);
         if (preferredUnassignedRow) visibleRows.push(preferredUnassignedRow);
     });
 
     return visibleRows;
+};
+
+const getRegroupingBoardDisplayMembers = (sourceMembers: any[]) =>
+    normalizeRegroupingDisplayMembers(sourceMembers).filter(member => !isRegroupingRemovedMembershipRow(member));
+
+const buildRegroupingSeasonSaveMembers = (sourceMembers: any[]) => {
+    const displayRows = normalizeRegroupingDisplayMembers(sourceMembers);
+    const savedKeys = new Set(displayRows.map(getRegroupingSourceMembershipKey).filter(Boolean));
+    const hiddenRemovedRows = sourceMembers.filter((member) => {
+        const sourceMembershipKey = getRegroupingSourceMembershipKey(member);
+        if (!sourceMembershipKey || savedKeys.has(sourceMembershipKey)) return false;
+
+        return !member.group_id && Boolean(
+            member.source_membership_group_id ||
+            member.source_membership_group_name
+        );
+    });
+
+    return [...displayRows, ...hiddenRemovedRows];
 };
 
 const isSameRegroupingGroup = (left: any, right: any) => {
@@ -453,18 +522,19 @@ function RegroupingPageInner() {
             ? formatRegroupingPeriodLabel(seasonEffectiveWeekDate, seasonEndWeekDate)
             : `${formatRegroupingWeekLabel(seasonEffectiveWeekDate)} - ${formatRegroupingWeekLabel(seasonEndWeekDate)}`;
 
-    // Calculate duplicate status for members (only show delete button if duplicated)
+    // Calculate duplicate status from board-visible current assignments only.
+    // Removed history rows must not make a person look multi-assigned.
     const isDeletableMap = useMemo(() => {
         const counts: Record<string, number> = {};
+        const currentBoardMembers = getRegroupingBoardDisplayMembers(localMembers);
 
-        // Count by identity (person_id or normalized name+phone)
-        localMembers.forEach(m => {
+        currentBoardMembers.forEach(m => {
             const key = getRegroupingIdentityKey(m);
             counts[key] = (counts[key] || 0) + 1;
         });
 
         const map: Record<string, boolean> = {};
-        localMembers.forEach(m => {
+        currentBoardMembers.forEach(m => {
             const key = getRegroupingIdentityKey(m);
             // Member is deletable if their identity appears more than once
             // OR if it's a temporary copy/new member
@@ -657,6 +727,81 @@ function RegroupingPageInner() {
         );
     };
 
+    const fetchLiveMembersForCurrentSeasonPlan = async (
+        season: { church_id: string; department_id: string; status: string; effective_week_date: string; end_week_date?: string | null },
+        planGroups: any[]
+    ) => {
+        if (season.status !== 'applied') return [];
+
+        const currentWeek = getCurrentSundayInputValue();
+        if (season.effective_week_date > currentWeek) return [];
+        if (season.end_week_date && season.end_week_date < currentWeek) return [];
+
+        const { data: directoryRows, error: directoryError } = await supabase
+            .from('member_directory')
+            .select('*')
+            .eq('church_id', season.church_id)
+            .eq('department_id', season.department_id)
+            .neq('is_active', false);
+
+        if (directoryError) throw directoryError;
+
+        const directoryIds = (directoryRows || []).map(member => member.id).filter(Boolean);
+        if (directoryIds.length === 0) return [];
+
+        const [{ data: membershipRows, error: membershipsError }, phase2PersonMap] = await Promise.all([
+            supabase
+                .from('memberships')
+                .select('id, person_id, legacy_member_directory_id, group_id, role, starts_at, ends_at, group:group_id(name)')
+                .eq('church_id', season.church_id)
+                .eq('department_id', season.department_id)
+                .eq('status', 'active')
+                .in('legacy_member_directory_id', directoryIds),
+            fetchPhase2PersonMap(directoryIds),
+        ]);
+
+        if (membershipsError) throw membershipsError;
+
+        const membershipByDirectoryId = new Map(
+            (membershipRows || [])
+                .filter(membership => membership.legacy_member_directory_id)
+                .map(membership => [membership.legacy_member_directory_id as string, membership])
+        );
+        const planGroupIdBySourceGroupId = new Map(
+            planGroups
+                .filter(group => group.source_group_id)
+                .map(group => [group.source_group_id, group.id])
+        );
+
+        return applyCanonicalFamilyInfo((directoryRows || []).map(member => {
+            const membership = membershipByDirectoryId.get(member.id);
+            const liveGroupId = membership?.group_id || null;
+            const liveGroup = membership?.group && !Array.isArray(membership.group)
+                ? membership.group as { name?: string | null }
+                : null;
+            const startsDate = typeof membership?.starts_at === 'string'
+                ? membership.starts_at.slice(0, 10)
+                : season.effective_week_date;
+            const endsDate = typeof membership?.ends_at === 'string'
+                ? membership.ends_at.slice(0, 10)
+                : season.end_week_date || null;
+
+            return {
+                ...member,
+                group_id: liveGroupId ? planGroupIdBySourceGroupId.get(liveGroupId) || null : null,
+                group_name: liveGroup?.name || member.group_name || null,
+                role_in_group: membership?.role || member.role_in_group || 'member',
+                phase2_membership_id: membership?.id || null,
+                phase2_person_id: membership?.person_id || phase2PersonMap.get(member.id) || null,
+                source_membership_group_id: liveGroupId,
+                source_membership_group_name: liveGroup?.name || member.group_name || null,
+                source_member_directory_id: member.id,
+                starts_week_date: snapDateInputToSunday(startsDate),
+                ends_week_date: endsDate ? snapDateInputToSunday(endsDate) : season.end_week_date || null,
+            };
+        }));
+    };
+
     const fetchMembers = async (churchId: string, deptId: string) => {
         setLoading(true);
         const { data } = await supabase
@@ -818,6 +963,104 @@ function RegroupingPageInner() {
         );
     }, []);
 
+    const buildRemovedMembershipRow = useCallback((
+        member: any,
+        sourceGroup: any,
+        endWeekDate: string
+    ) => {
+        const sourceGroupId =
+            sourceGroup?.source_group_id ||
+            (sourceGroup?.id && !String(sourceGroup.id).startsWith('temp-') ? sourceGroup.id : null) ||
+            member.source_membership_group_id ||
+            member.previous_source_group_id ||
+            null;
+        const sourceGroupName =
+            sourceGroup?.name ||
+            getValidRegroupingGroupLabel(member.source_membership_group_name) ||
+            getValidRegroupingGroupLabel(member.previous_group_name) ||
+            getValidRegroupingGroupLabel(member.group_name) ||
+            null;
+
+        return {
+            ...member,
+            group_id: null,
+            group_name: null,
+            source_membership_group_id: sourceGroupId,
+            source_membership_group_name: sourceGroupName,
+            plan_change_type: 'removed',
+            previous_source_group_id: sourceGroupId,
+            previous_group_name: sourceGroupName,
+            starts_week_date: member.starts_week_date || sourceGroup?.starts_week_date || seasonEffectiveWeekDate,
+            ends_week_date: endWeekDate,
+        };
+    }, [seasonEffectiveWeekDate]);
+
+    const buildUnassignedDepartmentRow = useCallback((
+        member: any,
+        startWeekDate: string
+    ) => ({
+        ...member,
+        id: `temp-unassigned-${member.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        group_id: null,
+        group_name: null,
+        role_in_group: 'member',
+        phase2_membership_id: null,
+        membership_id: null,
+        source_membership_id: null,
+        source_membership_group_id: null,
+        source_membership_group_name: null,
+        plan_change_type: null,
+        previous_source_group_id: null,
+        previous_group_name: null,
+        starts_week_date: startWeekDate,
+        ends_week_date: seasonEndWeekDate || null,
+    }), [seasonEndWeekDate]);
+
+    const buildMemberRowsForGroupMove = useCallback((
+        member: any,
+        targetGroupId: string | null,
+        currentAssignmentCount: number
+    ) => {
+        const targetGroup = targetGroupId ? groups.find(group => group.id === targetGroupId) : null;
+
+        if (targetGroupId) {
+            return [{
+                ...member,
+                group_id: targetGroupId,
+                group_name: targetGroup?.name || null,
+                plan_change_type: member.group_id ? member.plan_change_type : null,
+                starts_week_date: targetGroup?.starts_week_date || seasonEffectiveWeekDate,
+                ends_week_date: targetGroup?.ends_week_date || seasonEndWeekDate || null,
+            }];
+        }
+
+        if (!member.group_id) {
+            return [{
+                ...member,
+                group_id: null,
+                group_name: null,
+            }];
+        }
+
+        const sourceGroup = groups.find(group => group.id === member.group_id);
+        const removalEndWeek = getCurrentSundayInputValue();
+
+        if (currentAssignmentCount > 1) {
+            return [buildRemovedMembershipRow(member, sourceGroup, removalEndWeek)];
+        }
+
+        const unassignedStartWeek = addWeeksToDateInput(removalEndWeek, 1);
+        return [
+            buildRemovedMembershipRow(member, sourceGroup, removalEndWeek),
+            buildUnassignedDepartmentRow(
+                member,
+                unassignedStartWeek > (seasonEndWeekDate || unassignedStartWeek)
+                    ? seasonEndWeekDate || unassignedStartWeek
+                    : unassignedStartWeek
+            ),
+        ];
+    }, [buildRemovedMembershipRow, buildUnassignedDepartmentRow, groups, seasonEffectiveWeekDate, seasonEndWeekDate]);
+
     const handleReorderMembers = useMemo(() => (ids: string[], targetGroupId: string | null) => {
         const targetGroup = targetGroupId ? groups.find(group => group.id === targetGroupId) : null;
         const targetGroupPeriod = targetGroupId
@@ -860,17 +1103,27 @@ function RegroupingPageInner() {
         setLocalMembers(prev => {
             // Check if anything actually changed to avoid unnecessary re-renders
             let changed = false;
-            const next = prev.map(m => {
+            const currentBoardMembers = getRegroupingBoardDisplayMembers(prev);
+            const assignmentCountByIdentity = new Map<string, number>();
+            currentBoardMembers.forEach(member => {
+                const identityKey = getRegroupingIdentityKey(member);
+                assignmentCountByIdentity.set(identityKey, (assignmentCountByIdentity.get(identityKey) || 0) + 1);
+            });
+            const next = prev.flatMap(m => {
                 if (ids.includes(m.id) && m.group_id !== targetGroupId) {
                     changed = true;
-                    return { ...m, group_id: targetGroupId, ...targetGroupPeriod };
+                    return buildMemberRowsForGroupMove(
+                        { ...m, ...targetGroupPeriod },
+                        targetGroupId,
+                        assignmentCountByIdentity.get(getRegroupingIdentityKey(m)) || 1
+                    );
                 }
-                return m;
+                return [m];
             });
             return changed ? next : prev;
         });
         setHasChanges(true);
-    }, [findDuplicateIdentityNames, groups, localMembers, seasonEffectiveWeekDate, seasonEndWeekDate]); // Needs localMembers for duplicate check
+    }, [buildMemberRowsForGroupMove, findDuplicateIdentityNames, groups, localMembers, seasonEffectiveWeekDate, seasonEndWeekDate]); // Needs localMembers for duplicate check
 
     const handleMoveMembers = (ids: string[], targetGroupId: string | null, isCopy: boolean = false, targetIndex?: number) => {
         let finalIdsToMove = [...ids];
@@ -883,7 +1136,7 @@ function RegroupingPageInner() {
             : {};
 
         // Couple-aware logic: if autoMoveCouples is on, find spouses
-        if (autoMoveCouples && !isCopy) {
+        if (autoMoveCouples) {
             const spousesToInclude: string[] = [];
             ids.forEach(id => {
                 const member = localMembers.find(m => m.id === id);
@@ -957,14 +1210,23 @@ function RegroupingPageInner() {
 
         if (isCopy) {
             const membersToCopy = localMembers.filter(m => finalIdsToMove.includes(m.id));
+            const targetSourceGroupId =
+                targetGroup?.source_group_id ||
+                (targetGroup?.id && !String(targetGroup.id).startsWith('temp-') ? targetGroup.id : null);
             const newCopies = membersToCopy.map(m => ({
                 ...m,
                 id: `temp-copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                 group_id: targetGroupId,
+                group_name: targetGroup?.name || null,
                 phase2_membership_id: null,
                 membership_id: null,
                 source_membership_id: null,
-                source_member_directory_id: null,
+                source_member_directory_id: m.source_member_directory_id || (String(m.id || '').match(/^[0-9a-f-]{36}$/i) ? m.id : null),
+                source_membership_group_id: targetSourceGroupId,
+                source_membership_group_name: targetGroup?.name || null,
+                plan_change_type: 'added',
+                previous_group_name: '추가 소속',
+                previous_source_group_id: targetSourceGroupId,
                 ...targetGroupPeriod,
             }));
 
@@ -985,9 +1247,19 @@ function RegroupingPageInner() {
         } else {
             // MOVE logic
             setLocalMembers(prev => {
+                const currentBoardMembers = getRegroupingBoardDisplayMembers(prev);
+                const assignmentCountByIdentity = new Map<string, number>();
+                currentBoardMembers.forEach(member => {
+                    const identityKey = getRegroupingIdentityKey(member);
+                    assignmentCountByIdentity.set(identityKey, (assignmentCountByIdentity.get(identityKey) || 0) + 1);
+                });
                 // 1. Separate members to move from others
                 const movingMembers = prev.filter(m => finalIdsToMove.includes(m.id))
-                    .map(m => ({ ...m, group_id: targetGroupId, ...targetGroupPeriod }));
+                    .flatMap(m => buildMemberRowsForGroupMove(
+                        { ...m, ...targetGroupPeriod },
+                        targetGroupId,
+                        assignmentCountByIdentity.get(getRegroupingIdentityKey(m)) || 1
+                    ));
                 const remainingMembers = prev.filter(m => !finalIdsToMove.includes(m.id));
 
                 // 2. If targetIndex is specified, insert them at the position within the target group
@@ -1013,32 +1285,79 @@ function RegroupingPageInner() {
         const member = localMembers.find(m => m.id === id);
         if (!member) return;
 
-        const personIdCount = localMembers.filter(m => m.person_id === member.person_id).length;
+        const currentBoardMembers = getRegroupingBoardDisplayMembers(localMembers);
+        const memberIdentityKey = getRegroupingIdentityKey(member);
+        const currentPersonAssignmentCount = currentBoardMembers
+            .filter(m => getRegroupingIdentityKey(m) === memberIdentityKey)
+            .length;
+        const removedFromGroup = member.group_id ? groups.find(group => group.id === member.group_id) : null;
+        const removedFromSourceGroupId =
+            member.source_membership_group_id ||
+            removedFromGroup?.source_group_id ||
+            (removedFromGroup?.id && !String(removedFromGroup.id).startsWith('temp-') ? removedFromGroup.id : null);
+        const removedFromGroupName =
+            getValidRegroupingGroupLabel(member.source_membership_group_name) ||
+            removedFromGroup?.name ||
+            getValidRegroupingGroupLabel(member.group_name) ||
+            null;
 
         if (id.startsWith('temp-')) {
             // Temporary members are always safe to remove locally
             setLocalMembers(prev => prev.filter(m => m.id !== id));
             setHasChanges(true);
-        } else if (personIdCount > 1) {
+        } else if (currentPersonAssignmentCount > 1) {
             // If the member is duplicated (exists in other groups), we only remove this instance
             // This is effectively "de-assigning" from THIS group.
             if (confirm(`${member.full_name} 성도님을 이 조에서 제외하시겠습니까? (다른 조에 등록된 정보는 유지됩니다.)`)) {
+                // ends_week_date를 현재 주차(오늘)로 설정하여 앱에서 즉시 소속이 사라지도록 함
+                // 시즌 변경 내역 패널의 '소속 종료' 행에서 날짜를 더 세밀하게 조정할 수 있음
+                const removalEndWeek = getCurrentSundayInputValue();
                 setLocalMembers(prev => prev.map(m => (
                     m.id === id
                         ? {
                             ...m,
                             group_id: null,
-                            starts_week_date: m.starts_week_date || getCurrentSundayInputValue(),
-                            ends_week_date: m.ends_week_date || seasonEndWeekDate || null,
+                            group_name: null,
+                            source_membership_group_id: removedFromSourceGroupId,
+                            source_membership_group_name: removedFromGroupName,
+                            plan_change_type: 'removed',
+                            previous_source_group_id: removedFromSourceGroupId,
+                            previous_group_name: removedFromGroupName,
+                            starts_week_date: m.starts_week_date || seasonEffectiveWeekDate,
+                            ends_week_date: removalEndWeek,
                         }
                         : m
                 )));
                 setHasChanges(true); // User needs to click "Save" to persist this "de-assignment"
             }
         } else {
-            // If it's the last remaining card, we MUST NOT delete or remove it.
-            // The user requested that the actual member info never be deleted.
-            alert('이 성도는 현재 한 곳에만 편성되어 있어 삭제할 수 없습니다. 대신 다른 조로 이동시키거나 명단에 유지해 주세요.');
+            // 단일 소속은 기존 조 membership을 종료하고, 부서 안에는 미편성 row를 별도로 남긴다.
+            if (confirm(`${member.full_name} 성도님을 미편성으로 이동하시겠습니까?\n부서 소속은 유지되고 조 소속만 선택 주차부터 비워집니다.`)) {
+                const removalEndWeek = getCurrentSundayInputValue();
+                const unassignedStartWeek = addWeeksToDateInput(removalEndWeek, 1);
+                setLocalMembers(prev => prev.flatMap(m => (
+                    m.id === id
+                        ? [
+                            buildRemovedMembershipRow(
+                                {
+                                    ...m,
+                                    source_membership_group_id: removedFromSourceGroupId,
+                                    source_membership_group_name: removedFromGroupName,
+                                },
+                                removedFromGroup,
+                                removalEndWeek
+                            ),
+                            buildUnassignedDepartmentRow(
+                                m,
+                                unassignedStartWeek > (seasonEndWeekDate || unassignedStartWeek)
+                                    ? seasonEndWeekDate || unassignedStartWeek
+                                    : unassignedStartWeek
+                            ),
+                        ]
+                        : [m]
+                )));
+                setHasChanges(true);
+            }
         }
     };
 
@@ -1107,7 +1426,7 @@ function RegroupingPageInner() {
         const currentProfileMode = departments.find(d => d.id === selectedDeptId)?.profile_mode;
 
         groups.forEach(group => {
-            const members = displayLocalMembers.filter(m => m.group_id === group.id);
+            const members = boardDisplayMembers.filter(m => m.group_id === group.id);
 
             // Unified Leader logic for Excel
             const currentLeaders = members.filter(m => m.role_in_group === 'leader');
@@ -1186,7 +1505,7 @@ function RegroupingPageInner() {
         });
 
         // Add unassigned
-        const unassigned = displayLocalMembers.filter(m => !m.group_id);
+        const unassigned = boardDisplayMembers.filter(m => !m.group_id);
         if (unassigned.length > 0) {
             exportData.push({
                 '조': '미편성',
@@ -1325,8 +1644,8 @@ function RegroupingPageInner() {
         )));
 
         if (nextStartWeek || nextEndWeek) {
-            setLocalMembers(prev => prev.map(member => {
-                if (member.group_id !== id) return member;
+            setLocalMembers(prev => prev.flatMap(member => {
+                if (member.group_id !== id) return [member];
 
                 const nextMember = { ...member };
 
@@ -1378,8 +1697,63 @@ function RegroupingPageInner() {
         const deletedGroup = groups.find(g => g.id === id);
         if (!deletedGroup) return;
 
-        // Find members in this group and move to unassigned
-        setLocalMembers(prev => prev.map(m => m.group_id === id ? { ...m, group_id: null } : m));
+        if (regroupingMode === 'season' && isSelectedCurrentAppliedSeason) {
+            const endedWeekDate = maxDateInput(
+                seasonEffectiveWeekDate,
+                getPreviousWeekStartInput(getCurrentSundayInputValue())
+            );
+            const unassignedStartWeek = addWeeksToDateInput(endedWeekDate, 1);
+            const visibleMembersBeforeDelete = getRegroupingBoardDisplayMembers(localMembers);
+            const assignmentCountByIdentity = new Map<string, number>();
+            visibleMembersBeforeDelete.forEach(member => {
+                const identityKey = getRegroupingIdentityKey(member);
+                assignmentCountByIdentity.set(identityKey, (assignmentCountByIdentity.get(identityKey) || 0) + 1);
+            });
+
+            setLocalMembers(prev => prev.flatMap(member => {
+                if (member.group_id !== id) return [member];
+
+                const identityKey = getRegroupingIdentityKey(member);
+                const hasOtherAssignments = (assignmentCountByIdentity.get(identityKey) || 0) > 1;
+                const sourceGroupId =
+                    member.source_membership_group_id ||
+                    deletedGroup.source_group_id ||
+                    (deletedGroup.id && !String(deletedGroup.id).startsWith('temp-') ? deletedGroup.id : null);
+
+                if (hasOtherAssignments) {
+                    return [buildRemovedMembershipRow(
+                        {
+                            ...member,
+                            source_membership_group_id: sourceGroupId,
+                            source_membership_group_name: deletedGroup.name,
+                        },
+                        deletedGroup,
+                        endedWeekDate
+                    )];
+                }
+
+                return [
+                    buildRemovedMembershipRow(
+                        {
+                            ...member,
+                            source_membership_group_id: sourceGroupId,
+                            source_membership_group_name: deletedGroup.name,
+                        },
+                        deletedGroup,
+                        endedWeekDate
+                    ),
+                    buildUnassignedDepartmentRow(
+                        member,
+                        unassignedStartWeek > (seasonEndWeekDate || unassignedStartWeek)
+                            ? seasonEndWeekDate || unassignedStartWeek
+                            : unassignedStartWeek
+                    ),
+                ];
+            }));
+        } else {
+            setLocalMembers(prev => prev.map(m => m.group_id === id ? { ...m, group_id: null } : m));
+        }
+
         setGroups(prev => prev.filter(g => g.id !== id));
 
         if (regroupingMode === 'season' && isSelectedCurrentAppliedSeason) {
@@ -1387,7 +1761,6 @@ function RegroupingPageInner() {
                 seasonEffectiveWeekDate,
                 getPreviousWeekStartInput(getCurrentSundayInputValue())
             );
-
             setSeasonArchivedGroups(prev => {
                 const archivedGroup = {
                     ...deletedGroup,
@@ -1553,9 +1926,14 @@ function RegroupingPageInner() {
                 setSeasonTitle(title);
             }
 
+            const seasonSaveMembers = buildRegroupingSeasonSaveMembers(localMembers);
             const membersToSave = autoMoveCouples
-                ? expandCoupleMovesBeforeSave(displayLocalMembers, members)
-                : displayLocalMembers;
+                ? expandCoupleMovesBeforeSave(seasonSaveMembers, members)
+                : seasonSaveMembers;
+            const liveBoardMembersToSave = getRegroupingBoardDisplayMembers(localMembers);
+            const liveMembersToSave = autoMoveCouples
+                ? expandCoupleMovesBeforeSave(liveBoardMembersToSave, members)
+                : liveBoardMembersToSave;
             const seasonPlanGroupsToSave = [
                 ...groups.map(group => ({
                     ...group,
@@ -1625,8 +2003,10 @@ function RegroupingPageInner() {
                             ends_week_date: group.ends_week_date || seasonEndWeekDate || null,
                         })),
                     ],
-                    assignments: membersToSave.map(member => ({
-                        id: member.source_member_directory_id || member.id,
+                    assignments: liveMembersToSave.map(member => ({
+                        id: member.plan_change_type === 'added' && String(member.id || '').startsWith('temp-copy-')
+                            ? member.id
+                            : member.source_member_directory_id || member.id,
                         full_name: member.full_name,
                         phone: member.phone || '',
                         group_id: member.group_id
@@ -1814,7 +2194,16 @@ function RegroupingPageInner() {
     };
 
     const fetchSeasonPlanBoard = async (seasonId: string) => {
-        const [{ data: planGroups, error: groupsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
+        const [
+            { data: season, error: seasonError },
+            { data: planGroups, error: groupsError },
+            { data: assignments, error: assignmentsError },
+        ] = await Promise.all([
+            supabase
+                .from('regrouping_seasons')
+                .select('id, church_id, department_id, status, effective_week_date, end_week_date')
+                .eq('id', seasonId)
+                .maybeSingle(),
             supabase
                 .from('regrouping_plan_groups')
                 .select('id, source_group_id, name, color_hex, sort_order, leader_person_id, starts_week_date, ends_week_date, plan_status, is_new_member_group, climbing_threshold, source_group:source_group_id(is_new_member_group, climbing_threshold)')
@@ -1829,18 +2218,23 @@ function RegroupingPageInner() {
                     person_id,
                     role_in_group,
                     sort_order,
+                    change_type,
+                    previous_source_group_id,
+                    previous_source_group:previous_source_group_id(name),
+                    previous_group_name,
                     source_membership_id,
-                    source_membership:source_membership_id(group_id, group:group_id(name)),
+                    source_membership:source_membership_id(group_id, legacy_member_directory_id, group:group_id(name)),
                     source_member_directory_id,
                     starts_week_date,
                     ends_week_date,
                     people:person_id(display_name, normalized_phone),
-                    member_directory:source_member_directory_id(full_name, phone, family_name, spouse_name, children_info, birth_date, wedding_anniversary, notes, avatar_url, profile_id)
+                    member_directory:source_member_directory_id(full_name, phone, group_name, family_name, spouse_name, children_info, birth_date, wedding_anniversary, notes, avatar_url, profile_id, is_active, left_at)
                 `)
                 .eq('season_id', seasonId)
                 .order('sort_order', { ascending: true }),
         ]);
 
+        if (seasonError) throw seasonError;
         if (groupsError) throw groupsError;
         if (assignmentsError) throw assignmentsError;
 
@@ -1848,11 +2242,63 @@ function RegroupingPageInner() {
             planGroups: planGroups || [],
             assignments: assignments || [],
         });
+        const liveMembers = season
+            ? await fetchLiveMembersForCurrentSeasonPlan(season, mapped.groups)
+            : [];
+        const liveMemberByIdentity = new Map<string, any>();
+        const liveMemberByIdentityAndGroup = new Map<string, any>();
+        liveMembers.forEach(member => {
+            const identityKey = getRegroupingIdentityKey(member);
+            if (!liveMemberByIdentity.has(identityKey)) {
+                liveMemberByIdentity.set(identityKey, member);
+            }
+            liveMemberByIdentityAndGroup.set(`${identityKey}|${member.group_id || 'unassigned'}`, member);
+        });
+        const mappedCurrentMembers = mapped.members
+            .filter(member => (
+                isRegroupingRemovedMembershipRow(member) || member.is_active !== false
+            ))
+            .map(member => {
+                const identityKey = getRegroupingIdentityKey(member);
+                const liveMatch =
+                    liveMemberByIdentityAndGroup.get(`${identityKey}|${member.group_id || 'unassigned'}`) ||
+                    liveMemberByIdentity.get(identityKey);
+                if (!liveMatch) return member;
+
+                return {
+                    ...member,
+                    phone: member.phone || liveMatch.phone || null,
+                    family_name: member.family_name || liveMatch.family_name || null,
+                    spouse_name: member.spouse_name || liveMatch.spouse_name || null,
+                    children_info: member.children_info || liveMatch.children_info || null,
+                    birth_date: member.birth_date || liveMatch.birth_date || null,
+                    wedding_anniversary: member.wedding_anniversary || liveMatch.wedding_anniversary || null,
+                    notes: member.notes || liveMatch.notes || null,
+                    avatar_url: member.avatar_url || liveMatch.avatar_url || null,
+                    profile_id: member.profile_id || liveMatch.profile_id || null,
+                    source_member_directory_id: member.source_member_directory_id || liveMatch.source_member_directory_id || null,
+                };
+            });
+        const plannedTargets = new Set(
+            mappedCurrentMembers
+                .filter(member => !isRegroupingRemovedMembershipRow(member))
+                .map(member => [
+                    getRegroupingIdentityKey(member),
+                    member.group_id || 'unassigned',
+                ].join('|'))
+        );
+        const missingLiveMembers = liveMembers.filter(member => {
+            const targetKey = [
+                getRegroupingIdentityKey(member),
+                member.group_id || 'unassigned',
+            ].join('|');
+            return !plannedTargets.has(targetKey);
+        });
 
         return {
             activeGroups: mapped.groups.filter(group => group.plan_status !== 'ended'),
             endedGroups: mapped.groups.filter(group => group.plan_status === 'ended'),
-            members: mapped.members,
+            members: [...mappedCurrentMembers, ...missingLiveMembers],
         };
     };
 
@@ -2007,16 +2453,16 @@ function RegroupingPageInner() {
         }
     };
 
-    const displayLocalMembers = useMemo(() => normalizeRegroupingDisplayMembers(localMembers), [localMembers]);
-    const hasActiveBoard = groups.length > 0 || displayLocalMembers.some(member => Boolean(member.group_id));
+    const boardDisplayMembers = useMemo(() => getRegroupingBoardDisplayMembers(localMembers), [localMembers]);
+    const hasActiveBoard = groups.length > 0 || boardDisplayMembers.some(member => Boolean(member.group_id));
 
     const filteredLocalMembers = useMemo(() => {
-        if (!searchTerm) return displayLocalMembers;
-        return displayLocalMembers.filter(m =>
+        if (!searchTerm) return boardDisplayMembers;
+        return boardDisplayMembers.filter(m =>
             m.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             m.phone?.includes(searchTerm)
         );
-    }, [displayLocalMembers, searchTerm]);
+    }, [boardDisplayMembers, searchTerm]);
 
     const sortedMembers = useMemo(() => {
         const dept = departments.find(d => d.id === selectedDeptId);
@@ -2083,6 +2529,9 @@ function RegroupingPageInner() {
                 const targetGroup = nextGroupId ? groups.find(group => group.id === nextGroupId) : null;
                 const currentSourceGroupId = targetGroup?.source_group_id || (targetGroup?.id && !String(targetGroup.id).startsWith('temp-') ? targetGroup.id : null);
                 const originalSourceGroupId = member.source_membership_group_id || null;
+                const originalSourceGroupName = member.source_membership_group_name || null;
+                const persistedChangeType = member.plan_change_type || null;
+                const persistedPreviousGroupName = member.previous_group_name || null;
                 const expectedStartWeekDate = targetGroup?.starts_week_date || seasonEffectiveWeekDate;
                 const expectedEndWeekDate = targetGroup?.ends_week_date || seasonEndWeekDate || null;
                 const normalisePeriodDate = (value?: string | null) => value ? snapDateInputToSunday(value) : null;
@@ -2099,26 +2548,44 @@ function RegroupingPageInner() {
                     currentSourceGroupId &&
                     originalSourceGroupId !== currentSourceGroupId
                 );
-                if (previousGroupId === nextGroupId && !persistedGroupChanged && !periodChanged) return null;
+                const hasSourceMembership = Boolean(
+                    member.phase2_membership_id ||
+                    member.membership_id ||
+                    originalSourceGroupId ||
+                    originalSourceGroupName
+                );
+                const persistedAddedMembership = persistedChangeType === 'added' || Boolean(nextGroupId && !hasSourceMembership);
+                const persistedUnassignedMove = persistedChangeType === 'moved'
+                    && !nextGroupId
+                    && Boolean(originalSourceGroupId || originalSourceGroupName || persistedPreviousGroupName);
+                const persistedRemovedMembership = persistedChangeType === 'removed';
+                if (previousGroupId === nextGroupId && !persistedGroupChanged && !persistedAddedMembership && !persistedRemovedMembership && !persistedUnassignedMove && !periodChanged) return null;
                 const previousGroup = baselineGroups.find(group => group.id === previousGroupId);
                 const nextGroup = groups.find(group => group.id === nextGroupId);
-                const isRemoved = Boolean(previousGroupId) && !nextGroupId;
+                const previousGroupNameForDisplay =
+                    getValidRegroupingGroupLabel(persistedPreviousGroupName) ||
+                    getValidRegroupingGroupLabel(originalSourceGroupName) ||
+                    previousGroup?.name ||
+                    '이전 조';
+                const isRemoved = persistedRemovedMembership || persistedUnassignedMove;
                 const isMoved = persistedGroupChanged || previousGroupId !== nextGroupId;
                 return {
                     id: member.id,
                     full_name: member.full_name,
                     changeType: isRemoved
                         ? 'removed' as const
-                        : !isMoved
+                        : persistedAddedMembership
+                            ? 'added' as const
+                            : !isMoved
                             ? 'period' as const
                             : 'moved' as const,
-                    previousGroupName: member.source_membership_group_name || previousGroup?.name || '미편성',
+                    previousGroupName: persistedAddedMembership && !isRemoved ? '추가 소속' : previousGroupNameForDisplay,
                     nextGroupName: nextGroup?.name || '미편성',
                     starts_week_date: startsWeekDate,
                     ends_week_date: endsWeekDate,
                     recommended_starts_week_date: expectedStartWeekDate,
                     recommended_ends_week_date: expectedEndWeekDate,
-                    selectableForBulkNormalize: !isMoved && !isRemoved,
+                    selectableForBulkNormalize: !isMoved && !isRemoved && !persistedAddedMembership,
                 };
             })
             .filter((member): member is NonNullable<typeof member> => Boolean(member));
@@ -2132,7 +2599,7 @@ function RegroupingPageInner() {
     const stats = useMemo(() => {
         const people = new Map<string, { assigned: boolean }>();
 
-        displayLocalMembers.forEach(member => {
+        boardDisplayMembers.forEach(member => {
             const identityKey = getMemberIdentityKey(member);
             const current = people.get(identityKey) || { assigned: false };
             people.set(identityKey, {
@@ -2144,7 +2611,7 @@ function RegroupingPageInner() {
         const assigned = Array.from(people.values()).filter(person => person.assigned).length;
         const unassigned = total - assigned;
         return { total, assigned, unassigned };
-    }, [displayLocalMembers, getMemberIdentityKey]);
+    }, [boardDisplayMembers, getMemberIdentityKey]);
 
     if (loading) {
         return (
@@ -2977,7 +3444,7 @@ function RegroupingPageInner() {
                     tableRef={exportTableRef}
                     deptName={departments.find(d => d.id === selectedDeptId)?.name || '조편성'}
                     groups={groups}
-                    localMembers={displayLocalMembers}
+                    localMembers={boardDisplayMembers}
                     profileMode={departments.find(d => d.id === selectedDeptId)?.profile_mode}
                 />
             </div>

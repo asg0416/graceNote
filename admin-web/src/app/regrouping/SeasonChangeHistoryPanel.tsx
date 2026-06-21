@@ -26,6 +26,52 @@ type MovedSeasonMember = {
     selectableForBulkNormalize?: boolean;
 };
 
+const memberChangeMeta: Record<MovedSeasonMember['changeType'], {
+    label: string;
+    tabClassName: string;
+    activeTabClassName: string;
+    rowClassName: string;
+    badgeClassName: string;
+    groupClassName: string;
+}> = {
+    moved: {
+        // 기존 조에서 다른 조로 이동 — 이전 조 소속 row의 group_id가 변경됨 (이전 조 소속은 사라짐)
+        label: '소속 이동',
+        tabClassName: 'bg-blue-50 text-blue-700 ring-1 ring-blue-100 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:ring-blue-500/20',
+        activeTabClassName: 'bg-blue-600 text-white shadow-sm shadow-blue-500/20',
+        rowClassName: 'border-blue-100 bg-blue-50/55 dark:border-blue-500/20 dark:bg-blue-500/10',
+        badgeClassName: 'bg-blue-600 text-white',
+        groupClassName: 'bg-blue-100 text-blue-800 dark:bg-blue-400/10 dark:text-blue-200',
+    },
+    added: {
+        // 복사(다중편성)로 새 소속 row 추가 — 이전 조 소속은 그대로 유지되고 새 조에도 추가됨
+        label: '다중 소속 추가',
+        tabClassName: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20',
+        activeTabClassName: 'bg-emerald-600 text-white shadow-sm shadow-emerald-500/20',
+        rowClassName: 'border-emerald-100 bg-emerald-50/55 dark:border-emerald-500/20 dark:bg-emerald-500/10',
+        badgeClassName: 'bg-emerald-600 text-white',
+        groupClassName: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-200',
+    },
+    removed: {
+        // 조 소속 종료 — 미편성 전환, 조 종료, 다중소속 일부 제거를 모두 포함
+        label: '소속 종료',
+        tabClassName: 'bg-rose-50 text-rose-700 ring-1 ring-rose-100 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20',
+        activeTabClassName: 'bg-rose-600 text-white shadow-sm shadow-rose-500/20',
+        rowClassName: 'border-rose-100 bg-rose-50/55 dark:border-rose-500/20 dark:bg-rose-500/10',
+        badgeClassName: 'bg-rose-600 text-white',
+        groupClassName: 'bg-rose-100 text-rose-800 dark:bg-rose-400/10 dark:text-rose-200',
+    },
+    period: {
+        // 조 이동 없이 소속 기간(시작/종료 주차)만 변경된 경우
+        label: '기간 보정',
+        tabClassName: 'bg-amber-50 text-amber-700 ring-1 ring-amber-100 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20',
+        activeTabClassName: 'bg-amber-500 text-white shadow-sm shadow-amber-500/20',
+        rowClassName: 'border-amber-100 bg-amber-50/55 dark:border-amber-500/20 dark:bg-amber-500/10',
+        badgeClassName: 'bg-amber-500 text-white',
+        groupClassName: 'bg-amber-100 text-amber-800 dark:bg-amber-400/10 dark:text-amber-200',
+    },
+};
+
 interface SeasonChangeHistoryPanelProps {
     archivedGroups: SeasonGroup[];
     newGroups: SeasonGroup[];
@@ -67,10 +113,10 @@ export function SeasonChangeHistoryPanel({
     const memberTabOptions = useMemo(() => {
         const labelByType: Record<'all' | MovedSeasonMember['changeType'], string> = {
             all: '전체',
-            moved: '소속 이동',
-            added: '새 소속',
-            removed: '소속 종료',
-            period: '기간 보정',
+            moved: memberChangeMeta.moved.label,
+            added: memberChangeMeta.added.label,
+            removed: memberChangeMeta.removed.label,
+            period: memberChangeMeta.period.label,
         };
         const types: Array<'all' | MovedSeasonMember['changeType']> = ['all', 'moved', 'added', 'removed', 'period'];
         return types.map(type => ({
@@ -310,17 +356,25 @@ export function SeasonChangeHistoryPanel({
                                         <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-500">성도 소속 기간</h3>
                                         <div className="flex flex-wrap gap-1.5">
                                             {memberTabOptions.map(option => (
+                                                (() => {
+                                                    const meta = option.type === 'all' ? null : memberChangeMeta[option.type];
+                                                    const isActive = effectiveMemberTab === option.type;
+
+                                                    return (
                                                 <button
                                                     key={option.type}
                                                     type="button"
                                                     onClick={() => setMemberTab(option.type)}
-                                                    className={`rounded-full px-3 py-1 text-[10px] font-black transition ${effectiveMemberTab === option.type
-                                                        ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/20'
-                                                        : 'bg-white text-slate-500 ring-1 ring-slate-200 hover:text-amber-700 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-800'
-                                                        }`}
+                                                    className={`rounded-full px-3 py-1 text-[10px] font-black transition ${
+                                                        isActive
+                                                            ? meta?.activeTabClassName || 'bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-950'
+                                                            : meta?.tabClassName || 'bg-white text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-800'
+                                                    }`}
                                                 >
                                                     {option.label} {option.count}
                                                 </button>
+                                                    );
+                                                })()
                                             ))}
                                         </div>
                                     </div>
@@ -378,8 +432,11 @@ export function SeasonChangeHistoryPanel({
                                         </div>
                                     )}
                                     <div className="max-h-72 overflow-y-auto rounded-2xl border border-amber-100 bg-amber-50/50 dark:border-amber-500/20 dark:bg-amber-500/10">
-                                        {visibleMovedMembers.map(member => (
-                                            <div key={member.id} className="grid gap-3 border-b border-amber-100 px-3 py-3 last:border-b-0 dark:border-amber-500/10 lg:grid-cols-[1fr_160px_190px] lg:items-center">
+                                        {visibleMovedMembers.map(member => {
+                                            const meta = memberChangeMeta[member.changeType];
+
+                                            return (
+                                            <div key={member.id} className={`grid gap-3 border-b px-3 py-3 last:border-b-0 lg:grid-cols-[1fr_160px_190px] lg:items-center ${meta.rowClassName}`}>
                                                 <div className="min-w-0">
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         {member.changeType === 'period' && !readOnly && isPeriodTab && (
@@ -391,28 +448,22 @@ export function SeasonChangeHistoryPanel({
                                                             />
                                                         )}
                                                         <span className="text-xs font-black text-slate-800 dark:text-slate-100">{member.full_name}</span>
-                                                        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-amber-700 shadow-sm dark:bg-slate-950 dark:text-amber-300">
-                                                            {member.changeType === 'added'
-                                                                ? '새 소속'
-                                                                : member.changeType === 'removed'
-                                                                    ? '소속 종료'
-                                                                    : member.changeType === 'period'
-                                                                        ? '기간 보정'
-                                                                        : '소속 이동'}
+                                                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-black shadow-sm ${meta.badgeClassName}`}>
+                                                            {meta.label}
                                                         </span>
                                                     </div>
                                                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
-                                                        <span className="rounded-lg bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">
+                                                        <span className={`rounded-lg px-2 py-0.5 ${meta.groupClassName}`}>
                                                             {member.changeType === 'removed' ? member.previousGroupName : member.nextGroupName}
                                                         </span>
                                                         <span className="truncate text-slate-500 dark:text-slate-400">
                                                             {member.changeType === 'added'
-                                                                ? '새로 추가된 소속'
+                                                                ? '이전 조 소속 유지 + 이 조에 추가 편성 (다중 소속)'
                                                                 : member.changeType === 'removed'
-                                                                    ? '선택한 조 소속만 종료. 다른 조 소속은 유지'
+                                                                    ? '이 조 소속만 종료됨 — 아래 기간 설정이 앱에 반영'
                                                                     : member.changeType === 'period'
                                                                         ? '조/시즌 기간과 맞지 않아 보정 필요'
-                                                                    : `${member.previousGroupName}에서 이동`}
+                                                                    : `${member.previousGroupName}에서 이동 — 이전 조 소속 사라짐`}
                                                         </span>
                                                     </div>
                                                     {member.changeType === 'period' && (
@@ -422,7 +473,8 @@ export function SeasonChangeHistoryPanel({
                                                     )}
                                                 </div>
                                                 <label className="space-y-1">
-                                                    <span className="text-[10px] font-black text-slate-400">{member.changeType === 'removed' ? '종료 처리 시작 주차' : '소속 시작 주차'}</span>
+                                                    {/* removed: 이 조에서의 소속이 시작된 주차 (= 이 조에 처음 편성된 주차) */}
+                                                    <span className="text-[10px] font-black text-slate-400">{member.changeType === 'removed' ? '이 조 소속 시작 주차' : '소속 시작 주차'}</span>
                                                     <input
                                                         type="date"
                                                         value={clampDateToRange(
@@ -446,7 +498,8 @@ export function SeasonChangeHistoryPanel({
                                                     />
                                                 </label>
                                                 <label className="space-y-1">
-                                                    <span className="text-[10px] font-black text-slate-400">{member.changeType === 'removed' ? '이전 소속 마지막 주차' : '소속 마지막 주차'}</span>
+                                                    {/* removed: 이 조에서 마지막으로 활동한 주차 — 이 날짜 이후 앱에서 이 조 소속이 보이지 않음 */}
+                                                    <span className="text-[10px] font-black text-slate-400">{member.changeType === 'removed' ? '이 조 마지막 활동 주차' : '소속 마지막 주차'}</span>
                                                     <input
                                                         type="date"
                                                         value={clampDateToRange(
@@ -470,11 +523,19 @@ export function SeasonChangeHistoryPanel({
                                                     />
                                                 </label>
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
-                                    <p className="text-[11px] font-bold text-slate-400">
-                                        이 영역은 이동 로그가 아니라 시즌 안의 성도-조 소속 row 기간을 조정하는 곳입니다. 다른 조에 복사한 다중 소속도 별도 row로 표시됩니다.
-                                    </p>
+                                    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-[11px] font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
+                                        <p className="mb-1 font-black text-slate-600 dark:text-slate-300">카테고리 안내</p>
+                                        <ul className="space-y-1 list-none">
+                                            <li><span className="font-black text-blue-600">소속 이동</span>: 드래그앤드롭으로 다른 조로 옮김 → 이전 조 소속이 사라지고 새 조로 변경됨</li>
+                                            <li><span className="font-black text-emerald-600">다중 소속 추가</span>: 복사(다중편성)로 추가됨 → 이전 조 소속은 유지되고 이 조에도 동시에 속함</li>
+                                            <li><span className="font-black text-rose-600">소속 종료</span>: 특정 조 소속을 끝냄 → 미편성 전환, 조 종료, 다중소속 일부 제거가 여기에 포함됨</li>
+                                            <li><span className="font-black text-amber-600">기간 보정</span>: 조 이동 없이 소속 시작·종료 주차만 변경됨</li>
+                                        </ul>
+                                        <p className="mt-1.5 text-slate-400">※ 이 영역은 이동 로그가 아닌 시즌 내 성도-조 소속 기간을 조정하는 곳입니다. 저장 후 앱에 반영됩니다.</p>
+                                    </div>
                                 </div>
                             )}
                         </>

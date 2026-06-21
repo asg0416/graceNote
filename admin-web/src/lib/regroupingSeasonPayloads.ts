@@ -55,12 +55,34 @@ export const buildRegroupingSeasonAssignmentsPayload = (members: Array<Record<st
                     ? member.role
                     : 'member';
 
+            const changeType = typeof member.plan_change_type === 'string' && member.plan_change_type
+                ? member.plan_change_type
+                : typeof member.change_type === 'string' && member.change_type
+                    ? member.change_type
+                    : null;
+            const rawPreviousGroupName = typeof member.previous_group_name === 'string' && member.previous_group_name
+                ? member.previous_group_name
+                : null;
+            const sourceGroupName = typeof member.source_membership_group_name === 'string' && member.source_membership_group_name
+                ? member.source_membership_group_name
+                : null;
+            const previousGroupName = changeType === 'removed'
+                ? getGroupLabel(rawPreviousGroupName) || getGroupLabel(sourceGroupName) || null
+                : rawPreviousGroupName || sourceGroupName || null;
+
             return {
                 group_id: groupId,
                 plan_group_id: null,
                 person_id: personId,
                 role_in_group: role,
                 sort_order: index,
+                change_type: changeType,
+                previous_source_group_id: typeof member.previous_source_group_id === 'string' && isUuid(member.previous_source_group_id)
+                    ? member.previous_source_group_id
+                    : typeof member.source_membership_group_id === 'string' && isUuid(member.source_membership_group_id)
+                        ? member.source_membership_group_id
+                        : null,
+                previous_group_name: previousGroupName,
                 source_membership_id: typeof member.phase2_membership_id === 'string' && isUuid(member.phase2_membership_id)
                     ? member.phase2_membership_id
                     : typeof member.membership_id === 'string' && isUuid(member.membership_id)
@@ -87,6 +109,12 @@ const getText = (...values: unknown[]) => {
         if (typeof value === 'string' && value.trim()) return value;
     }
     return '';
+};
+
+const getGroupLabel = (value: unknown) => {
+    const label = typeof value === 'string' ? value.trim() : '';
+    if (!label || label === '추가 소속') return '';
+    return label;
 };
 
 export const mapRegroupingSeasonDraftToBoard = ({
@@ -123,9 +151,18 @@ export const mapRegroupingSeasonDraftToBoard = ({
             const directory = getNestedRecord(assignment.member_directory);
             const sourceMembership = getNestedRecord(assignment.source_membership);
             const sourceMembershipGroup = getNestedRecord(sourceMembership.group);
+            const previousSourceGroup = getNestedRecord(assignment.previous_source_group);
             const sourceDirectoryId = typeof assignment.source_member_directory_id === 'string'
                 ? assignment.source_member_directory_id
-                : null;
+                : typeof sourceMembership.legacy_member_directory_id === 'string'
+                    ? sourceMembership.legacy_member_directory_id
+                    : null;
+            const resolvedSourceGroupName = getText(
+                getGroupLabel(sourceMembershipGroup.name),
+                getGroupLabel(previousSourceGroup.name),
+                getGroupLabel(directory.group_name),
+                getGroupLabel(assignment.previous_group_name),
+            );
 
             return {
                 id: `season-${String(assignment.id || '')}`,
@@ -142,11 +179,16 @@ export const mapRegroupingSeasonDraftToBoard = ({
                 notes: getText(directory.notes) || null,
                 avatar_url: getText(directory.avatar_url) || null,
                 profile_id: getText(directory.profile_id) || null,
+                is_active: directory.is_active === false ? false : true,
+                left_at: getText(directory.left_at) || null,
                 person_id: String(assignment.person_id || ''),
                 phase2_person_id: String(assignment.person_id || ''),
                 phase2_membership_id: typeof assignment.source_membership_id === 'string' ? assignment.source_membership_id : null,
+                plan_change_type: getText(assignment.change_type) || null,
+                previous_source_group_id: getText(assignment.previous_source_group_id) || null,
+                previous_group_name: getText(assignment.previous_group_name) || null,
                 source_membership_group_id: typeof sourceMembership.group_id === 'string' ? sourceMembership.group_id : null,
-                source_membership_group_name: getText(sourceMembershipGroup.name) || null,
+                source_membership_group_name: resolvedSourceGroupName || null,
                 source_member_directory_id: sourceDirectoryId,
                 starts_week_date: getDateText(assignment.starts_week_date),
                 ends_week_date: getDateText(assignment.ends_week_date),

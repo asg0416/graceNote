@@ -30,10 +30,16 @@ class GraceNoteRepository {
 
     final weekStart = DateTime(weekDate.year, weekDate.month, weekDate.day);
     final weekEnd = weekStart.add(const Duration(days: 1));
-    final activeFrom =
-        DateTime.tryParse(group['active_from']?.toString() ?? '') ??
-            DateTime.tryParse(group['created_at']?.toString() ?? '');
-    final endedAt = DateTime.tryParse(group['ended_at']?.toString() ?? '');
+
+    // [FIX] UTC timestamp → 로컬 변환 후 비교
+    DateTime? parseLocalDate(dynamic value) {
+      final parsed = DateTime.tryParse(value?.toString() ?? '');
+      return parsed?.toLocal();
+    }
+
+    final activeFrom = parseLocalDate(group['active_from']) ??
+        parseLocalDate(group['created_at']);
+    final endedAt = parseLocalDate(group['ended_at']);
 
     if (activeFrom != null && !activeFrom.isBefore(weekEnd)) return false;
     if (endedAt != null && endedAt.isBefore(weekStart)) return false;
@@ -51,13 +57,20 @@ class GraceNoteRepository {
     final group = membership['groups'] is Map<String, dynamic>
         ? membership['groups'] as Map<String, dynamic>
         : <String, dynamic>{};
-    final startsAt =
-        DateTime.tryParse(membership['starts_at']?.toString() ?? '') ??
-            DateTime.tryParse(group['active_from']?.toString() ?? '');
-    final endsAt = DateTime.tryParse(membership['ends_at']?.toString() ?? '');
-    final groupActiveFrom =
-        DateTime.tryParse(group['active_from']?.toString() ?? '');
-    final groupEndedAt = DateTime.tryParse(group['ended_at']?.toString() ?? '');
+
+    // [FIX] UTC timestamp를 로컬 DateTime으로 변환 후 비교해야 함.
+    // Dart에서 DateTime.tryParse("2026-06-13T23:59:59+00:00")는 isUtc=true를 반환하고
+    // DateTime(year, month, day)는 isUtc=false(로컬)라 섞어 비교하면 잘못된 결과가 나옴.
+    DateTime? parseLocalDate(dynamic value) {
+      final parsed = DateTime.tryParse(value?.toString() ?? '');
+      return parsed?.toLocal();
+    }
+
+    final startsAt = parseLocalDate(membership['starts_at']) ??
+        parseLocalDate(group['active_from']);
+    final endsAt = parseLocalDate(membership['ends_at']);
+    final groupActiveFrom = parseLocalDate(group['active_from']);
+    final groupEndedAt = parseLocalDate(group['ended_at']);
 
     if (startsAt != null && !startsAt.isBefore(weekEnd)) return false;
     if (groupActiveFrom != null && !groupActiveFrom.isBefore(weekEnd)) {
@@ -1062,16 +1075,51 @@ class GraceNoteRepository {
           membership['legacy_member_directory_id'] as String: membership
       };
 
+      // [FIX] is_active=false 필터 제거: 동일 person의 여러 directory row 중
+      // 유효한 기간의 멤버십이 is_active=false row에 연결된 경우도 표시해야 함.
+      // 대신 person_id 기준으로 중복 제거 후 is_active=true row 우선 선택.
       final directoryResponse = await _supabase
           .from('member_directory')
           .select()
           .inFilter('id', directoryIds)
-          .eq('is_active', true)
+          .order('is_active', ascending: false) // is_active=true를 먼저
           .order('family_name', ascending: true, nullsFirst: false)
           .order('full_name', ascending: true);
 
-      return List<Map<String, dynamic>>.from(directoryResponse).map((dir) {
-        final membership = membershipByDirectoryId[dir['id']];
+      // 동일 person_id에 여러 row가 있을 때 is_active=true 우선으로 1개만 선택
+      final allDirs = List<Map<String, dynamic>>.from(directoryResponse);
+      final seenPersonIds = <String>{};
+      final deduped = <Map<String, dynamic>>[];
+      for (final dir in allDirs) {
+        final pid = dir['person_id']?.toString();
+        if (pid != null && pid.isNotEmpty) {
+          if (seenPersonIds.contains(pid)) continue;
+          seenPersonIds.add(pid);
+        }
+        deduped.add(dir);
+      }
+
+      // [FIX] person_id 기준 멤버십 룩업도 추가:
+      // deduped에서 is_active=true row가 선택됐지만 실제 멤버십은
+      // 같은 person의 다른 directory id에 연결된 경우 폴백으로 사용
+      final membershipByPersonId = <String, Map<String, dynamic>>{};
+      for (final membership in memberships) {
+        final pid = membership['person_id']?.toString();
+        if (pid != null && pid.isNotEmpty) {
+          membershipByPersonId[pid] ??= membership;
+        }
+      }
+
+      return deduped.map((dir) {
+        // 1순위: directory id로 직접 매핑
+        Map<String, dynamic>? membership = membershipByDirectoryId[dir['id']];
+        // 2순위: 같은 person_id의 다른 directory row에 연결된 멤버십
+        if (membership == null) {
+          final pid = dir['person_id']?.toString();
+          if (pid != null && pid.isNotEmpty) {
+            membership = membershipByPersonId[pid];
+          }
+        }
         return <String, dynamic>{
           ...dir,
           if (membership?['person_id'] != null)

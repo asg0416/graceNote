@@ -98,6 +98,21 @@ const clampMembershipToGroupPeriod = (membership: any) => {
     };
 };
 
+const isMembershipActiveToday = (membership: any) => {
+    if (membership.status !== 'active') return false;
+
+    const today = new Date();
+    const todayText = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const effective = clampMembershipToGroupPeriod(membership);
+    if (!effective) return false;
+
+    const startsAt = effective.starts_at;
+    const endsAt = effective.ends_at;
+    if (startsAt && isAfterDate(startsAt, todayText)) return false;
+    if (endsAt && isAfterDate(todayText, endsAt)) return false;
+    return true;
+};
+
 const getMembershipHistoryKey = (membership: any) => [
     membership.departments?.name || '부서 없음',
     membership.groups?.name || '조 미배정',
@@ -603,9 +618,9 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
     }
 
     const phase2Memberships = phase2Data?.memberships || [];
-    const phase2ActiveAffiliations = phase2Memberships.filter((membership: any) => membership.status === 'active');
+    const phase2ActiveAffiliations = phase2Memberships.filter(isMembershipActiveToday);
     const phase2HistoricalAffiliations = consolidateHistoricalMemberships(
-        phase2Memberships.filter((membership: any) => membership.status !== 'active')
+        phase2Memberships.filter((membership: any) => !isMembershipActiveToday(membership))
     );
     const linkedProfileCount = phase2Data?.memberProfiles?.filter((mp: any) => mp.profile_id).length || 0;
     const legacyAffiliations = member._affiliations?.length > 0 ? member._affiliations : [member];
