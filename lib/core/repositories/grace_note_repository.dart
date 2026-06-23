@@ -3,6 +3,38 @@ import '../error/exceptions.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:flutter/foundation.dart';
 
+class _SeasonPlanMembersResult {
+  final bool applies;
+  final List<Map<String, dynamic>> members;
+
+  const _SeasonPlanMembersResult._({
+    required this.applies,
+    required this.members,
+  });
+
+  const _SeasonPlanMembersResult.notApplicable()
+      : this._(applies: false, members: const []);
+
+  const _SeasonPlanMembersResult.applied(List<Map<String, dynamic>> members)
+      : this._(applies: true, members: members);
+}
+
+class _SeasonPlanGroupsResult {
+  final bool applies;
+  final List<Map<String, dynamic>> groups;
+
+  const _SeasonPlanGroupsResult._({
+    required this.applies,
+    required this.groups,
+  });
+
+  const _SeasonPlanGroupsResult.notApplicable()
+      : this._(applies: false, groups: const []);
+
+  const _SeasonPlanGroupsResult.applied(List<Map<String, dynamic>> groups)
+      : this._(applies: true, groups: groups);
+}
+
 class GraceNoteRepository {
   final _supabase = Supabase.instance.client;
 
@@ -129,6 +161,215 @@ class GraceNoteRepository {
           boundary.month == latestKnownBoundary.month &&
           boundary.day == latestKnownBoundary.day;
     }).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> _overlayCurrentSeasonGroupPeriods(
+    String departmentId,
+    DateTime? weekDate,
+    List<Map<String, dynamic>> allGroups,
+  ) async {
+    if (weekDate == null || departmentId.isEmpty || allGroups.isEmpty) {
+      return allGroups;
+    }
+
+    try {
+      final weekText = _snapToSundayStr(weekDate);
+
+      final seasons = await _supabase
+          .from('regrouping_seasons')
+          .select('id')
+          .eq('department_id', departmentId)
+          .eq('status', 'applied')
+          .lte('effective_week_date', weekText)
+          .or('end_week_date.is.null,end_week_date.gte.$weekText')
+          .order('effective_week_date', ascending: false)
+          .limit(1);
+
+      final seasonRows = List<Map<String, dynamic>>.from(seasons);
+      if (seasonRows.isEmpty) return allGroups;
+
+      final seasonId = seasonRows.first['id']?.toString();
+      if (seasonId == null || seasonId.isEmpty) return allGroups;
+
+      final planRows = await _supabase
+          .from('regrouping_plan_groups')
+          .select(
+              'source_group_id, name, starts_week_date, ends_week_date, plan_status')
+          .eq('season_id', seasonId);
+
+      final planBySourceGroupId = {
+        for (final row in List<Map<String, dynamic>>.from(planRows))
+          if (row['source_group_id'] != null)
+            row['source_group_id'].toString(): row,
+      };
+      final newPlanByName = {
+        for (final row in List<Map<String, dynamic>>.from(planRows))
+          if (row['source_group_id'] == null && row['name'] != null)
+            row['name'].toString(): row,
+      };
+
+      if (planBySourceGroupId.isEmpty && newPlanByName.isEmpty) {
+        return allGroups;
+      }
+
+      return allGroups.map((group) {
+        final groupId = group['id']?.toString();
+        final groupName = group['name']?.toString();
+        final plan = groupId == null
+            ? null
+            : planBySourceGroupId[groupId] ??
+                (groupName == null ? null : newPlanByName[groupName]);
+        if (plan == null) return group;
+
+        return {
+          ...group,
+          'active_from':
+              plan['starts_week_date']?.toString() ?? group['active_from'],
+          'ended_at': plan['ends_week_date']?.toString() ?? group['ended_at'],
+          // Historical week filtering below uses active_from/ended_at. Keep
+          // is_active as a current-state hint only so ended groups still appear
+          // on weeks inside their corrected period.
+          'is_active':
+              plan['plan_status'] == 'ended' ? false : group['is_active'],
+        };
+      }).toList();
+    } catch (e) {
+      debugPrint(
+          'GraceNoteRepository: Failed to overlay season group periods: $e');
+      return allGroups;
+    }
+  }
+
+  Future<_SeasonPlanGroupsResult> _getSeasonPlanGroupsForWeek(
+    String departmentId,
+    DateTime? weekDate,
+    List<Map<String, dynamic>> allGroups, {
+    Set<String> recordGroupIds = const {},
+  }) async {
+    if (weekDate == null || departmentId.isEmpty) {
+      return const _SeasonPlanGroupsResult.notApplicable();
+    }
+
+    try {
+      final weekText = _snapToSundayStr(weekDate);
+      final snappedWeekDate = DateTime.parse(weekText);
+
+      final seasons = await _supabase
+          .from('regrouping_seasons')
+          .select('id')
+          .eq('department_id', departmentId)
+          .eq('status', 'applied')
+          .lte('effective_week_date', weekText)
+          .or('end_week_date.is.null,end_week_date.gte.$weekText')
+          .order('effective_week_date', ascending: false)
+          .limit(1);
+
+      final seasonRows = List<Map<String, dynamic>>.from(seasons);
+      if (seasonRows.isEmpty) {
+        return const _SeasonPlanGroupsResult.notApplicable();
+      }
+
+      final seasonId = seasonRows.first['id']?.toString();
+      if (seasonId == null || seasonId.isEmpty) {
+        return const _SeasonPlanGroupsResult.notApplicable();
+      }
+
+      final planRowsResponse = await _supabase
+          .from('regrouping_plan_groups')
+          .select(
+              'id, source_group_id, name, color_hex, is_new_member_group, climbing_threshold, starts_week_date, ends_week_date, plan_status, sort_order')
+          .eq('season_id', seasonId)
+          .order('sort_order')
+          .order('name');
+
+      final liveGroupById = {
+        for (final group in allGroups)
+          if (group['id'] != null) group['id'].toString(): group,
+      };
+      final planGroups = <Map<String, dynamic>>[];
+      final includedGroupIds = <String>{};
+
+      for (final row in List<Map<String, dynamic>>.from(planRowsResponse)) {
+        final sourceGroupId = row['source_group_id']?.toString();
+        if (sourceGroupId == null || sourceGroupId.isEmpty) {
+          // 앱 출석/기도 기록은 아직 실제 groups.id를 기준으로 저장된다.
+          // 적용 시즌에 source_group_id가 없는 조는 live 반영 전 초안 성격이므로
+          // 앱의 주차별 조 목록에는 포함하지 않는다.
+          continue;
+        }
+
+        final planGroupForWeek = _membershipWasInUseOnWeek({
+          'starts_at': row['starts_week_date'],
+          'ends_at': row['ends_week_date'],
+          'groups': {
+            'active_from': row['starts_week_date'],
+            'ended_at': row['ends_week_date'],
+          },
+        }, snappedWeekDate);
+
+        if (!planGroupForWeek && !recordGroupIds.contains(sourceGroupId)) {
+          continue;
+        }
+
+        final liveGroup = liveGroupById[sourceGroupId] ?? <String, dynamic>{};
+        includedGroupIds.add(sourceGroupId);
+        planGroups.add({
+          ...liveGroup,
+          'id': sourceGroupId,
+          'name': row['name'] ?? liveGroup['name'],
+          'color_hex': row['color_hex'] ?? liveGroup['color_hex'],
+          'is_new_member_group':
+              row['is_new_member_group'] ?? liveGroup['is_new_member_group'],
+          'climbing_threshold':
+              row['climbing_threshold'] ?? liveGroup['climbing_threshold'],
+          'is_active': row['plan_status'] == 'ended' ? false : true,
+          'active_from': row['starts_week_date'] ?? liveGroup['active_from'],
+          'ended_at': row['ends_week_date'] ?? liveGroup['ended_at'],
+          'season_plan_group_id': row['id'],
+          'season_plan_source': 'regrouping_plan_groups',
+        });
+      }
+
+      for (final recordGroupId in recordGroupIds) {
+        if (includedGroupIds.contains(recordGroupId)) continue;
+        final recordGroup = liveGroupById[recordGroupId];
+        if (recordGroup != null) {
+          planGroups.add(recordGroup);
+        }
+      }
+
+      return _SeasonPlanGroupsResult.applied(planGroups);
+    } catch (e) {
+      debugPrint(
+          'GraceNoteRepository: season plan group list read failed, using live groups fallback: $e');
+      return const _SeasonPlanGroupsResult.notApplicable();
+    }
+  }
+
+  Future<Map<String, dynamic>?> getRegroupingSeasonForWeek(
+    String departmentId,
+    DateTime weekDate,
+  ) async {
+    if (departmentId.isEmpty) return null;
+
+    try {
+      final weekText = _snapToSundayStr(weekDate);
+      final seasons = await _supabase
+          .from('regrouping_seasons')
+          .select('id, title, effective_week_date, end_week_date, status')
+          .eq('department_id', departmentId)
+          .eq('status', 'applied')
+          .lte('effective_week_date', weekText)
+          .or('end_week_date.is.null,end_week_date.gte.$weekText')
+          .order('effective_week_date', ascending: false)
+          .limit(1);
+
+      final rows = List<Map<String, dynamic>>.from(seasons);
+      return rows.isEmpty ? null : rows.first;
+    } catch (e) {
+      debugPrint('GraceNoteRepository: Failed to read regrouping season: $e');
+      return null;
+    }
   }
 
   Future<Set<String>> _getRelatedDirectoryIdsByPhase2Person(
@@ -676,9 +917,7 @@ class GraceNoteRepository {
                 );
 
         // 2순위: 추가 조회된 이동/비활성 멤버 리스트
-        if (memberInfo == null) {
-          memberInfo = missingMembersMap[dirId];
-        }
+        memberInfo ??= missingMembersMap[dirId];
 
         attendanceWithInfo.add(<String, dynamic>{
           ...att,
@@ -698,9 +937,7 @@ class GraceNoteRepository {
                 (m) => m?['id'] == dirId,
                 orElse: () => null,
               );
-      if (memberInfo == null) {
-        memberInfo = missingMembersMap[dirId];
-      }
+      memberInfo ??= missingMembersMap[dirId];
 
       prayersWithInfo.add({
         ...prayer,
@@ -768,11 +1005,23 @@ class GraceNoteRepository {
             prayer['group_id']?.toString())
         .whereType<String>()
         .toSet();
-    final groups = _groupsForWeekWithLastKnownFallback(
-      allGroups,
+    final seasonPlanGroups = await _getSeasonPlanGroupsForWeek(
+      departmentId,
       weekDate,
+      allGroups,
       recordGroupIds: prayerGroupIds,
     );
+    final groups = seasonPlanGroups.applies
+        ? seasonPlanGroups.groups
+        : _groupsForWeekWithLastKnownFallback(
+            await _overlayCurrentSeasonGroupPeriods(
+              departmentId,
+              weekDate,
+              allGroups,
+            ),
+            weekDate,
+            recordGroupIds: prayerGroupIds,
+          );
 
     return {
       'groups': groups,
@@ -892,17 +1141,40 @@ class GraceNoteRepository {
     final groupResponse = await _supabase
         .from('groups')
         .select(
-            'church_id, department_id, name, is_new_member_group, climbing_threshold')
+            'id, church_id, department_id, name, is_new_member_group, climbing_threshold, is_active, created_at, active_from, ended_at')
         .eq('id', groupId)
         .single();
 
     final groupName = groupResponse['name'];
     final churchId = groupResponse['church_id'];
     final departmentId = groupResponse['department_id'];
+    final seasonAwareGroup = (await _overlayCurrentSeasonGroupPeriods(
+      departmentId,
+      weekDate,
+      [Map<String, dynamic>.from(groupResponse)],
+    ))
+        .first;
 
-    // 2. 명부 데이터 가져오기: Phase 2 memberships 우선, legacy group_name fallback.
-    final phase2Members =
-        await _getGroupMembersFromMemberships(groupId, weekDate: weekDate);
+    // 2. 명부 데이터 가져오기:
+    // 주차가 지정된 출석/기도 작성 화면에서는 적용된 시즌 plan이 source of truth다.
+    final seasonPlanMembers = weekDate == null
+        ? const _SeasonPlanMembersResult.notApplicable()
+        : await _getGroupMembersFromSeasonPlanAssignments(
+            groupId,
+            weekDate: weekDate,
+            groupName: groupName?.toString(),
+            churchId: churchId,
+            departmentId: departmentId,
+          );
+    final phase2Members = seasonPlanMembers.applies
+        ? seasonPlanMembers.members
+        : await _getGroupMembersFromMemberships(
+            groupId,
+            weekDate: weekDate,
+            churchId: churchId,
+            departmentId: departmentId,
+            groupPeriodOverride: seasonAwareGroup,
+          );
     final directoryResponse = phase2Members.isNotEmpty
         ? phase2Members
         : weekDate != null
@@ -1042,19 +1314,232 @@ class GraceNoteRepository {
     }).toList();
   }
 
+  Future<_SeasonPlanMembersResult> _getGroupMembersFromSeasonPlanAssignments(
+      String groupId,
+      {required DateTime weekDate,
+      String? groupName,
+      String? churchId,
+      String? departmentId}) async {
+    if (departmentId == null || departmentId.isEmpty) {
+      return const _SeasonPlanMembersResult.notApplicable();
+    }
+
+    try {
+      final weekText = _snapToSundayStr(weekDate);
+      final snappedWeekDate = DateTime.parse(weekText);
+
+      final seasons = await _supabase
+          .from('regrouping_seasons')
+          .select('id')
+          .eq('department_id', departmentId)
+          .eq('status', 'applied')
+          .lte('effective_week_date', weekText)
+          .or('end_week_date.is.null,end_week_date.gte.$weekText')
+          .order('effective_week_date', ascending: false)
+          .limit(1);
+
+      final seasonRows = List<Map<String, dynamic>>.from(seasons);
+      if (seasonRows.isEmpty) {
+        return const _SeasonPlanMembersResult.notApplicable();
+      }
+
+      final seasonId = seasonRows.first['id']?.toString();
+      if (seasonId == null || seasonId.isEmpty) {
+        return const _SeasonPlanMembersResult.notApplicable();
+      }
+
+      final planGroups = await _supabase
+          .from('regrouping_plan_groups')
+          .select(
+              'id, source_group_id, name, starts_week_date, ends_week_date, plan_status')
+          .eq('season_id', seasonId);
+
+      final planGroupRows = List<Map<String, dynamic>>.from(planGroups);
+      final planGroup = planGroupRows.firstWhere(
+        (row) => row['source_group_id']?.toString() == groupId,
+        orElse: () => groupName == null
+            ? <String, dynamic>{}
+            : planGroupRows.firstWhere(
+                (row) =>
+                    row['source_group_id'] == null &&
+                    row['name']?.toString() == groupName,
+                orElse: () => <String, dynamic>{},
+              ),
+      );
+
+      if (planGroup.isEmpty) {
+        return const _SeasonPlanMembersResult.notApplicable();
+      }
+
+      final planGroupId = planGroup['id']?.toString();
+      if (planGroupId == null || planGroupId.isEmpty) {
+        return const _SeasonPlanMembersResult.notApplicable();
+      }
+
+      final planGroupForWeek = _membershipWasInUseOnWeek({
+        'starts_at': planGroup['starts_week_date'],
+        'ends_at': planGroup['ends_week_date'],
+        'groups': {
+          'active_from': planGroup['starts_week_date'],
+          'ended_at': planGroup['ends_week_date'],
+        },
+      }, snappedWeekDate);
+
+      if (!planGroupForWeek) {
+        return const _SeasonPlanMembersResult.applied([]);
+      }
+
+      final assignmentsResponse = await _supabase
+          .from('regrouping_plan_assignments')
+          .select(
+              'id, person_id, source_member_directory_id, role_in_group, starts_week_date, ends_week_date')
+          .eq('season_id', seasonId)
+          .eq('plan_group_id', planGroupId)
+          .lte('starts_week_date', weekText)
+          .or('ends_week_date.is.null,ends_week_date.gte.$weekText')
+          .order('role_in_group', ascending: true);
+
+      final assignments = List<Map<String, dynamic>>.from(assignmentsResponse);
+      if (assignments.isEmpty) {
+        return const _SeasonPlanMembersResult.applied([]);
+      }
+
+      final directoryIds = assignments
+          .map((row) => row['source_member_directory_id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      final personIds = assignments
+          .map((row) => row['person_id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      final directoryRowsById = <String, Map<String, dynamic>>{};
+      if (directoryIds.isNotEmpty) {
+        final directoryResponse = await _supabase
+            .from('member_directory')
+            .select()
+            .inFilter('id', directoryIds)
+            .order('is_active', ascending: false)
+            .order('family_name', ascending: true, nullsFirst: false)
+            .order('full_name', ascending: true);
+
+        for (final row in List<Map<String, dynamic>>.from(directoryResponse)) {
+          final id = row['id']?.toString();
+          if (id != null && id.isNotEmpty) {
+            directoryRowsById[id] = row;
+          }
+        }
+      }
+
+      if (personIds.isNotEmpty && churchId != null) {
+        final personDirectoryResponse = await _supabase
+            .from('member_directory')
+            .select()
+            .eq('church_id', churchId)
+            .eq('department_id', departmentId)
+            .inFilter('person_id', personIds)
+            .order('is_active', ascending: false)
+            .order('family_name', ascending: true, nullsFirst: false)
+            .order('full_name', ascending: true);
+
+        for (final row
+            in List<Map<String, dynamic>>.from(personDirectoryResponse)) {
+          final id = row['id']?.toString();
+          if (id != null && id.isNotEmpty) {
+            directoryRowsById[id] = row;
+          }
+        }
+      }
+
+      final assignmentByDirectoryId = {
+        for (final assignment in assignments)
+          if (assignment['source_member_directory_id'] != null)
+            assignment['source_member_directory_id'].toString(): assignment,
+      };
+      final assignmentByPersonId = <String, Map<String, dynamic>>{};
+      for (final assignment in assignments) {
+        final personId = assignment['person_id']?.toString();
+        if (personId != null && personId.isNotEmpty) {
+          assignmentByPersonId[personId] ??= assignment;
+        }
+      }
+
+      final seenPersonIds = <String>{};
+      final rows = <Map<String, dynamic>>[];
+      for (final dir in directoryRowsById.values) {
+        final personId = dir['person_id']?.toString();
+        if (personId != null && personId.isNotEmpty) {
+          if (seenPersonIds.contains(personId)) continue;
+          seenPersonIds.add(personId);
+        }
+
+        final assignment = assignmentByDirectoryId[dir['id']?.toString()] ??
+            (personId == null ? null : assignmentByPersonId[personId]);
+        if (assignment == null) continue;
+
+        rows.add({
+          ...dir,
+          if (assignment['person_id'] != null)
+            'person_id': assignment['person_id'],
+          'role_in_group': assignment['role_in_group'] ?? dir['role_in_group'],
+          'membership_id': assignment['id'],
+          'membership_starts_at': assignment['starts_week_date']?.toString(),
+          'membership_ends_at': assignment['ends_week_date']?.toString(),
+          'phase2_membership_source': 'regrouping_plan_assignments',
+        });
+      }
+
+      rows.sort((a, b) {
+        final roleA = a['role_in_group']?.toString() == 'leader' ? 0 : 1;
+        final roleB = b['role_in_group']?.toString() == 'leader' ? 0 : 1;
+        if (roleA != roleB) return roleA.compareTo(roleB);
+        return (a['full_name']?.toString() ?? '')
+            .compareTo(b['full_name']?.toString() ?? '');
+      });
+
+      return _SeasonPlanMembersResult.applied(rows);
+    } catch (e) {
+      debugPrint(
+          'GraceNoteRepository: season plan group member read failed, using memberships fallback: $e');
+      return const _SeasonPlanMembersResult.notApplicable();
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _getGroupMembersFromMemberships(
       String groupId,
-      {DateTime? weekDate}) async {
+      {DateTime? weekDate,
+      String? churchId,
+      String? departmentId,
+      Map<String, dynamic>? groupPeriodOverride}) async {
     try {
       final membershipsResponse = await _supabase
           .from('memberships')
           .select(
               'id, person_id, legacy_member_directory_id, legacy_group_member_id, role, status, starts_at, ends_at, groups(active_from, ended_at)')
           .eq('group_id', groupId)
-          .inFilter('status', ['active', 'ended']).not(
-              'legacy_member_directory_id', 'is', null);
+          .inFilter('status', ['active', 'ended']);
 
-      final memberships = List<Map<String, dynamic>>.from(membershipsResponse)
+      final rawMemberships =
+          List<Map<String, dynamic>>.from(membershipsResponse);
+      final memberships = rawMemberships
+          .map((membership) {
+            if (groupPeriodOverride == null) return membership;
+            final nestedGroup = membership['groups'] is Map
+                ? Map<String, dynamic>.from(membership['groups'] as Map)
+                : <String, dynamic>{};
+            return <String, dynamic>{
+              ...membership,
+              'groups': {
+                ...nestedGroup,
+                'active_from': groupPeriodOverride['active_from'],
+                'ended_at': groupPeriodOverride['ended_at'],
+              },
+            };
+          })
           .where((membership) => _membershipWasInUseOnWeek(
                 membership,
                 weekDate,
@@ -1067,27 +1552,60 @@ class GraceNoteRepository {
           .where((id) => id != null)
           .cast<String>()
           .toList();
+      final personIds = memberships
+          .map((m) => m['person_id'])
+          .where((id) => id != null)
+          .map((id) => id.toString())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
 
-      if (directoryIds.isEmpty) return [];
+      if (directoryIds.isEmpty && personIds.isEmpty) return [];
 
       final membershipByDirectoryId = {
         for (final membership in memberships)
-          membership['legacy_member_directory_id'] as String: membership
+          if (membership['legacy_member_directory_id'] != null)
+            membership['legacy_member_directory_id'].toString(): membership
       };
 
-      // [FIX] is_active=false 필터 제거: 동일 person의 여러 directory row 중
-      // 유효한 기간의 멤버십이 is_active=false row에 연결된 경우도 표시해야 함.
-      // 대신 person_id 기준으로 중복 제거 후 is_active=true row 우선 선택.
-      final directoryResponse = await _supabase
-          .from('member_directory')
-          .select()
-          .inFilter('id', directoryIds)
-          .order('is_active', ascending: false) // is_active=true를 먼저
-          .order('family_name', ascending: true, nullsFirst: false)
-          .order('full_name', ascending: true);
+      // [FIX] legacy_member_directory_id가 없는 조장 row도 person_id로 명부 row를
+      // 찾아 출석/기도 작성 대상에 포함한다.
+      final directoryRowsById = <String, Map<String, dynamic>>{};
+      if (directoryIds.isNotEmpty) {
+        final directoryResponse = await _supabase
+            .from('member_directory')
+            .select()
+            .inFilter('id', directoryIds)
+            .order('is_active', ascending: false)
+            .order('family_name', ascending: true, nullsFirst: false)
+            .order('full_name', ascending: true);
+
+        for (final row in List<Map<String, dynamic>>.from(directoryResponse)) {
+          final id = row['id']?.toString();
+          if (id != null) directoryRowsById[id] = row;
+        }
+      }
+
+      if (personIds.isNotEmpty && churchId != null && departmentId != null) {
+        final personDirectoryResponse = await _supabase
+            .from('member_directory')
+            .select()
+            .eq('church_id', churchId)
+            .eq('department_id', departmentId)
+            .inFilter('person_id', personIds)
+            .order('is_active', ascending: false)
+            .order('family_name', ascending: true, nullsFirst: false)
+            .order('full_name', ascending: true);
+
+        for (final row
+            in List<Map<String, dynamic>>.from(personDirectoryResponse)) {
+          final id = row['id']?.toString();
+          if (id != null) directoryRowsById[id] = row;
+        }
+      }
 
       // 동일 person_id에 여러 row가 있을 때 is_active=true 우선으로 1개만 선택
-      final allDirs = List<Map<String, dynamic>>.from(directoryResponse);
+      final allDirs = directoryRowsById.values.toList();
       final seenPersonIds = <String>{};
       final deduped = <Map<String, dynamic>>[];
       for (final dir in allDirs) {
@@ -1473,11 +1991,13 @@ class GraceNoteRepository {
     // 1. 조 정보 가져오기
     final group = await _supabase
         .from('groups')
-        .select('church_id, is_active, created_at, active_from, ended_at')
+        .select(
+            'id, church_id, department_id, is_active, created_at, active_from, ended_at')
         .eq('id', groupId)
         .single();
 
     final churchId = group['church_id'];
+    final departmentId = group['department_id']?.toString();
 
     // 2. 주차 정보 가져오기
     var query = _supabase
@@ -1497,9 +2017,20 @@ class GraceNoteRepository {
     final weeksResponse =
         await query.order('week_date', ascending: false).limit(limit);
 
+    final seasonAwareGroup = departmentId == null
+        ? Map<String, dynamic>.from(group)
+        : (await _overlayCurrentSeasonGroupPeriods(
+            departmentId,
+            year != null && month != null
+                ? DateTime(year, month, 1)
+                : DateTime.now(),
+            [Map<String, dynamic>.from(group)],
+          ))
+            .first;
+
     final weeks = List<Map<String, dynamic>>.from(weeksResponse)
         .where((week) => _groupWasInUseOnWeek(
-              group,
+              seasonAwareGroup,
               DateTime.tryParse(week['week_date']?.toString() ?? ''),
             ))
         .toList();
@@ -1679,14 +2210,26 @@ class GraceNoteRepository {
         .map((row) => row['group_id']?.toString())
         .whereType<String>()
         .toSet();
-    final groups = _groupsForWeekWithLastKnownFallback(
-      allGroups,
+    final seasonPlanGroups = await _getSeasonPlanGroupsForWeek(
+      departmentId,
       weekDate,
+      allGroups,
       recordGroupIds: attendanceGroupIds,
     );
+    final groups = seasonPlanGroups.applies
+        ? seasonPlanGroups.groups
+        : _groupsForWeekWithLastKnownFallback(
+            await _overlayCurrentSeasonGroupPeriods(
+              departmentId,
+              weekDate,
+              allGroups,
+            ),
+            weekDate,
+            recordGroupIds: attendanceGroupIds,
+          );
 
     // 5. 데이터를 조별로 가공
-    final resultGroups = groups.map((group) {
+    final resultGroups = await Future.wait(groups.map((group) async {
       final groupName = group['name'];
       final groupId = group['id'];
 
@@ -1699,8 +2242,16 @@ class GraceNoteRepository {
       // 아예 미제출(is_submitted: false) 상태로 반환.
       // 단, 부서 전체 상단 통계(참석률 분모) 유지를 위해 total_count는 현재 조 인원으로 전달.
       if (groupAttendanceData.isEmpty) {
-        final groupMemberCount =
-            allMembers.where((m) => m['group_name'] == groupName).length;
+        int groupMemberCount;
+        try {
+          groupMemberCount =
+              (await getGroupMembers(groupId, weekDate: weekDate)).length;
+        } catch (e) {
+          debugPrint(
+              'GraceNoteRepository: Failed to count season group members: $e');
+          groupMemberCount =
+              allMembers.where((m) => m['group_name'] == groupName).length;
+        }
 
         return {
           'id': groupId,
@@ -1740,7 +2291,7 @@ class GraceNoteRepository {
         'total_count': membersWithStatus.length,
         'members': membersWithStatus,
       };
-    }).toList();
+    }).toList());
 
     return {'groups': resultGroups};
   }

@@ -10,6 +10,7 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/attendance/presentation/screens/attendance_check_screen.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
 import 'package:grace_note/core/widgets/ai_processing_loader.dart';
+import 'package:grace_note/core/widgets/season_context_chip.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
@@ -218,6 +219,77 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     }
   }
 
+  DateTime _weekStart(DateTime value) {
+    final date = DateTime(value.year, value.month, value.day);
+    return date.subtract(Duration(days: date.weekday % 7));
+  }
+
+  DateTime? _parseDateOnly(String? value) {
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    final parsed = DateTime.tryParse(value);
+    if (parsed == null) {
+      return null;
+    }
+    final local = parsed.toLocal();
+    return DateTime(local.year, local.month, local.day);
+  }
+
+  DateTime? _latestDate(List<DateTime?> values) {
+    final dates = values.whereType<DateTime>().toList();
+    if (dates.isEmpty) {
+      return null;
+    }
+    dates.sort();
+    return dates.last;
+  }
+
+  DateTime? _earliestDate(List<DateTime?> values) {
+    final dates = values.whereType<DateTime>().toList();
+    if (dates.isEmpty) {
+      return null;
+    }
+    dates.sort();
+    return dates.first;
+  }
+
+  DateTime _nearestActiveMembershipWeek(
+    UserMembership membership,
+    DateTime selectedWeek,
+  ) {
+    final todayWeek = _weekStart(DateTime.now());
+    final startBoundary = _latestDate([
+      _parseDateOnly(membership.groupActiveFrom),
+      _parseDateOnly(membership.membershipStartsAt),
+    ]);
+    final endBoundary = _earliestDate([
+      _parseDateOnly(membership.groupEndedAt),
+      _parseDateOnly(membership.membershipEndsAt),
+    ]);
+
+    var candidate = _weekStart(selectedWeek);
+    if (candidate.isAfter(todayWeek)) {
+      candidate = todayWeek;
+    }
+
+    if (endBoundary != null) {
+      final endWeek = _weekStart(endBoundary);
+      if (candidate.isAfter(endWeek)) {
+        candidate = endWeek;
+      }
+    }
+
+    if (startBoundary != null) {
+      final startWeek = _weekStart(startBoundary);
+      if (candidate.isBefore(startWeek)) {
+        candidate = startWeek;
+      }
+    }
+
+    return candidate;
+  }
+
   Future<void> _refreshData() async {
     // [FIX] 주차 변경이나 새로고침 시 이전에 타이핑하던 상태(3초 딜레이)를 해제하여 정상적인 팝업 표시 허용
     try {
@@ -240,6 +312,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           orElse: () => <String, dynamic>{});
       _currentChurchId = activeMembership.churchId ?? matchedGroup['church_id'];
       _isCoupleMode = matchedGroup['profile_mode'] == 'couple';
+
+      final selectedDate = ref.read(attendanceSelectedWeekProvider);
+      if (activeMembership.groupId != 'global_admin' &&
+          !activeMembership.isActiveOnWeek(selectedDate)) {
+        final nearestWeek =
+            _nearestActiveMembershipWeek(activeMembership, selectedDate);
+        if (nearestWeek != selectedDate) {
+          ref.read(attendanceSelectedWeekProvider.notifier).state = nearestWeek;
+        }
+      }
     } else if (groups.isNotEmpty) {
       // 선택된 그룹이 없으면 첫 번째 그룹 사용
       _currentGroupId = groups.first['group_id'];
@@ -1444,6 +1526,13 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           },
         ),
         actions: [
+          if (departmentId.isNotEmpty)
+            SeasonContextChip(
+              departmentId: departmentId,
+              weekDate: selectedWeek,
+              iconOnly: true,
+              margin: const EdgeInsets.only(right: 4),
+            ),
           IconButton(
             icon: Icon(lucide.LucideIcons.clipboardPaste,
                 color: noMeeting != null
@@ -1480,12 +1569,16 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         ],
       ),
       // [FIX] 로컬 상태 기반 렌더링 — provider AsyncLoading 전환 시 위젯 트리 교체 방지
-      body: _buildBody(noMeeting),
+      body: _buildBody(noMeeting, departmentId, selectedWeek),
       bottomNavigationBar: _buildBottomActions(noMeeting),
     );
   }
 
-  Widget _buildBody(NoMeetingDayModel? noMeeting) {
+  Widget _buildBody(
+    NoMeetingDayModel? noMeeting,
+    String departmentId,
+    DateTime selectedWeek,
+  ) {
     if (!_isInitialized || (_members.isEmpty && (_isLoading || _isFetching))) {
       return const Center(
         child: Padding(

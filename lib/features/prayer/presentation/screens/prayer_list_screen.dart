@@ -10,6 +10,7 @@ import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import 'package:grace_note/core/widgets/app_skeleton.dart';
+import 'package:grace_note/core/widgets/season_context_chip.dart';
 import 'package:grace_note/core/utils/snack_bar_util.dart';
 
 class PrayerListScreen extends ConsumerStatefulWidget {
@@ -351,6 +352,21 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
+          ...userProfileAsync.maybeWhen(
+            data: (profile) {
+              final deptId = profile?.departmentId ?? '';
+              if (deptId.isEmpty) return const <Widget>[];
+              return [
+                SeasonContextChip(
+                  departmentId: deptId,
+                  weekDate: selectedDate,
+                  iconOnly: true,
+                  margin: const EdgeInsets.only(right: 4),
+                ),
+              ];
+            },
+            orElse: () => const <Widget>[],
+          ),
           IconButton(
             onPressed: () => context.push('/prayer/search'),
             icon: Icon(lucide.LucideIcons.search,

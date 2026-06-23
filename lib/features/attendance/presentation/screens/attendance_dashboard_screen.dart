@@ -9,6 +9,7 @@ import 'package:grace_note/features/attendance/presentation/screens/attendance_c
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:grace_note/core/widgets/season_context_chip.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 class AttendanceDashboardScreen extends ConsumerStatefulWidget {
@@ -113,6 +114,15 @@ class _AttendanceDashboardScreenState
       for (final d in (noMeetingListAsync.value ?? []))
         '${d.weekDate.year}-${d.weekDate.month.toString().padLeft(2, '0')}-${d.weekDate.day.toString().padLeft(2, '0')}'
     };
+    final activeWeek = history.isNotEmpty
+        ? history.firstWhere(
+            (h) => h['week_id'] == (_selectedWeekId ?? history.first['week_id']),
+            orElse: () => history.first,
+          )
+        : null;
+    final activeWeekDate = activeWeek == null
+        ? null
+        : DateTime.tryParse(activeWeek['week_date']?.toString() ?? '');
 
     // [FIX] 에러 발생 시 사용자에게 노출하지 않고 3초 후 자동 재시도
     if (historyAsync.hasError && !historyAsync.isLoading) {
@@ -137,7 +147,15 @@ class _AttendanceDashboardScreenState
         backgroundColor: Colors.white,
         elevation: 0,
         automaticallyImplyLeading: false,
-        actions: const [],
+        actions: [
+          if (activeWeekDate != null && deptId.isNotEmpty)
+            SeasonContextChip(
+              departmentId: deptId,
+              weekDate: activeWeekDate,
+              iconOnly: true,
+              margin: const EdgeInsets.only(right: 12),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -154,7 +172,7 @@ class _AttendanceDashboardScreenState
             // [FIX] 초기 로딩(캐시 없음) 중일 때만 스피너, 그 외에는 항상 전체 UI를 표시
             child: (_cachedHistory == null &&
                     (isLoading || historyAsync.hasError))
-                ? Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
+                ? const Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
                 : RefreshIndicator(
                     onRefresh: () async {
                       ref.invalidate(attendanceHistoryProvider(
