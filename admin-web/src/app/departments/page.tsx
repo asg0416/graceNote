@@ -20,6 +20,7 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
+import { SeasonBadge } from '@/components/SeasonBadge';
 import { renameMemberDirectoryGroupAssignments } from '@/lib/memberWriteRpc';
 
 type ChurchOption = {
@@ -48,6 +49,10 @@ type DepartmentRecord = {
     name: string;
     color_hex?: string | null;
     profile_mode?: 'individual' | 'couple' | null;
+    current_season_id?: string | null;
+    current_season_title?: string | null;
+    current_season_effective_week_date?: string | null;
+    current_season_end_week_date?: string | null;
     groups?: GroupRecord[];
 };
 
@@ -98,6 +103,20 @@ export default function DepartmentsPage() {
         const date = new Date(`${value}T00:00:00`);
         if (Number.isNaN(date.getTime())) return '설정 없음';
         return date.toLocaleDateString('ko-KR');
+    };
+
+    const formatSeasonShortDate = (value?: string | null) => {
+        if (!value) return '';
+        const [year, month, day] = value.slice(0, 10).split('-');
+        if (!year || !month || !day) return '';
+        return `${Number(month)}/${Number(day)}`;
+    };
+
+    const formatSeasonPeriodLabel = (dept: DepartmentRecord) => {
+        if (!dept.current_season_effective_week_date) return null;
+        const start = formatSeasonShortDate(dept.current_season_effective_week_date);
+        const end = dept.current_season_end_week_date ? formatSeasonShortDate(dept.current_season_end_week_date) : '진행 중';
+        return `${start}~${end}`;
     };
 
     useEffect(() => {
@@ -191,19 +210,21 @@ export default function DepartmentsPage() {
             const { data: seasons } = departmentIds.length > 0
                 ? await supabase
                     .from('regrouping_seasons')
-                    .select('id, department_id, effective_week_date, end_week_date, status')
+                    .select('id, department_id, title, effective_week_date, end_week_date, status')
                     .eq('church_id', churchId)
                     .in('department_id', departmentIds)
                     .eq('status', 'applied')
                     .order('effective_week_date', { ascending: false })
                 : { data: [] };
-            const seasonByDepartmentId = new Map<string, { id: string; effective_week_date?: string | null; end_week_date?: string | null }>();
-            (seasons || []).forEach((season: { id: string; department_id: string; effective_week_date?: string | null; end_week_date?: string | null }) => {
-                if (seasonByDepartmentId.has(season.department_id)) return;
-                const coversToday = season.effective_week_date && season.effective_week_date <= todayInputValue
-                    && (!season.end_week_date || todayInputValue <= season.end_week_date);
+            const seasonCoversToday = (season?: { effective_week_date?: string | null; end_week_date?: string | null }) => (
+                Boolean(season?.effective_week_date) &&
+                String(season?.effective_week_date) <= todayInputValue &&
+                (!season?.end_week_date || todayInputValue <= String(season.end_week_date))
+            );
+            const seasonByDepartmentId = new Map<string, { id: string; title?: string | null; effective_week_date?: string | null; end_week_date?: string | null }>();
+            (seasons || []).forEach((season: { id: string; department_id: string; title?: string | null; effective_week_date?: string | null; end_week_date?: string | null }) => {
                 const existing = seasonByDepartmentId.get(season.department_id);
-                if (!existing || coversToday) {
+                if (!existing || (seasonCoversToday(season) && !seasonCoversToday(existing))) {
                     seasonByDepartmentId.set(season.department_id, season);
                 }
             });
@@ -223,6 +244,10 @@ export default function DepartmentsPage() {
 
             setDepartments((data || []).map((dept) => ({
                 ...dept,
+                current_season_id: seasonByDepartmentId.get(dept.id)?.id || null,
+                current_season_title: seasonByDepartmentId.get(dept.id)?.title || null,
+                current_season_effective_week_date: seasonByDepartmentId.get(dept.id)?.effective_week_date || null,
+                current_season_end_week_date: seasonByDepartmentId.get(dept.id)?.end_week_date || null,
                 groups: (dept.groups || [])
                     .filter((group: { is_active?: boolean }) => group.is_active !== false)
                     .map((group: GroupRecord) => {
@@ -247,6 +272,16 @@ export default function DepartmentsPage() {
         setCurrentChurchName(name);
         setIsChurchSelectOpen(false);
         await fetchData(id);
+    };
+
+    const openDepartmentSeason = (dept: DepartmentRecord) => {
+        if (!currentChurchId || !dept.current_season_id) return;
+        const params = new URLSearchParams({
+            seasonId: dept.current_season_id,
+            churchId: currentChurchId,
+            deptId: dept.id,
+        });
+        router.push(`/regrouping?${params.toString()}`);
     };
 
 
@@ -446,7 +481,7 @@ export default function DepartmentsPage() {
                                     </div>
                                     <div>
                                         <h3 className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">{dept.name}</h3>
-                                        <div className="flex items-center gap-1.5 mt-1 sm:mt-1.5">
+                                        <div className="flex flex-wrap items-center gap-1.5 mt-1 sm:mt-1.5">
                                             <span className={cn(
                                                 "text-[8px] sm:text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border",
                                                 dept.profile_mode === 'couple'
@@ -455,6 +490,14 @@ export default function DepartmentsPage() {
                                             )}>
                                                 {dept.profile_mode === 'couple' ? '부부/가족형' : '개인별 관리'}
                                             </span>
+                                            {dept.current_season_title && (
+                                                <SeasonBadge
+                                                    title={dept.current_season_title}
+                                                    periodLabel={formatSeasonPeriodLabel(dept)}
+                                                    onClick={() => openDepartmentSeason(dept)}
+                                                    className="shadow-none"
+                                                />
+                                            )}
                                         </div>
                                     </div>
                                 </div>

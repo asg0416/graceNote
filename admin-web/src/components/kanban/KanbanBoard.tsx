@@ -238,7 +238,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             if (spouse) idsToMoveSet.add(spouse.id);
         }
 
-        selectedMemberIds.forEach(id => idsToMoveSet.add(id));
+        if (selectedMemberIds.includes(activeUnitId)) {
+            selectedMemberIds.forEach(id => idsToMoveSet.add(id));
+        }
 
         const isCopy = (event.activatorEvent as any)?.shiftKey;
         onMoveMembers(Array.from(idsToMoveSet), targetGroupId, isCopy, targetIndex);
@@ -303,7 +305,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             if (spouse) movingIds.add(spouse.id);
         }
 
-        selectedMemberIds.forEach(id => movingIds.add(id));
+        if (selectedMemberIds.includes(activeMemberInSession.id)) {
+            selectedMemberIds.forEach(id => movingIds.add(id));
+        }
         return currentMembers.filter((m: any) => movingIds.has(m.id));
     };
 

@@ -25,6 +25,7 @@ import {
     PencilLine,
     HelpCircle,
     SlidersHorizontal,
+    Trash2,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import * as htmlToImage from 'html-to-image';
@@ -39,6 +40,7 @@ import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
 import {
     applyRegroupingSeason,
     createRegroupingSeason,
+    deletePendingRegroupingSeason,
     registerCurrentRegroupingSeason,
     saveRegroupingSeasonDraft,
     updateCurrentRegroupingGroupPeriods,
@@ -119,7 +121,45 @@ const isSeasonCoveringDate = (season: any, dateInputValue: string) => {
     return addDaysToDateInput(season.end_week_date, 6) >= dateInputValue;
 };
 
+const DATE_RANGE_OPEN_END = '9999-12-31';
+
+const doDateRangesOverlap = (
+    leftStart?: string | null,
+    leftEnd?: string | null,
+    rightStart?: string | null,
+    rightEnd?: string | null
+) => {
+    if (!leftStart || !rightStart) return false;
+    return leftStart <= (rightEnd || DATE_RANGE_OPEN_END) && rightStart <= (leftEnd || DATE_RANGE_OPEN_END);
+};
+
+const formatSeasonConflictLabel = (season: any) => {
+    const title = season?.title || '이전 조편성';
+    const start = season?.effective_week_date ? formatRegroupingDateLabel(season.effective_week_date) : '시작 미정';
+    const end = season?.end_week_date ? formatRegroupingDateLabel(addDaysToDateInput(season.end_week_date, 6)) : '종료 미정';
+    return `${title} (${start} ~ ${end})`;
+};
+
+const getSuggestedNextSeasonStartWeek = (seasons: any[]) => {
+    const latestSeason = seasons
+        .filter(season => ['draft', 'ready', 'applied', 'archived'].includes(String(season?.status || '')))
+        .filter(season => season?.effective_week_date)
+        .sort((left, right) => String(right.end_week_date || right.effective_week_date).localeCompare(String(left.end_week_date || left.effective_week_date)))[0];
+
+    if (!latestSeason?.end_week_date) return getCurrentSundayInputValue();
+    return addWeeksToDateInput(latestSeason.end_week_date, 1);
+};
+
 const getSeasonStatusMeta = (season: any, todayInputValue: string) => {
+    if (season?.status === 'archived') {
+        return {
+            label: '적용 이력',
+            description: '기간이 지난 조편성 기록입니다.',
+            icon: CheckCircle2,
+            className: 'bg-slate-50 text-slate-600 border-slate-200',
+        };
+    }
+
     if (season?.status === 'applied') {
         if (!isSeasonCoveringDate(season, todayInputValue)) {
             return {
@@ -163,7 +203,16 @@ const getRegroupingIdentityKey = (member: any) => {
 const isRegroupingRemovedMembershipRow = (member: any) => {
     const changeType = member.plan_change_type || member.change_type;
     if (changeType) return changeType === 'removed';
+    if (String(member.id || '').startsWith('removed-')) return true;
     if (member.group_id) return false;
+
+    // Saved rows without an explicit removed change type are treated as
+    // unassigned placeholders. Older data should now be backfilled with
+    // change_type='removed', so hiding by source metadata alone makes
+    // unassigned -> reassigned flows lose their origin.
+    if (member.season_assignment_id || member.source_member_directory_id) {
+        return false;
+    }
 
     return Boolean(
         member.previous_source_group_id ||
@@ -182,6 +231,36 @@ const getValidRegroupingGroupLabel = (value?: string | null) => {
 const getRegroupingSourceMembershipKey = (member: any) =>
     member.phase2_membership_id || member.membership_id || member.season_assignment_id || member.id || '';
 
+const getRegroupingStableMembershipKey = (member: any) => {
+    const membershipId = member.phase2_membership_id || member.membership_id || member.source_membership_id;
+    if (membershipId) return `membership:${membershipId}`;
+
+    const memberId = String(member.id || '');
+    const sourceDirectoryId = member.source_member_directory_id ||
+        (
+            memberId &&
+            !memberId.startsWith('season-') &&
+            !memberId.startsWith('temp-') &&
+            !memberId.startsWith('removed-')
+                ? memberId
+                : null
+        );
+    const sourceGroupKey =
+        member.previous_source_group_id ||
+        member.source_membership_group_id ||
+        member.group_id ||
+        getValidRegroupingGroupLabel(member.previous_group_name) ||
+        getValidRegroupingGroupLabel(member.source_membership_group_name) ||
+        getValidRegroupingGroupLabel(member.group_name);
+
+    if (sourceDirectoryId && sourceGroupKey) {
+        return `directory:${sourceDirectoryId}:${sourceGroupKey}`;
+    }
+
+    const identityKey = getRegroupingIdentityKey(member);
+    return sourceGroupKey ? `person:${identityKey}:${sourceGroupKey}` : null;
+};
+
 const getRegroupingRemovedAssignmentKey = (member: any) =>
     member.previous_source_group_id ||
     member.source_membership_group_id ||
@@ -189,6 +268,25 @@ const getRegroupingRemovedAssignmentKey = (member: any) =>
     getValidRegroupingGroupLabel(member.previous_group_name) ||
     getValidRegroupingGroupLabel(member.source_membership_group_name) ||
     '';
+
+const getRegroupingRemovedGroupKey = (member: any) =>
+    member.previous_source_group_id ||
+    member.source_membership_group_id ||
+    getValidRegroupingGroupLabel(member.previous_group_name) ||
+    getValidRegroupingGroupLabel(member.source_membership_group_name) ||
+    '';
+
+const getRegroupingRemovedPairKey = (member: any) => {
+    const groupKey = getRegroupingRemovedGroupKey(member);
+    return groupKey ? `${getRegroupingIdentityKey(member)}|${groupKey}` : '';
+};
+
+const getRegroupingReplacedRemovedPairKeys = (members: any[]) => new Set(
+    members
+        .filter(member => member.group_id && !isRegroupingRemovedMembershipRow(member))
+        .map(getRegroupingRemovedPairKey)
+        .filter(Boolean)
+);
 
 const getRegroupingAssignmentTargetKey = (member: any) => [
     member.group_id || (
@@ -200,6 +298,45 @@ const getRegroupingAssignmentTargetKey = (member: any) => [
     member.starts_week_date || '',
     member.ends_week_date || '',
 ].join('|');
+
+const isSeasonFullPeriodRow = (
+    row: { starts_week_date?: string | null; ends_week_date?: string | null },
+    seasonPeriod: { start: string; end: string | null }
+) => (
+    (row.starts_week_date || seasonPeriod.start) === seasonPeriod.start &&
+    (row.ends_week_date || null) === (seasonPeriod.end || null)
+);
+
+const isSameRegroupingPeriod = (
+    left: { start: string; end: string | null },
+    right: { start: string; end: string | null }
+) => left.start === right.start && (left.end || null) === (right.end || null);
+
+const resolveDefaultSeasonPeriod = (
+    seasonPeriod: { start: string; end: string | null },
+    rows: Array<{ starts_week_date?: string | null; ends_week_date?: string | null; plan_status?: string | null }>
+) => {
+    const activeRows = rows.filter(row => row.plan_status !== 'ended');
+    if (activeRows.length === 0) return seasonPeriod;
+
+    const counts = new Map<string, { start: string; end: string | null; count: number }>();
+    activeRows.forEach(row => {
+        const start = row.starts_week_date || seasonPeriod.start;
+        const end = row.ends_week_date || seasonPeriod.end || null;
+        const key = `${start}|${end || ''}`;
+        const current = counts.get(key) || { start, end, count: 0 };
+        current.count += 1;
+        counts.set(key, current);
+    });
+
+    const dominant = Array.from(counts.values()).sort((left, right) => right.count - left.count)[0];
+    if (!dominant) return seasonPeriod;
+
+    const minimumDefaultCount = Math.max(2, Math.ceil(activeRows.length * 0.6));
+    if (dominant.count < minimumDefaultCount) return seasonPeriod;
+
+    return { start: dominant.start, end: dominant.end };
+};
 
 const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
     const rowsByPerson = new Map<string, any[]>();
@@ -278,9 +415,12 @@ const getRegroupingBoardDisplayMembers = (sourceMembers: any[]) =>
 const buildRegroupingSeasonSaveMembers = (sourceMembers: any[]) => {
     const displayRows = normalizeRegroupingDisplayMembers(sourceMembers);
     const savedKeys = new Set(displayRows.map(getRegroupingSourceMembershipKey).filter(Boolean));
+    const replacedRemovedPairKeys = getRegroupingReplacedRemovedPairKeys(displayRows);
     const hiddenRemovedRows = sourceMembers.filter((member) => {
         const sourceMembershipKey = getRegroupingSourceMembershipKey(member);
         if (!sourceMembershipKey || savedKeys.has(sourceMembershipKey)) return false;
+        const removedPairKey = getRegroupingRemovedPairKey(member);
+        if (removedPairKey && replacedRemovedPairKeys.has(removedPairKey)) return false;
 
         return !member.group_id && Boolean(
             member.source_membership_group_id ||
@@ -433,6 +573,7 @@ function RegroupingPageInner() {
     const [seasonEndWeekDate, setSeasonEndWeekDate] = useState(() => addWeeksToDateInput(getCurrentSundayInputValue(), 24));
     const [currentRegistrationStartWeek, setCurrentRegistrationStartWeek] = useState(getCurrentSundayInputValue);
     const [currentRegistrationEndWeek, setCurrentRegistrationEndWeek] = useState(() => addWeeksToDateInput(getCurrentSundayInputValue(), 24));
+    const [deletingSeasonId, setDeletingSeasonId] = useState<string | null>(null);
     const [, setPhase2RegroupingCheck] = useState<{
         status: 'idle' | 'ok' | 'warning' | 'unavailable';
         legacyActiveCount: number;
@@ -454,6 +595,10 @@ function RegroupingPageInner() {
     const [hasChanges, setHasChanges] = useState(false);
     const boardRef = useRef<HTMLDivElement>(null);
     const exportTableRef = useRef<HTMLDivElement>(null);
+    const loadedQuerySeasonIdRef = useRef<string | null>(null);
+    const loadSeasonDraftRef = useRef<((seasonId: string) => Promise<void>) | null>(null);
+    const previousSeasonPeriodRef = useRef<{ start: string; end: string | null } | null>(null);
+    const groupsRef = useRef<any[]>([]);
     const router = useRouter();
     const searchParams = useSearchParams();
     const selectedChurch = useMemo(
@@ -475,8 +620,15 @@ function RegroupingPageInner() {
             .sort((left, right) => String(right.effective_week_date).localeCompare(String(left.effective_week_date)));
         return appliedSeasons.find(season => isSeasonCoveringDate(season, todayInputValue)) || appliedSeasons[0] || null;
     }, [regroupingSeasons, todayInputValue]);
+    const suggestedNextSeasonStartWeek = useMemo(
+        () => getSuggestedNextSeasonStartWeek(regroupingSeasons),
+        [regroupingSeasons]
+    );
     const isCurrentAppliedSeasonExpired = Boolean(currentAppliedSeason) && !isSeasonCoveringDate(currentAppliedSeason, todayInputValue);
     const isSelectedSeasonApplied = selectedSeason?.status === 'applied';
+    const isSelectedAppliedSeasonCurrentAfterEdit = isSelectedSeasonApplied &&
+        seasonEffectiveWeekDate <= todayInputValue &&
+        (!seasonEndWeekDate || seasonEndWeekDate >= todayInputValue);
     const isSelectedCurrentAppliedSeason = Boolean(
         selectedSeason &&
         currentAppliedSeason &&
@@ -484,21 +636,94 @@ function RegroupingPageInner() {
         selectedSeason.id === currentAppliedSeason.id &&
         !isCurrentAppliedSeasonExpired
     );
+    const annotateCurrentSeasonMemberChanges = useCallback((sourceMembers: any[]) => {
+        if (!isSelectedCurrentAppliedSeason) return sourceMembers;
+
+        const baselineById = new Map(boardBaselineMembers.map(member => [member.id, member]));
+        const baselineByStableKey = new Map<string, any>();
+        boardBaselineMembers.forEach(member => {
+            const stableKey = getRegroupingStableMembershipKey(member);
+            if (stableKey) baselineByStableKey.set(stableKey, member);
+        });
+        const baselineGroupById = new Map(
+            [...boardBaselineGroups, ...boardBaselineArchivedGroups].map(group => [group.id, group])
+        );
+
+        return sourceMembers.map(member => {
+            const existingChangeType = member.plan_change_type || member.change_type;
+            if (isRegroupingRemovedMembershipRow(member)) return member;
+
+            const memberStableKey = getRegroupingStableMembershipKey(member);
+            const baseline = baselineById.get(member.id) ||
+                (memberStableKey ? baselineByStableKey.get(memberStableKey) : undefined);
+            if (!baseline) return member;
+
+            const previousGroupId = baseline.group_id || null;
+            const nextGroupId = member.group_id || null;
+            if (!previousGroupId || !nextGroupId || previousGroupId === nextGroupId) return member;
+            if (existingChangeType && existingChangeType !== 'added') return member;
+
+            const previousGroup = baselineGroupById.get(previousGroupId);
+            const previousSourceGroupId =
+                baseline.source_membership_group_id ||
+                baseline.previous_source_group_id ||
+                previousGroup?.source_group_id ||
+                (previousGroup?.id && !String(previousGroup.id).startsWith('temp-') ? previousGroup.id : null);
+            const previousGroupName =
+                previousGroup?.name ||
+                getValidRegroupingGroupLabel(baseline.group_name) ||
+                getValidRegroupingGroupLabel(baseline.previous_group_name) ||
+                getValidRegroupingGroupLabel(baseline.source_membership_group_name) ||
+                null;
+
+            return {
+                ...member,
+                plan_change_type: 'moved',
+                previous_source_group_id: previousSourceGroupId,
+                previous_group_name: previousGroupName,
+                source_membership_group_id: previousSourceGroupId,
+                source_membership_group_name: previousGroupName,
+            };
+        });
+    }, [
+        boardBaselineArchivedGroups,
+        boardBaselineGroups,
+        boardBaselineMembers,
+        isSelectedCurrentAppliedSeason,
+    ]);
     const isSelectedSeasonLocked = isSelectedSeasonApplied && !isSelectedCurrentAppliedSeason;
+    const shouldSaveSelectedAppliedSeasonShellOnly = isSelectedSeasonApplied &&
+        (!isSelectedCurrentAppliedSeason || !isSelectedAppliedSeasonCurrentAfterEdit);
+    const canEditSelectedSeasonShell = regroupingMode === 'season' && isSelectedSeasonApplied;
     const isBoardReadonly = regroupingMode === 'season' && isSelectedSeasonLocked;
     const isSeasonEffectiveFuture = seasonEffectiveWeekDate > toDateInputValue(new Date());
     const isSeasonPeriodInvalid = Boolean(seasonEndWeekDate) && seasonEndWeekDate < seasonEffectiveWeekDate;
+    const seasonPeriodConflict = useMemo(() => {
+        if (regroupingMode !== 'season' || !seasonEffectiveWeekDate) return null;
+        return regroupingSeasons.find(season => {
+            if (!season?.id || season.id === selectedSeasonId) return false;
+            if (!['draft', 'ready', 'applied', 'archived'].includes(String(season.status || ''))) return false;
+            return doDateRangesOverlap(
+                seasonEffectiveWeekDate,
+                seasonEndWeekDate || null,
+                season.effective_week_date,
+                season.end_week_date || null
+            );
+        }) || null;
+    }, [regroupingMode, regroupingSeasons, selectedSeasonId, seasonEffectiveWeekDate, seasonEndWeekDate]);
+    const isSeasonPeriodOverlapping = Boolean(seasonPeriodConflict);
     const isCurrentRegistrationPeriodInvalid = Boolean(currentRegistrationEndWeek) && currentRegistrationEndWeek < currentRegistrationStartWeek;
     const canSaveSeasonDraft = regroupingMode === 'season' &&
         Boolean(selectedChurch) &&
         Boolean(selectedDepartment) &&
-        !isSelectedSeasonLocked &&
-        !isSeasonPeriodInvalid;
+        !isSeasonPeriodInvalid &&
+        !isSeasonPeriodOverlapping;
     const canApplySeason = regroupingMode === 'season' &&
         Boolean(selectedSeasonId) &&
         !isSelectedSeasonApplied &&
         !isSeasonEffectiveFuture &&
-        !isSeasonPeriodInvalid;
+        !isSeasonPeriodInvalid &&
+        !isSeasonPeriodOverlapping;
     const viewTitle = regroupingView === 'list'
         ? '조편성 시즌'
         : regroupingMode === 'live'
@@ -627,7 +852,7 @@ function RegroupingPageInner() {
             .select('id, title, status, effective_week_date, end_week_date, updated_at, created_at')
             .eq('church_id', churchId)
             .eq('department_id', deptId)
-            .in('status', ['draft', 'ready', 'applied'])
+            .in('status', ['draft', 'ready', 'applied', 'archived'])
             .order('effective_week_date', { ascending: false })
             .order('updated_at', { ascending: false });
 
@@ -800,6 +1025,95 @@ function RegroupingPageInner() {
                 ends_week_date: endsDate ? snapDateInputToSunday(endsDate) : season.end_week_date || null,
             };
         }));
+    };
+
+    const fetchPeriodMembersForSeasonPlan = async (
+        season: { church_id: string; department_id: string; effective_week_date: string; end_week_date?: string | null },
+        planGroups: any[]
+    ) => {
+        const sourceGroupIds = planGroups
+            .map(group => group.source_group_id)
+            .filter((groupId): groupId is string => typeof groupId === 'string' && Boolean(groupId));
+        if (sourceGroupIds.length === 0) return [];
+
+        const seasonStart = season.effective_week_date;
+        const seasonEnd = season.end_week_date || season.effective_week_date;
+
+        const { data: membershipRows, error: membershipsError } = await supabase
+            .from('memberships')
+            .select('id, person_id, legacy_member_directory_id, group_id, role, starts_at, ends_at, status, group:group_id(name)')
+            .eq('church_id', season.church_id)
+            .eq('department_id', season.department_id)
+            .in('group_id', sourceGroupIds)
+            .or(`starts_at.is.null,starts_at.lte.${seasonEnd}`)
+            .or(`ends_at.is.null,ends_at.gte.${seasonStart}`);
+
+        if (membershipsError) throw membershipsError;
+        if (!membershipRows || membershipRows.length === 0) return [];
+
+        const directoryIds = Array.from(new Set(
+            membershipRows
+                .map(membership => membership.legacy_member_directory_id)
+                .filter((id): id is string => typeof id === 'string' && Boolean(id))
+        ));
+        if (directoryIds.length === 0) return [];
+
+        const [{ data: directoryRows, error: directoryError }, phase2PersonMap] = await Promise.all([
+            supabase
+                .from('member_directory')
+                .select('*')
+                .in('id', directoryIds),
+            fetchPhase2PersonMap(directoryIds),
+        ]);
+
+        if (directoryError) throw directoryError;
+
+        const directoryById = new Map(
+            (directoryRows || []).map(member => [member.id as string, member])
+        );
+        const planGroupIdBySourceGroupId = new Map(
+            planGroups
+                .filter(group => group.source_group_id)
+                .map(group => [group.source_group_id, group.id])
+        );
+
+        return applyCanonicalFamilyInfo((membershipRows || [])
+            .map(membership => {
+                const directoryMemberId = membership.legacy_member_directory_id as string | null;
+                if (!directoryMemberId) return null;
+                const directoryMember = directoryById.get(directoryMemberId);
+                if (!directoryMember) return null;
+                const planGroupId = membership.group_id
+                    ? planGroupIdBySourceGroupId.get(membership.group_id as string) || null
+                    : null;
+                if (!planGroupId) return null;
+
+                const liveGroup = membership.group && !Array.isArray(membership.group)
+                    ? membership.group as { name?: string | null }
+                    : null;
+                const startsDate = typeof membership.starts_at === 'string'
+                    ? membership.starts_at.slice(0, 10)
+                    : seasonStart;
+                const endsDate = typeof membership.ends_at === 'string'
+                    ? membership.ends_at.slice(0, 10)
+                    : season.end_week_date || null;
+
+                return {
+                    ...directoryMember,
+                    id: `season-period-${membership.id}`,
+                    group_id: planGroupId,
+                    group_name: liveGroup?.name || directoryMember.group_name || null,
+                    role_in_group: membership.role || directoryMember.role_in_group || 'member',
+                    phase2_membership_id: membership.id || null,
+                    phase2_person_id: membership.person_id || phase2PersonMap.get(directoryMemberId) || null,
+                    source_membership_group_id: membership.group_id || null,
+                    source_membership_group_name: liveGroup?.name || directoryMember.group_name || null,
+                    source_member_directory_id: directoryMemberId,
+                    starts_week_date: snapDateInputToSunday(startsDate),
+                    ends_week_date: endsDate ? snapDateInputToSunday(endsDate) : season.end_week_date || null,
+                };
+            })
+            .filter((member): member is NonNullable<typeof member> => Boolean(member)));
     };
 
     const fetchMembers = async (churchId: string, deptId: string) => {
@@ -980,9 +1294,19 @@ function RegroupingPageInner() {
             getValidRegroupingGroupLabel(member.previous_group_name) ||
             getValidRegroupingGroupLabel(member.group_name) ||
             null;
+        const removedRowBaseId =
+            member.phase2_membership_id ||
+            member.membership_id ||
+            member.source_membership_id ||
+            member.id ||
+            getRegroupingIdentityKey(member);
+        const removedRowSourceKey = sourceGroupId || sourceGroupName || 'unknown-group';
 
         return {
             ...member,
+            id: String(member.id || '').startsWith('removed-')
+                ? member.id
+                : `removed-${removedRowBaseId}-${removedRowSourceKey}-${endWeekDate}`,
             group_id: null,
             group_name: null,
             source_membership_group_id: sourceGroupId,
@@ -997,24 +1321,70 @@ function RegroupingPageInner() {
 
     const buildUnassignedDepartmentRow = useCallback((
         member: any,
-        startWeekDate: string
-    ) => ({
-        ...member,
-        id: `temp-unassigned-${member.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        group_id: null,
-        group_name: null,
-        role_in_group: 'member',
-        phase2_membership_id: null,
-        membership_id: null,
-        source_membership_id: null,
-        source_membership_group_id: null,
-        source_membership_group_name: null,
-        plan_change_type: null,
-        previous_source_group_id: null,
-        previous_group_name: null,
-        starts_week_date: startWeekDate,
-        ends_week_date: seasonEndWeekDate || null,
-    }), [seasonEndWeekDate]);
+        startWeekDate: string,
+        sourceGroup?: any
+    ) => {
+        const sourceGroupId =
+            sourceGroup?.source_group_id ||
+            (sourceGroup?.id && !String(sourceGroup.id).startsWith('temp-') ? sourceGroup.id : null) ||
+            member.group_id ||
+            null;
+        const sourceGroupName =
+            sourceGroup?.name ||
+            getValidRegroupingGroupLabel(member.group_name) ||
+            null;
+
+        return {
+            ...member,
+            id: `temp-unassigned-${member.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            group_id: null,
+            group_name: null,
+            role_in_group: 'member',
+            phase2_membership_id: null,
+            membership_id: null,
+            source_membership_id: null,
+            source_membership_group_id: sourceGroupId,
+            source_membership_group_name: sourceGroupName,
+            plan_change_type: null,
+            previous_source_group_id: sourceGroupId,
+            previous_group_name: sourceGroupName,
+            starts_week_date: startWeekDate,
+            ends_week_date: seasonEndWeekDate || null,
+        };
+    }, [seasonEndWeekDate]);
+
+    const hydrateMemberWithRemovedSource = useCallback((member: any, allMembers: any[]) => {
+        if (member.group_id) return member;
+        if (
+            member.previous_source_group_id ||
+            member.previous_group_name ||
+            member.source_membership_group_id ||
+            member.source_membership_group_name ||
+            member.plan_change_type === 'removed'
+        ) {
+            return member;
+        }
+
+        const identityKey = getRegroupingIdentityKey(member);
+        const removedRows = allMembers.filter(row =>
+            getRegroupingIdentityKey(row) === identityKey &&
+            isRegroupingRemovedMembershipRow(row)
+        );
+        if (removedRows.length !== 1) return member;
+
+        const removedRow = removedRows[0];
+        return {
+            ...member,
+            previous_source_group_id: removedRow.previous_source_group_id || removedRow.source_membership_group_id || null,
+            previous_group_name: getValidRegroupingGroupLabel(removedRow.previous_group_name) ||
+                getValidRegroupingGroupLabel(removedRow.source_membership_group_name) ||
+                null,
+            source_membership_group_id: removedRow.source_membership_group_id || removedRow.previous_source_group_id || null,
+            source_membership_group_name: getValidRegroupingGroupLabel(removedRow.source_membership_group_name) ||
+                getValidRegroupingGroupLabel(removedRow.previous_group_name) ||
+                null,
+        };
+    }, []);
 
     const buildMemberRowsForGroupMove = useCallback((
         member: any,
@@ -1024,11 +1394,49 @@ function RegroupingPageInner() {
         const targetGroup = targetGroupId ? groups.find(group => group.id === targetGroupId) : null;
 
         if (targetGroupId) {
+            const sourceGroupId = member.previous_source_group_id || member.source_membership_group_id || null;
+            const sourceGroupName =
+                getValidRegroupingGroupLabel(member.previous_group_name) ||
+                getValidRegroupingGroupLabel(member.source_membership_group_name) ||
+                null;
+            const isReassigningRemovedMembership = !member.group_id && Boolean(sourceGroupId || sourceGroupName);
+            const sourceGroup = member.group_id ? groups.find(group => group.id === member.group_id) : null;
+            const movedSourceGroupId =
+                sourceGroup?.source_group_id ||
+                (sourceGroup?.id && !String(sourceGroup.id).startsWith('temp-') ? sourceGroup.id : null) ||
+                sourceGroupId;
+            const movedSourceGroupName =
+                sourceGroup?.name ||
+                getValidRegroupingGroupLabel(member.group_name) ||
+                sourceGroupName ||
+                null;
+            const isCurrentSeasonMove = Boolean(
+                isSelectedCurrentAppliedSeason &&
+                member.group_id &&
+                member.group_id !== targetGroupId
+            );
+
             return [{
                 ...member,
                 group_id: targetGroupId,
                 group_name: targetGroup?.name || null,
-                plan_change_type: member.group_id ? member.plan_change_type : null,
+                plan_change_type: isReassigningRemovedMembership || isCurrentSeasonMove
+                    ? 'moved'
+                    : member.group_id
+                        ? member.plan_change_type
+                        : null,
+                previous_source_group_id: isReassigningRemovedMembership || isCurrentSeasonMove
+                    ? movedSourceGroupId
+                    : member.previous_source_group_id || null,
+                previous_group_name: isReassigningRemovedMembership || isCurrentSeasonMove
+                    ? movedSourceGroupName
+                    : member.previous_group_name || null,
+                source_membership_group_id: isReassigningRemovedMembership || isCurrentSeasonMove
+                    ? movedSourceGroupId
+                    : member.source_membership_group_id || null,
+                source_membership_group_name: isReassigningRemovedMembership || isCurrentSeasonMove
+                    ? movedSourceGroupName
+                    : member.source_membership_group_name || null,
                 starts_week_date: targetGroup?.starts_week_date || seasonEffectiveWeekDate,
                 ends_week_date: targetGroup?.ends_week_date || seasonEndWeekDate || null,
             }];
@@ -1056,12 +1464,14 @@ function RegroupingPageInner() {
                 member,
                 unassignedStartWeek > (seasonEndWeekDate || unassignedStartWeek)
                     ? seasonEndWeekDate || unassignedStartWeek
-                    : unassignedStartWeek
+                    : unassignedStartWeek,
+                sourceGroup
             ),
         ];
-    }, [buildRemovedMembershipRow, buildUnassignedDepartmentRow, groups, seasonEffectiveWeekDate, seasonEndWeekDate]);
+    }, [buildRemovedMembershipRow, buildUnassignedDepartmentRow, groups, isSelectedCurrentAppliedSeason, seasonEffectiveWeekDate, seasonEndWeekDate]);
 
     const handleReorderMembers = useMemo(() => (ids: string[], targetGroupId: string | null) => {
+        const currentBoardMembers = getRegroupingBoardDisplayMembers(localMembers);
         const targetGroup = targetGroupId ? groups.find(group => group.id === targetGroupId) : null;
         const targetGroupPeriod = targetGroupId
             ? {
@@ -1071,7 +1481,7 @@ function RegroupingPageInner() {
             : {};
 
         if (targetGroupId) {
-            const movingMembers = localMembers.filter(member => ids.includes(member.id));
+            const movingMembers = currentBoardMembers.filter(member => ids.includes(member.id));
             const duplicateMovingNames = findDuplicateIdentityNames(movingMembers);
 
             if (duplicateMovingNames.length > 0) {
@@ -1082,9 +1492,9 @@ function RegroupingPageInner() {
 
         // Prevent duplicates in the target group
         if (targetGroupId) {
-            const targetGroupMembers = localMembers.filter(m => m.group_id === targetGroupId);
+            const targetGroupMembers = currentBoardMembers.filter(m => m.group_id === targetGroupId);
             const duplicates = ids.filter(id => {
-                const memberToMove = localMembers.find(m => m.id === id);
+                const memberToMove = currentBoardMembers.find(m => m.id === id);
                 if (!memberToMove || ids.includes(memberToMove.id) && memberToMove.group_id === targetGroupId) return false;
 
                 return targetGroupMembers.some(tm =>
@@ -1094,7 +1504,7 @@ function RegroupingPageInner() {
             });
 
             if (duplicates.length > 0) {
-                const duplicateNames = duplicates.map(id => localMembers.find(m => m.id === id)?.full_name).join(', ');
+                const duplicateNames = duplicates.map(id => currentBoardMembers.find(m => m.id === id)?.full_name).join(', ');
                 alert(`${duplicateNames} 성도님은 이미 해당 조에 편성되어 있습니다.`);
                 return;
             }
@@ -1109,24 +1519,44 @@ function RegroupingPageInner() {
                 const identityKey = getRegroupingIdentityKey(member);
                 assignmentCountByIdentity.set(identityKey, (assignmentCountByIdentity.get(identityKey) || 0) + 1);
             });
+            const movableIds = new Set(currentBoardMembers.map(member => member.id));
+            const removedPairKeysToReplace = new Set<string>();
             const next = prev.flatMap(m => {
-                if (ids.includes(m.id) && m.group_id !== targetGroupId) {
+                const shouldMoveMember =
+                    ids.includes(m.id) &&
+                    movableIds.has(m.id) &&
+                    !isRegroupingRemovedMembershipRow(m);
+
+                if (shouldMoveMember && m.group_id !== targetGroupId) {
                     changed = true;
+                    const hydratedMember = targetGroupId && !m.group_id
+                        ? hydrateMemberWithRemovedSource(m, prev)
+                        : m;
+                    const removedPairKey = targetGroupId ? getRegroupingRemovedPairKey(hydratedMember) : '';
+                    if (removedPairKey) removedPairKeysToReplace.add(removedPairKey);
                     return buildMemberRowsForGroupMove(
-                        { ...m, ...targetGroupPeriod },
+                        { ...hydratedMember, ...targetGroupPeriod },
                         targetGroupId,
                         assignmentCountByIdentity.get(getRegroupingIdentityKey(m)) || 1
                     );
                 }
                 return [m];
             });
-            return changed ? next : prev;
+            if (!changed) return prev;
+
+            return next.filter(member => {
+                if (!targetGroupId || !isRegroupingRemovedMembershipRow(member)) return true;
+                const removedPairKey = getRegroupingRemovedPairKey(member);
+                return !removedPairKey || !removedPairKeysToReplace.has(removedPairKey);
+            });
         });
         setHasChanges(true);
-    }, [buildMemberRowsForGroupMove, findDuplicateIdentityNames, groups, localMembers, seasonEffectiveWeekDate, seasonEndWeekDate]); // Needs localMembers for duplicate check
+    }, [buildMemberRowsForGroupMove, findDuplicateIdentityNames, groups, hydrateMemberWithRemovedSource, localMembers, seasonEffectiveWeekDate, seasonEndWeekDate]); // Needs localMembers for duplicate check
 
     const handleMoveMembers = (ids: string[], targetGroupId: string | null, isCopy: boolean = false, targetIndex?: number) => {
         let finalIdsToMove = [...ids];
+        const currentBoardMembers = getRegroupingBoardDisplayMembers(localMembers);
+        const currentBoardMemberById = new Map(currentBoardMembers.map(member => [member.id, member]));
         const targetGroup = targetGroupId ? groups.find(group => group.id === targetGroupId) : null;
         const targetGroupPeriod = targetGroupId
             ? {
@@ -1139,9 +1569,9 @@ function RegroupingPageInner() {
         if (autoMoveCouples) {
             const spousesToInclude: string[] = [];
             ids.forEach(id => {
-                const member = localMembers.find(m => m.id === id);
+                const member = currentBoardMemberById.get(id);
                 if (member?.spouse_name) {
-                    const spouse = localMembers.find(m =>
+                    const spouse = currentBoardMembers.find(m =>
                         m.full_name === member.spouse_name &&
                         m.spouse_name === member.full_name &&
                         isSameRegroupingGroup(m, member)
@@ -1155,7 +1585,7 @@ function RegroupingPageInner() {
         }
 
         if (targetGroupId) {
-            const movingMembers = localMembers.filter(member => finalIdsToMove.includes(member.id));
+            const movingMembers = currentBoardMembers.filter(member => finalIdsToMove.includes(member.id));
             const duplicateMovingNames = findDuplicateIdentityNames(movingMembers);
 
             if (duplicateMovingNames.length > 0) {
@@ -1167,10 +1597,10 @@ function RegroupingPageInner() {
 
         // Prevent duplicates in the target group
         if (targetGroupId) {
-            const targetGroupMembers = localMembers.filter(m => m.group_id === targetGroupId);
+            const targetGroupMembers = currentBoardMembers.filter(m => m.group_id === targetGroupId);
             const idsBeingMoved = new Set(finalIdsToMove);
             const duplicates = finalIdsToMove.filter(id => {
-                const memberToMove = localMembers.find(m => m.id === id);
+                const memberToMove = currentBoardMemberById.get(id);
                 if (!memberToMove) return false;
 
                 if (isCopy && (memberToMove.group_id || null) === targetGroupId) {
@@ -1196,7 +1626,7 @@ function RegroupingPageInner() {
             });
 
             if (duplicates.length > 0) {
-                const duplicateNames = duplicates.map(id => localMembers.find(m => m.id === id)?.full_name).join(', ');
+                const duplicateNames = duplicates.map(id => currentBoardMemberById.get(id)?.full_name).join(', ');
                 alert(`${duplicateNames} 성도님은 이미 해당 조에 편성되어 있습니다.`);
 
                 // Filter out duplicates from moves
@@ -1209,7 +1639,7 @@ function RegroupingPageInner() {
         }
 
         if (isCopy) {
-            const membersToCopy = localMembers.filter(m => finalIdsToMove.includes(m.id));
+            const membersToCopy = currentBoardMembers.filter(m => finalIdsToMove.includes(m.id));
             const targetSourceGroupId =
                 targetGroup?.source_group_id ||
                 (targetGroup?.id && !String(targetGroup.id).startsWith('temp-') ? targetGroup.id : null);
@@ -1253,14 +1683,34 @@ function RegroupingPageInner() {
                     const identityKey = getRegroupingIdentityKey(member);
                     assignmentCountByIdentity.set(identityKey, (assignmentCountByIdentity.get(identityKey) || 0) + 1);
                 });
+                const movableIds = new Set(currentBoardMembers.map(member => member.id));
+                const shouldMoveMember = (member: any) =>
+                    finalIdsToMove.includes(member.id) &&
+                    movableIds.has(member.id) &&
+                    !isRegroupingRemovedMembershipRow(member);
+                const removedPairKeysToReplace = new Set<string>();
+
                 // 1. Separate members to move from others
-                const movingMembers = prev.filter(m => finalIdsToMove.includes(m.id))
-                    .flatMap(m => buildMemberRowsForGroupMove(
-                        { ...m, ...targetGroupPeriod },
-                        targetGroupId,
-                        assignmentCountByIdentity.get(getRegroupingIdentityKey(m)) || 1
-                    ));
-                const remainingMembers = prev.filter(m => !finalIdsToMove.includes(m.id));
+                const movingMembers = prev.filter(shouldMoveMember)
+                    .flatMap(m => {
+                        const hydratedMember = targetGroupId && !m.group_id
+                            ? hydrateMemberWithRemovedSource(m, prev)
+                            : m;
+                        const removedPairKey = targetGroupId ? getRegroupingRemovedPairKey(hydratedMember) : '';
+                        if (removedPairKey) removedPairKeysToReplace.add(removedPairKey);
+
+                        return buildMemberRowsForGroupMove(
+                            { ...hydratedMember, ...targetGroupPeriod },
+                            targetGroupId,
+                            assignmentCountByIdentity.get(getRegroupingIdentityKey(m)) || 1
+                        );
+                    });
+                const remainingMembers = prev.filter(m => {
+                    if (shouldMoveMember(m)) return false;
+                    if (!targetGroupId || !isRegroupingRemovedMembershipRow(m)) return true;
+                    const removedPairKey = getRegroupingRemovedPairKey(m);
+                    return !removedPairKey || !removedPairKeysToReplace.has(removedPairKey);
+                });
 
                 // 2. If targetIndex is specified, insert them at the position within the target group
                 if (targetIndex !== undefined) {
@@ -1890,13 +2340,13 @@ function RegroupingPageInner() {
             return;
         }
 
-        if (isSelectedSeasonLocked) {
-            alert('기간이 지난 적용 시즌은 수정할 수 없습니다.');
+        if (isSeasonPeriodInvalid) {
+            alert('종료 주차는 시작 주차보다 빠를 수 없습니다.');
             return;
         }
 
-        if (isSeasonPeriodInvalid) {
-            alert('종료 주차는 시작 주차보다 빠를 수 없습니다.');
+        if (isSeasonPeriodOverlapping) {
+            alert('다른 조편성 시즌과 기간이 겹칩니다. 시작/종료 주차를 조정해 주세요.');
             return;
         }
 
@@ -1904,6 +2354,25 @@ function RegroupingPageInner() {
 
         try {
             const title = seasonTitle.trim() || `${selectedDepartment.name} ${formatRegroupingWeekLabel(seasonEffectiveWeekDate)} 조편성`;
+            if (shouldSaveSelectedAppliedSeasonShellOnly) {
+                if (!selectedSeasonId) {
+                    alert('수정할 시즌을 먼저 선택하세요.');
+                    return;
+                }
+
+                await updateRegroupingSeason(supabase, {
+                    seasonId: selectedSeasonId,
+                    title,
+                    effectiveWeekDate: seasonEffectiveWeekDate,
+                    endWeekDate: seasonEndWeekDate,
+                });
+                await fetchRegroupingSeasons(selectedChurch.id, selectedDepartment.id);
+                setSeasonTitle(title);
+                setHasChanges(false);
+                alert('시즌 기간을 저장했습니다. 조/성도 편성 내용은 변경하지 않았습니다.');
+                return;
+            }
+
             const seasonId = selectedSeasonId ?? await createRegroupingSeason(supabase, {
                 churchId: selectedChurch.id,
                 departmentId: selectedDepartment.id,
@@ -1926,7 +2395,9 @@ function RegroupingPageInner() {
                 setSeasonTitle(title);
             }
 
-            const seasonSaveMembers = buildRegroupingSeasonSaveMembers(localMembers);
+            const seasonSaveMembers = annotateCurrentSeasonMemberChanges(
+                buildRegroupingSeasonSaveMembers(localMembers)
+            );
             const membersToSave = autoMoveCouples
                 ? expandCoupleMovesBeforeSave(seasonSaveMembers, members)
                 : seasonSaveMembers;
@@ -2074,7 +2545,7 @@ function RegroupingPageInner() {
 
                 await updateCurrentRegroupingGroupPeriods(supabase, {
                     seasonId,
-                    groups: buildRegroupingSeasonGroupsPayload(seasonArchivedGroups),
+                    groups: buildRegroupingSeasonGroupsPayload(resolvedSeasonPlanGroupsToSave),
                 });
                 await saveRegroupingSeasonDraft(supabase, {
                     seasonId,
@@ -2139,15 +2610,64 @@ function RegroupingPageInner() {
 
             setSelectedSeasonId(seasonId);
             setSeasonTitle(season.title || '');
-            setSeasonEffectiveWeekDate(season.effective_week_date || getCurrentSundayInputValue());
-            setSeasonEndWeekDate(season.end_week_date || addWeeksToDateInput(season.effective_week_date || getCurrentSundayInputValue(), 24));
-            setGroups(reloaded.activeGroups);
-            setSeasonArchivedGroups(endedGroups);
-            setLocalMembers(reloaded.members);
-            setBoardBaselineGroups(JSON.parse(JSON.stringify(reloaded.activeGroups)));
-            setBoardBaselineArchivedGroups(JSON.parse(JSON.stringify(reloaded.endedGroups)));
-            setBoardBaselineMembers(JSON.parse(JSON.stringify(reloaded.members)));
-            setHasChanges(injectedRestoreGroup);
+            const loadedSeasonStart = season.effective_week_date || getCurrentSundayInputValue();
+            const loadedSeasonEnd = season.end_week_date || addWeeksToDateInput(loadedSeasonStart, 24);
+            const loadedSeasonPeriod = {
+                start: loadedSeasonStart,
+                end: loadedSeasonEnd || null,
+            };
+            const loadedDefaultPeriod = resolveDefaultSeasonPeriod(loadedSeasonPeriod, reloaded.activeGroups);
+            const shouldNormalizeDefaultPeriodOnLoad = !isSameRegroupingPeriod(loadedDefaultPeriod, loadedSeasonPeriod);
+            const defaultPeriodGroupIds = new Set(
+                reloaded.activeGroups
+                    .filter(group => isSeasonFullPeriodRow(group, loadedDefaultPeriod))
+                    .map(group => group.id)
+            );
+            const loadedActiveGroups = shouldNormalizeDefaultPeriodOnLoad
+                ? reloaded.activeGroups.map(group => (
+                    isSeasonFullPeriodRow(group, loadedDefaultPeriod)
+                        ? {
+                            ...group,
+                            starts_week_date: loadedSeasonPeriod.start,
+                            ends_week_date: loadedSeasonPeriod.end,
+                        }
+                        : group
+                ))
+                : reloaded.activeGroups;
+            const loadedEndedGroups = shouldNormalizeDefaultPeriodOnLoad
+                ? endedGroups.map(group => (
+                    isSeasonFullPeriodRow(group, loadedDefaultPeriod)
+                        ? {
+                            ...group,
+                            starts_week_date: loadedSeasonPeriod.start,
+                            ends_week_date: loadedSeasonPeriod.end,
+                        }
+                        : group
+                ))
+                : endedGroups;
+            const loadedMembers = shouldNormalizeDefaultPeriodOnLoad
+                ? reloaded.members.map(member => (
+                    isSeasonFullPeriodRow(member, loadedDefaultPeriod) &&
+                    (!member.group_id || defaultPeriodGroupIds.has(member.group_id))
+                        ? {
+                            ...member,
+                            starts_week_date: loadedSeasonPeriod.start,
+                            ends_week_date: loadedSeasonPeriod.end,
+                        }
+                        : member
+                ))
+                : reloaded.members;
+            previousSeasonPeriodRef.current = loadedSeasonPeriod;
+            setSeasonEffectiveWeekDate(loadedSeasonStart);
+            setSeasonEndWeekDate(loadedSeasonEnd);
+            setGroups(loadedActiveGroups);
+            setSeasonArchivedGroups(loadedEndedGroups);
+            setLocalMembers(loadedMembers);
+            setSearchTerm('');
+            setBoardBaselineGroups(JSON.parse(JSON.stringify(loadedActiveGroups)));
+            setBoardBaselineArchivedGroups(JSON.parse(JSON.stringify(loadedEndedGroups)));
+            setBoardBaselineMembers(JSON.parse(JSON.stringify(loadedMembers)));
+            setHasChanges(injectedRestoreGroup || shouldNormalizeDefaultPeriodOnLoad);
             setRegroupingMode('season');
             setRegroupingView('seasonEditor');
         } catch (error) {
@@ -2157,6 +2677,30 @@ function RegroupingPageInner() {
             setSaving(false);
         }
     };
+    loadSeasonDraftRef.current = handleLoadSeasonDraft;
+
+    useEffect(() => {
+        const seasonIdFromQuery = searchParams.get('seasonId');
+        const churchIdFromQuery = searchParams.get('churchId');
+        const deptIdFromQuery = searchParams.get('deptId');
+        const queryLoadKey = [
+            seasonIdFromQuery,
+            churchIdFromQuery || currentChurchId || '',
+            deptIdFromQuery || selectedDeptId || '',
+        ].join('|');
+
+        if (!seasonIdFromQuery || loadedQuerySeasonIdRef.current === queryLoadKey) return;
+        if (churchIdFromQuery && currentChurchId !== churchIdFromQuery) return;
+        if (deptIdFromQuery && selectedDeptId !== deptIdFromQuery) return;
+        if (!regroupingSeasons.some(season => season.id === seasonIdFromQuery)) return;
+
+        const loadFromQuery = async () => {
+            await loadSeasonDraftRef.current?.(seasonIdFromQuery);
+            loadedQuerySeasonIdRef.current = queryLoadKey;
+        };
+
+        void loadFromQuery();
+    }, [searchParams, regroupingSeasons, currentChurchId, selectedDeptId]);
 
     const handleApplySeason = async () => {
         if (!selectedSeasonId) {
@@ -2190,6 +2734,41 @@ function RegroupingPageInner() {
             alert(error instanceof Error ? error.message : '조편성 계획 적용 중 오류가 발생했습니다.');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleDeletePendingSeason = async (seasonId: string) => {
+        const season = regroupingSeasons.find(item => item.id === seasonId);
+        if (!season) return;
+
+        const canDeleteThisSeason = ['draft', 'ready'].includes(season.status)
+            && season.effective_week_date > todayInputValue;
+        if (!canDeleteThisSeason) {
+            alert('적용 대기 중인 미래 조편성 계획만 삭제할 수 있습니다.');
+            return;
+        }
+
+        if (!window.confirm(`"${season.title}" 조편성 계획을 삭제할까요?\n\n미래 편성 계획만 삭제되며 실제 성도, 현재 조, 출석/기도 기록은 삭제되지 않습니다.`)) {
+            return;
+        }
+
+        setDeletingSeasonId(seasonId);
+
+        try {
+            await deletePendingRegroupingSeason(supabase, { seasonId });
+            if (selectedSeasonId === seasonId) {
+                setSelectedSeasonId(null);
+                setRegroupingView('list');
+                setHasChanges(false);
+            }
+            if (selectedChurch?.id && selectedDepartment?.id) {
+                await fetchRegroupingSeasons(selectedChurch.id, selectedDepartment.id);
+            }
+        } catch (error) {
+            console.error('Delete pending regrouping season error:', error);
+            alert(error instanceof Error ? error.message : '적용 대기 조편성 계획 삭제 중 오류가 발생했습니다.');
+        } finally {
+            setDeletingSeasonId(null);
         }
     };
 
@@ -2242,9 +2821,27 @@ function RegroupingPageInner() {
             planGroups: planGroups || [],
             assignments: assignments || [],
         });
-        const liveMembers = season
+        const isSeasonCurrentForToday = Boolean(
+            season &&
+            season.status === 'applied' &&
+            season.effective_week_date <= todayInputValue &&
+            (!season.end_week_date || season.end_week_date >= todayInputValue)
+        );
+        const canBackfillPeriodMembers = Boolean(
+            season &&
+            ['applied', 'archived'].includes(String(season.status || '')) &&
+            season.effective_week_date <= todayInputValue
+        );
+        let liveMembers = season && isSeasonCurrentForToday
             ? await fetchLiveMembersForCurrentSeasonPlan(season, mapped.groups)
             : [];
+        if (season && !isSeasonCurrentForToday && canBackfillPeriodMembers) {
+            liveMembers = await fetchPeriodMembersForSeasonPlan(season, mapped.groups);
+        }
+        const mappedBoardMemberCount = getRegroupingBoardDisplayMembers(mapped.members).length;
+        if (season && liveMembers.length === 0 && mappedBoardMemberCount === 0 && canBackfillPeriodMembers) {
+            liveMembers = await fetchPeriodMembersForSeasonPlan(season, mapped.groups);
+        }
         const liveMemberByIdentity = new Map<string, any>();
         const liveMemberByIdentityAndGroup = new Map<string, any>();
         liveMembers.forEach(member => {
@@ -2256,7 +2853,9 @@ function RegroupingPageInner() {
         });
         const mappedCurrentMembers = mapped.members
             .filter(member => (
-                isRegroupingRemovedMembershipRow(member) || member.is_active !== false
+                isRegroupingRemovedMembershipRow(member) ||
+                Boolean(member.group_id) ||
+                member.is_active !== false
             ))
             .map(member => {
                 const identityKey = getRegroupingIdentityKey(member);
@@ -2355,12 +2954,16 @@ function RegroupingPageInner() {
             return;
         }
 
-        const defaultStartWeek = getCurrentSundayInputValue();
+        const defaultStartWeek = suggestedNextSeasonStartWeek;
         const unassignedMembers = buildUnassignedRegroupingMembers(members.length > 0 ? members : localMembers);
         setRegroupingMode('season');
         setRegroupingView('seasonEditor');
         setSelectedSeasonId(null);
         setSeasonTitle('');
+        previousSeasonPeriodRef.current = {
+            start: defaultStartWeek,
+            end: addWeeksToDateInput(defaultStartWeek, 24),
+        };
         setSeasonEffectiveWeekDate(defaultStartWeek);
         setSeasonEndWeekDate(addWeeksToDateInput(defaultStartWeek, 24));
         setGroups([]);
@@ -2456,6 +3059,14 @@ function RegroupingPageInner() {
     const boardDisplayMembers = useMemo(() => getRegroupingBoardDisplayMembers(localMembers), [localMembers]);
     const hasActiveBoard = groups.length > 0 || boardDisplayMembers.some(member => Boolean(member.group_id));
 
+    useEffect(() => {
+        const visibleMemberIds = new Set(boardDisplayMembers.map(member => member.id));
+        setSelectedMemberIds(prev => {
+            const next = prev.filter(id => visibleMemberIds.has(id));
+            return next.length === prev.length ? prev : next;
+        });
+    }, [boardDisplayMembers]);
+
     const filteredLocalMembers = useMemo(() => {
         if (!searchTerm) return boardDisplayMembers;
         return boardDisplayMembers.filter(m =>
@@ -2505,22 +3116,70 @@ function RegroupingPageInner() {
 
     const movedSeasonMembers = useMemo(() => {
         const baselineById = new Map(boardBaselineMembers.map(member => [member.id, member]));
+        const baselineByStableKey = new Map<string, any>();
+        boardBaselineMembers.forEach(member => {
+            const stableKey = getRegroupingStableMembershipKey(member);
+            if (stableKey) baselineByStableKey.set(stableKey, member);
+        });
         const baselineGroups = [...boardBaselineGroups, ...boardBaselineArchivedGroups];
+        const replacedRemovedPairKeys = new Set(
+            localMembers
+                .filter(member => member.group_id && !isRegroupingRemovedMembershipRow(member))
+                .map(getRegroupingRemovedPairKey)
+                .filter((key): key is string => Boolean(key))
+        );
         return localMembers
             .map(member => {
-                const baseline = baselineById.get(member.id);
+                if (isRegroupingRemovedMembershipRow(member)) {
+                    const removedPairKey = getRegroupingRemovedPairKey(member);
+                    if (removedPairKey && replacedRemovedPairKeys.has(removedPairKey)) {
+                        return null;
+                    }
+                }
+
+                const memberStableKey = getRegroupingStableMembershipKey(member);
+                const baseline = baselineById.get(member.id) ||
+                    (memberStableKey ? baselineByStableKey.get(memberStableKey) : undefined);
                 const nextGroupId = member.group_id || null;
                 if (!baseline) {
+                    const persistedChangeType = member.plan_change_type || member.change_type || null;
+                    if (isRegroupingRemovedMembershipRow(member)) {
+                        const previousGroupName =
+                            getValidRegroupingGroupLabel(member.previous_group_name) ||
+                            getValidRegroupingGroupLabel(member.source_membership_group_name) ||
+                            '이전 조';
+                        return {
+                            id: member.id,
+                            full_name: member.full_name,
+                            changeType: 'removed' as const,
+                            previousGroupName,
+                            nextGroupName: '미편성',
+                            starts_week_date: member.starts_week_date || seasonEffectiveWeekDate,
+                            ends_week_date: member.ends_week_date || seasonEndWeekDate || null,
+                            selectableForBulkNormalize: false,
+                        };
+                    }
                     if (!nextGroupId) return null;
                     const nextGroup = groups.find(group => group.id === nextGroupId);
+                    const previousGroupName =
+                        getValidRegroupingGroupLabel(member.previous_group_name) ||
+                        getValidRegroupingGroupLabel(member.source_membership_group_name) ||
+                        null;
+                    const persistedMovedMembership = persistedChangeType === 'moved' && Boolean(previousGroupName);
+                    const persistedAddedMembership = persistedChangeType === 'added' || !persistedMovedMembership;
                     return {
                         id: member.id,
                         full_name: member.full_name,
-                        changeType: 'added' as const,
-                        previousGroupName: '추가 소속',
+                        changeType: persistedMovedMembership
+                            ? 'moved' as const
+                            : 'added' as const,
+                        previousGroupName: persistedMovedMembership
+                            ? previousGroupName
+                            : '추가 소속',
                         nextGroupName: nextGroup?.name || member.group_name || '미편성',
                         starts_week_date: member.starts_week_date || seasonEffectiveWeekDate,
                         ends_week_date: member.ends_week_date || seasonEndWeekDate || null,
+                        selectableForBulkNormalize: !persistedAddedMembership && !persistedMovedMembership,
                     };
                 }
                 const previousGroupId = baseline.group_id || null;
@@ -2532,10 +3191,13 @@ function RegroupingPageInner() {
                 const originalSourceGroupName = member.source_membership_group_name || null;
                 const persistedChangeType = member.plan_change_type || null;
                 const persistedPreviousGroupName = member.previous_group_name || null;
+                const isExplicitPersistedChange = persistedChangeType === 'moved' ||
+                    persistedChangeType === 'removed' ||
+                    persistedChangeType === 'added';
                 const expectedStartWeekDate = targetGroup?.starts_week_date || seasonEffectiveWeekDate;
                 const expectedEndWeekDate = targetGroup?.ends_week_date || seasonEndWeekDate || null;
                 const normalisePeriodDate = (value?: string | null) => value ? snapDateInputToSunday(value) : null;
-                const periodChanged = shouldShowSeasonMemberPeriodChange({
+                const periodChanged = Boolean(nextGroupId) && !isExplicitPersistedChange && shouldShowSeasonMemberPeriodChange({
                     currentStart: normalisePeriodDate(startsWeekDate),
                     currentEnd: normalisePeriodDate(endsWeekDate),
                     expectedStart: normalisePeriodDate(expectedStartWeekDate),
@@ -2543,11 +3205,18 @@ function RegroupingPageInner() {
                     baselineStart: normalisePeriodDate(baseline.starts_week_date),
                     baselineEnd: normalisePeriodDate(baseline.ends_week_date),
                 });
-                const persistedGroupChanged = Boolean(
-                    originalSourceGroupId &&
-                    currentSourceGroupId &&
-                    originalSourceGroupId !== currentSourceGroupId
+                const persistedSourceGroupId = originalSourceGroupId || member.previous_source_group_id || null;
+                const persistedSourceGroupName =
+                    getValidRegroupingGroupLabel(originalSourceGroupName) ||
+                    getValidRegroupingGroupLabel(persistedPreviousGroupName);
+                const persistedGroupChanged = persistedChangeType === 'moved' && Boolean(nextGroupId) && (
+                    Boolean(persistedSourceGroupId && currentSourceGroupId && persistedSourceGroupId !== currentSourceGroupId) ||
+                    Boolean(persistedSourceGroupId && !currentSourceGroupId) ||
+                    Boolean(!persistedSourceGroupId && persistedSourceGroupName && targetGroup?.name && persistedSourceGroupName !== targetGroup.name)
                 );
+                const runtimeGroupChanged = isSelectedCurrentAppliedSeason &&
+                    hasChanges &&
+                    previousGroupId !== nextGroupId;
                 const hasSourceMembership = Boolean(
                     member.phase2_membership_id ||
                     member.membership_id ||
@@ -2559,7 +3228,7 @@ function RegroupingPageInner() {
                     && !nextGroupId
                     && Boolean(originalSourceGroupId || originalSourceGroupName || persistedPreviousGroupName);
                 const persistedRemovedMembership = persistedChangeType === 'removed';
-                if (previousGroupId === nextGroupId && !persistedGroupChanged && !persistedAddedMembership && !persistedRemovedMembership && !persistedUnassignedMove && !periodChanged) return null;
+                if (!runtimeGroupChanged && !persistedGroupChanged && !persistedAddedMembership && !persistedRemovedMembership && !persistedUnassignedMove && !periodChanged) return null;
                 const previousGroup = baselineGroups.find(group => group.id === previousGroupId);
                 const nextGroup = groups.find(group => group.id === nextGroupId);
                 const previousGroupNameForDisplay =
@@ -2568,18 +3237,18 @@ function RegroupingPageInner() {
                     previousGroup?.name ||
                     '이전 조';
                 const isRemoved = persistedRemovedMembership || persistedUnassignedMove;
-                const isMoved = persistedGroupChanged || previousGroupId !== nextGroupId;
+                const isMoved = persistedGroupChanged || runtimeGroupChanged;
                 return {
                     id: member.id,
                     full_name: member.full_name,
                     changeType: isRemoved
                         ? 'removed' as const
-                        : persistedAddedMembership
-                            ? 'added' as const
-                            : !isMoved
-                            ? 'period' as const
-                            : 'moved' as const,
-                    previousGroupName: persistedAddedMembership && !isRemoved ? '추가 소속' : previousGroupNameForDisplay,
+                        : isMoved
+                            ? 'moved' as const
+                            : persistedAddedMembership
+                                ? 'added' as const
+                                : 'period' as const,
+                    previousGroupName: persistedAddedMembership && !isRemoved && !isMoved ? '추가 소속' : previousGroupNameForDisplay,
                     nextGroupName: nextGroup?.name || '미편성',
                     starts_week_date: startsWeekDate,
                     ends_week_date: endsWeekDate,
@@ -2589,12 +3258,91 @@ function RegroupingPageInner() {
                 };
             })
             .filter((member): member is NonNullable<typeof member> => Boolean(member));
-    }, [boardBaselineArchivedGroups, boardBaselineGroups, boardBaselineMembers, groups, localMembers, seasonEffectiveWeekDate, seasonEndWeekDate]);
+    }, [boardBaselineArchivedGroups, boardBaselineGroups, boardBaselineMembers, groups, hasChanges, isSelectedCurrentAppliedSeason, localMembers, seasonEffectiveWeekDate, seasonEndWeekDate]);
 
     const currentChurchName = useMemo(() => {
         if (!currentChurchId) return null;
         return churches.find(c => c.id === currentChurchId)?.name || null;
     }, [currentChurchId, churches]);
+
+    useEffect(() => {
+        groupsRef.current = groups;
+    }, [groups]);
+
+    useEffect(() => {
+        if (regroupingMode !== 'season' || !selectedSeasonId) {
+            previousSeasonPeriodRef.current = {
+                start: seasonEffectiveWeekDate,
+                end: seasonEndWeekDate || null,
+            };
+            return;
+        }
+
+        const previousPeriod = previousSeasonPeriodRef.current;
+        const nextPeriod = {
+            start: seasonEffectiveWeekDate,
+            end: seasonEndWeekDate || null,
+        };
+
+        if (!previousPeriod) {
+            previousSeasonPeriodRef.current = nextPeriod;
+            return;
+        }
+
+        const currentGroups = groupsRef.current;
+        const currentDefaultPeriod = resolveDefaultSeasonPeriod(nextPeriod, currentGroups);
+        const syncPeriods = [
+            previousPeriod,
+            ...(isSameRegroupingPeriod(currentDefaultPeriod, nextPeriod) ? [] : [currentDefaultPeriod]),
+        ].filter((period, index, periods) => (
+            !isSameRegroupingPeriod(period, nextPeriod) &&
+            periods.findIndex(candidate => isSameRegroupingPeriod(candidate, period)) === index
+        ));
+
+        if (syncPeriods.length === 0) {
+            previousSeasonPeriodRef.current = nextPeriod;
+            return;
+        }
+
+        const syncedGroupIds = new Set(
+            currentGroups
+                .filter(group => syncPeriods.some(period => isSeasonFullPeriodRow(group, period)))
+                .map(group => group.id)
+        );
+
+        setGroups(prev => prev.map(group => {
+            const shouldSync = syncPeriods.some(period => isSeasonFullPeriodRow(group, period));
+            if (!shouldSync) return group;
+            return {
+                ...group,
+                starts_week_date: nextPeriod.start,
+                ends_week_date: nextPeriod.end,
+            };
+        }));
+
+        setSeasonArchivedGroups(prev => prev.map(group => (
+            syncPeriods.some(period => isSeasonFullPeriodRow(group, period))
+                ? {
+                    ...group,
+                    starts_week_date: nextPeriod.start,
+                    ends_week_date: nextPeriod.end,
+                }
+                : group
+        )));
+
+        setLocalMembers(prev => prev.map(member => (
+            syncPeriods.some(period => isSeasonFullPeriodRow(member, period)) &&
+            (!member.group_id || syncedGroupIds.has(member.group_id))
+                ? {
+                    ...member,
+                    starts_week_date: nextPeriod.start,
+                    ends_week_date: nextPeriod.end,
+                }
+                : member
+        )));
+
+        previousSeasonPeriodRef.current = nextPeriod;
+    }, [regroupingMode, selectedSeasonId, seasonEffectiveWeekDate, seasonEndWeekDate]);
 
     const stats = useMemo(() => {
         const people = new Map<string, { assigned: boolean }>();
@@ -2864,6 +3612,8 @@ function RegroupingPageInner() {
                                             const statusMeta = getSeasonStatusMeta(season, todayInputValue);
                                             const StatusIcon = statusMeta.icon;
                                             const canApplyThisSeason = season.status !== 'applied' && season.effective_week_date <= todayInputValue;
+                                            const canDeleteThisSeason = ['draft', 'ready'].includes(season.status)
+                                                && season.effective_week_date > todayInputValue;
 
                                             return (
                                                 <tr key={season.id} className="transition hover:bg-slate-50/80 dark:hover:bg-slate-950/40">
@@ -2902,6 +3652,21 @@ function RegroupingPageInner() {
                                                                     className="inline-flex h-9 items-center justify-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white transition hover:bg-emerald-500 active:scale-95"
                                                                 >
                                                                     적용 검토
+                                                                </button>
+                                                            )}
+                                                            {canDeleteThisSeason && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDeletePendingSeason(season.id)}
+                                                                    disabled={deletingSeasonId === season.id}
+                                                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-rose-100 bg-rose-50 px-3 text-xs font-black text-rose-600 transition hover:border-rose-200 hover:bg-rose-100 active:scale-95 disabled:cursor-wait disabled:opacity-60"
+                                                                >
+                                                                    {deletingSeasonId === season.id ? (
+                                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                                    ) : (
+                                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                                    )}
+                                                                    삭제
                                                                 </button>
                                                             )}
                                                         </div>
@@ -2981,7 +3746,7 @@ function RegroupingPageInner() {
                                         className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-black text-white transition hover:bg-blue-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 sm:px-5"
                                     >
                                         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                        {isSelectedCurrentAppliedSeason ? '현재 시즌 저장' : '초안 저장'}
+                                        {shouldSaveSelectedAppliedSeasonShellOnly ? '시즌 기간 저장' : isSelectedCurrentAppliedSeason ? '현재 시즌 저장' : '초안 저장'}
                                     </button>
                                     {selectedSeasonId && !isSelectedSeasonApplied && !isSeasonEffectiveFuture ? (
                                         <button
@@ -3017,12 +3782,12 @@ function RegroupingPageInner() {
                                             type="text"
                                             value={seasonTitle}
                                             onChange={(event) => setSeasonTitle(event.target.value)}
-                                            disabled={isSelectedSeasonLocked}
+                                            disabled={isSelectedSeasonLocked && !canEditSelectedSeasonShell}
                                             placeholder={`${selectedDepartment?.name || '선택 부서'} 다음 시즌 조편성`}
                                             className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                         />
                                     </label>
-                                    {isSelectedCurrentAppliedSeason ? (
+                                    {isSelectedSeasonLocked && !canEditSelectedSeasonShell ? (
                                         <div className="rounded-xl border border-blue-100 bg-white p-3 dark:border-blue-500/20 dark:bg-slate-950">
                                             <span className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-600">현재 시즌 기간</span>
                                             <p className="mt-1 text-xs font-black text-slate-700 dark:text-slate-100">
@@ -3044,7 +3809,8 @@ function RegroupingPageInner() {
                                                     <input
                                                         type="date"
                                                         value={seasonEffectiveWeekDate}
-                                                        disabled={isSelectedSeasonLocked}
+                                                        min={!selectedSeasonId ? suggestedNextSeasonStartWeek : undefined}
+                                                        disabled={isSelectedSeasonLocked && !canEditSelectedSeasonShell}
                                                         onChange={(event) => {
                                                             const nextStart = snapDateInputToSunday(event.target.value);
                                                             setSeasonEffectiveWeekDate(nextStart);
@@ -3063,7 +3829,7 @@ function RegroupingPageInner() {
                                                         type="date"
                                                         value={seasonEndWeekDate}
                                                         min={seasonEffectiveWeekDate}
-                                                        disabled={isSelectedSeasonLocked}
+                                                        disabled={isSelectedSeasonLocked && !canEditSelectedSeasonShell}
                                                         onChange={(event) => {
                                                             setSeasonEndWeekDate(snapDateInputToSunday(event.target.value));
                                                             setHasChanges(true);
@@ -3083,6 +3849,11 @@ function RegroupingPageInner() {
                                                     </span>
                                                 </label>
                                             </div>
+                                            {seasonPeriodConflict ? (
+                                                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                                                    기존 시즌과 기간이 겹칩니다: {formatSeasonConflictLabel(seasonPeriodConflict)}
+                                                </div>
+                                            ) : null}
                                         </div>
                                     )}
                                     {!selectedSeasonId && !isSelectedCurrentAppliedSeason && (
@@ -3132,12 +3903,12 @@ function RegroupingPageInner() {
                                         type="text"
                                         value={seasonTitle}
                                         onChange={(event) => setSeasonTitle(event.target.value)}
-                                        disabled={isSelectedSeasonLocked}
+                                        disabled={isSelectedSeasonLocked && !canEditSelectedSeasonShell}
                                         placeholder={`${selectedDepartment?.name || '선택 부서'} 다음 시즌 조편성`}
                                         className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none transition focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                     />
                                 </label>
-                                {isSelectedCurrentAppliedSeason ? (
+                                {isSelectedSeasonLocked && !canEditSelectedSeasonShell ? (
                                     <>
                                         <div className="space-y-1.5 xl:col-span-2">
                                             <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">시즌 기간</span>
@@ -3154,7 +3925,8 @@ function RegroupingPageInner() {
                                                 <input
                                                     type="date"
                                                     value={seasonEffectiveWeekDate}
-                                                    disabled={isSelectedSeasonLocked}
+                                                    min={!selectedSeasonId ? suggestedNextSeasonStartWeek : undefined}
+                                                    disabled={isSelectedSeasonLocked && !canEditSelectedSeasonShell}
                                                     onChange={(event) => {
                                                         const nextStart = snapDateInputToSunday(event.target.value);
                                                         setSeasonEffectiveWeekDate(nextStart);
@@ -3177,7 +3949,7 @@ function RegroupingPageInner() {
                                                     type="date"
                                                     value={seasonEndWeekDate}
                                                     min={seasonEffectiveWeekDate}
-                                                    disabled={isSelectedSeasonLocked}
+                                                    disabled={isSelectedSeasonLocked && !canEditSelectedSeasonShell}
                                                     onChange={(event) => {
                                                         setSeasonEndWeekDate(snapDateInputToSunday(event.target.value));
                                                         setHasChanges(true);
@@ -3214,6 +3986,11 @@ function RegroupingPageInner() {
                                                 </button>
                                             )}
                                         </div>
+                                        {seasonPeriodConflict ? (
+                                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[11px] font-bold leading-5 text-amber-800 xl:col-span-4 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                                                기존 시즌과 기간이 겹칩니다: {formatSeasonConflictLabel(seasonPeriodConflict)}
+                                            </div>
+                                        ) : null}
                                     </>
                                 )}
                             </>

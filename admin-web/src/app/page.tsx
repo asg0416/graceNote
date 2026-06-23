@@ -268,6 +268,11 @@ export default function DashboardPage() {
         return;
       }
 
+      if (!data) {
+        router.replace('/upgrade');
+        return;
+      }
+
       setProfile(data);
       await fetchDashboardData(data);
       setLoading(false);
