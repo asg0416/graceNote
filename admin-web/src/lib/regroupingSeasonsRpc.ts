@@ -130,6 +130,19 @@ export const applyRegroupingSeason = async (
     return data;
 };
 
+export const deletePendingRegroupingSeason = async (
+    supabase: RpcClientLike,
+    payload: { seasonId: string }
+) => {
+    const { data, error } = await supabase.rpc<boolean>('delete_pending_regrouping_season', {
+        p_season_id: payload.seasonId,
+    });
+
+    assertNoRpcError(error, '적용 대기 조편성 계획 삭제에 실패했습니다.');
+
+    return data === true;
+};
+
 export const syncCurrentRegroupingSeasonPlanFromLive = async (
     supabase: RpcClientLike,
     payload: { seasonId: string }

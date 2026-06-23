@@ -152,17 +152,28 @@ export const mapRegroupingSeasonDraftToBoard = ({
             const sourceMembership = getNestedRecord(assignment.source_membership);
             const sourceMembershipGroup = getNestedRecord(sourceMembership.group);
             const previousSourceGroup = getNestedRecord(assignment.previous_source_group);
+            const changeType = getText(assignment.change_type) || null;
             const sourceDirectoryId = typeof assignment.source_member_directory_id === 'string'
                 ? assignment.source_member_directory_id
                 : typeof sourceMembership.legacy_member_directory_id === 'string'
                     ? sourceMembership.legacy_member_directory_id
                     : null;
-            const resolvedSourceGroupName = getText(
-                getGroupLabel(sourceMembershipGroup.name),
-                getGroupLabel(previousSourceGroup.name),
-                getGroupLabel(directory.group_name),
-                getGroupLabel(assignment.previous_group_name),
-            );
+            const resolvedSourceGroupName = ['moved', 'removed'].includes(changeType || '')
+                ? getText(
+                    getGroupLabel(assignment.previous_group_name),
+                    getGroupLabel(previousSourceGroup.name),
+                    getGroupLabel(sourceMembershipGroup.name),
+                    getGroupLabel(directory.group_name),
+                )
+                : getText(
+                    getGroupLabel(sourceMembershipGroup.name),
+                    getGroupLabel(previousSourceGroup.name),
+                    getGroupLabel(directory.group_name),
+                    getGroupLabel(assignment.previous_group_name),
+                );
+            const resolvedSourceGroupId = ['moved', 'removed'].includes(changeType || '')
+                ? getText(assignment.previous_source_group_id, sourceMembership.group_id) || null
+                : getText(sourceMembership.group_id, assignment.previous_source_group_id) || null;
 
             return {
                 id: `season-${String(assignment.id || '')}`,
@@ -184,10 +195,10 @@ export const mapRegroupingSeasonDraftToBoard = ({
                 person_id: String(assignment.person_id || ''),
                 phase2_person_id: String(assignment.person_id || ''),
                 phase2_membership_id: typeof assignment.source_membership_id === 'string' ? assignment.source_membership_id : null,
-                plan_change_type: getText(assignment.change_type) || null,
+                plan_change_type: changeType,
                 previous_source_group_id: getText(assignment.previous_source_group_id) || null,
                 previous_group_name: getText(assignment.previous_group_name) || null,
-                source_membership_group_id: typeof sourceMembership.group_id === 'string' ? sourceMembership.group_id : null,
+                source_membership_group_id: resolvedSourceGroupId,
                 source_membership_group_name: resolvedSourceGroupName || null,
                 source_member_directory_id: sourceDirectoryId,
                 starts_week_date: getDateText(assignment.starts_week_date),

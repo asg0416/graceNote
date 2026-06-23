@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   applyRegroupingSeason,
   createRegroupingSeason,
+  deletePendingRegroupingSeason,
   registerCurrentRegroupingSeason,
   saveRegroupingSeasonDraft,
   syncCurrentRegroupingSeasonPlanFromLive,
@@ -137,6 +138,24 @@ test('applyRegroupingSeason surfaces rpc errors', async () => {
     () => applyRegroupingSeason(client, { seasonId: 'season-1' }),
     /season already applied/
   );
+});
+
+test('deletePendingRegroupingSeason sends only season id to pending delete rpc', async () => {
+  const { client, calls } = createRpcClient({ data: true, error: null });
+
+  const result = await deletePendingRegroupingSeason(client, {
+    seasonId: 'season-pending-1',
+  });
+
+  assert.equal(result, true);
+  assert.deepEqual(calls, [
+    {
+      functionName: 'delete_pending_regrouping_season',
+      args: {
+        p_season_id: 'season-pending-1',
+      },
+    },
+  ]);
 });
 
 test('syncCurrentRegroupingSeasonPlanFromLive returns normalized synced counts', async () => {
