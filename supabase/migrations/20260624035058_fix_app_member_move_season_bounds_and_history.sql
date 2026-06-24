@@ -287,7 +287,8 @@ begin
            and v_source_assignment_id <> v_target_assignment_id then
           if v_source_assignment_end_week >= v_source_assignment_start_week then
             update public.regrouping_plan_assignments
-            set starts_week_date = v_source_assignment_start_week,
+            set plan_group_id = coalesce(plan_group_id, v_source_plan_group_id),
+                starts_week_date = v_source_assignment_start_week,
                 ends_week_date = v_source_assignment_end_week,
                 updated_at = now()
             where id = v_source_assignment_id;
@@ -313,7 +314,8 @@ begin
       else
         if v_source_assignment_id is not null then
           update public.regrouping_plan_assignments
-          set starts_week_date = v_source_assignment_start_week,
+          set plan_group_id = coalesce(plan_group_id, v_source_plan_group_id),
+              starts_week_date = v_source_assignment_start_week,
               ends_week_date = v_source_assignment_end_week,
               updated_at = now()
           where id = v_source_assignment_id;
