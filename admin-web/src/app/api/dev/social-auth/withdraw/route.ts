@@ -13,9 +13,29 @@ function getRepoRoot() {
     : process.cwd();
 }
 
-function isDevToolAllowed() {
+function isLocalHost(value: string) {
+  const host = value.split(',')[0]?.trim().toLowerCase() ?? '';
+  return (
+    host === 'localhost' ||
+    host.startsWith('localhost:') ||
+    host === '127.0.0.1' ||
+    host.startsWith('127.0.0.1:') ||
+    host === '[::1]' ||
+    host.startsWith('[::1]:') ||
+    host === '::1'
+  );
+}
+
+function isDevToolAllowed(req: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  return process.env.NODE_ENV !== 'production' && supabaseUrl.includes('eftdf');
+  const host = req.headers.get('host') ?? '';
+  const forwardedHost = req.headers.get('x-forwarded-host') ?? '';
+  return (
+    process.env.NODE_ENV !== 'production' &&
+    supabaseUrl.includes('eftdf') &&
+    isLocalHost(host) &&
+    (!forwardedHost || isLocalHost(forwardedHost))
+  );
 }
 
 function isValidEmail(email: string) {
@@ -27,7 +47,7 @@ function isValidUuid(value: string) {
 }
 
 export async function POST(req: Request) {
-  if (!isDevToolAllowed()) {
+  if (!isDevToolAllowed(req)) {
     return NextResponse.json(
       { error: '이 기능은 eftdf 개발 서버의 로컬 개발 환경에서만 사용할 수 있습니다.' },
       { status: 403 }

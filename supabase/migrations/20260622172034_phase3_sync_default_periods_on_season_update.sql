@@ -92,48 +92,37 @@ begin
     v_default_plan_group_end := null;
   end if;
 
-  update public.regrouping_plan_groups rpg
+  update public.regrouping_plan_groups
   set starts_week_date = p_effective_week_date,
       ends_week_date = p_end_week_date,
       updated_at = now()
-  where rpg.season_id = p_season_id
+  where season_id = p_season_id
     and (
       (
-        rpg.starts_week_date is not distinct from v_old_effective_week_date
-        and rpg.ends_week_date is not distinct from v_old_end_week_date
+        starts_week_date is not distinct from v_old_effective_week_date
+        and ends_week_date is not distinct from v_old_end_week_date
       )
       or (
         v_default_plan_group_start is not null
-        and rpg.starts_week_date is not distinct from v_default_plan_group_start
-        and rpg.ends_week_date is not distinct from v_default_plan_group_end
+        and starts_week_date is not distinct from v_default_plan_group_start
+        and ends_week_date is not distinct from v_default_plan_group_end
       )
     );
 
-  update public.regrouping_plan_assignments rpa
+  update public.regrouping_plan_assignments
   set starts_week_date = p_effective_week_date,
       ends_week_date = p_end_week_date,
       updated_at = now()
-  where rpa.season_id = p_season_id
+  where season_id = p_season_id
     and (
       (
-        rpa.starts_week_date is not distinct from v_old_effective_week_date
-        and rpa.ends_week_date is not distinct from v_old_end_week_date
+        starts_week_date is not distinct from v_old_effective_week_date
+        and ends_week_date is not distinct from v_old_end_week_date
       )
       or (
         v_default_plan_group_start is not null
-        and rpa.starts_week_date is not distinct from v_default_plan_group_start
-        and rpa.ends_week_date is not distinct from v_default_plan_group_end
-      )
-    )
-    and (
-      rpa.plan_group_id is null
-      or exists (
-        select 1
-        from public.regrouping_plan_groups updated_rpg
-        where updated_rpg.id = rpa.plan_group_id
-          and updated_rpg.season_id = p_season_id
-          and updated_rpg.starts_week_date is not distinct from p_effective_week_date
-          and updated_rpg.ends_week_date is not distinct from p_end_week_date
+        and starts_week_date is not distinct from v_default_plan_group_start
+        and ends_week_date is not distinct from v_default_plan_group_end
       )
     );
 

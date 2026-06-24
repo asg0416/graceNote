@@ -479,7 +479,7 @@ test('mapRegroupingSeasonDraftToBoard restores removed assignment group name fro
   assert.equal(result.members[0].plan_change_type, 'removed');
   assert.equal(result.members[0].previous_source_group_id, '66666666-6666-4666-8666-666666666666');
   assert.equal(result.members[0].previous_group_name, '효석 해비 조');
-  assert.equal(result.members[0].source_membership_group_id, null);
+  assert.equal(result.members[0].source_membership_group_id, '66666666-6666-4666-8666-666666666666');
   assert.equal(result.members[0].source_membership_group_name, '효석 해비 조');
 });
 

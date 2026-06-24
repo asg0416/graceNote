@@ -8,7 +8,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export default function DevSocialAuthToolPage() {
-  const [target, setTarget] = useState('asg0416@naver.com');
+  const [target, setTarget] = useState('');
   const [confirmText, setConfirmText] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
