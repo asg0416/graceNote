@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isRegroupingBoardReadonly, shouldShowSeasonMemberPeriodChange } from './regroupingSeasonUiState.ts';
+import {
+  isMoveSourceMembershipPeriodClosure,
+  isRegroupingBoardReadonly,
+  shouldShowSeasonMemberPeriodChange,
+} from './regroupingSeasonUiState.ts';
 
 test('applied season boards are read-only', () => {
   assert.equal(isRegroupingBoardReadonly('season', 'applied'), true);
@@ -39,6 +43,66 @@ test('period change is hidden only when current and baseline both match expected
       expectedEnd: '2026-06-28',
       baselineStart: '2026-02-01',
       baselineEnd: '2026-06-28',
+    }),
+    false
+  );
+});
+
+test('move source membership closures are not treated as standalone period adjustments', () => {
+  const sourceMembership = {
+    id: 'source-row',
+    phase2_person_id: 'person-1',
+    group_id: 'plan-group-3',
+    source_membership_group_id: 'live-group-3',
+    starts_week_date: '2026-06-14',
+    ends_week_date: '2026-06-14',
+  };
+  const movedMembership = {
+    id: 'moved-row',
+    phase2_person_id: 'person-1',
+    group_id: 'plan-group-1',
+    plan_change_type: 'moved',
+    previous_source_group_id: 'live-group-3',
+    starts_week_date: '2026-06-21',
+    ends_week_date: '2026-12-27',
+  };
+
+  assert.equal(
+    isMoveSourceMembershipPeriodClosure({
+      member: sourceMembership,
+      allMembers: [sourceMembership, movedMembership],
+      currentSourceGroupId: 'live-group-3',
+      seasonEffectiveWeekDate: '2026-06-14',
+    }),
+    true
+  );
+});
+
+test('manual period adjustments remain visible when they are not paired with a move', () => {
+  const sourceMembership = {
+    id: 'source-row',
+    phase2_person_id: 'person-1',
+    group_id: 'plan-group-3',
+    source_membership_group_id: 'live-group-3',
+    starts_week_date: '2026-06-14',
+    ends_week_date: '2026-06-21',
+  };
+  const movedMembership = {
+    id: 'moved-row',
+    phase2_person_id: 'person-1',
+    group_id: 'plan-group-1',
+    plan_change_type: 'moved',
+    previous_source_group_id: 'live-group-3',
+    starts_week_date: '2026-06-21',
+    ends_week_date: '2026-12-27',
+  };
+
+  assert.equal(
+    isMoveSourceMembershipPeriodClosure({
+      member: sourceMembership,
+      allMembers: [sourceMembership, movedMembership],
+      currentSourceGroupId: 'live-group-3',
+      seasonEffectiveWeekDate: '2026-06-14',
     }),
     false
   );

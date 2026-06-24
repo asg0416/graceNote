@@ -34,7 +34,10 @@ import { cn } from '@/lib/utils';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { MemberModal } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
-import { shouldShowSeasonMemberPeriodChange } from '@/lib/regroupingSeasonUiState';
+import {
+    isMoveSourceMembershipPeriodClosure,
+    shouldShowSeasonMemberPeriodChange,
+} from '@/lib/regroupingSeasonUiState';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
 import {
@@ -3185,6 +3188,18 @@ function RegroupingPageInner() {
                     }
                     if (!nextGroupId) return null;
                     const nextGroup = groups.find(group => group.id === nextGroupId);
+                    const currentSourceGroupId = nextGroup?.source_group_id || (nextGroup?.id && !String(nextGroup.id).startsWith('temp-') ? nextGroup.id : null);
+                    if (
+                        !persistedChangeType &&
+                        isMoveSourceMembershipPeriodClosure({
+                            member,
+                            allMembers: localMembers,
+                            currentSourceGroupId,
+                            seasonEffectiveWeekDate,
+                        })
+                    ) {
+                        return null;
+                    }
                     const previousGroupName =
                         getValidRegroupingGroupLabel(member.previous_group_name) ||
                         getValidRegroupingGroupLabel(member.source_membership_group_name) ||
@@ -3252,6 +3267,22 @@ function RegroupingPageInner() {
                     && !nextGroupId
                     && Boolean(originalSourceGroupId || originalSourceGroupName || persistedPreviousGroupName);
                 const persistedRemovedMembership = persistedChangeType === 'removed';
+                const isSourcePeriodClosureForMove = periodChanged && isMoveSourceMembershipPeriodClosure({
+                    member,
+                    allMembers: localMembers,
+                    currentSourceGroupId,
+                    seasonEffectiveWeekDate,
+                });
+                if (
+                    isSourcePeriodClosureForMove &&
+                    !runtimeGroupChanged &&
+                    !persistedGroupChanged &&
+                    !persistedAddedMembership &&
+                    !persistedRemovedMembership &&
+                    !persistedUnassignedMove
+                ) {
+                    return null;
+                }
                 if (!runtimeGroupChanged && !persistedGroupChanged && !persistedAddedMembership && !persistedRemovedMembership && !persistedUnassignedMove && !periodChanged) return null;
                 const previousGroup = baselineGroups.find(group => group.id === previousGroupId);
                 const nextGroup = groups.find(group => group.id === nextGroupId);

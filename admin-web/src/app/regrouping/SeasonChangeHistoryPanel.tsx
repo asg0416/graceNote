@@ -62,8 +62,8 @@ const memberChangeMeta: Record<MovedSeasonMember['changeType'], {
         groupClassName: 'bg-rose-100 text-rose-800 dark:bg-rose-400/10 dark:text-rose-200',
     },
     period: {
-        // 조 이동 없이 소속 기간(시작/종료 주차)만 변경된 경우
-        label: '기간 보정',
+        // 조 이동 없이 소속 적용 기간만 기본 기간과 다르게 설정된 경우
+        label: '기간 조정',
         tabClassName: 'bg-amber-50 text-amber-700 ring-1 ring-amber-100 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20',
         activeTabClassName: 'bg-amber-500 text-white shadow-sm shadow-amber-500/20',
         rowClassName: 'border-amber-100 bg-amber-50/55 dark:border-amber-500/20 dark:bg-amber-500/10',
@@ -253,7 +253,7 @@ export function SeasonChangeHistoryPanel({
                             </span>
                         </div>
                         <p className="mt-1 text-xs font-bold text-slate-400">
-                            현재/과거 시즌 안에서 조와 성도 소속이 언제부터 언제까지 유효한지 확인하고 필요한 기간만 보정합니다.
+                            시즌 안에서 조와 성도 소속이 실제로 유효한 기간을 확인하고, 기본 기간과 다른 소속 기간만 조정합니다.
                         </p>
                     </div>
                     <ChevronDown className="h-5 w-5 shrink-0 text-slate-400 transition group-open:rotate-180" />
@@ -485,13 +485,13 @@ export function SeasonChangeHistoryPanel({
                                                                 : member.changeType === 'removed'
                                                                     ? '이 조 소속만 종료됨 — 아래 기간 설정이 앱에 반영'
                                                                     : member.changeType === 'period'
-                                                                        ? '조/시즌 기간과 맞지 않아 보정 필요'
+                                                                        ? '조는 그대로이고 적용 시작·마지막 주차만 기본 기간과 다름'
                                                                     : `${member.previousGroupName}에서 이동 — 이전 조 소속 사라짐`}
                                                         </span>
                                                     </div>
                                                     {member.changeType === 'period' && (
                                                         <p className="mt-1 text-[10px] font-bold text-amber-700/80 dark:text-amber-200/80">
-                                                            권장 기간: {member.recommended_starts_week_date || seasonEffectiveWeekDate} ~ {member.recommended_ends_week_date || seasonEndWeekDate}
+                                                            기본 기간: {member.recommended_starts_week_date || seasonEffectiveWeekDate} ~ {member.recommended_ends_week_date || seasonEndWeekDate}
                                                         </p>
                                                     )}
                                                 </div>
@@ -555,9 +555,9 @@ export function SeasonChangeHistoryPanel({
                                             <li><span className="font-black text-blue-600">소속 이동</span>: 드래그앤드롭으로 다른 조로 옮김 → 이전 조 소속이 사라지고 새 조로 변경됨</li>
                                             <li><span className="font-black text-emerald-600">다중 소속 추가</span>: 복사(다중편성)로 추가됨 → 이전 조 소속은 유지되고 이 조에도 동시에 속함</li>
                                             <li><span className="font-black text-rose-600">소속 종료</span>: 특정 조 소속을 끝냄 → 미편성 전환, 조 종료, 다중소속 일부 제거가 여기에 포함됨</li>
-                                            <li><span className="font-black text-amber-600">기간 보정</span>: 조 이동 없이 소속 시작·종료 주차만 변경됨</li>
+                                            <li><span className="font-black text-amber-600">기간 조정</span>: 조 이동은 없고, 그 조에 포함되는 시작·마지막 주차만 시즌/조 기본 기간과 다르게 둔 항목</li>
                                         </ul>
-                                        <p className="mt-1.5 text-slate-400">※ 이 영역은 이동 로그가 아닌 시즌 내 성도-조 소속 기간을 조정하는 곳입니다. 저장 후 앱에 반영됩니다.</p>
+                                        <p className="mt-1.5 text-slate-400">※ 소속 이동으로 자동 종료된 이전 조 구간은 소속 이동으로만 봅니다. 기간 조정은 오류 표시가 아니라 별도 확인·일괄 정리가 필요한 소속 기간만 모아 둔 탭입니다. 저장 후 앱과 출석 집계에 반영됩니다.</p>
                                     </div>
                                 </div>
                             )}
