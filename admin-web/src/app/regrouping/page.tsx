@@ -3907,21 +3907,15 @@ function RegroupingPageInner() {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleLoadSeasonDraft(season.id)}
-                                                                className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:border-blue-200 hover:text-blue-600 active:scale-95 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                                                                className={cn(
+                                                                    "inline-flex h-9 items-center justify-center rounded-xl px-3 text-xs font-black transition active:scale-95",
+                                                                    canApplyThisSeason
+                                                                        ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                                                                        : "border border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                                                                )}
                                                             >
-                                                                열기
+                                                                {canApplyThisSeason ? '적용 검토' : '열기'}
                                                             </button>
-                                                            {canApplyThisSeason && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={async () => {
-                                                                        await handleLoadSeasonDraft(season.id);
-                                                                    }}
-                                                                    className="inline-flex h-9 items-center justify-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white transition hover:bg-emerald-500 active:scale-95"
-                                                                >
-                                                                    적용 검토
-                                                                </button>
-                                                            )}
                                                             {canDeleteThisSeason && (
                                                                 <button
                                                                     type="button"
