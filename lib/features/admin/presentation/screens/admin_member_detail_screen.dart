@@ -554,8 +554,10 @@ class _AdminMemberDetailScreenState
     );
   }
 
-  void _showMoveGroupDialog() {
-    showDialog(
+  Future<void> _showMoveGroupDialog() async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final movedGroupName = await showDialog<String>(
       context: context,
       builder: (context) => _MoveGroupDialog(
         departmentId: widget.departmentId,
@@ -564,6 +566,13 @@ class _AdminMemberDetailScreenState
         directoryMemberId: widget.directoryMemberId,
         memberFullName: widget.fullName,
       ),
+    );
+
+    if (!mounted || movedGroupName == null) return;
+
+    await navigator.maybePop();
+    messenger.showSnackBar(
+      SnackBar(content: Text('$movedGroupName로 이동되었습니다.')),
     );
   }
 }
@@ -830,11 +839,7 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
       if (profileId != null) ref.invalidate(userProfileProvider);
 
       if (mounted) {
-        Navigator.pop(context); // Close dialog
-        Navigator.pop(context); // Go back
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${targetGroup['name']}로 이동되었습니다.')),
-        );
+        Navigator.of(context).pop(targetGroup['name']?.toString() ?? '선택한 조');
       }
     } catch (e) {
       if (mounted) {
