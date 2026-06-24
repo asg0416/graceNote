@@ -44,6 +44,7 @@ import {
     shouldCreateHistoricalUnassignedMoveRows,
     shouldAutoSyncRegroupingSeasonPeriodRows,
     shouldShowSeasonMemberPeriodChange,
+    shouldKeepMappedRegroupingSeasonMember,
 } from '@/lib/regroupingSeasonUiState';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
@@ -3044,11 +3045,7 @@ function RegroupingPageInner() {
             liveMemberByIdentityAndGroup.set(`${identityKey}|${member.group_id || 'unassigned'}`, member);
         });
         const mappedCurrentMembers = mapped.members
-            .filter(member => (
-                isRegroupingRemovedMembershipRow(member) ||
-                Boolean(member.group_id) ||
-                member.is_active !== false
-            ))
+            .filter(shouldKeepMappedRegroupingSeasonMember)
             .map(member => {
                 const identityKey = getRegroupingIdentityKey(member);
                 const liveMatch =

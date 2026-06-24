@@ -55,6 +55,7 @@ type SeasonMemberPeriodChangeInput = {
 
 type SeasonMembershipRow = {
   id?: string | null;
+  season_assignment_id?: string | null;
   phase2_person_id?: string | null;
   person_id?: string | null;
   source_member_directory_id?: string | null;
@@ -67,6 +68,7 @@ type SeasonMembershipRow = {
   ends_week_date?: string | null;
   plan_change_type?: string | null;
   change_type?: string | null;
+  is_active?: boolean | null;
 };
 
 const normalizeWeekDate = (value?: string | null) => value || null;
@@ -76,6 +78,14 @@ const normalizeText = (value?: string | null) =>
 
 const normalizePhone = (value?: string | null) =>
   typeof value === 'string' ? value.replace(/[^0-9]/g, '') : '';
+
+export const shouldKeepMappedRegroupingSeasonMember = (member: SeasonMembershipRow) => {
+  const changeType = normalizeText(member.plan_change_type) || normalizeText(member.change_type);
+  if (changeType === 'removed') return true;
+  if (normalizeText(member.group_id)) return true;
+  if (normalizeText(member.season_assignment_id)) return true;
+  return member.is_active !== false;
+};
 
 const getSeasonMembershipIdentityKey = (member: SeasonMembershipRow) => {
   const id = normalizeText(member.phase2_person_id)

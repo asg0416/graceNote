@@ -6,6 +6,7 @@ import {
   isRegroupingSeasonPeriodCoveringDate,
   shouldCreateHistoricalUnassignedMoveRows,
   shouldAutoSyncRegroupingSeasonPeriodRows,
+  shouldKeepMappedRegroupingSeasonMember,
   isMoveSourceMembershipPeriodClosure,
   isRegroupingBoardReadonly,
   shouldShowSeasonMemberPeriodChange,
@@ -58,6 +59,18 @@ test('applied season period edits do not auto-sync board row periods', () => {
     shouldAutoSyncRegroupingSeasonPeriodRows({
       mode: 'season',
       seasonStatus: 'draft',
+    }),
+    true
+  );
+});
+
+test('inactive unassigned season assignment rows stay visible as planned unassigned members', () => {
+  assert.equal(
+    shouldKeepMappedRegroupingSeasonMember({
+      season_assignment_id: 'assignment-unassigned',
+      group_id: null,
+      is_active: false,
+      plan_change_type: null,
     }),
     true
   );
