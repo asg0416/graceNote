@@ -4105,7 +4105,7 @@ function RegroupingPageInner() {
                     </details>
 
                     <div className={cn(
-                        "hidden gap-3 rounded-2xl border p-4 xl:grid xl:grid-cols-[minmax(220px,1fr)_minmax(200px,0.75fr)_minmax(200px,0.75fr)_auto]",
+                        "hidden gap-3 rounded-2xl border p-4 xl:grid xl:grid-cols-[minmax(220px,1fr)_minmax(200px,0.75fr)_minmax(240px,0.75fr)]",
                         regroupingMode === 'live'
                             ? "border-amber-200 bg-amber-50/70"
                             : "border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/60"
@@ -4185,12 +4185,12 @@ function RegroupingPageInner() {
                                             </div>
                                         </label>
                                         {!selectedSeasonId && (
-                                            <div className="flex items-end justify-start">
+                                            <div className="flex items-center justify-end border-t border-slate-200 pt-3 xl:col-span-3 dark:border-slate-800">
                                                 <Tooltip content={LOAD_CURRENT_BOARD_HELP_TEXT} position="bottom" className="w-fit">
                                                     <button
                                                         type="button"
                                                         onClick={handleLoadCurrentBoardIntoSeason}
-                                                        className="inline-flex h-10 w-fit items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800 dark:bg-slate-950"
+                                                        className="inline-flex h-10 min-w-40 items-center justify-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800 dark:bg-slate-950"
                                                     >
                                                         현재 조편성 불러오기
                                                     </button>
@@ -4198,7 +4198,7 @@ function RegroupingPageInner() {
                                             </div>
                                         )}
                                         {seasonPeriodConflict ? (
-                                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[11px] font-bold leading-5 text-amber-800 xl:col-span-4 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[11px] font-bold leading-5 text-amber-800 xl:col-span-3 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
                                                 기존 시즌과 기간이 겹칩니다: {formatSeasonConflictLabel(seasonPeriodConflict)}
                                             </div>
                                         ) : null}
@@ -4225,7 +4225,7 @@ function RegroupingPageInner() {
                                         </span>
                                     </div>
                                 </label>
-                                <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-xs font-black text-amber-800 xl:col-span-3">
+                                <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-xs font-black text-amber-800 xl:col-span-2">
                                     <span>저장 즉시 반영</span>
                                     <Tooltip content="현재/과거 보정은 저장 즉시 실제 소속에 반영됩니다. 미래 조편성은 시즌 초안에서 준비하세요.">
                                         <HelpCircle className="h-4 w-4 text-amber-500" />
