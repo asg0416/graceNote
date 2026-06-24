@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
+import 'package:grace_note/features/admin/presentation/widgets/effective_week_picker_field.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' hide DateFormat;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdminMemberDetailScreen extends ConsumerStatefulWidget {
@@ -765,42 +766,10 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
                     fontFamily: 'Pretendard',
                     letterSpacing: -0.2)),
             const SizedBox(height: 10),
-            InkWell(
-              onTap: _isSaving ? null : _pickEffectiveWeek,
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: AppTheme.background,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(LucideIcons.calendarDays,
-                        size: 18, color: AppTheme.primaryViolet),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        DateFormat('yyyy. M. d.').format(_effectiveWeekDate),
-                        style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.textMain,
-                            fontFamily: 'Pretendard'),
-                      ),
-                    ),
-                    const Text('이 주차부터 반영',
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.textSub,
-                            fontFamily: 'Pretendard')),
-                  ],
-                ),
-              ),
+            EffectiveWeekPickerField(
+              effectiveWeekDate: _effectiveWeekDate,
+              enabled: !_isSaving,
+              onTap: _pickEffectiveWeek,
             ),
           ],
         ),
