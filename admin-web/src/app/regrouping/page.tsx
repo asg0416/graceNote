@@ -592,6 +592,7 @@ function RegroupingPageInner() {
     const [autoMoveCouples, setAutoMoveCouples] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
+    const [isBoardToolbarCollapsed, setIsBoardToolbarCollapsed] = useState(false);
     const [effectiveWeekDate, setEffectiveWeekDate] = useState(getCurrentSundayInputValue);
     const [regroupingView, setRegroupingView] = useState<'list' | 'seasonEditor' | 'liveCorrection'>('list');
     const [regroupingMode, setRegroupingMode] = useState<'season' | 'live'>('season');
@@ -4286,40 +4287,65 @@ function RegroupingPageInner() {
             )}
 
             {regroupingView !== 'list' && (
-            <div className="bg-white/50 dark:bg-slate-900/10 rounded-3xl border border-slate-200/50 dark:border-slate-800/50 p-1 sm:p-2 shadow-inner overflow-hidden">
-                <div className="flex flex-col gap-3 border-b border-slate-200/50 bg-slate-50/50 px-5 py-3 dark:border-slate-800/50 dark:bg-slate-900/40 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex flex-wrap items-center gap-4">
-                        <div className="flex items-center gap-2">
-                            <kbd className="flex h-7 min-w-[40px] items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Drag</kbd>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">이동</span>
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white/70 shadow-sm shadow-slate-900/5 dark:border-slate-800 dark:bg-slate-900/20">
+                <div className={cn(
+                    "border-b border-slate-200 bg-slate-100/90 px-5 dark:border-slate-800 dark:bg-slate-900/70 sm:px-8",
+                    isBoardToolbarCollapsed ? "py-2" : "py-3"
+                )}>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0">
+                            {isBoardToolbarCollapsed ? (
+                                <div className="flex h-9 items-center gap-2">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">보드 도구</span>
+                                    <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-slate-400 dark:bg-slate-800">접힘</span>
+                                </div>
+                            ) : (
+                                <div className="flex flex-wrap items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <kbd className="flex h-7 min-w-[40px] items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Drag</kbd>
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">이동</span>
+                                    </div>
+                                    <div className="hidden h-3 w-px bg-slate-300 dark:bg-slate-700 sm:block" />
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="flex items-center gap-1.5">
+                                            <kbd className="flex h-7 min-w-[40px] items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black uppercase tracking-tighter text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Shift</kbd>
+                                            <span className="font-bold text-slate-400">+</span>
+                                            <kbd className="flex h-7 min-w-[40px] items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Drag</kbd>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">다른 조로 복사</span>
+                                            <span className="mt-0.5 rounded-md bg-white px-1.5 py-0.5 text-[9px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">Shift를 먼저 누른 채 드래그</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                        <div className="hidden h-3 w-px bg-slate-200 dark:bg-slate-800 sm:block" />
-                        <div className="flex items-center gap-2.5">
-                            <div className="flex items-center gap-1.5">
-                                <kbd className="flex h-7 min-w-[40px] items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black uppercase tracking-tighter text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Shift</kbd>
-                                <span className="font-bold text-slate-300">+</span>
-                                <kbd className="flex h-7 min-w-[40px] items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Drag</kbd>
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-500">다른 조로 복사</span>
-                                <span className="mt-0.5 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-slate-400 dark:bg-indigo-500/5">Shift를 먼저 누른 채 드래그</span>
-                            </div>
-                        </div>
-                    </div>
-                    {regroupingMode === 'season' && !selectedSeasonId && !isSelectedCurrentAppliedSeason && (
-                        <Tooltip content={LOAD_CURRENT_BOARD_HELP_TEXT} position="bottom" className="w-fit">
+                        <div className="flex flex-wrap items-center gap-2">
+                            {regroupingMode === 'season' && !selectedSeasonId && !isSelectedCurrentAppliedSeason && (
+                                <Tooltip content={LOAD_CURRENT_BOARD_HELP_TEXT} position="bottom" className="w-fit">
+                                    <button
+                                        type="button"
+                                        onClick={handleLoadCurrentBoardIntoSeason}
+                                        className="inline-flex h-9 w-fit items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800 dark:bg-slate-950"
+                                    >
+                                        <FileDown className="h-3.5 w-3.5" />
+                                        현재 조편성 불러오기
+                                    </button>
+                                </Tooltip>
+                            )}
                             <button
                                 type="button"
-                                onClick={handleLoadCurrentBoardIntoSeason}
-                                className="inline-flex h-9 w-fit items-center justify-center gap-2 self-start whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800 dark:bg-slate-950 lg:self-auto"
+                                onClick={() => setIsBoardToolbarCollapsed(prev => !prev)}
+                                aria-expanded={!isBoardToolbarCollapsed}
+                                className="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-black text-slate-600 transition hover:border-blue-200 hover:text-blue-600 active:scale-95 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
                             >
-                                <FileDown className="h-3.5 w-3.5" />
-                                현재 조편성 불러오기
+                                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", !isBoardToolbarCollapsed && "rotate-180")} />
+                                {isBoardToolbarCollapsed ? '펼치기' : '접기'}
                             </button>
-                        </Tooltip>
-                    )}
+                        </div>
+                    </div>
                 </div>
-                <div ref={boardRef} className="relative w-full overflow-x-auto custom-scrollbar p-5 sm:p-8 bg-white/30">
+                <div ref={boardRef} className="relative w-full overflow-x-auto bg-white/50 p-5 custom-scrollbar sm:p-8 dark:bg-slate-950/10">
                     <KanbanBoard
                         groups={groups}
                         members={sortedMembers}
