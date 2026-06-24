@@ -4069,17 +4069,6 @@ function RegroupingPageInner() {
                                             ) : null}
                                         </div>
                                     )}
-                                    {!selectedSeasonId && !isSelectedCurrentAppliedSeason && (
-                                        <Tooltip content={LOAD_CURRENT_BOARD_HELP_TEXT} position="bottom" className="w-fit">
-                                            <button
-                                                type="button"
-                                                onClick={handleLoadCurrentBoardIntoSeason}
-                                                className="inline-flex h-9 w-fit items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800"
-                                            >
-                                                현재 조편성 불러오기
-                                            </button>
-                                        </Tooltip>
-                                    )}
                                 </>
                             ) : (
                                 <label className="space-y-1">
@@ -4113,23 +4102,9 @@ function RegroupingPageInner() {
                         {regroupingMode === 'season' ? (
                             <>
                                 <div className="space-y-1.5 md:col-span-2 xl:col-span-1">
-                                    <div className="flex min-h-7 items-center justify-between gap-2">
-                                        <label htmlFor="regrouping-season-title-desktop" className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
-                                            시즌 이름
-                                        </label>
-                                        {!selectedSeasonId && (
-                                            <Tooltip content={LOAD_CURRENT_BOARD_HELP_TEXT} position="bottom" className="w-fit">
-                                                <button
-                                                    type="button"
-                                                    onClick={handleLoadCurrentBoardIntoSeason}
-                                                    className="relative inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 after:absolute after:-inset-1 after:content-[''] dark:border-slate-800 dark:bg-slate-950"
-                                                >
-                                                    <FileDown className="h-3.5 w-3.5" />
-                                                    현재 불러오기
-                                                </button>
-                                            </Tooltip>
-                                        )}
-                                    </div>
+                                    <label htmlFor="regrouping-season-title-desktop" className="block text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                                        시즌 이름
+                                    </label>
                                     <input
                                         id="regrouping-season-title-desktop"
                                         type="text"
@@ -4312,6 +4287,38 @@ function RegroupingPageInner() {
 
             {regroupingView !== 'list' && (
             <div className="bg-white/50 dark:bg-slate-900/10 rounded-3xl border border-slate-200/50 dark:border-slate-800/50 p-1 sm:p-2 shadow-inner overflow-hidden">
+                <div className="flex flex-col gap-3 border-b border-slate-200/50 bg-slate-50/50 px-5 py-3 dark:border-slate-800/50 dark:bg-slate-900/40 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-wrap items-center gap-4">
+                        <div className="flex items-center gap-2">
+                            <kbd className="flex h-7 min-w-[40px] items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Drag</kbd>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">이동</span>
+                        </div>
+                        <div className="hidden h-3 w-px bg-slate-200 dark:bg-slate-800 sm:block" />
+                        <div className="flex items-center gap-2.5">
+                            <div className="flex items-center gap-1.5">
+                                <kbd className="flex h-7 min-w-[40px] items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black uppercase tracking-tighter text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Shift</kbd>
+                                <span className="font-bold text-slate-300">+</span>
+                                <kbd className="flex h-7 min-w-[40px] items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Drag</kbd>
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-500">다른 조로 복사</span>
+                                <span className="mt-0.5 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-slate-400 dark:bg-indigo-500/5">Shift를 먼저 누른 채 드래그</span>
+                            </div>
+                        </div>
+                    </div>
+                    {regroupingMode === 'season' && !selectedSeasonId && !isSelectedCurrentAppliedSeason && (
+                        <Tooltip content={LOAD_CURRENT_BOARD_HELP_TEXT} position="bottom" className="w-fit">
+                            <button
+                                type="button"
+                                onClick={handleLoadCurrentBoardIntoSeason}
+                                className="inline-flex h-9 w-fit items-center justify-center gap-2 self-start whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800 dark:bg-slate-950 lg:self-auto"
+                            >
+                                <FileDown className="h-3.5 w-3.5" />
+                                현재 조편성 불러오기
+                            </button>
+                        </Tooltip>
+                    )}
+                </div>
                 <div ref={boardRef} className="relative w-full overflow-x-auto custom-scrollbar p-5 sm:p-8 bg-white/30">
                     <KanbanBoard
                         groups={groups}
@@ -4343,30 +4350,6 @@ function RegroupingPageInner() {
                         isDeletableMap={isDeletableMap}
                         readOnly={isBoardReadonly}
                     />
-                </div>
-
-                {/* Keyboard Shortcuts Legend */}
-                <div className="px-8 py-4 bg-slate-50/50 dark:bg-slate-900/40 border-t border-slate-200/50 dark:border-slate-800/50 flex items-center gap-8">
-                    <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2">
-                            <kbd className="min-w-[40px] h-7 px-2 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm text-[10px] font-black text-slate-700 dark:text-slate-300">Drag</kbd>
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">이동</span>
-                        </div>
-                    </div>
-                    <div className="w-[1px] h-3 bg-slate-200 dark:bg-slate-800" />
-                    <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2.5">
-                            <div className="flex items-center gap-1.5">
-                                <kbd className="min-w-[40px] h-7 px-2 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-tighter">Shift</kbd>
-                                <span className="text-slate-300 font-bold">+</span>
-                                <kbd className="min-w-[40px] h-7 px-2 flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm text-[10px] font-black text-slate-700 dark:text-slate-300">Drag</kbd>
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">다른 조로 복사</span>
-                                <span className="text-[9px] font-bold text-slate-400 bg-indigo-50 dark:bg-indigo-500/5 px-1.5 py-0.5 rounded-md mt-0.5">* Shift를 먼저 누른 채 드래그하세요</span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
             )}
