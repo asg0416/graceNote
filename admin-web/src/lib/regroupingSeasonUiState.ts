@@ -9,6 +9,9 @@ export const isRegroupingBoardReadonly = (
 export const canCopyRegroupingMemberToTargetGroup = (targetGroupId?: string | null) =>
   Boolean(targetGroupId);
 
+export const getRegroupingEditorShellMode = (isFocusMode: boolean) =>
+  isFocusMode ? 'focus' : 'normal';
+
 type SeasonMemberPeriodChangeInput = {
   currentStart?: string | null;
   currentEnd?: string | null;

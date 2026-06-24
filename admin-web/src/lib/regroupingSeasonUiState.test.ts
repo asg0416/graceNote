@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   canCopyRegroupingMemberToTargetGroup,
+  getRegroupingEditorShellMode,
   shouldCreateHistoricalUnassignedMoveRows,
   isMoveSourceMembershipPeriodClosure,
   isRegroupingBoardReadonly,
@@ -25,6 +26,11 @@ test('live correction boards remain editable regardless of season status', () =>
 test('copying a member is allowed only into an assigned group', () => {
   assert.equal(canCopyRegroupingMemberToTargetGroup('plan-group-1'), true);
   assert.equal(canCopyRegroupingMemberToTargetGroup(null), false);
+});
+
+test('editor shell switches between normal and focus mode', () => {
+  assert.equal(getRegroupingEditorShellMode(false), 'normal');
+  assert.equal(getRegroupingEditorShellMode(true), 'focus');
 });
 
 test('draft season unassigned moves keep a single visible board card', () => {

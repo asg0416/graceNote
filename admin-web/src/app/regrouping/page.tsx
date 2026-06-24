@@ -21,6 +21,8 @@ import {
     Plus,
     CheckCircle2,
     Clock3,
+    Maximize2,
+    Minimize2,
     ShieldAlert,
     PencilLine,
     HelpCircle,
@@ -36,6 +38,7 @@ import { MemberModal } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
 import {
     canCopyRegroupingMemberToTargetGroup,
+    getRegroupingEditorShellMode,
     isMoveSourceMembershipPeriodClosure,
     shouldCreateHistoricalUnassignedMoveRows,
     shouldShowSeasonMemberPeriodChange,
@@ -593,6 +596,7 @@ function RegroupingPageInner() {
     const [isExporting, setIsExporting] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [isEditorControlsCollapsed, setIsEditorControlsCollapsed] = useState(false);
+    const [isEditorFocusMode, setIsEditorFocusMode] = useState(false);
     const [effectiveWeekDate, setEffectiveWeekDate] = useState(getCurrentSundayInputValue);
     const [regroupingView, setRegroupingView] = useState<'list' | 'seasonEditor' | 'liveCorrection'>('list');
     const [regroupingMode, setRegroupingMode] = useState<'season' | 'live'>('season');
@@ -3575,6 +3579,32 @@ function RegroupingPageInner() {
         const unassigned = total - assigned;
         return { total, assigned, unassigned };
     }, [boardDisplayMembers, getMemberIdentityKey]);
+    const editorShellMode = getRegroupingEditorShellMode(isEditorFocusMode);
+    const isEditorShellFocused = editorShellMode === 'focus';
+
+    useEffect(() => {
+        if (regroupingView === 'list' && isEditorFocusMode) {
+            setIsEditorFocusMode(false);
+        }
+    }, [isEditorFocusMode, regroupingView]);
+
+    useEffect(() => {
+        if (!isEditorFocusMode) return;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setIsEditorFocusMode(false);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [isEditorFocusMode]);
 
     if (loading) {
         return (
@@ -3586,7 +3616,16 @@ function RegroupingPageInner() {
     }
 
     return (
-        <div className="space-y-8 sm:space-y-10 max-w-7xl mx-auto">
+        <div
+            data-regrouping-editor-shell={editorShellMode}
+            className={cn(
+                isEditorShellFocused
+                    ? "fixed inset-0 z-[220] flex h-screen w-screen flex-col gap-3 overflow-hidden bg-slate-50 p-3 dark:bg-[#0a0f1d] sm:p-4"
+                    : "mx-auto max-w-7xl space-y-8 sm:space-y-10"
+            )}
+        >
+            {!isEditorShellFocused && (
+                <>
             {/* Page Header */}
             <header className="space-y-6 px-2">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -3676,6 +3715,8 @@ function RegroupingPageInner() {
                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                     </div>
                 </div>
+            )}
+                </>
             )}
 
             {regroupingView === 'list' ? (
@@ -3895,7 +3936,10 @@ function RegroupingPageInner() {
                     </div>
                 </section>
             ) : (
-                <section className="z-30 space-y-3 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl xl:sticky xl:top-20 xl:rounded-3xl xl:p-4 dark:border-slate-800 dark:bg-slate-950/95">
+                <section className={cn(
+                    "z-30 space-y-3 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95",
+                    isEditorShellFocused ? "shrink-0" : "xl:sticky xl:top-20 xl:rounded-3xl xl:p-4"
+                )}>
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div className="min-w-0">
                             <button
@@ -3937,6 +3981,14 @@ function RegroupingPageInner() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row">
+                            <button
+                                type="button"
+                                onClick={() => setIsEditorFocusMode(prev => !prev)}
+                                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:border-blue-200 hover:text-blue-600 active:scale-95 sm:px-4 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                            >
+                                {isEditorShellFocused ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                                {isEditorShellFocused ? '확대 종료' : '보드 확대'}
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => setIsEditorControlsCollapsed(prev => !prev)}
@@ -4305,7 +4357,10 @@ function RegroupingPageInner() {
             )}
 
             {regroupingView !== 'list' && (
-            <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm shadow-slate-900/5 dark:border-slate-800 dark:bg-slate-900/20">
+            <div className={cn(
+                "overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm shadow-slate-900/5 dark:border-slate-800 dark:bg-slate-900/20",
+                isEditorShellFocused && "flex min-h-0 flex-1 flex-col rounded-2xl"
+            )}>
                 <div className="border-b border-slate-200/80 bg-slate-50/80 px-5 py-3 dark:border-slate-800 dark:bg-slate-900/50 sm:px-8">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div className="min-w-0">
@@ -4344,7 +4399,13 @@ function RegroupingPageInner() {
                         </div>
                     </div>
                 </div>
-                <div ref={boardRef} className="relative w-full overflow-x-auto bg-white p-5 custom-scrollbar sm:p-8 dark:bg-slate-950/10">
+                <div
+                    ref={boardRef}
+                    className={cn(
+                        "relative w-full overflow-x-auto bg-white p-5 custom-scrollbar dark:bg-slate-950/10",
+                        isEditorShellFocused ? "min-h-0 flex-1 sm:p-5" : "sm:p-8"
+                    )}
+                >
                     <KanbanBoard
                         groups={groups}
                         members={sortedMembers}
