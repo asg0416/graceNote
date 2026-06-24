@@ -38,11 +38,11 @@ export const isRegroupingSeasonPeriodCoveringDate = ({
 
 export const shouldAutoSyncRegroupingSeasonPeriodRows = ({
   mode,
-  seasonStatus,
+  seasonStatus: _seasonStatus,
 }: {
   mode: RegroupingMode;
   seasonStatus: RegroupingSeasonStatus;
-}) => mode === 'season' && seasonStatus !== 'applied';
+}) => mode === 'season';
 
 type SeasonMemberPeriodChangeInput = {
   currentStart?: string | null;
@@ -85,6 +85,13 @@ export const shouldKeepMappedRegroupingSeasonMember = (member: SeasonMembershipR
   if (normalizeText(member.group_id)) return true;
   if (normalizeText(member.season_assignment_id)) return true;
   return member.is_active !== false;
+};
+
+export const shouldUseRegroupingSeasonMemberAsVisibleUnassigned = (member: SeasonMembershipRow) => {
+  const changeType = normalizeText(member.plan_change_type) || normalizeText(member.change_type);
+  return changeType !== 'removed' &&
+    !normalizeText(member.group_id) &&
+    Boolean(normalizeText(member.season_assignment_id));
 };
 
 const getSeasonMembershipIdentityKey = (member: SeasonMembershipRow) => {

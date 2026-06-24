@@ -45,6 +45,7 @@ import {
     shouldAutoSyncRegroupingSeasonPeriodRows,
     shouldShowSeasonMemberPeriodChange,
     shouldKeepMappedRegroupingSeasonMember,
+    shouldUseRegroupingSeasonMemberAsVisibleUnassigned,
 } from '@/lib/regroupingSeasonUiState';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
@@ -435,6 +436,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
         if (hasCurrentAssignmentRow) return;
 
         const preferredUnassignedRow =
+            rows.find(row => !removedMembershipRows.includes(row) && shouldUseRegroupingSeasonMemberAsVisibleUnassigned(row)) ||
             rows.find(row => !removedMembershipRows.includes(row) && !row.group_id && row.is_active !== false) ||
             rows.find(row => !removedMembershipRows.includes(row) && row.is_active !== false);
         if (preferredUnassignedRow) visibleRows.push(preferredUnassignedRow);
@@ -3538,7 +3540,7 @@ function RegroupingPageInner() {
                 .map(group => group.id)
         );
 
-        setGroups(prev => prev.map(group => {
+        const syncGroupPeriod = (group: any) => {
             const shouldSync = syncPeriods.some(period => isSeasonFullPeriodRow(group, period));
             if (!shouldSync) return group;
             return {
@@ -3546,19 +3548,8 @@ function RegroupingPageInner() {
                 starts_week_date: nextPeriod.start,
                 ends_week_date: nextPeriod.end,
             };
-        }));
-
-        setSeasonArchivedGroups(prev => prev.map(group => (
-            syncPeriods.some(period => isSeasonFullPeriodRow(group, period))
-                ? {
-                    ...group,
-                    starts_week_date: nextPeriod.start,
-                    ends_week_date: nextPeriod.end,
-                }
-                : group
-        )));
-
-        setLocalMembers(prev => prev.map(member => (
+        };
+        const syncMemberPeriod = (member: any) => (
             syncPeriods.some(period => isSeasonFullPeriodRow(member, period)) &&
             (!member.group_id || syncedGroupIds.has(member.group_id))
                 ? {
@@ -3567,7 +3558,15 @@ function RegroupingPageInner() {
                     ends_week_date: nextPeriod.end,
                 }
                 : member
-        )));
+        );
+
+        setGroups(prev => prev.map(syncGroupPeriod));
+        setSeasonArchivedGroups(prev => prev.map(syncGroupPeriod));
+        setBoardBaselineGroups(prev => prev.map(syncGroupPeriod));
+        setBoardBaselineArchivedGroups(prev => prev.map(syncGroupPeriod));
+
+        setLocalMembers(prev => prev.map(syncMemberPeriod));
+        setBoardBaselineMembers(prev => prev.map(syncMemberPeriod));
 
         previousSeasonPeriodRef.current = nextPeriod;
     }, [regroupingMode, selectedSeason?.status, selectedSeasonId, seasonEffectiveWeekDate, seasonEndWeekDate]);

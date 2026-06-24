@@ -7,6 +7,7 @@ import {
   shouldCreateHistoricalUnassignedMoveRows,
   shouldAutoSyncRegroupingSeasonPeriodRows,
   shouldKeepMappedRegroupingSeasonMember,
+  shouldUseRegroupingSeasonMemberAsVisibleUnassigned,
   isMoveSourceMembershipPeriodClosure,
   isRegroupingBoardReadonly,
   shouldShowSeasonMemberPeriodChange,
@@ -47,13 +48,13 @@ test('season end week covers the whole selected week', () => {
   );
 });
 
-test('applied season period edits do not auto-sync board row periods', () => {
+test('applied season period edits still auto-sync default board row periods', () => {
   assert.equal(
     shouldAutoSyncRegroupingSeasonPeriodRows({
       mode: 'season',
       seasonStatus: 'applied',
     }),
-    false
+    true
   );
   assert.equal(
     shouldAutoSyncRegroupingSeasonPeriodRows({
@@ -65,13 +66,19 @@ test('applied season period edits do not auto-sync board row periods', () => {
 });
 
 test('inactive unassigned season assignment rows stay visible as planned unassigned members', () => {
+  const plannedUnassignedMember = {
+    season_assignment_id: 'assignment-unassigned',
+    group_id: null,
+    is_active: false,
+    plan_change_type: null,
+  };
+
   assert.equal(
-    shouldKeepMappedRegroupingSeasonMember({
-      season_assignment_id: 'assignment-unassigned',
-      group_id: null,
-      is_active: false,
-      plan_change_type: null,
-    }),
+    shouldKeepMappedRegroupingSeasonMember(plannedUnassignedMember),
+    true
+  );
+  assert.equal(
+    shouldUseRegroupingSeasonMemberAsVisibleUnassigned(plannedUnassignedMember),
     true
   );
 });
