@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/admin/presentation/widgets/effective_week_picker_field.dart';
+import 'package:grace_note/features/admin/presentation/widgets/move_group_effective_week.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' hide DateFormat;
@@ -602,32 +603,78 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
   bool _isSaving = false;
   String _groupSearchQuery = '';
   late DateTime _effectiveWeekDate;
+  DateTime? _seasonStartWeek;
+  DateTime? _seasonEndWeek;
+  bool _seasonBoundsLoaded = false;
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _effectiveWeekDate = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: now.weekday % 7));
+    _effectiveWeekDate = weekStart(now);
+    _loadCurrentSeasonBounds();
   }
 
-  DateTime _weekStart(DateTime date) {
-    return DateTime(date.year, date.month, date.day)
-        .subtract(Duration(days: date.weekday % 7));
+  Future<void> _loadCurrentSeasonBounds() async {
+    try {
+      final season = await ref
+          .read(repositoryProvider)
+          .getRegroupingSeasonForWeek(widget.departmentId, DateTime.now());
+      if (!mounted) return;
+
+      final seasonStart = parseWeekDateText(season?['effective_week_date']);
+      final seasonEnd = parseWeekDateText(season?['end_week_date']);
+
+      setState(() {
+        _seasonStartWeek = seasonStart;
+        _seasonEndWeek = seasonEnd;
+        _effectiveWeekDate = resolveMoveEffectiveWeek(
+          requestedWeek: _effectiveWeekDate,
+          seasonStartWeek: _seasonStartWeek,
+          seasonEndWeek: _seasonEndWeek,
+        );
+        _seasonBoundsLoaded = true;
+      });
+    } catch (e) {
+      debugPrint('MoveGroupDialog: current season bounds read failed: $e');
+      if (!mounted) return;
+      setState(() => _seasonBoundsLoaded = true);
+    }
+  }
+
+  DateTime _datePickerLastDate() {
+    final fallbackLastDate = DateTime.now().add(const Duration(days: 365));
+    final firstDate = _seasonStartWeek ?? DateTime(2020);
+    final seasonEnd = _seasonEndWeek;
+    if (seasonEnd != null) return seasonEnd;
+    return fallbackLastDate.isBefore(firstDate) ? firstDate : fallbackLastDate;
   }
 
   Future<void> _pickEffectiveWeek() async {
+    final firstDate = _seasonStartWeek ?? DateTime(2020);
+    final lastDate = _datePickerLastDate();
+    final initialDate = resolveMoveEffectiveWeek(
+      requestedWeek: _effectiveWeekDate,
+      seasonStartWeek: firstDate,
+      seasonEndWeek: lastDate,
+    );
     final picked = await showDatePicker(
       context: context,
-      initialDate: _effectiveWeekDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
       helpText: '적용 시작 주차 선택',
       locale: const Locale('ko', 'KR'),
       selectableDayPredicate: (date) => date.weekday == DateTime.sunday,
     );
     if (picked != null) {
-      setState(() => _effectiveWeekDate = _weekStart(picked));
+      setState(() {
+        _effectiveWeekDate = resolveMoveEffectiveWeek(
+          requestedWeek: picked,
+          seasonStartWeek: _seasonStartWeek,
+          seasonEndWeek: _seasonEndWeek,
+        );
+      });
     }
   }
 
@@ -777,7 +824,7 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
             const SizedBox(height: 10),
             EffectiveWeekPickerField(
               effectiveWeekDate: _effectiveWeekDate,
-              enabled: !_isSaving,
+              enabled: !_isSaving && _seasonBoundsLoaded,
               onTap: _pickEffectiveWeek,
             ),
           ],
@@ -791,7 +838,10 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
                   TextStyle(color: AppTheme.textSub, fontFamily: 'Pretendard')),
         ),
         ShadButton(
-          onPressed: _isSaving || _selectedGroupId == null ? null : _save,
+          onPressed:
+              _isSaving || _selectedGroupId == null || !_seasonBoundsLoaded
+                  ? null
+                  : _save,
           child: _isSaving
               ? SizedBox(
                   width: 16,
@@ -824,12 +874,17 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
       final groups =
           await ref.read(departmentGroupsProvider(widget.departmentId).future);
       final targetGroup = groups.firstWhere((g) => g['id'] == _selectedGroupId);
+      final effectiveWeekDate = resolveMoveEffectiveWeek(
+        requestedWeek: _effectiveWeekDate,
+        seasonStartWeek: _seasonStartWeek,
+        seasonEndWeek: _seasonEndWeek,
+      );
 
       await repo.moveDirectoryMemberToGroup(
         memberDirectoryId: widget.directoryMemberId,
         sourceGroupId: widget.currentGroupId,
         targetGroupId: _selectedGroupId!,
-        effectiveWeekDate: _effectiveWeekDate,
+        effectiveWeekDate: effectiveWeekDate,
       );
 
       // Refresh providers — invalidate both old and new group member lists
