@@ -56,6 +56,7 @@ import {
 } from '@/lib/regroupingSeasonPayloads';
 import { applyBulkMemberPeriods, clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
 import { shouldReturnToSeasonListOnMissingSeasonQuery } from '@/lib/regroupingNavigationState';
+import { canDeletePendingRegroupingSeason } from '@/lib/regroupingSeasonActions';
 import { SeasonChangeHistoryPanel } from './SeasonChangeHistoryPanel';
 
 const toDateInputValue = (date: Date) => {
@@ -2861,14 +2862,13 @@ function RegroupingPageInner() {
         const season = regroupingSeasons.find(item => item.id === seasonId);
         if (!season) return;
 
-        const canDeleteThisSeason = ['draft', 'ready'].includes(season.status)
-            && season.effective_week_date > todayInputValue;
+        const canDeleteThisSeason = canDeletePendingRegroupingSeason(season);
         if (!canDeleteThisSeason) {
-            alert('적용 대기 중인 미래 조편성 계획만 삭제할 수 있습니다.');
+            alert('아직 실제 소속에 적용되지 않은 초안만 삭제할 수 있습니다.');
             return;
         }
 
-        if (!window.confirm(`"${season.title}" 조편성 계획을 삭제할까요?\n\n미래 편성 계획만 삭제되며 실제 성도, 현재 조, 출석/기도 기록은 삭제되지 않습니다.`)) {
+        if (!window.confirm(`"${season.title}" 조편성 초안을 삭제할까요?\n\n초안 기록만 삭제되며 실제 성도, 현재 조, 출석/기도 기록은 삭제되지 않습니다.`)) {
             return;
         }
 
@@ -3766,8 +3766,7 @@ function RegroupingPageInner() {
                                             const statusMeta = getSeasonStatusMeta(season, todayInputValue);
                                             const StatusIcon = statusMeta.icon;
                                             const canApplyThisSeason = season.status !== 'applied' && season.effective_week_date <= todayInputValue;
-                                            const canDeleteThisSeason = ['draft', 'ready'].includes(season.status)
-                                                && season.effective_week_date > todayInputValue;
+                                            const canDeleteThisSeason = canDeletePendingRegroupingSeason(season);
 
                                             return (
                                                 <tr key={season.id} className="transition hover:bg-slate-50/80 dark:hover:bg-slate-950/40">
