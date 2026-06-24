@@ -44,6 +44,7 @@ interface KanbanColumnProps {
     isDeletableMap?: Record<string, boolean>;
     autoMoveCouples?: boolean;
     readOnly?: boolean;
+    fillHeight?: boolean;
 }
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({
@@ -74,7 +75,8 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     onDeleteMember,
     isDeletableMap,
     autoMoveCouples = true,
-    readOnly = false
+    readOnly = false,
+    fillHeight = false
 }) => {
     const { setNodeRef, isOver } = useDroppable({ id });
     const [isRenaming, setIsRenaming] = useState(autoFocusRename);
@@ -196,7 +198,10 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     }, [autoMoveCouples, filteredMembers, profileMode]);
 
     return (
-        <div className="flex flex-col w-96 shrink-0 max-h-[820px] bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800/60 transition-all group/column shadow-sm hover:shadow-xl hover:shadow-slate-200/40 dark:hover:shadow-none">
+        <div className={cn(
+            "flex w-96 shrink-0 flex-col rounded-2xl border border-slate-200/80 bg-white shadow-sm transition-shadow group/column hover:shadow-xl hover:shadow-slate-200/40 dark:border-slate-800/60 dark:bg-slate-900/60 dark:hover:shadow-none",
+            fillHeight ? "h-full min-h-[520px] max-h-none" : "max-h-[820px]"
+        )}>
             {/* Header - Sticky within column */}
             <div className="sticky top-0 z-20 p-5 flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800/60 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-t-[31px]">
                 <div className="flex items-center gap-3 flex-1 min-w-0">

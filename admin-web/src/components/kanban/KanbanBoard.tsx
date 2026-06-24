@@ -57,6 +57,7 @@ interface KanbanBoardProps {
     onDeleteMember?: (id: string) => void;
     isDeletableMap?: Record<string, boolean>;
     readOnly?: boolean;
+    fillHeight?: boolean;
 }
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
@@ -81,7 +82,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     lastAddedGroupId,
     profileMode,
     autoMoveCouples = true,
-    readOnly = false
+    readOnly = false,
+    fillHeight = false
 }) => {
     const [activeId, setActiveId] = useState<string | null>(null);
     const [dragSessionMembers, setDragSessionMembers] = useState<any[] | null>(null);
@@ -324,7 +326,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
         >
-            <div className="flex gap-8 px-2 items-start pb-20">
+            <div className={cn(
+                "flex items-start gap-8 px-2 pb-20",
+                fillHeight && "h-full min-h-[520px] pb-6"
+            )}>
                 {/* Unassigned Column */}
                 <KanbanColumn
                     key={`unassigned-${readOnly ? 'readonly' : 'editable'}`}
@@ -346,6 +351,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     periodStartMaxDate={groupPeriodStartMaxDate}
                     autoMoveCouples={autoMoveCouples}
                     readOnly={readOnly}
+                    fillHeight={fillHeight}
                 />
 
                 {/* Group Columns */}
@@ -384,6 +390,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         movingMembersCount={movingMembersCount}
                         autoMoveCouples={autoMoveCouples}
                         readOnly={readOnly}
+                        fillHeight={fillHeight}
                     />
                 ))}
 

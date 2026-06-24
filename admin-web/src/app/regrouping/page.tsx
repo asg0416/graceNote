@@ -3620,7 +3620,7 @@ function RegroupingPageInner() {
             data-regrouping-editor-shell={editorShellMode}
             className={cn(
                 isEditorShellFocused
-                    ? "fixed inset-0 z-[220] flex h-screen w-screen flex-col gap-3 overflow-hidden bg-slate-50 p-3 dark:bg-[#0a0f1d] sm:p-4"
+                    ? "fixed inset-0 z-[220] flex h-screen w-screen flex-col gap-4 overflow-y-auto overscroll-contain bg-slate-50 p-4 dark:bg-[#0a0f1d] sm:gap-5 sm:p-6 lg:p-8"
                     : "mx-auto max-w-7xl space-y-8 sm:space-y-10"
             )}
         >
@@ -3937,8 +3937,8 @@ function RegroupingPageInner() {
                 </section>
             ) : (
                 <section className={cn(
-                    "z-30 space-y-3 rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95",
-                    isEditorShellFocused ? "shrink-0" : "xl:sticky xl:top-20 xl:rounded-3xl xl:p-4"
+                    "z-30 space-y-3 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95",
+                    isEditorShellFocused ? "shrink-0" : "xl:sticky xl:top-20 xl:rounded-3xl"
                 )}>
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div className="min-w-0">
@@ -4359,7 +4359,7 @@ function RegroupingPageInner() {
             {regroupingView !== 'list' && (
             <div className={cn(
                 "overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm shadow-slate-900/5 dark:border-slate-800 dark:bg-slate-900/20",
-                isEditorShellFocused && "flex min-h-0 flex-1 flex-col rounded-2xl"
+                isEditorShellFocused && "flex min-h-[680px] flex-none flex-col rounded-2xl"
             )}>
                 <div className="border-b border-slate-200/80 bg-slate-50/80 px-5 py-3 dark:border-slate-800 dark:bg-slate-900/50 sm:px-8">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -4403,7 +4403,7 @@ function RegroupingPageInner() {
                     ref={boardRef}
                     className={cn(
                         "relative w-full overflow-x-auto bg-white p-5 custom-scrollbar dark:bg-slate-950/10",
-                        isEditorShellFocused ? "min-h-0 flex-1 sm:p-5" : "sm:p-8"
+                        isEditorShellFocused ? "min-h-[560px] flex-1 sm:p-6" : "sm:p-8"
                     )}
                 >
                     <KanbanBoard
@@ -4435,6 +4435,7 @@ function RegroupingPageInner() {
                         onDeleteMember={handleDeleteMember}
                         isDeletableMap={isDeletableMap}
                         readOnly={isBoardReadonly}
+                        fillHeight={isEditorShellFocused}
                     />
                 </div>
             </div>
