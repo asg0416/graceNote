@@ -59,6 +59,7 @@ type SeasonMembershipRow = {
   phase2_person_id?: string | null;
   person_id?: string | null;
   source_member_directory_id?: string | null;
+  source_membership_id?: string | null;
   full_name?: string | null;
   phone?: string | null;
   group_id?: string | null;
@@ -69,6 +70,11 @@ type SeasonMembershipRow = {
   plan_change_type?: string | null;
   change_type?: string | null;
   is_active?: boolean | null;
+};
+
+type SeasonPlanGroupRow = {
+  id?: string | null;
+  source_group_id?: string | null;
 };
 
 const normalizeWeekDate = (value?: string | null) => value || null;
@@ -120,6 +126,52 @@ const getSourceGroupId = (member: SeasonMembershipRow, fallbackGroupId?: string 
   normalizeText(member.source_membership_group_id)
   || normalizeText(member.previous_source_group_id)
   || normalizeText(fallbackGroupId);
+
+export const buildRegroupingSuppressedHistoricalTargetKeys = ({
+  members,
+  planGroups,
+}: {
+  members: SeasonMembershipRow[];
+  planGroups: SeasonPlanGroupRow[];
+}) => {
+  const planGroupIdBySourceGroupId = new Map<string, string>();
+  const planGroupIds = new Set<string>();
+
+  planGroups.forEach(group => {
+    const planGroupId = normalizeText(group.id);
+    if (!planGroupId) return;
+    planGroupIds.add(planGroupId);
+
+    const sourceGroupId = normalizeText(group.source_group_id);
+    if (sourceGroupId) {
+      planGroupIdBySourceGroupId.set(sourceGroupId, planGroupId);
+    }
+  });
+
+  const suppressedTargets = new Set<string>();
+  members.forEach(member => {
+    const identityKey = getSeasonMembershipIdentityKey(member);
+    const previousSourceGroupId = normalizeText(member.previous_source_group_id)
+      || normalizeText(member.source_membership_group_id);
+    if (!identityKey || !previousSourceGroupId) return;
+
+    const changeType = normalizeText(member.plan_change_type) || normalizeText(member.change_type);
+    const isPersistedSourceClosure = !normalizeText(member.group_id) && Boolean(
+      normalizeText(member.season_assignment_id)
+      || normalizeText(member.source_membership_id)
+      || normalizeText(member.source_member_directory_id)
+    );
+    if (changeType !== 'moved' && changeType !== 'removed' && !isPersistedSourceClosure) return;
+
+    const planGroupId = planGroupIdBySourceGroupId.get(previousSourceGroupId)
+      || (planGroupIds.has(previousSourceGroupId) ? previousSourceGroupId : null);
+    if (!planGroupId) return;
+
+    suppressedTargets.add(`${identityKey}|${planGroupId}`);
+  });
+
+  return suppressedTargets;
+};
 
 export const isMoveSourceMembershipPeriodClosure = ({
   member,

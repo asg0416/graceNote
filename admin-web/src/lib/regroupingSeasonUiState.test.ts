@@ -6,6 +6,7 @@ import {
   isRegroupingSeasonPeriodCoveringDate,
   shouldCreateHistoricalUnassignedMoveRows,
   shouldAutoSyncRegroupingSeasonPeriodRows,
+  buildRegroupingSuppressedHistoricalTargetKeys,
   shouldKeepMappedRegroupingSeasonMember,
   shouldUseRegroupingSeasonMemberAsVisibleUnassigned,
   isMoveSourceMembershipPeriodClosure,
@@ -166,6 +167,36 @@ test('move source membership closures are not treated as standalone period adjus
     }),
     true
   );
+});
+
+test('persisted move source groups are not backfilled as period memberships', () => {
+  const suppressedTargets = buildRegroupingSuppressedHistoricalTargetKeys({
+    members: [
+      {
+        id: 'source-row',
+        season_assignment_id: 'assignment-source',
+        phase2_person_id: 'person-1',
+        group_id: null,
+        previous_source_group_id: 'live-group-3',
+        source_membership_id: 'old-membership',
+      },
+      {
+        id: 'moved-row',
+        season_assignment_id: 'assignment-moved',
+        phase2_person_id: 'person-1',
+        group_id: 'plan-group-1',
+        plan_change_type: 'moved',
+        previous_source_group_id: 'live-group-3',
+      },
+    ],
+    planGroups: [
+      { id: 'plan-group-1', source_group_id: 'live-group-1' },
+      { id: 'plan-group-3', source_group_id: 'live-group-3' },
+    ],
+  });
+
+  assert.equal(suppressedTargets.has('person-1|plan-group-3'), true);
+  assert.equal(suppressedTargets.has('person-1|plan-group-1'), false);
 });
 
 test('manual period adjustments remain visible when they are not paired with a move', () => {

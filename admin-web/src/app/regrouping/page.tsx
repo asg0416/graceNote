@@ -46,6 +46,7 @@ import {
     shouldShowSeasonMemberPeriodChange,
     shouldKeepMappedRegroupingSeasonMember,
     shouldUseRegroupingSeasonMemberAsVisibleUnassigned,
+    buildRegroupingSuppressedHistoricalTargetKeys,
 } from '@/lib/regroupingSeasonUiState';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
 import { saveRegroupingMemberships } from '@/lib/memberWriteRpc';
@@ -3077,12 +3078,16 @@ function RegroupingPageInner() {
                     member.group_id || 'unassigned',
                 ].join('|'))
         );
+        const suppressedHistoricalTargets = buildRegroupingSuppressedHistoricalTargetKeys({
+            members: mappedCurrentMembers,
+            planGroups: mapped.groups,
+        });
         const missingLiveMembers = liveMembers.filter(member => {
             const targetKey = [
                 getRegroupingIdentityKey(member),
                 member.group_id || 'unassigned',
             ].join('|');
-            return !plannedTargets.has(targetKey);
+            return !plannedTargets.has(targetKey) && !suppressedHistoricalTargets.has(targetKey);
         });
 
         return {
