@@ -39,8 +39,10 @@ import { Tooltip } from '@/components/Tooltip';
 import {
     canCopyRegroupingMemberToTargetGroup,
     getRegroupingEditorShellMode,
+    isRegroupingSeasonPeriodCoveringDate,
     isMoveSourceMembershipPeriodClosure,
     shouldCreateHistoricalUnassignedMoveRows,
+    shouldAutoSyncRegroupingSeasonPeriodRows,
     shouldShowSeasonMemberPeriodChange,
 } from '@/lib/regroupingSeasonUiState';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
@@ -145,12 +147,11 @@ const buildRegroupingPageHref = ({
 };
 
 const isSeasonCoveringDate = (season: any, dateInputValue: string) => {
-    if (!season?.effective_week_date || season.effective_week_date > dateInputValue) {
-        return false;
-    }
-
-    if (!season.end_week_date) return true;
-    return addDaysToDateInput(season.end_week_date, 6) >= dateInputValue;
+    return isRegroupingSeasonPeriodCoveringDate({
+        effectiveWeekDate: season?.effective_week_date,
+        endWeekDate: season?.end_week_date,
+        dateInputValue,
+    });
 };
 
 const DATE_RANGE_OPEN_END = '9999-12-31';
@@ -662,8 +663,11 @@ function RegroupingPageInner() {
     const isCurrentAppliedSeasonExpired = Boolean(currentAppliedSeason) && !isSeasonCoveringDate(currentAppliedSeason, todayInputValue);
     const isSelectedSeasonApplied = selectedSeason?.status === 'applied';
     const isSelectedAppliedSeasonCurrentAfterEdit = isSelectedSeasonApplied &&
-        seasonEffectiveWeekDate <= todayInputValue &&
-        (!seasonEndWeekDate || seasonEndWeekDate >= todayInputValue);
+        isRegroupingSeasonPeriodCoveringDate({
+            effectiveWeekDate: seasonEffectiveWeekDate,
+            endWeekDate: seasonEndWeekDate,
+            dateInputValue: todayInputValue,
+        });
     const isSelectedCurrentAppliedSeason = Boolean(
         selectedSeason &&
         currentAppliedSeason &&
@@ -2746,7 +2750,10 @@ function RegroupingPageInner() {
                 end: loadedSeasonEnd || null,
             };
             const loadedDefaultPeriod = resolveDefaultSeasonPeriod(loadedSeasonPeriod, reloaded.activeGroups);
-            const shouldNormalizeDefaultPeriodOnLoad = !isSameRegroupingPeriod(loadedDefaultPeriod, loadedSeasonPeriod);
+            const shouldNormalizeDefaultPeriodOnLoad = shouldAutoSyncRegroupingSeasonPeriodRows({
+                mode: 'season',
+                seasonStatus: season.status,
+            }) && !isSameRegroupingPeriod(loadedDefaultPeriod, loadedSeasonPeriod);
             const defaultPeriodGroupIds = new Set(
                 reloaded.activeGroups
                     .filter(group => isSeasonFullPeriodRow(group, loadedDefaultPeriod))
@@ -3489,7 +3496,12 @@ function RegroupingPageInner() {
     }, [groups]);
 
     useEffect(() => {
-        if (regroupingMode !== 'season' || !selectedSeasonId) {
+        const shouldSyncBoardRowPeriods = shouldAutoSyncRegroupingSeasonPeriodRows({
+            mode: regroupingMode,
+            seasonStatus: selectedSeason?.status,
+        });
+
+        if (regroupingMode !== 'season' || !selectedSeasonId || !shouldSyncBoardRowPeriods) {
             previousSeasonPeriodRef.current = {
                 start: seasonEffectiveWeekDate,
                 end: seasonEndWeekDate || null,
@@ -3561,7 +3573,7 @@ function RegroupingPageInner() {
         )));
 
         previousSeasonPeriodRef.current = nextPeriod;
-    }, [regroupingMode, selectedSeasonId, seasonEffectiveWeekDate, seasonEndWeekDate]);
+    }, [regroupingMode, selectedSeason?.status, selectedSeasonId, seasonEffectiveWeekDate, seasonEndWeekDate]);
 
     const stats = useMemo(() => {
         const people = new Map<string, { assigned: boolean }>();

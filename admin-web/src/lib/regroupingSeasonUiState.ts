@@ -12,6 +12,38 @@ export const canCopyRegroupingMemberToTargetGroup = (targetGroupId?: string | nu
 export const getRegroupingEditorShellMode = (isFocusMode: boolean) =>
   isFocusMode ? 'focus' : 'normal';
 
+const addDaysToDateInput = (value: string, dayCount: number) => {
+  const base = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return value;
+  base.setDate(base.getDate() + dayCount);
+  const year = base.getFullYear();
+  const month = String(base.getMonth() + 1).padStart(2, '0');
+  const day = String(base.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const isRegroupingSeasonPeriodCoveringDate = ({
+  effectiveWeekDate,
+  endWeekDate,
+  dateInputValue,
+}: {
+  effectiveWeekDate?: string | null;
+  endWeekDate?: string | null;
+  dateInputValue: string;
+}) => {
+  if (!effectiveWeekDate || effectiveWeekDate > dateInputValue) return false;
+  if (!endWeekDate) return true;
+  return addDaysToDateInput(endWeekDate, 6) >= dateInputValue;
+};
+
+export const shouldAutoSyncRegroupingSeasonPeriodRows = ({
+  mode,
+  seasonStatus,
+}: {
+  mode: RegroupingMode;
+  seasonStatus: RegroupingSeasonStatus;
+}) => mode === 'season' && seasonStatus !== 'applied';
+
 type SeasonMemberPeriodChangeInput = {
   currentStart?: string | null;
   currentEnd?: string | null;

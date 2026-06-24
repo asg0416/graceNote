@@ -3,7 +3,9 @@ import test from 'node:test';
 import {
   canCopyRegroupingMemberToTargetGroup,
   getRegroupingEditorShellMode,
+  isRegroupingSeasonPeriodCoveringDate,
   shouldCreateHistoricalUnassignedMoveRows,
+  shouldAutoSyncRegroupingSeasonPeriodRows,
   isMoveSourceMembershipPeriodClosure,
   isRegroupingBoardReadonly,
   shouldShowSeasonMemberPeriodChange,
@@ -31,6 +33,34 @@ test('copying a member is allowed only into an assigned group', () => {
 test('editor shell switches between normal and focus mode', () => {
   assert.equal(getRegroupingEditorShellMode(false), 'normal');
   assert.equal(getRegroupingEditorShellMode(true), 'focus');
+});
+
+test('season end week covers the whole selected week', () => {
+  assert.equal(
+    isRegroupingSeasonPeriodCoveringDate({
+      effectiveWeekDate: '2026-06-14',
+      endWeekDate: '2026-06-21',
+      dateInputValue: '2026-06-25',
+    }),
+    true
+  );
+});
+
+test('applied season period edits do not auto-sync board row periods', () => {
+  assert.equal(
+    shouldAutoSyncRegroupingSeasonPeriodRows({
+      mode: 'season',
+      seasonStatus: 'applied',
+    }),
+    false
+  );
+  assert.equal(
+    shouldAutoSyncRegroupingSeasonPeriodRows({
+      mode: 'season',
+      seasonStatus: 'draft',
+    }),
+    true
+  );
 });
 
 test('draft season unassigned moves keep a single visible board card', () => {
