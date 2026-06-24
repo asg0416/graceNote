@@ -55,6 +55,7 @@ import {
     mapRegroupingSeasonDraftToBoard,
 } from '@/lib/regroupingSeasonPayloads';
 import { applyBulkMemberPeriods, clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
+import { shouldReturnToSeasonListOnMissingSeasonQuery } from '@/lib/regroupingNavigationState';
 import { SeasonChangeHistoryPanel } from './SeasonChangeHistoryPanel';
 
 const toDateInputValue = (date: Date) => {
@@ -621,6 +622,7 @@ function RegroupingPageInner() {
     const boardRef = useRef<HTMLDivElement>(null);
     const exportTableRef = useRef<HTMLDivElement>(null);
     const loadedQuerySeasonIdRef = useRef<string | null>(null);
+    const pendingSeasonUrlSyncIdRef = useRef<string | null>(null);
     const loadSeasonDraftRef = useRef<((seasonId: string, options?: { syncHistory?: boolean }) => Promise<void>) | null>(null);
     const previousSeasonPeriodRef = useRef<{ start: string; end: string | null } | null>(null);
     const groupsRef = useRef<any[]>([]);
@@ -2437,6 +2439,17 @@ function RegroupingPageInner() {
             }
 
             if (!selectedSeasonId) {
+                pendingSeasonUrlSyncIdRef.current = seasonId;
+                loadedQuerySeasonIdRef.current = [
+                    seasonId,
+                    selectedChurch.id,
+                    selectedDepartment.id,
+                ].join('|');
+                router.replace(buildRegroupingPageHref({
+                    churchId: selectedChurch.id,
+                    deptId: selectedDepartment.id,
+                    seasonId,
+                }));
                 setSelectedSeasonId(seasonId);
                 setSeasonTitle(title);
             }
@@ -2721,6 +2734,7 @@ function RegroupingPageInner() {
             setRegroupingMode('season');
             setRegroupingView('seasonEditor');
             if (shouldSyncHistory) {
+                pendingSeasonUrlSyncIdRef.current = seasonId;
                 loadedQuerySeasonIdRef.current = [
                     seasonId,
                     currentChurchId || '',
@@ -2745,6 +2759,9 @@ function RegroupingPageInner() {
         const seasonIdFromQuery = searchParams.get('seasonId');
         const churchIdFromQuery = searchParams.get('churchId');
         const deptIdFromQuery = searchParams.get('deptId');
+        if (seasonIdFromQuery && pendingSeasonUrlSyncIdRef.current === seasonIdFromQuery) {
+            pendingSeasonUrlSyncIdRef.current = null;
+        }
         const queryLoadKey = [
             seasonIdFromQuery,
             churchIdFromQuery || currentChurchId || '',
@@ -2766,9 +2783,15 @@ function RegroupingPageInner() {
 
     useEffect(() => {
         const seasonIdFromQuery = searchParams.get('seasonId');
-        if (seasonIdFromQuery || regroupingView === 'list' || !selectedSeasonId) return;
+        if (!shouldReturnToSeasonListOnMissingSeasonQuery({
+            seasonIdFromQuery,
+            selectedSeasonId,
+            regroupingView,
+            pendingSeasonUrlSyncId: pendingSeasonUrlSyncIdRef.current,
+        })) return;
 
         if (hasChanges && !window.confirm('저장되지 않은 변경 사항을 버리고 시즌 목록으로 돌아갈까요?')) {
+            pendingSeasonUrlSyncIdRef.current = selectedSeasonId;
             router.replace(buildRegroupingPageHref({
                 churchId: currentChurchId,
                 deptId: selectedDeptId,
@@ -3140,6 +3163,7 @@ function RegroupingPageInner() {
         setSeasonArchivedGroups([]);
         setHasChanges(false);
         loadedQuerySeasonIdRef.current = null;
+        pendingSeasonUrlSyncIdRef.current = null;
         router.replace(buildRegroupingPageHref({
             churchId: currentChurchId,
             deptId: selectedDeptId,
