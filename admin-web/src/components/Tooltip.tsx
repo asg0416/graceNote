@@ -13,9 +13,18 @@ interface TooltipProps {
 
 export function Tooltip({ content, children, position = 'top', className }: TooltipProps) {
     const [isVisible, setIsVisible] = useState(false);
-    const [coords, setCoords] = useState({ top: 0, left: 0 });
+    const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
     const triggerRef = useRef<HTMLDivElement>(null);
     const tooltipRef = useRef<HTMLDivElement>(null);
+
+    const showTooltip = () => {
+        setCoords(null);
+        setIsVisible(true);
+    };
+
+    const hideTooltip = () => {
+        setIsVisible(false);
+    };
 
     useEffect(() => {
         if (!isVisible) return;
@@ -70,17 +79,21 @@ export function Tooltip({ content, children, position = 'top', className }: Tool
         <div
             ref={triggerRef}
             className={cn("relative inline-flex", className)}
-            onMouseEnter={() => setIsVisible(true)}
-            onMouseLeave={() => setIsVisible(false)}
-            onFocus={() => setIsVisible(true)}
-            onBlur={() => setIsVisible(false)}
+            onMouseEnter={showTooltip}
+            onMouseLeave={hideTooltip}
+            onFocus={showTooltip}
+            onBlur={hideTooltip}
         >
             {children}
             {isVisible && typeof document !== 'undefined' && createPortal(
                 <div
                     ref={tooltipRef}
-                    style={{ top: coords.top, left: coords.left }}
-                    className="fixed z-[99999] max-w-[min(22rem,calc(100vw-24px))] rounded-xl bg-slate-950 px-3 py-2 text-[11px] font-bold leading-relaxed text-white shadow-2xl shadow-slate-900/25 animate-in fade-in zoom-in-95 duration-150 pointer-events-none dark:bg-slate-800"
+                    style={{
+                        top: coords?.top ?? 0,
+                        left: coords?.left ?? 0,
+                        visibility: coords ? 'visible' : 'hidden',
+                    }}
+                    className="fixed z-[99999] max-w-[min(18rem,calc(100vw-24px))] rounded-xl bg-slate-950 px-3 py-2 text-[11px] font-bold leading-relaxed text-white opacity-100 shadow-2xl shadow-slate-900/25 transition-opacity duration-100 pointer-events-none dark:bg-slate-800"
                 >
                     {content}
                 </div>,

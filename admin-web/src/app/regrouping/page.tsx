@@ -122,7 +122,7 @@ const formatRegroupingDateLabel = (value?: string | null) => {
     return `${year}.${Number(month)}.${Number(day)}.`;
 };
 
-const LOAD_CURRENT_BOARD_HELP_TEXT = '현재 적용 중인 조와 성도 목록을 새 시즌 초안의 시작 상태로 가져옵니다. 이후 새 시즌 안에서 필요한 이동과 기간만 수정하세요.';
+const LOAD_CURRENT_BOARD_HELP_TEXT = '현재 조편성을 초안에 복사합니다. 저장 전까지 실제 소속은 바뀌지 않습니다.';
 
 const buildRegroupingPageHref = ({
     churchId,
@@ -767,10 +767,10 @@ function RegroupingPageInner() {
             ? '저장 즉시 실제 소속과 호환 데이터가 변경되는 예외 작업입니다.'
             : '초안은 저장해도 적용 전까지 앱, 출석, 기도 화면에 반영되지 않습니다.';
     const editorHelpText = regroupingMode === 'live'
-        ? '현재/과거 보정은 저장 즉시 실제 소속에 반영됩니다. 미래 조편성은 시즌 초안에서 준비하세요.'
+        ? '저장하면 실제 소속에 바로 반영됩니다.'
         : isSelectedCurrentAppliedSeason
-            ? '현재 시즌은 각 조와 성도 소속의 시즌 내 유효기간을 조정합니다. 같은 성도가 여러 조에 동시에 속할 수 있으며, 같은 조 중복 기간만 피하면 됩니다.'
-            : '미래 시즌은 조와 구성원 모두 시즌 기간 전체에 적용됩니다. 시즌 중간 변동은 현재 시즌에서 처리합니다.';
+            ? '현재 시즌 안에서 조와 성도의 시작·종료 주차를 조정합니다.'
+            : '시작일부터 종료일까지 같은 조편성이 적용됩니다.';
     const editorPeriodSummary = regroupingMode === 'live'
         ? formatRegroupingWeekLabel(effectiveWeekDate)
         : isSelectedCurrentAppliedSeason
