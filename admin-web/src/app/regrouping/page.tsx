@@ -51,7 +51,7 @@ import {
     buildRegroupingSeasonGroupsPayload,
     mapRegroupingSeasonDraftToBoard,
 } from '@/lib/regroupingSeasonPayloads';
-import { applyBulkMemberPeriods } from '@/lib/regroupingPeriodBulk';
+import { applyBulkMemberPeriods, clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
 import { SeasonChangeHistoryPanel } from './SeasonChangeHistoryPanel';
 
 const toDateInputValue = (date: Date) => {
@@ -78,6 +78,9 @@ const getPreviousWeekStartInput = (value: string) => addWeeksToDateInput(value, 
 
 const maxDateInput = (...values: string[]) =>
     values.filter(Boolean).sort().at(-1) || getCurrentSundayInputValue();
+
+const minDateInput = (...values: string[]) =>
+    values.filter(Boolean).sort().at(0) || getCurrentSundayInputValue();
 
 const addDaysToDateInput = (value: string, dayCount: number) => {
     const base = new Date(`${value}T00:00:00`);
@@ -2082,15 +2085,31 @@ function RegroupingPageInner() {
         setHasChanges(true);
     };
 
+    const currentSeasonStartMaxWeekDate = isSelectedCurrentAppliedSeason
+        ? minDateInput(seasonEndWeekDate || getCurrentSundayInputValue(), getCurrentSundayInputValue())
+        : seasonEndWeekDate || null;
+    const clampCurrentSeasonPeriodUpdate = (updates: Record<string, unknown>) => clampPeriodUpdate(
+        {
+            starts_week_date: typeof updates.starts_week_date === 'string' ? updates.starts_week_date : null,
+            ends_week_date: typeof updates.ends_week_date === 'string' ? updates.ends_week_date : null,
+        },
+        {
+            min: seasonEffectiveWeekDate,
+            startMax: currentSeasonStartMaxWeekDate,
+            endMax: seasonEndWeekDate || null,
+        }
+    );
+
     const handleUpdateSeasonGroupPeriod = (id: string, updates: Record<string, unknown>) => {
         const previousGroup = groups.find(group => group.id === id);
         const previousStartWeek = previousGroup?.starts_week_date || seasonEffectiveWeekDate;
         const previousEndWeek = previousGroup?.ends_week_date || seasonEndWeekDate || null;
-        const nextStartWeek = typeof updates.starts_week_date === 'string' ? updates.starts_week_date : null;
-        const nextEndWeek = typeof updates.ends_week_date === 'string' ? updates.ends_week_date : null;
+        const clampedUpdates = clampCurrentSeasonPeriodUpdate(updates);
+        const nextStartWeek = clampedUpdates.starts_week_date || null;
+        const nextEndWeek = clampedUpdates.ends_week_date || null;
 
         setGroups(prev => prev.map(group => (
-            group.id === id ? { ...group, ...updates } : group
+            group.id === id ? { ...group, ...clampedUpdates } : group
         )));
 
         if (nextStartWeek || nextEndWeek) {
@@ -2129,8 +2148,9 @@ function RegroupingPageInner() {
     };
 
     const handleUpdateSeasonMemberPeriod = (id: string, updates: Record<string, unknown>) => {
+        const clampedUpdates = clampCurrentSeasonPeriodUpdate(updates);
         setLocalMembers(prev => prev.map(member => (
-            member.id === id ? { ...member, ...updates } : member
+            member.id === id ? { ...member, ...clampedUpdates } : member
         )));
         setHasChanges(true);
     };
@@ -2139,7 +2159,11 @@ function RegroupingPageInner() {
         ids: string[],
         updates: { starts_week_date?: string | null; ends_week_date?: string | null }
     ) => {
-        setLocalMembers(prev => applyBulkMemberPeriods(prev, ids, updates));
+        setLocalMembers(prev => applyBulkMemberPeriods(prev, ids, updates, {
+            min: seasonEffectiveWeekDate,
+            startMax: currentSeasonStartMaxWeekDate,
+            endMax: seasonEndWeekDate || null,
+        }));
         setHasChanges(true);
     };
 
@@ -4120,6 +4144,7 @@ function RegroupingPageInner() {
                         }) : undefined}
                         groupPeriodMinDate={regroupingMode === 'season' ? seasonEffectiveWeekDate : null}
                         groupPeriodMaxDate={regroupingMode === 'season' ? seasonEndWeekDate : null}
+                        groupPeriodStartMaxDate={regroupingMode === 'season' ? currentSeasonStartMaxWeekDate : null}
                         onAddMembers={handleOpenAddMemberModal}
                         profileMode={departments.find(d => d.id === selectedDeptId)?.profile_mode}
                         autoMoveCouples={autoMoveCouples}
@@ -4162,6 +4187,7 @@ function RegroupingPageInner() {
                     movedMembers={movedSeasonMembers}
                     seasonEffectiveWeekDate={seasonEffectiveWeekDate}
                     seasonEndWeekDate={seasonEndWeekDate}
+                    startMaxWeekDate={currentSeasonStartMaxWeekDate}
                     readOnly={isBoardReadonly}
                     onArchivedGroupStartChange={(groupId, value) => handleUpdateArchivedGroup(groupId, {
                         starts_week_date: snapDateInputToSunday(value),

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyBulkMemberPeriods, clampDateToRange } from './regroupingPeriodBulk.ts';
+import { applyBulkMemberPeriods, clampDateToRange, clampPeriodUpdate } from './regroupingPeriodBulk.ts';
 
 test('applyBulkMemberPeriods updates only selected member period fields', () => {
   const members = [
@@ -84,4 +84,24 @@ test('clampDateToRange returns the nearest boundary when outside the range', () 
   assert.equal(clampDateToRange('2026-04-01', '2026-05-03', '2026-06-28'), '2026-05-03');
   assert.equal(clampDateToRange('2026-07-05', '2026-05-03', '2026-06-28'), '2026-06-28');
   assert.equal(clampDateToRange('2026-05-24', '2026-05-03', '2026-06-28'), '2026-05-24');
+});
+
+test('clampPeriodUpdate can cap only the start date at the current week', () => {
+  assert.deepEqual(
+    clampPeriodUpdate(
+      {
+        starts_week_date: '2026-07-05',
+        ends_week_date: '2026-12-27',
+      },
+      {
+        min: '2026-06-14',
+        startMax: '2026-06-21',
+        endMax: '2026-12-27',
+      }
+    ),
+    {
+      starts_week_date: '2026-06-21',
+      ends_week_date: '2026-12-27',
+    }
+  );
 });

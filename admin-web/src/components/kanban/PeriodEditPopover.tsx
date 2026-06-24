@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, X } from 'lucide-react';
-import { clampDateToRange } from '@/lib/regroupingPeriodBulk';
+import { clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
 
 interface PeriodEditPopoverProps {
     title: string;
@@ -11,6 +11,8 @@ interface PeriodEditPopoverProps {
     endValue?: string | null;
     minValue?: string | null;
     maxValue?: string | null;
+    startMaxValue?: string | null;
+    endMaxValue?: string | null;
     anchorRect: DOMRect | null;
     onApply: (updates: { starts_week_date: string | null; ends_week_date: string | null }) => void;
     onClose: () => void;
@@ -22,6 +24,8 @@ export const PeriodEditPopover: React.FC<PeriodEditPopoverProps> = ({
     endValue,
     minValue,
     maxValue,
+    startMaxValue,
+    endMaxValue,
     anchorRect,
     onApply,
     onClose,
@@ -53,8 +57,17 @@ export const PeriodEditPopover: React.FC<PeriodEditPopoverProps> = ({
     }, [onClose]);
 
     const apply = () => {
-        const nextStart = draftStart ? clampDateToRange(draftStart, minValue || null, maxValue || null) : null;
-        const nextEnd = draftEnd ? clampDateToRange(draftEnd, minValue || null, maxValue || null) : null;
+        const { starts_week_date: nextStart = null, ends_week_date: nextEnd = null } = clampPeriodUpdate(
+            {
+                starts_week_date: draftStart || null,
+                ends_week_date: draftEnd || null,
+            },
+            {
+                min: minValue || null,
+                startMax: startMaxValue || maxValue || null,
+                endMax: endMaxValue || maxValue || null,
+            }
+        );
 
         onApply({
             starts_week_date: nextStart,
@@ -111,7 +124,7 @@ export const PeriodEditPopover: React.FC<PeriodEditPopoverProps> = ({
                         type="date"
                         value={draftStart}
                         min={minValue || undefined}
-                        max={maxValue || draftEnd || undefined}
+                        max={startMaxValue || maxValue || draftEnd || undefined}
                         onChange={(event) => setDraftStart(event.target.value)}
                         className="h-10 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-900 outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
                     />
@@ -122,7 +135,7 @@ export const PeriodEditPopover: React.FC<PeriodEditPopoverProps> = ({
                         type="date"
                         value={draftEnd}
                         min={draftStart || minValue || undefined}
-                        max={maxValue || undefined}
+                        max={endMaxValue || maxValue || undefined}
                         onChange={(event) => setDraftEnd(event.target.value)}
                         className="h-10 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-900 outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
                     />

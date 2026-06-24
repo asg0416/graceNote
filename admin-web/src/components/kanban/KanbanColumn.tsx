@@ -29,6 +29,7 @@ interface KanbanColumnProps {
     endsWeekDate?: string | null;
     periodMinDate?: string | null;
     periodMaxDate?: string | null;
+    periodStartMaxDate?: string | null;
     onAddMembers?: () => void;
     onDelete?: () => void;
     onUpdate?: (updates: { name?: string, color_hex?: string, is_new_member_group?: boolean, climbing_threshold?: number | null }) => void;
@@ -59,6 +60,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     endsWeekDate,
     periodMinDate,
     periodMaxDate,
+    periodStartMaxDate,
     onAddMembers,
     onDelete,
     onUpdate,
@@ -242,6 +244,8 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                                 endValue={endsWeekDate}
                                                 minValue={periodMinDate}
                                                 maxValue={periodMaxDate}
+                                                startMaxValue={periodStartMaxDate}
+                                                endMaxValue={periodMaxDate}
                                                 anchorRect={periodAnchorRect}
                                                 onApply={onUpdateGroupPeriod}
                                                 onClose={() => {
@@ -374,6 +378,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                     isDraggingElsewhere={isBeingDragged}
                                     movingMembersCount={movingMembersCount}
                                     onUpdateMemberPeriod={onUpdateMemberPeriod}
+                                    periodStartMaxDate={periodStartMaxDate}
                                     readOnly={readOnly}
                                 />
                             );

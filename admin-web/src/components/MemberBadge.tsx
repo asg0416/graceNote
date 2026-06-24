@@ -28,6 +28,7 @@ interface MemberBadgeProps {
     onToggleLeader?: (id: string) => void;
     onDeleteMember?: (id: string) => void;
     onUpdateMemberPeriod?: (id: string, updates: { starts_week_date: string | null; ends_week_date: string | null }) => void;
+    periodStartMaxDate?: string | null;
     isDeletable?: boolean;
 }
 
@@ -41,6 +42,7 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
     onToggleLeader,
     onDeleteMember,
     onUpdateMemberPeriod,
+    periodStartMaxDate,
     isDeletable
 }) => {
     const isLeader = member.role_in_group === 'leader';
@@ -150,6 +152,8 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
                                     endValue={member.ends_week_date}
                                     minValue={member.group_starts_week_date}
                                     maxValue={member.group_ends_week_date}
+                                    startMaxValue={periodStartMaxDate || member.group_ends_week_date}
+                                    endMaxValue={member.group_ends_week_date}
                                     anchorRect={periodAnchorRect}
                                     onApply={(updates) => onUpdateMemberPeriod(member.id, updates)}
                                     onClose={() => {

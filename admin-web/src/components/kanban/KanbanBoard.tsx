@@ -48,6 +48,7 @@ interface KanbanBoardProps {
     onUpdateMemberPeriod?: (id: string, updates: { starts_week_date: string | null; ends_week_date: string | null }) => void;
     groupPeriodMinDate?: string | null;
     groupPeriodMaxDate?: string | null;
+    groupPeriodStartMaxDate?: string | null;
     onAddMembers?: (groupId: string | null) => void;
     lastAddedGroupId?: string | null;
     profileMode?: string;
@@ -75,6 +76,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     onUpdateMemberPeriod,
     groupPeriodMinDate,
     groupPeriodMaxDate,
+    groupPeriodStartMaxDate,
     onAddMembers,
     lastAddedGroupId,
     profileMode,
@@ -341,6 +343,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     activeId={activeId}
                     movingMembersCount={movingMembersCount}
                     onUpdateMemberPeriod={onUpdateMemberPeriod}
+                    periodStartMaxDate={groupPeriodStartMaxDate}
                     autoMoveCouples={autoMoveCouples}
                     readOnly={readOnly}
                 />
@@ -358,6 +361,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         endsWeekDate={group.ends_week_date}
                         periodMinDate={groupPeriodMinDate}
                         periodMaxDate={groupPeriodMaxDate}
+                        periodStartMaxDate={groupPeriodStartMaxDate}
                         members={getMembersByGroup(group.id).map((member: any) => ({
                             ...member,
                             group_starts_week_date: group.starts_week_date || null,

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { ClipboardEvent, DragEvent, KeyboardEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { clampDateToRange } from '@/lib/regroupingPeriodBulk';
+import { clampDateToRange, clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
 
 type SeasonGroup = {
     id: string;
@@ -17,7 +17,7 @@ type MovedSeasonMember = {
     id: string;
     full_name: string;
     changeType: 'moved' | 'added' | 'removed' | 'period';
-    previousGroupName: string;
+    previousGroupName: string | null;
     nextGroupName: string;
     starts_week_date?: string | null;
     ends_week_date?: string | null;
@@ -78,6 +78,7 @@ interface SeasonChangeHistoryPanelProps {
     movedMembers: MovedSeasonMember[];
     seasonEffectiveWeekDate: string;
     seasonEndWeekDate: string;
+    startMaxWeekDate?: string | null;
     readOnly: boolean;
     onArchivedGroupStartChange: (groupId: string, value: string) => void;
     onArchivedGroupEndChange: (groupId: string, value: string) => void;
@@ -95,6 +96,7 @@ export function SeasonChangeHistoryPanel({
     movedMembers,
     seasonEffectiveWeekDate,
     seasonEndWeekDate,
+    startMaxWeekDate,
     readOnly,
     onArchivedGroupStartChange,
     onArchivedGroupEndChange,
@@ -139,7 +141,7 @@ export function SeasonChangeHistoryPanel({
     const selectedPeriodMemberIdSet = new Set(selectedValidPeriodMemberIds);
     const allPeriodMembersSelected = periodAdjustmentMemberIds.length > 0
         && periodAdjustmentMemberIds.every(id => selectedPeriodMemberIdSet.has(id));
-    const currentBulkDateScope = `${seasonEffectiveWeekDate}:${seasonEndWeekDate}`;
+    const currentBulkDateScope = `${seasonEffectiveWeekDate}:${seasonEndWeekDate}:${startMaxWeekDate || ''}`;
     const isBulkDateScopeCurrent = bulkDateScope === currentBulkDateScope;
     const resolvedBulkStartsWeekDate = isBulkDateScopeCurrent ? bulkStartsWeekDate : seasonEffectiveWeekDate;
     const resolvedBulkEndsWeekDate = isBulkDateScopeCurrent ? bulkEndsWeekDate : seasonEndWeekDate;
@@ -163,10 +165,20 @@ export function SeasonChangeHistoryPanel({
     const applyBulkPeriodDates = () => {
         if (!hasSelectedPeriodMembers || !isBulkPeriodRangeValid) return;
 
-        onBulkUpdateMovedMemberPeriods(selectedValidPeriodMemberIds, {
-            starts_week_date: resolvedBulkStartsWeekDate,
-            ends_week_date: resolvedBulkEndsWeekDate,
-        });
+        onBulkUpdateMovedMemberPeriods(
+            selectedValidPeriodMemberIds,
+            clampPeriodUpdate(
+                {
+                    starts_week_date: resolvedBulkStartsWeekDate,
+                    ends_week_date: resolvedBulkEndsWeekDate,
+                },
+                {
+                    min: seasonEffectiveWeekDate,
+                    startMax: startMaxWeekDate || seasonEndWeekDate,
+                    endMax: seasonEndWeekDate,
+                }
+            )
+        );
     };
 
     const updateBulkStartsWeekDate = (value: string) => {
@@ -179,19 +191,26 @@ export function SeasonChangeHistoryPanel({
         setBulkEndsWeekDate(value);
     };
 
-    const getMemberPeriodBounds = (member: MovedSeasonMember) => ({
-        min: member.recommended_starts_week_date || seasonEffectiveWeekDate,
-        max: member.recommended_ends_week_date || seasonEndWeekDate,
-    });
+    const getMemberPeriodBounds = (member: MovedSeasonMember) => {
+        const min = member.recommended_starts_week_date || seasonEffectiveWeekDate;
+        const endMax = member.recommended_ends_week_date || seasonEndWeekDate;
+        const startMax = startMaxWeekDate && startMaxWeekDate < endMax ? startMaxWeekDate : endMax;
+        return { min, startMax, endMax };
+    };
 
     const handleMemberStartChange = (member: MovedSeasonMember, value: string) => {
         const bounds = getMemberPeriodBounds(member);
-        onMovedMemberStartChange(member.id, clampDateToRange(value, bounds.min, bounds.max));
+        onMovedMemberStartChange(member.id, clampDateToRange(value, bounds.min, bounds.startMax));
     };
 
     const handleMemberEndChange = (member: MovedSeasonMember, value: string) => {
         const bounds = getMemberPeriodBounds(member);
-        onMovedMemberEndChange(member.id, clampDateToRange(value, bounds.min, bounds.max));
+        onMovedMemberEndChange(member.id, clampDateToRange(value, bounds.min, bounds.endMax));
+    };
+
+    const getStartInputMax = (endMax?: string | null) => {
+        const resolvedEndMax = endMax || seasonEndWeekDate;
+        return startMaxWeekDate && startMaxWeekDate < resolvedEndMax ? startMaxWeekDate : resolvedEndMax;
     };
 
     const preventManualDateEntry = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -324,9 +343,13 @@ export function SeasonChangeHistoryPanel({
                                                     <span className="text-[10px] font-black text-slate-400">시즌 내 시작 주차</span>
                                                     <input
                                                         type="date"
-                                                        value={group.starts_week_date || seasonEffectiveWeekDate}
+                                                        value={clampDateToRange(
+                                                            group.starts_week_date || seasonEffectiveWeekDate,
+                                                            seasonEffectiveWeekDate,
+                                                            getStartInputMax(group.ends_week_date)
+                                                        )}
                                                         min={seasonEffectiveWeekDate}
-                                                        max={group.ends_week_date || seasonEndWeekDate}
+                                                        max={getStartInputMax(group.ends_week_date)}
                                                         disabled={readOnly}
                                                         onChange={(event) => onNewGroupStartChange(group.id, event.target.value)}
                                                         className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
@@ -404,7 +427,7 @@ export function SeasonChangeHistoryPanel({
                                                         type="date"
                                                         value={resolvedBulkStartsWeekDate}
                                                         min={seasonEffectiveWeekDate}
-                                                        max={resolvedBulkEndsWeekDate || seasonEndWeekDate}
+                                                        max={getStartInputMax(resolvedBulkEndsWeekDate)}
                                                         onChange={(event) => updateBulkStartsWeekDate(event.target.value)}
                                                         className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:ring-4 focus:ring-amber-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                                                     />
@@ -480,13 +503,13 @@ export function SeasonChangeHistoryPanel({
                                                         value={clampDateToRange(
                                                             member.starts_week_date || getMemberPeriodBounds(member).min,
                                                             getMemberPeriodBounds(member).min,
-                                                            member.ends_week_date || getMemberPeriodBounds(member).max
+                                                            getMemberPeriodBounds(member).startMax
                                                         )}
                                                         min={getMemberPeriodBounds(member).min}
                                                         max={clampDateToRange(
-                                                            member.ends_week_date || getMemberPeriodBounds(member).max,
+                                                            member.ends_week_date || getMemberPeriodBounds(member).startMax,
                                                             getMemberPeriodBounds(member).min,
-                                                            getMemberPeriodBounds(member).max
+                                                            getMemberPeriodBounds(member).startMax
                                                         )}
                                                         disabled={readOnly}
                                                         inputMode="none"
@@ -503,16 +526,16 @@ export function SeasonChangeHistoryPanel({
                                                     <input
                                                         type="date"
                                                         value={clampDateToRange(
-                                                            member.ends_week_date || getMemberPeriodBounds(member).max,
+                                                            member.ends_week_date || getMemberPeriodBounds(member).endMax,
                                                             member.starts_week_date || getMemberPeriodBounds(member).min,
-                                                            getMemberPeriodBounds(member).max
+                                                            getMemberPeriodBounds(member).endMax
                                                         )}
                                                         min={clampDateToRange(
                                                             member.starts_week_date || getMemberPeriodBounds(member).min,
                                                             getMemberPeriodBounds(member).min,
-                                                            getMemberPeriodBounds(member).max
+                                                            getMemberPeriodBounds(member).endMax
                                                         )}
-                                                        max={getMemberPeriodBounds(member).max}
+                                                        max={getMemberPeriodBounds(member).endMax}
                                                         disabled={readOnly}
                                                         inputMode="none"
                                                         onKeyDown={preventManualDateEntry}

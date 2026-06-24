@@ -632,6 +632,7 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
           requestedWeek: _effectiveWeekDate,
           seasonStartWeek: _seasonStartWeek,
           seasonEndWeek: _seasonEndWeek,
+          currentWeek: DateTime.now(),
         );
         _seasonBoundsLoaded = true;
       });
@@ -645,9 +646,12 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
   DateTime _datePickerLastDate() {
     final fallbackLastDate = DateTime.now().add(const Duration(days: 365));
     final firstDate = _seasonStartWeek ?? DateTime(2020);
-    final seasonEnd = _seasonEndWeek;
-    if (seasonEnd != null) return seasonEnd;
-    return fallbackLastDate.isBefore(firstDate) ? firstDate : fallbackLastDate;
+    final currentWeek = weekStart(DateTime.now());
+    var lastDate = _seasonEndWeek ?? fallbackLastDate;
+    if (currentWeek.isBefore(lastDate)) {
+      lastDate = currentWeek;
+    }
+    return lastDate.isBefore(firstDate) ? firstDate : lastDate;
   }
 
   Future<void> _pickEffectiveWeek() async {
@@ -657,6 +661,7 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
       requestedWeek: _effectiveWeekDate,
       seasonStartWeek: firstDate,
       seasonEndWeek: lastDate,
+      currentWeek: DateTime.now(),
     );
     final picked = await showDatePicker(
       context: context,
@@ -673,6 +678,7 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
           requestedWeek: picked,
           seasonStartWeek: _seasonStartWeek,
           seasonEndWeek: _seasonEndWeek,
+          currentWeek: DateTime.now(),
         );
       });
     }
@@ -878,6 +884,7 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
         requestedWeek: _effectiveWeekDate,
         seasonStartWeek: _seasonStartWeek,
         seasonEndWeek: _seasonEndWeek,
+        currentWeek: DateTime.now(),
       );
 
       await repo.moveDirectoryMemberToGroup(

@@ -31,4 +31,15 @@ void main() {
 
     expect(result, DateTime(2026, 12, 27));
   });
+
+  test('clamps a future move week to the current week', () {
+    final result = resolveMoveEffectiveWeek(
+      requestedWeek: DateTime(2026, 7, 5),
+      seasonStartWeek: DateTime(2026, 6, 14),
+      seasonEndWeek: DateTime(2026, 12, 27),
+      currentWeek: DateTime(2026, 6, 21),
+    );
+
+    expect(result, DateTime(2026, 6, 21));
+  });
 }
