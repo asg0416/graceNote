@@ -120,6 +120,23 @@ const formatRegroupingDateLabel = (value?: string | null) => {
 
 const LOAD_CURRENT_BOARD_HELP_TEXT = '현재 적용 중인 조와 성도 목록을 새 시즌 초안의 시작 상태로 가져옵니다. 이후 새 시즌 안에서 필요한 이동과 기간만 수정하세요.';
 
+const buildRegroupingPageHref = ({
+    churchId,
+    deptId,
+    seasonId,
+}: {
+    churchId?: string | null;
+    deptId?: string | null;
+    seasonId?: string | null;
+}) => {
+    const params = new URLSearchParams();
+    if (churchId) params.set('churchId', churchId);
+    if (deptId) params.set('deptId', deptId);
+    if (seasonId) params.set('seasonId', seasonId);
+    const query = params.toString();
+    return query ? `/regrouping?${query}` : '/regrouping';
+};
+
 const isSeasonCoveringDate = (season: any, dateInputValue: string) => {
     if (!season?.effective_week_date || season.effective_week_date > dateInputValue) {
         return false;
@@ -604,7 +621,7 @@ function RegroupingPageInner() {
     const boardRef = useRef<HTMLDivElement>(null);
     const exportTableRef = useRef<HTMLDivElement>(null);
     const loadedQuerySeasonIdRef = useRef<string | null>(null);
-    const loadSeasonDraftRef = useRef<((seasonId: string) => Promise<void>) | null>(null);
+    const loadSeasonDraftRef = useRef<((seasonId: string, options?: { syncHistory?: boolean }) => Promise<void>) | null>(null);
     const previousSeasonPeriodRef = useRef<{ start: string; end: string | null } | null>(null);
     const groupsRef = useRef<any[]>([]);
     const router = useRouter();
@@ -2622,7 +2639,11 @@ function RegroupingPageInner() {
         }
     };
 
-    const handleLoadSeasonDraft = async (seasonId: string) => {
+    const handleLoadSeasonDraft = async (
+        seasonId: string,
+        options: { syncHistory?: boolean } = {}
+    ) => {
+        const shouldSyncHistory = options.syncHistory ?? true;
         const season = regroupingSeasons.find(item => item.id === seasonId);
         if (!season) return;
 
@@ -2699,6 +2720,18 @@ function RegroupingPageInner() {
             setHasChanges(injectedRestoreGroup || shouldNormalizeDefaultPeriodOnLoad);
             setRegroupingMode('season');
             setRegroupingView('seasonEditor');
+            if (shouldSyncHistory) {
+                loadedQuerySeasonIdRef.current = [
+                    seasonId,
+                    currentChurchId || '',
+                    selectedDeptId || '',
+                ].join('|');
+                router.push(buildRegroupingPageHref({
+                    churchId: currentChurchId,
+                    deptId: selectedDeptId,
+                    seasonId,
+                }));
+            }
         } catch (error) {
             console.error('Load regrouping season draft error:', error);
             alert(error instanceof Error ? error.message : '시즌 초안을 불러오는 중 오류가 발생했습니다.');
@@ -2724,12 +2757,47 @@ function RegroupingPageInner() {
         if (!regroupingSeasons.some(season => season.id === seasonIdFromQuery)) return;
 
         const loadFromQuery = async () => {
-            await loadSeasonDraftRef.current?.(seasonIdFromQuery);
+            await loadSeasonDraftRef.current?.(seasonIdFromQuery, { syncHistory: false });
             loadedQuerySeasonIdRef.current = queryLoadKey;
         };
 
         void loadFromQuery();
     }, [searchParams, regroupingSeasons, currentChurchId, selectedDeptId]);
+
+    useEffect(() => {
+        const seasonIdFromQuery = searchParams.get('seasonId');
+        if (seasonIdFromQuery || regroupingView === 'list' || !selectedSeasonId) return;
+
+        if (hasChanges && !window.confirm('저장되지 않은 변경 사항을 버리고 시즌 목록으로 돌아갈까요?')) {
+            router.replace(buildRegroupingPageHref({
+                churchId: currentChurchId,
+                deptId: selectedDeptId,
+                seasonId: selectedSeasonId,
+            }));
+            return;
+        }
+
+        loadedQuerySeasonIdRef.current = null;
+        setRegroupingView('list');
+        setRegroupingMode('season');
+        setSelectedSeasonId(null);
+        setSeasonTitle('');
+        setSeasonEffectiveWeekDate(getCurrentSundayInputValue());
+        setSeasonEndWeekDate(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
+        setSeasonArchivedGroups([]);
+        setHasChanges(false);
+        if (currentChurchId && selectedDeptId) {
+            void fetchData();
+        }
+    }, [
+        currentChurchId,
+        hasChanges,
+        regroupingView,
+        router,
+        searchParams,
+        selectedDeptId,
+        selectedSeasonId,
+    ]);
 
     const handleApplySeason = async () => {
         if (!selectedSeasonId) {
@@ -3071,6 +3139,11 @@ function RegroupingPageInner() {
         setSeasonEndWeekDate(addWeeksToDateInput(getCurrentSundayInputValue(), 24));
         setSeasonArchivedGroups([]);
         setHasChanges(false);
+        loadedQuerySeasonIdRef.current = null;
+        router.replace(buildRegroupingPageHref({
+            churchId: currentChurchId,
+            deptId: selectedDeptId,
+        }));
         if (currentChurchId && selectedDeptId) {
             await fetchData();
         }
