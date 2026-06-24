@@ -112,3 +112,11 @@ export const shouldShowSeasonMemberPeriodChange = ({
 
   return currentDiffers || baselineDiffers;
 };
+
+export const shouldCreateHistoricalUnassignedMoveRows = ({
+  mode,
+  isCurrentAppliedSeason,
+}: {
+  mode: RegroupingMode;
+  isCurrentAppliedSeason: boolean;
+}) => mode === 'live' || isCurrentAppliedSeason;

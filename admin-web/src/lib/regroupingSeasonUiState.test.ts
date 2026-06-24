@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  shouldCreateHistoricalUnassignedMoveRows,
   isMoveSourceMembershipPeriodClosure,
   isRegroupingBoardReadonly,
   shouldShowSeasonMemberPeriodChange,
@@ -18,6 +19,33 @@ test('draft and ready season boards remain editable', () => {
 test('live correction boards remain editable regardless of season status', () => {
   assert.equal(isRegroupingBoardReadonly('live', 'applied'), false);
   assert.equal(isRegroupingBoardReadonly('live', null), false);
+});
+
+test('draft season unassigned moves keep a single visible board card', () => {
+  assert.equal(
+    shouldCreateHistoricalUnassignedMoveRows({
+      mode: 'season',
+      isCurrentAppliedSeason: false,
+    }),
+    false
+  );
+});
+
+test('live and current applied season unassigned moves keep historical rows', () => {
+  assert.equal(
+    shouldCreateHistoricalUnassignedMoveRows({
+      mode: 'live',
+      isCurrentAppliedSeason: false,
+    }),
+    true
+  );
+  assert.equal(
+    shouldCreateHistoricalUnassignedMoveRows({
+      mode: 'season',
+      isCurrentAppliedSeason: true,
+    }),
+    true
+  );
 });
 
 test('period change remains visible after user corrects the current value until save resets baseline', () => {

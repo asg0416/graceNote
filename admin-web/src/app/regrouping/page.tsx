@@ -36,6 +36,7 @@ import { MemberModal } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
 import {
     isMoveSourceMembershipPeriodClosure,
+    shouldCreateHistoricalUnassignedMoveRows,
     shouldShowSeasonMemberPeriodChange,
 } from '@/lib/regroupingSeasonUiState';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
@@ -1420,6 +1421,10 @@ function RegroupingPageInner() {
         currentAssignmentCount: number
     ) => {
         const targetGroup = targetGroupId ? groups.find(group => group.id === targetGroupId) : null;
+        const shouldCreateHistoricalUnassignedRows = shouldCreateHistoricalUnassignedMoveRows({
+            mode: regroupingMode,
+            isCurrentAppliedSeason: isSelectedCurrentAppliedSeason,
+        });
 
         if (targetGroupId) {
             const sourceGroupId = member.previous_source_group_id || member.source_membership_group_id || null;
@@ -1478,6 +1483,22 @@ function RegroupingPageInner() {
             }];
         }
 
+        if (!shouldCreateHistoricalUnassignedRows) {
+            return [{
+                ...member,
+                group_id: null,
+                group_name: null,
+                role_in_group: 'member',
+                plan_change_type: null,
+                previous_source_group_id: null,
+                previous_group_name: null,
+                source_membership_group_id: null,
+                source_membership_group_name: null,
+                starts_week_date: member.starts_week_date || seasonEffectiveWeekDate,
+                ends_week_date: member.ends_week_date || seasonEndWeekDate || null,
+            }];
+        }
+
         const sourceGroup = groups.find(group => group.id === member.group_id);
         const removalEndWeek = getCurrentSundayInputValue();
 
@@ -1496,7 +1517,7 @@ function RegroupingPageInner() {
                 sourceGroup
             ),
         ];
-    }, [buildRemovedMembershipRow, buildUnassignedDepartmentRow, groups, isSelectedCurrentAppliedSeason, seasonEffectiveWeekDate, seasonEndWeekDate]);
+    }, [buildRemovedMembershipRow, buildUnassignedDepartmentRow, groups, isSelectedCurrentAppliedSeason, regroupingMode, seasonEffectiveWeekDate, seasonEndWeekDate]);
 
     const handleReorderMembers = useMemo(() => (ids: string[], targetGroupId: string | null) => {
         const currentBoardMembers = getRegroupingBoardDisplayMembers(localMembers);
@@ -1778,6 +1799,10 @@ function RegroupingPageInner() {
             removedFromGroup?.name ||
             getValidRegroupingGroupLabel(member.group_name) ||
             null;
+        const shouldCreateHistoricalUnassignedRows = shouldCreateHistoricalUnassignedMoveRows({
+            mode: regroupingMode,
+            isCurrentAppliedSeason: isSelectedCurrentAppliedSeason,
+        });
 
         if (id.startsWith('temp-')) {
             // Temporary members are always safe to remove locally
@@ -1787,6 +1812,12 @@ function RegroupingPageInner() {
             // If the member is duplicated (exists in other groups), we only remove this instance
             // This is effectively "de-assigning" from THIS group.
             if (confirm(`${member.full_name} 성도님을 이 조에서 제외하시겠습니까? (다른 조에 등록된 정보는 유지됩니다.)`)) {
+                if (!shouldCreateHistoricalUnassignedRows) {
+                    setLocalMembers(prev => prev.filter(m => m.id !== id));
+                    setHasChanges(true);
+                    return;
+                }
+
                 // ends_week_date를 현재 주차(오늘)로 설정하여 앱에서 즉시 소속이 사라지도록 함
                 // 시즌 변경 내역 패널의 '소속 종료' 행에서 날짜를 더 세밀하게 조정할 수 있음
                 const removalEndWeek = getCurrentSundayInputValue();
@@ -1811,6 +1842,28 @@ function RegroupingPageInner() {
         } else {
             // 단일 소속은 기존 조 membership을 종료하고, 부서 안에는 미편성 row를 별도로 남긴다.
             if (confirm(`${member.full_name} 성도님을 미편성으로 이동하시겠습니까?\n부서 소속은 유지되고 조 소속만 선택 주차부터 비워집니다.`)) {
+                if (!shouldCreateHistoricalUnassignedRows) {
+                    setLocalMembers(prev => prev.map(m => (
+                        m.id === id
+                            ? {
+                                ...m,
+                                group_id: null,
+                                group_name: null,
+                                role_in_group: 'member',
+                                plan_change_type: null,
+                                previous_source_group_id: null,
+                                previous_group_name: null,
+                                source_membership_group_id: null,
+                                source_membership_group_name: null,
+                                starts_week_date: m.starts_week_date || seasonEffectiveWeekDate,
+                                ends_week_date: m.ends_week_date || seasonEndWeekDate || null,
+                            }
+                            : m
+                    )));
+                    setHasChanges(true);
+                    return;
+                }
+
                 const removalEndWeek = getCurrentSundayInputValue();
                 const unassignedStartWeek = addWeeksToDateInput(removalEndWeek, 1);
                 setLocalMembers(prev => prev.flatMap(m => (
