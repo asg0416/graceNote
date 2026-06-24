@@ -118,6 +118,8 @@ const formatRegroupingDateLabel = (value?: string | null) => {
     return `${year}.${Number(month)}.${Number(day)}.`;
 };
 
+const LOAD_CURRENT_BOARD_HELP_TEXT = '현재 적용 중인 조와 성도 목록을 새 시즌 초안의 시작 상태로 가져옵니다. 이후 새 시즌 안에서 필요한 이동과 기간만 수정하세요.';
+
 const isSeasonCoveringDate = (season: any, dateInputValue: string) => {
     if (!season?.effective_week_date || season.effective_week_date > dateInputValue) {
         return false;
@@ -3912,13 +3914,15 @@ function RegroupingPageInner() {
                                         </div>
                                     )}
                                     {!selectedSeasonId && !isSelectedCurrentAppliedSeason && (
-                                        <button
-                                            type="button"
-                                            onClick={handleLoadCurrentBoardIntoSeason}
-                                            className="inline-flex h-9 w-fit items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800"
-                                        >
-                                            현재 조편성 불러오기
-                                        </button>
+                                        <Tooltip content={LOAD_CURRENT_BOARD_HELP_TEXT} position="bottom" className="w-fit">
+                                            <button
+                                                type="button"
+                                                onClick={handleLoadCurrentBoardIntoSeason}
+                                                className="inline-flex h-9 w-fit items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800"
+                                            >
+                                                현재 조편성 불러오기
+                                            </button>
+                                        </Tooltip>
                                     )}
                                 </>
                             ) : (
@@ -4024,23 +4028,19 @@ function RegroupingPageInner() {
                                                 </span>
                                             </div>
                                         </label>
-                                        <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-xs font-black text-slate-600 xl:col-span-2 dark:bg-slate-950 dark:text-slate-300">
-                                            <div className="flex items-center gap-2">
-                                                <span>{selectedSeasonId ? '초안 보관' : '초안 시작점'}</span>
-                                                <Tooltip content="미래 시즌은 설정한 기간 전체에 적용됩니다. 시즌 중간 변동은 현재 시즌에서 변경 주차를 정해 처리합니다.">
-                                                    <HelpCircle className="h-4 w-4 text-slate-400" />
+                                        {!selectedSeasonId && (
+                                            <div className="flex items-end justify-start">
+                                                <Tooltip content={LOAD_CURRENT_BOARD_HELP_TEXT} position="bottom" className="w-fit">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleLoadCurrentBoardIntoSeason}
+                                                        className="inline-flex h-10 w-fit items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800 dark:bg-slate-950"
+                                                    >
+                                                        현재 조편성 불러오기
+                                                    </button>
                                                 </Tooltip>
                                             </div>
-                                            {!selectedSeasonId && (
-                                                <button
-                                                    type="button"
-                                                    onClick={handleLoadCurrentBoardIntoSeason}
-                                                    className="inline-flex h-8 w-fit items-center justify-center rounded-lg border border-slate-200 px-3 text-[11px] font-black text-blue-600 transition hover:bg-blue-50 active:scale-95 dark:border-slate-800"
-                                                >
-                                                    현재 조편성 불러오기
-                                                </button>
-                                            )}
-                                        </div>
+                                        )}
                                         {seasonPeriodConflict ? (
                                             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[11px] font-bold leading-5 text-amber-800 xl:col-span-4 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
                                                 기존 시즌과 기간이 겹칩니다: {formatSeasonConflictLabel(seasonPeriodConflict)}
