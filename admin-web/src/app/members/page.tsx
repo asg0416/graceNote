@@ -40,6 +40,7 @@ import RichTextEditor from '@/components/RichTextEditor';
 import { MemberModal, MemberProfile } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
+import { buildCurrentSeasonPhase2ListCheck } from '@/lib/phase2ListDiagnostics';
 import {
     setMemberDirectoryActiveStatus,
     setPersonDepartmentActiveStatus,
@@ -139,12 +140,6 @@ const selectRelevantSeason = (seasons: CurrentSeasonRow[], dateText: string) => 
         || sortedSeasons.find(season => String(season.effective_week_date || '') <= dateText)
         || sortedSeasons[0]
         || null;
-};
-
-const getSeasonReferenceDate = (season: CurrentSeasonRow, dateText: string) => {
-    if (season.effective_week_date && dateText < season.effective_week_date) return season.effective_week_date;
-    if (season.end_week_date && season.end_week_date < dateText) return season.end_week_date;
-    return dateText;
 };
 
 const formatSeasonShortDate = (value?: string | null) => {
@@ -648,36 +643,36 @@ function MembersPageInner() {
                 const currentSeasonId = currentSeason?.id;
 
                 if (currentSeasonId) {
-                    const referenceDate = getSeasonReferenceDate(currentSeason, todayText);
                     const { data: planAssignments, error: planAssignmentsError } = await supabase
                         .from('regrouping_plan_assignments')
                         .select('id, person_id')
                         .eq('season_id', currentSeasonId)
-                        .lte('starts_week_date', referenceDate)
-                        .or(`ends_week_date.is.null,ends_week_date.gte.${referenceDate}`)
                         .or('change_type.is.null,change_type.neq.removed');
 
                     if (planAssignmentsError) throw planAssignmentsError;
 
                     const planRows = (planAssignments || []) as CurrentSeasonPlanAssignmentRow[];
-                    const phase2PlanPersonIds = new Set(planRows.map(row => row.person_id).filter(isNonEmptyString));
-                    const missingPlanPersonIds = Array.from(activeLegacyPhase2PersonIds)
-                        .filter(personId => !phase2PlanPersonIds.has(personId));
-                    const extraPlanPersonIds = Array.from(phase2PlanPersonIds)
-                        .filter(personId => !activeLegacyPhase2PersonIds.has(personId));
-                    const missingUnlinkedCount = activeLegacyMembers.filter(member => !member.phase2_person_id).length;
-                    const issueCount = missingPlanPersonIds.length + extraPlanPersonIds.length + missingUnlinkedCount;
+                    const check = buildCurrentSeasonPhase2ListCheck({
+                        activeLegacyMembers: activeLegacyMembers.map(member => ({
+                            id: member.id,
+                            phase2PersonId: member.phase2_person_id,
+                            personKey: getRosterPersonKey(member),
+                        })),
+                        planAssignments: planRows.map(row => ({
+                            personId: row.person_id,
+                        })),
+                    });
 
                     setPhase2ListCheck({
-                        status: issueCount === 0 ? 'ok' : 'warning',
-                        legacyActiveCount: activeLegacyMembers.length,
-                        phase2ActiveCount: planRows.length,
-                        legacyActivePersonCount: activeLegacyPersonIds.size,
-                        phase2ActivePersonCount: phase2PlanPersonIds.size,
-                        issueCount,
-                        message: issueCount === 0
+                        status: check.issueCount === 0 ? 'ok' : 'warning',
+                        legacyActiveCount: check.legacyActiveCount,
+                        phase2ActiveCount: check.phase2ActiveCount,
+                        legacyActivePersonCount: check.legacyActivePersonCount,
+                        phase2ActivePersonCount: check.phase2ActivePersonCount,
+                        issueCount: check.issueCount,
+                        message: check.issueCount === 0
                             ? '조편성 시즌 기준의 사람 목록이 성도명부와 일치합니다.'
-                            : `시즌 기준 누락 ${missingPlanPersonIds.length + missingUnlinkedCount}명 / 추가 확인 ${extraPlanPersonIds.length}명`
+                            : `시즌 기준 누락 ${check.missingCount}명 / 추가 확인 ${check.extraCount}명`
                     });
                     return;
                 }
