@@ -66,7 +66,7 @@ import {
 } from '@/lib/regroupingSeasonPayloads';
 import { applyBulkMemberPeriods, clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
 import { shouldReturnToSeasonListOnMissingSeasonQuery } from '@/lib/regroupingNavigationState';
-import { canDeletePendingRegroupingSeason } from '@/lib/regroupingSeasonActions';
+import { canApplyRegroupingSeason, canDeletePendingRegroupingSeason } from '@/lib/regroupingSeasonActions';
 import { SeasonChangeHistoryPanel } from './SeasonChangeHistoryPanel';
 
 const toDateInputValue = (date: Date) => {
@@ -761,12 +761,15 @@ function RegroupingPageInner() {
         Boolean(selectedDepartment) &&
         !isSeasonPeriodInvalid &&
         !isSeasonPeriodOverlapping;
-    const canApplySeason = regroupingMode === 'season' &&
-        Boolean(selectedSeasonId) &&
-        !isSelectedSeasonApplied &&
-        !isSeasonEffectiveFuture &&
-        !isSeasonPeriodInvalid &&
-        !isSeasonPeriodOverlapping;
+    const canAttemptApplySeason = canApplyRegroupingSeason({
+        mode: regroupingMode,
+        hasSelectedSeason: Boolean(selectedSeasonId),
+        isApplied: isSelectedSeasonApplied,
+        isFuture: isSeasonEffectiveFuture,
+        hasInvalidPeriod: isSeasonPeriodInvalid,
+        hasOverlappingPeriod: isSeasonPeriodOverlapping,
+        hasUnsavedChanges: false,
+    });
     const viewTitle = regroupingView === 'list'
         ? '조편성 시즌'
         : regroupingMode === 'live'
@@ -2915,6 +2918,11 @@ function RegroupingPageInner() {
             return;
         }
 
+        if (hasChanges) {
+            alert('저장되지 않은 변경 사항이 있습니다. 먼저 초안 저장을 눌러 현재 화면을 저장한 뒤 실제 소속에 적용해 주세요.');
+            return;
+        }
+
         if (!window.confirm('이 조편성 계획을 실제 소속으로 적용할까요? 적용 후에는 앱과 출석/기도 화면에 반영됩니다.')) {
             return;
         }
@@ -4031,7 +4039,7 @@ function RegroupingPageInner() {
                                         <button
                                             type="button"
                                             onClick={handleApplySeason}
-                                            disabled={saving || !canApplySeason}
+                                            disabled={saving || !canAttemptApplySeason}
                                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-black text-white transition hover:bg-emerald-500 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-300 sm:px-5"
                                         >
                                             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
