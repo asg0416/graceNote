@@ -3983,14 +3983,6 @@ function RegroupingPageInner() {
                         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row">
                             <button
                                 type="button"
-                                onClick={() => setIsEditorFocusMode(prev => !prev)}
-                                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:border-blue-200 hover:text-blue-600 active:scale-95 sm:px-4 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                            >
-                                {isEditorShellFocused ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                                {isEditorShellFocused ? '확대 종료' : '보드 확대'}
-                            </button>
-                            <button
-                                type="button"
                                 onClick={() => setIsEditorControlsCollapsed(prev => !prev)}
                                 aria-expanded={!isEditorControlsCollapsed}
                                 className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:border-blue-200 hover:text-blue-600 active:scale-95 sm:px-4 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
@@ -4396,6 +4388,15 @@ function RegroupingPageInner() {
                                     </button>
                                 </Tooltip>
                             )}
+                            <button
+                                type="button"
+                                onClick={() => setIsEditorFocusMode(prev => !prev)}
+                                aria-label={isEditorShellFocused ? '보드 확대 종료' : '편집 보드 확대'}
+                                className="inline-flex h-9 w-fit items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-black text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 active:scale-95 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                            >
+                                {isEditorShellFocused ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                                {isEditorShellFocused ? '확대 종료' : '보드 확대'}
+                            </button>
                         </div>
                     </div>
                 </div>
