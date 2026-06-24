@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  canCopyRegroupingMemberToTargetGroup,
   shouldCreateHistoricalUnassignedMoveRows,
   isMoveSourceMembershipPeriodClosure,
   isRegroupingBoardReadonly,
@@ -19,6 +20,11 @@ test('draft and ready season boards remain editable', () => {
 test('live correction boards remain editable regardless of season status', () => {
   assert.equal(isRegroupingBoardReadonly('live', 'applied'), false);
   assert.equal(isRegroupingBoardReadonly('live', null), false);
+});
+
+test('copying a member is allowed only into an assigned group', () => {
+  assert.equal(canCopyRegroupingMemberToTargetGroup('plan-group-1'), true);
+  assert.equal(canCopyRegroupingMemberToTargetGroup(null), false);
 });
 
 test('draft season unassigned moves keep a single visible board card', () => {

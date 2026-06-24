@@ -6,6 +6,9 @@ export const isRegroupingBoardReadonly = (
   seasonStatus: RegroupingSeasonStatus
 ) => mode === 'season' && seasonStatus === 'applied';
 
+export const canCopyRegroupingMemberToTargetGroup = (targetGroupId?: string | null) =>
+  Boolean(targetGroupId);
+
 type SeasonMemberPeriodChangeInput = {
   currentStart?: string | null;
   currentEnd?: string | null;

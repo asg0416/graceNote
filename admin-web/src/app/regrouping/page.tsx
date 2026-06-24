@@ -35,6 +35,7 @@ import { KanbanBoard } from '@/components/kanban/KanbanBoard';
 import { MemberModal } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
 import {
+    canCopyRegroupingMemberToTargetGroup,
     isMoveSourceMembershipPeriodClosure,
     shouldCreateHistoricalUnassignedMoveRows,
     shouldShowSeasonMemberPeriodChange,
@@ -1613,6 +1614,12 @@ function RegroupingPageInner() {
                 ends_week_date: targetGroup?.ends_week_date || seasonEndWeekDate || null,
             }
             : {};
+
+        if (isCopy && !canCopyRegroupingMemberToTargetGroup(targetGroupId)) {
+            alert('미편성에는 복사할 수 없습니다. 미편성으로 옮기려면 Shift 없이 드래그하세요.');
+            setSelectedMemberIds([]);
+            return;
+        }
 
         // Couple-aware logic: if autoMoveCouples is on, find spouses
         if (autoMoveCouples) {
