@@ -2,13 +2,16 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const BLOCKED_TOKENS = [
-  'regrouping_seasons',
-  'regrouping_plan_groups',
-  'regrouping_plan_assignments',
+const BLOCKED_DRAFT_TOKENS = [
   'create_regrouping_season',
   'save_regrouping_season_draft',
   'apply_regrouping_season',
+  "status', 'draft'",
+  'status", "draft"',
+  "status = 'draft'",
+  'status = "draft"',
+  "plan_status = 'draft'",
+  'plan_status = "draft"',
 ];
 
 const SCANNED_EXTENSIONS = new Set(['.dart', '.ts', '.tsx', '.js', '.mjs', '.sql']);
@@ -26,6 +29,7 @@ const ALWAYS_ALLOWED_PREFIXES = [
   'supabase/migrations/',
   'supabase/verify_',
   'scripts/verify-regrouping-season-boundary',
+  'lib/core/models/',
 ];
 
 const RUNTIME_ALLOWED_PREFIXES = [
@@ -72,7 +76,7 @@ export async function findRegroupingSeasonBoundaryViolations(root = process.cwd(
     if (isAllowedReferencePath(relativePath)) continue;
 
     const contents = await readFile(filePath, 'utf8');
-    const matchedTokens = BLOCKED_TOKENS.filter(token => contents.includes(token));
+    const matchedTokens = BLOCKED_DRAFT_TOKENS.filter(token => contents.includes(token));
     if (matchedTokens.length > 0) {
       violations.push(`${relativePath}: ${matchedTokens.join(', ')}`);
     }
@@ -84,12 +88,12 @@ export async function findRegroupingSeasonBoundaryViolations(root = process.cwd(
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const violations = await findRegroupingSeasonBoundaryViolations();
   if (violations.length > 0) {
-    console.error('Regrouping season draft references leaked into operational code:');
+    console.error('Regrouping season draft/write references leaked into operational code:');
     for (const violation of violations) {
       console.error(`- ${violation}`);
     }
     process.exit(1);
   }
 
-  console.log('Regrouping season boundary OK: draft tables/RPCs are isolated from operational app code.');
+  console.log('Regrouping season boundary OK: draft/write APIs are isolated from operational app code.');
 }

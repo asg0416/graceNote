@@ -1,10 +1,9 @@
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/core/services/push_notification_service.dart';
+import 'package:grace_note/core/services/web_push_runtime.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
@@ -79,14 +78,14 @@ class _PushPermissionBannerState extends ConsumerState<PushPermissionBanner>
     } else {
       // Check if browser has explicitly denied (vs. just not asked yet)
       final isDenied = _isBrowserNotificationDenied();
-      setState(() =>
-          _state = isDenied ? _BannerState.denied : _BannerState.visible);
+      setState(
+          () => _state = isDenied ? _BannerState.denied : _BannerState.visible);
     }
   }
 
   bool _isBrowserNotificationDenied() {
     try {
-      return html.Notification.permission == 'denied';
+      return isBrowserNotificationDenied();
     } catch (_) {
       return false;
     }

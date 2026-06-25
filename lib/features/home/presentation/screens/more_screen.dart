@@ -14,8 +14,7 @@ import 'package:grace_note/core/widgets/app_skeleton.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/services/push_notification_service.dart';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:grace_note/core/services/web_update_runtime.dart';
 
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
@@ -26,7 +25,9 @@ class MoreScreen extends ConsumerStatefulWidget {
 
 class _MoreScreenState extends ConsumerState<MoreScreen> {
   void _reloadApp() {
-    html.window.location.reload();
+    if (kIsWeb) {
+      reloadBrowserWindow();
+    }
   }
 
   @override
