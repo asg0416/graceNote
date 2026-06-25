@@ -8,6 +8,7 @@ import {
   shouldAutoSyncRegroupingSeasonPeriodRows,
   buildRegroupingSuppressedHistoricalTargetKeys,
   shouldKeepMappedRegroupingSeasonMember,
+  shouldHideHistoricalMoveSourceOnBoard,
   shouldUseRegroupingSeasonMemberAsVisibleUnassigned,
   isMoveSourceMembershipPeriodClosure,
   isRegroupingBoardReadonly,
@@ -166,6 +167,43 @@ test('move source membership closures are not treated as standalone period adjus
       seasonEffectiveWeekDate: '2026-06-14',
     }),
     true
+  );
+});
+
+test('historical move source rows stay out of the editable board cards', () => {
+  const sourceMembership = {
+    id: 'source-row',
+    phase2_person_id: 'person-1',
+    group_id: 'plan-new-family',
+    source_membership_group_id: 'live-new-family',
+    starts_week_date: '2026-03-08',
+    ends_week_date: '2026-03-15',
+  };
+  const movedMembership = {
+    id: 'moved-row',
+    phase2_person_id: 'person-1',
+    group_id: 'plan-regular',
+    plan_change_type: 'moved',
+    previous_source_group_id: 'live-new-family',
+    starts_week_date: '2026-03-22',
+    ends_week_date: '2026-06-28',
+  };
+
+  assert.equal(
+    shouldHideHistoricalMoveSourceOnBoard({
+      member: sourceMembership,
+      allMembers: [sourceMembership, movedMembership],
+      seasonEffectiveWeekDate: '2026-01-04',
+    }),
+    true
+  );
+  assert.equal(
+    shouldHideHistoricalMoveSourceOnBoard({
+      member: movedMembership,
+      allMembers: [sourceMembership, movedMembership],
+      seasonEffectiveWeekDate: '2026-01-04',
+    }),
+    false
   );
 });
 

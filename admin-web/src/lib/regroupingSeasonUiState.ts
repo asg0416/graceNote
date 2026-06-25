@@ -38,7 +38,6 @@ export const isRegroupingSeasonPeriodCoveringDate = ({
 
 export const shouldAutoSyncRegroupingSeasonPeriodRows = ({
   mode,
-  seasonStatus: _seasonStatus,
 }: {
   mode: RegroupingMode;
   seasonStatus: RegroupingSeasonStatus;
@@ -198,6 +197,28 @@ export const isMoveSourceMembershipPeriodClosure = ({
 
     const moveStartWeekDate = normalizeWeekDate(candidate.starts_week_date) || seasonEffectiveWeekDate;
     return getPreviousWeekDate(moveStartWeekDate) === closedEndWeekDate;
+  });
+};
+
+export const shouldHideHistoricalMoveSourceOnBoard = ({
+  member,
+  allMembers,
+  seasonEffectiveWeekDate,
+}: {
+  member: SeasonMembershipRow;
+  allMembers: SeasonMembershipRow[];
+  seasonEffectiveWeekDate: string;
+}) => {
+  const changeType = normalizeText(member.plan_change_type) || normalizeText(member.change_type);
+  if (changeType === 'moved' || changeType === 'added' || changeType === 'removed') return false;
+  if (!normalizeText(member.group_id)) return false;
+
+  const sourceGroupId = getSourceGroupId(member, member.group_id);
+  return isMoveSourceMembershipPeriodClosure({
+    member,
+    allMembers,
+    currentSourceGroupId: sourceGroupId,
+    seasonEffectiveWeekDate,
   });
 };
 

@@ -41,6 +41,7 @@ import {
     getRegroupingEditorShellMode,
     isRegroupingSeasonPeriodCoveringDate,
     isMoveSourceMembershipPeriodClosure,
+    shouldHideHistoricalMoveSourceOnBoard,
     shouldCreateHistoricalUnassignedMoveRows,
     shouldAutoSyncRegroupingSeasonPeriodRows,
     shouldShowSeasonMemberPeriodChange,
@@ -374,7 +375,7 @@ const resolveDefaultSeasonPeriod = (
     return { start: dominant.start, end: dominant.end };
 };
 
-const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
+const normalizeRegroupingDisplayMembers = (sourceMembers: any[], seasonEffectiveWeekDate = '') => {
     const rowsByPerson = new Map<string, any[]>();
     sourceMembers.forEach((member) => {
         const key = getRegroupingIdentityKey(member);
@@ -394,6 +395,12 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
             visibleRows.push(row);
         };
 
+        const historicalMoveSourceRows = rows.filter(row => shouldHideHistoricalMoveSourceOnBoard({
+            member: row,
+            allMembers: rows,
+            seasonEffectiveWeekDate,
+        }));
+
         const draftRows = rows.filter(row => String(row.id || '').startsWith('temp-') || row.is_new);
         if (draftRows.length > 0) {
             draftRows.forEach(pushVisibleRow);
@@ -402,6 +409,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
 
         const removedMembershipRows = rows.filter(row =>
             !draftRows.includes(row) &&
+            !historicalMoveSourceRows.includes(row) &&
             isRegroupingRemovedMembershipRow(row)
         );
         if (removedMembershipRows.length > 0) {
@@ -411,6 +419,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
         const activeMembershipRows = rows.filter(row =>
             !draftRows.includes(row) &&
             !removedMembershipRows.includes(row) &&
+            !historicalMoveSourceRows.includes(row) &&
             Boolean(row.phase2_person_id) &&
             Boolean(row.phase2_membership_id) &&
             Boolean(row.group_id) &&
@@ -425,6 +434,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
             !draftRows.includes(row) &&
             !removedMembershipRows.includes(row) &&
             !activeMembershipRows.includes(row) &&
+            !historicalMoveSourceRows.includes(row) &&
             Boolean(row.group_id) &&
             row.is_active !== false
         );
@@ -449,8 +459,8 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[]) => {
 const getRegroupingBoardDisplayMembers = (sourceMembers: any[]) =>
     normalizeRegroupingDisplayMembers(sourceMembers).filter(member => !isRegroupingRemovedMembershipRow(member));
 
-const buildRegroupingSeasonSaveMembers = (sourceMembers: any[]) => {
-    const displayRows = normalizeRegroupingDisplayMembers(sourceMembers);
+const buildRegroupingSeasonSaveMembers = (sourceMembers: any[], seasonEffectiveWeekDate = '') => {
+    const displayRows = normalizeRegroupingDisplayMembers(sourceMembers, seasonEffectiveWeekDate);
     const savedKeys = new Set(displayRows.map(getRegroupingSourceMembershipKey).filter(Boolean));
     const replacedRemovedPairKeys = getRegroupingReplacedRemovedPairKeys(displayRows);
     const hiddenRemovedRows = sourceMembers.filter((member) => {
@@ -465,7 +475,13 @@ const buildRegroupingSeasonSaveMembers = (sourceMembers: any[]) => {
         );
     });
 
-    return [...displayRows, ...hiddenRemovedRows];
+    const hiddenHistoricalMoveSourceRows = sourceMembers.filter(member => shouldHideHistoricalMoveSourceOnBoard({
+        member,
+        allMembers: sourceMembers,
+        seasonEffectiveWeekDate,
+    }));
+
+    return [...displayRows, ...hiddenRemovedRows, ...hiddenHistoricalMoveSourceRows];
 };
 
 const isSameRegroupingGroup = (left: any, right: any) => {
@@ -2532,7 +2548,7 @@ function RegroupingPageInner() {
             }
 
             const seasonSaveMembers = annotateCurrentSeasonMemberChanges(
-                buildRegroupingSeasonSaveMembers(localMembers)
+                buildRegroupingSeasonSaveMembers(localMembers, seasonEffectiveWeekDate)
             );
             const membersToSave = autoMoveCouples
                 ? expandCoupleMovesBeforeSave(seasonSaveMembers, members)
