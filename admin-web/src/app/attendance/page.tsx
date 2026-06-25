@@ -47,6 +47,7 @@ import {
     getWeekAttendanceTargetDetails,
     type AttendanceRosterMember,
 } from '@/lib/attendanceMetrics';
+import { applyAttendanceWeekGroupDisplayNames } from '@/lib/attendanceGroupDisplay';
 import {
     buildSeasonPlanAttendanceRoster,
     type SeasonPlanAssignment,
@@ -1534,13 +1535,26 @@ export default function AttendancePage() {
             const groupActiveByName = new Map(
                 departmentGroupRows.map((group) => [group.name, isGroupActiveOnWeek(group, selectedWeek.week_date)])
             );
-            const orderedGroups = departmentGroupRows
-                .filter((group) => (
-                    isGroupActiveOnWeek(group, selectedWeek.week_date) ||
-                    snapshotGroupIds.has(group.id) ||
-                    snapshotGroupNames.has(group.name) ||
-                    submittedGroupIds.has(group.id)
-                ));
+            const selectedWeekGroupNameSources = [
+                ...activeRosterForSelectedWeek.map((member) => ({
+                    groupId: member.groupId,
+                    groupName: member.groupName,
+                })),
+                ...snapshotMembersWithAttendance.map((member) => ({
+                    groupId: member.groupId,
+                    groupName: member.groupName,
+                })),
+            ];
+            const orderedGroups = applyAttendanceWeekGroupDisplayNames(
+                departmentGroupRows
+                    .filter((group) => (
+                        isGroupActiveOnWeek(group, selectedWeek.week_date) ||
+                        snapshotGroupIds.has(group.id) ||
+                        snapshotGroupNames.has(group.name) ||
+                        submittedGroupIds.has(group.id)
+                    )),
+                selectedWeekGroupNameSources
+            );
             const groupOrder = new Map(orderedGroups.map((group, index) => [group.name, index]));
             setAttendanceGroups(orderedGroups);
             setUnlinkedAttendanceGroups(
