@@ -321,14 +321,17 @@ Future<List<Map<String, dynamic>>> _fetchUserGroupsFromMemberships(
   final response = await Supabase.instance.client
       .from('memberships')
       .select(
-          'id, group_id, role, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, departments(name, profile_mode))')
+          'id, group_id, role, status, starts_at, ends_at, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, is_active, active_from, ended_at, departments(name, profile_mode))')
       .eq('person_id', personId)
-      .eq('status', 'active')
+      .inFilter('status', ['active', 'ended'])
       .not('group_id', 'is', null)
       .order('starts_at', ascending: false);
 
+  final seasonAwareRows = await _overlayAppliedSeasonGroupPeriodsForUserRows(
+    List<dynamic>.from(response as List),
+  );
   return _normalizeUserGroupRows(
-    response as List,
+    seasonAwareRows,
     roleKey: 'role',
     source: 'phase2',
   );
@@ -339,16 +342,103 @@ Future<List<Map<String, dynamic>>> _fetchUserGroupsFromGroupMembers(
   final response = await Supabase.instance.client
       .from('group_members')
       .select(
-          'group_id, role_in_group, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, departments(name, profile_mode))')
+          'group_id, role_in_group, joined_at, groups(name, church_id, department_id, color_hex, is_new_member_group, climbing_threshold, is_active, active_from, ended_at, departments(name, profile_mode))')
       .eq('profile_id', profileId)
       .eq('is_active', true)
       .order('joined_at', ascending: false);
 
+  final seasonAwareRows = await _overlayAppliedSeasonGroupPeriodsForUserRows(
+    List<dynamic>.from(response as List),
+  );
   return _normalizeUserGroupRows(
-    response as List,
+    seasonAwareRows,
     roleKey: 'role_in_group',
     source: 'legacy',
   );
+}
+
+String _dateText(DateTime date) =>
+    '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+Future<List<dynamic>> _overlayAppliedSeasonGroupPeriodsForUserRows(
+    List<dynamic> rows) async {
+  if (rows.isEmpty) return rows;
+
+  final today = _dateOnly(DateTime.now());
+  final todayText = _dateText(today);
+  final copiedRows = rows
+      .whereType<Map>()
+      .map((row) => Map<String, dynamic>.from(row))
+      .toList();
+  final rowsByDepartment = <String, List<Map<String, dynamic>>>{};
+
+  for (final row in copiedRows) {
+    final group = row['groups'];
+    if (group is! Map) continue;
+    final departmentId = group['department_id']?.toString();
+    if (departmentId == null || departmentId.isEmpty) continue;
+    rowsByDepartment.putIfAbsent(departmentId, () => []).add(row);
+  }
+
+  if (rowsByDepartment.isEmpty) return copiedRows;
+
+  for (final entry in rowsByDepartment.entries) {
+    try {
+      final seasons = await Supabase.instance.client
+          .from('regrouping_seasons')
+          .select('id')
+          .eq('department_id', entry.key)
+          .eq('status', 'applied')
+          .lte('effective_week_date', todayText)
+          .or('end_week_date.is.null,end_week_date.gte.$todayText')
+          .order('effective_week_date', ascending: false)
+          .limit(1);
+
+      final seasonRows = List<Map<String, dynamic>>.from(seasons);
+      if (seasonRows.isEmpty) continue;
+      final seasonId = seasonRows.first['id']?.toString();
+      if (seasonId == null || seasonId.isEmpty) continue;
+
+      final groupIds = entry.value
+          .map((row) => row['group_id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      if (groupIds.isEmpty) continue;
+
+      final planRows = await Supabase.instance.client
+          .from('regrouping_plan_groups')
+          .select(
+              'source_group_id, starts_week_date, ends_week_date, plan_status')
+          .eq('season_id', seasonId)
+          .inFilter('source_group_id', groupIds);
+
+      final planByGroupId = {
+        for (final row in List<Map<String, dynamic>>.from(planRows))
+          if (row['source_group_id'] != null)
+            row['source_group_id'].toString(): row,
+      };
+
+      for (final row in entry.value) {
+        final groupId = row['group_id']?.toString();
+        final plan = groupId == null ? null : planByGroupId[groupId];
+        if (plan == null || row['groups'] is! Map) continue;
+        final group = Map<String, dynamic>.from(row['groups'] as Map);
+        row['groups'] = {
+          ...group,
+          'active_from': plan['starts_week_date']?.toString(),
+          'ended_at': plan['ends_week_date']?.toString(),
+          'season_plan_period_applied': true,
+          'season_plan_status': plan['plan_status']?.toString(),
+        };
+      }
+    } catch (e) {
+      debugPrint('userGroupsProvider: season group period overlay failed: $e');
+    }
+  }
+
+  return copiedRows;
 }
 
 List<Map<String, dynamic>> _normalizeUserGroupRows(
@@ -356,27 +446,47 @@ List<Map<String, dynamic>> _normalizeUserGroupRows(
   required String roleKey,
   required String source,
 }) {
-  final List<Map<String, dynamic>> rawGroups =
-      rows.map<Map<String, dynamic>>((e) {
-    return {
-      'group_id': e['group_id']?.toString() ?? '',
-      'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
-      'church_id': e['groups']?['church_id']?.toString() ?? '',
-      'department_id': e['groups']?['department_id']
-          ?.toString(), // [NEW] Added department_id
-      'color_hex': e['groups']?['color_hex']?.toString() ?? '', // [NEW] 조 색상 추가
-      'department_name':
-          e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
-      'profile_mode':
-          e['groups']?['departments']?['profile_mode']?.toString() ??
-              'individual',
-      'role_in_group': (e[roleKey] ?? 'member').toString(),
-      'is_new_member_group': e['groups']?['is_new_member_group'] ?? false,
-      'climbing_threshold': e['groups']?['climbing_threshold'],
-      'phase2_membership_id': source == 'phase2' ? e['id']?.toString() : null,
-      'membership_source': source,
-    };
-  }).toList();
+  final today = _dateOnly(DateTime.now());
+
+  final List<Map<String, dynamic>> rawGroups = rows
+      .map<Map<String, dynamic>>((e) {
+        return {
+          'group_id': e['group_id']?.toString() ?? '',
+          'group_name': e['groups']?['name']?.toString() ?? '알 수 없는 조',
+          'church_id': e['groups']?['church_id']?.toString() ?? '',
+          'department_id': e['groups']?['department_id']
+              ?.toString(), // [NEW] Added department_id
+          'color_hex':
+              e['groups']?['color_hex']?.toString() ?? '', // [NEW] 조 색상 추가
+          'department_name':
+              e['groups']?['departments']?['name']?.toString() ?? '부서 미정',
+          'profile_mode':
+              e['groups']?['departments']?['profile_mode']?.toString() ??
+                  'individual',
+          'role_in_group': (e[roleKey] ?? 'member').toString(),
+          'is_new_member_group': e['groups']?['is_new_member_group'] ?? false,
+          'climbing_threshold': e['groups']?['climbing_threshold'],
+          'phase2_membership_id':
+              source == 'phase2' ? e['id']?.toString() : null,
+          'membership_starts_at': source == 'phase2'
+              ? e['starts_at']?.toString()
+              : e['joined_at']?.toString(),
+          'membership_ends_at':
+              source == 'phase2' ? e['ends_at']?.toString() : null,
+          'membership_status': source == 'phase2'
+              ? e['status']?.toString()
+              : (e['is_active'] == false ? 'inactive' : 'active'),
+          'group_is_active': e['groups']?['is_active'],
+          'group_active_from': e['groups']?['active_from']?.toString(),
+          'group_ended_at': e['groups']?['ended_at']?.toString(),
+          'season_plan_period_applied':
+              e['groups']?['season_plan_period_applied'] == true,
+          'season_plan_status': e['groups']?['season_plan_status']?.toString(),
+          'membership_source': source,
+        };
+      })
+      .where((g) => _isGroupMembershipSelectable(g, today))
+      .toList();
 
   // [UNIQUE] 중복 데이터 제거 (group_id와 role_in_group의 조합이 동일한 경우 제거)
   final Set<String> seen = {};
@@ -404,6 +514,73 @@ List<Map<String, dynamic>> _normalizeUserGroupRows(
   return groups;
 }
 
+DateTime _dateOnly(DateTime value) =>
+    DateTime(value.year, value.month, value.day);
+
+DateTime? _parseDateOnly(dynamic value) {
+  if (value == null) return null;
+  final parsed = DateTime.tryParse(value.toString());
+  if (parsed == null) return null;
+  final local = parsed.toLocal();
+  return DateTime(local.year, local.month, local.day);
+}
+
+bool _startsOnOrBeforeToday(dynamic value, DateTime today) {
+  final date = _parseDateOnly(value);
+  return date == null || !date.isAfter(today);
+}
+
+bool _endsOnOrAfterToday(dynamic value, DateTime today) {
+  final date = _parseDateOnly(value);
+  return date == null || !date.isBefore(today);
+}
+
+bool _isGroupMembershipActiveOn(Map<String, dynamic> group, DateTime today) {
+  return group['group_is_active'] != false &&
+      _startsOnOrBeforeToday(group['membership_starts_at'], today) &&
+      _endsOnOrAfterToday(group['membership_ends_at'], today) &&
+      _startsOnOrBeforeToday(group['group_active_from'], today) &&
+      _endsOnOrAfterToday(group['group_ended_at'], today);
+}
+
+bool _rangesOverlap(
+  dynamic firstStart,
+  dynamic firstEnd,
+  dynamic secondStart,
+  dynamic secondEnd,
+) {
+  final aStart = _parseDateOnly(firstStart);
+  final aEnd = _parseDateOnly(firstEnd);
+  final bStart = _parseDateOnly(secondStart);
+  final bEnd = _parseDateOnly(secondEnd);
+
+  if (aEnd != null && bStart != null && aEnd.isBefore(bStart)) return false;
+  if (bEnd != null && aStart != null && bEnd.isBefore(aStart)) return false;
+  return true;
+}
+
+bool _isGroupMembershipSelectable(Map<String, dynamic> group, DateTime today) {
+  if (_isGroupMembershipActiveOn(group, today)) return true;
+
+  final role = group['role_in_group']?.toString();
+  final membershipStatus = group['membership_status']?.toString();
+
+  // 조장은 조 활성 기간이 오늘 이전에 끝났더라도, 현재 적용 시즌에 남아 있는
+  // 조라면 과거 출석/기도 보정이 필요할 수 있다. 삭제/종료된 조까지 다시
+  // 노출하지 않도록 plan_status=active인 시즌 조만 허용한다.
+  return role == 'leader' &&
+      membershipStatus != 'inactive' &&
+      group['group_is_active'] != false &&
+      group['season_plan_period_applied'] == true &&
+      group['season_plan_status'] == 'active' &&
+      _rangesOverlap(
+        group['membership_starts_at'],
+        group['membership_ends_at'],
+        group['group_active_from'],
+        group['group_ended_at'],
+      );
+}
+
 // Selected Week Provider (Current context for app — 기도소식 화면용)
 final selectedWeekDateProvider = StateProvider<DateTime>((ref) {
   final now = DateTime.now();
@@ -418,6 +595,20 @@ final attendanceSelectedWeekProvider = StateProvider<DateTime>((ref) {
   final now = DateTime.now();
   return DateTime(now.year, now.month, now.day)
       .subtract(Duration(days: now.weekday % 7));
+});
+
+final regroupingSeasonForWeekProvider =
+    FutureProvider.family<Map<String, dynamic>?, String>((ref, key) async {
+  final separatorIndex = key.indexOf(':');
+  if (separatorIndex <= 0 || separatorIndex >= key.length - 1) return null;
+
+  final departmentId = key.substring(0, separatorIndex);
+  final weekDate = DateTime.tryParse(key.substring(separatorIndex + 1));
+  if (departmentId.isEmpty || weekDate == null) return null;
+
+  return ref
+      .watch(repositoryProvider)
+      .getRegroupingSeasonForWeek(departmentId, weekDate);
 });
 
 // [NEW] Attendance Screen Action Trigger Provider

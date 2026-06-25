@@ -7,6 +7,7 @@ import { Loader2, Users, Calendar, AlertCircle, ArrowUpRight, TrendingUp, Bell }
 import type { ComponentType } from 'react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { decideAdminAuthRedirect } from '@/lib/adminAuth';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -251,13 +252,24 @@ export default function DashboardPage() {
         .from('profiles')
         .select('id, full_name, role, admin_status, is_master, church_id, department_id')
         .eq('id', session.user.id)
-        .single();
+        .maybeSingle();
 
-      const isAuthorized = data && (data.is_master || (data.role === 'admin' && data.admin_status === 'approved'));
+      const decision = decideAdminAuthRedirect(data, {
+        approvedPath: '/',
+        missingProfilePath: '/upgrade',
+        upgradePath: '/upgrade',
+      });
 
-      if (!isAuthorized) {
-        await supabase.auth.signOut();
-        router.push('/login?error=unauthorized');
+      if (decision.path !== '/') {
+        if (decision.shouldSignOut) {
+          await supabase.auth.signOut();
+        }
+        router.replace(decision.path);
+        return;
+      }
+
+      if (!data) {
+        router.replace('/upgrade');
         return;
       }
 

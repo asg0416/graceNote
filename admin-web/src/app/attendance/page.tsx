@@ -25,12 +25,11 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
+import { SeasonBadge } from '@/components/SeasonBadge';
 import {
-    calculateSnapshotMetrics,
     addSnapshotMember,
     ensureAttendanceRosterSnapshot,
     fetchAttendanceRosterSnapshotMembers,
-    mapSnapshotMemberRow,
     loadGroupRosterIntoSnapshot,
     loadMissingGroupRostersIntoSnapshot,
     setSnapshotMemberIncluded,
@@ -41,6 +40,20 @@ import {
     type SnapshotAttendanceStatus,
     type SnapshotAttendanceMetrics,
 } from '@/lib/attendanceRosterSnapshots';
+import {
+    buildAttendanceTargetExplanation,
+    calculateWeekAttendanceMetrics,
+    getActiveRosterForWeek,
+    getWeekAttendanceTargetDetails,
+    type AttendanceRosterMember,
+} from '@/lib/attendanceMetrics';
+import { applyAttendanceWeekGroupDisplayNames } from '@/lib/attendanceGroupDisplay';
+import {
+    buildSeasonPlanAttendanceRoster,
+    type SeasonPlanAssignment,
+    type SeasonPlanDirectoryMember,
+    type SeasonPlanGroup,
+} from '@/lib/attendanceSeasonRoster';
 import * as XLSX from 'xlsx';
 
 type AttendanceDirectoryMember = {
@@ -65,6 +78,7 @@ type AttendanceDashboardItem = {
     id: string;
     snapshotMemberId?: string | null;
     personId?: string | null;
+    groupId?: string | null;
     name: string;
     department: string;
     group: string;
@@ -77,6 +91,8 @@ type AttendanceDashboardItem = {
     submittedStatus?: SnapshotAttendanceStatus | null;
     hasSubmissionConflict?: boolean;
     reason?: string | null;
+    isTargetMember?: boolean;
+    isOutOfPeriodRecord?: boolean;
 };
 
 type AttendanceGroupRow = {
@@ -115,6 +131,8 @@ type Phase2AttendanceMembership = {
     groups?: {
         id?: string | null;
         name?: string | null;
+        active_from?: string | null;
+        ended_at?: string | null;
     } | null;
 };
 
@@ -124,11 +142,178 @@ const toDateOnly = (value?: string | null) => (
     value ? value.slice(0, 10) : null
 );
 
+const maxDateText = (...values: Array<string | null | undefined>) => (
+    values
+        .map(toDateOnly)
+        .filter((value): value is string => Boolean(value))
+        .sort((a, b) => b.localeCompare(a))[0] || null
+);
+
+const minDateText = (...values: Array<string | null | undefined>) => (
+    values
+        .map(toDateOnly)
+        .filter((value): value is string => Boolean(value))
+        .sort((a, b) => a.localeCompare(b))[0] || null
+);
+
 const isGroupActiveOnWeek = (group: AttendanceGroupRow, weekDate: string) => {
     const activeFrom = toDateOnly(group.active_from) || toDateOnly(group.created_at);
     const endedAt = toDateOnly(group.ended_at);
 
     return (!activeFrom || activeFrom <= weekDate) && (!endedAt || endedAt >= weekDate);
+};
+
+const applySeasonGroupPeriodsForWeek = async (
+    departmentId: string,
+    weekDate: string,
+    groups: AttendanceGroupRow[]
+) => {
+    if (!departmentId || !weekDate || groups.length === 0) return groups;
+
+    const { data: seasons, error: seasonsError } = await supabase
+        .from('regrouping_seasons')
+        .select('id')
+        .eq('department_id', departmentId)
+        .eq('status', 'applied')
+        .lte('effective_week_date', weekDate)
+        .or(`end_week_date.is.null,end_week_date.gte.${weekDate}`)
+        .order('effective_week_date', { ascending: false })
+        .limit(1);
+
+    if (seasonsError) throw buildQueryError('attendance season lookup failed', seasonsError);
+    const seasonId = (seasons || [])[0]?.id as string | undefined;
+    if (!seasonId) return groups;
+
+    const sourceGroupIds = groups.map((group) => group.id).filter(Boolean);
+    if (sourceGroupIds.length === 0) return groups;
+
+    const { data: planGroups, error: planGroupsError } = await supabase
+        .from('regrouping_plan_groups')
+        .select('source_group_id, starts_week_date, ends_week_date, plan_status')
+        .eq('season_id', seasonId)
+        .in('source_group_id', sourceGroupIds);
+
+    if (planGroupsError) throw buildQueryError('attendance season group periods lookup failed', planGroupsError);
+    const planByGroupId = new Map(
+        (planGroups || [])
+            .filter((row) => row.source_group_id)
+            .map((row) => [row.source_group_id as string, row])
+    );
+
+    if (planByGroupId.size === 0) return groups;
+
+    return groups.map((group) => {
+        const plan = planByGroupId.get(group.id);
+        if (!plan) return group;
+
+        return {
+            ...group,
+            active_from: plan.starts_week_date || group.active_from,
+            ended_at: plan.ends_week_date || group.ended_at,
+            is_active: plan.plan_status === 'ended' ? false : group.is_active,
+        };
+    });
+};
+
+const createSeasonGroupPeriodResolver = async (
+    departmentId: string,
+    weekDates: string[],
+    groups: AttendanceGroupRow[]
+) => {
+    const uniqueWeekDates = Array.from(new Set(weekDates.map(toDateOnly).filter((value): value is string => Boolean(value))));
+    if (!departmentId || uniqueWeekDates.length === 0 || groups.length === 0) {
+        return (weekDate: string) => groups.filter((group) => isGroupActiveOnWeek(group, weekDate));
+    }
+
+    const sortedWeekDates = [...uniqueWeekDates].sort((a, b) => a.localeCompare(b));
+    const minWeekDate = sortedWeekDates[0];
+    const maxWeekDate = sortedWeekDates[sortedWeekDates.length - 1];
+
+    const { data: seasons, error: seasonsError } = await supabase
+        .from('regrouping_seasons')
+        .select('id, effective_week_date, end_week_date')
+        .eq('department_id', departmentId)
+        .eq('status', 'applied')
+        .lte('effective_week_date', maxWeekDate)
+        .or(`end_week_date.is.null,end_week_date.gte.${minWeekDate}`)
+        .order('effective_week_date', { ascending: false });
+
+    if (seasonsError) throw buildQueryError('attendance season resolver lookup failed', seasonsError);
+
+    const seasonRows = (seasons || []) as Array<{
+        id: string;
+        effective_week_date?: string | null;
+        end_week_date?: string | null;
+    }>;
+
+    if (seasonRows.length === 0) {
+        return (weekDate: string) => groups.filter((group) => isGroupActiveOnWeek(group, weekDate));
+    }
+
+    const sourceGroupIds = groups.map((group) => group.id).filter(Boolean);
+    const seasonIds = seasonRows.map((season) => season.id).filter(Boolean);
+    if (sourceGroupIds.length === 0 || seasonIds.length === 0) {
+        return (weekDate: string) => groups.filter((group) => isGroupActiveOnWeek(group, weekDate));
+    }
+
+    const { data: planGroups, error: planGroupsError } = await supabase
+        .from('regrouping_plan_groups')
+        .select('season_id, source_group_id, starts_week_date, ends_week_date, plan_status')
+        .in('season_id', seasonIds)
+        .in('source_group_id', sourceGroupIds);
+
+    if (planGroupsError) throw buildQueryError('attendance season resolver group periods lookup failed', planGroupsError);
+
+    const planBySeasonAndGroupId = new Map<string, Map<string, {
+        starts_week_date?: string | null;
+        ends_week_date?: string | null;
+        plan_status?: string | null;
+    }>>();
+
+    (planGroups || []).forEach((row) => {
+        const seasonId = row.season_id as string | null;
+        const groupId = row.source_group_id as string | null;
+        if (!seasonId || !groupId) return;
+        const groupPlan = planBySeasonAndGroupId.get(seasonId) || new Map<string, {
+            starts_week_date?: string | null;
+            ends_week_date?: string | null;
+            plan_status?: string | null;
+        }>();
+        groupPlan.set(groupId, {
+            starts_week_date: row.starts_week_date as string | null,
+            ends_week_date: row.ends_week_date as string | null,
+            plan_status: row.plan_status as string | null,
+        });
+        planBySeasonAndGroupId.set(seasonId, groupPlan);
+    });
+
+    return (weekDate: string) => {
+        const normalizedWeekDate = toDateOnly(weekDate) || weekDate;
+        const season = seasonRows.find((row) => {
+            const startsAt = toDateOnly(row.effective_week_date);
+            const endsAt = toDateOnly(row.end_week_date);
+            return (!startsAt || startsAt <= normalizedWeekDate) && (!endsAt || endsAt >= normalizedWeekDate);
+        });
+
+        if (!season) {
+            return groups.filter((group) => isGroupActiveOnWeek(group, normalizedWeekDate));
+        }
+
+        const planByGroupId = planBySeasonAndGroupId.get(season.id);
+        const seasonAwareGroups = groups.map((group) => {
+            const plan = planByGroupId?.get(group.id);
+            if (!plan) return group;
+
+            return {
+                ...group,
+                active_from: plan.starts_week_date || group.active_from,
+                ended_at: plan.ends_week_date || group.ended_at,
+                is_active: plan.plan_status === 'ended' ? false : group.is_active,
+            };
+        });
+
+        return seasonAwareGroups.filter((group) => isGroupActiveOnWeek(group, normalizedWeekDate));
+    };
 };
 
 const buildWeekGroupKey = (weekId: string, groupId: string) => `${weekId}:${groupId}`;
@@ -164,6 +349,7 @@ type ProfileRow = {
     is_master?: boolean | null;
     church_id?: string | null;
     department_id?: string | null;
+    churches?: { name?: string | null } | { name?: string | null }[] | null;
 };
 
 type ChurchRow = {
@@ -181,7 +367,13 @@ type GroupStat = {
     name: string;
     present: number;
     total: number;
+    outOfPeriodPresent?: number;
+    outOfPeriodTotal?: number;
 };
+
+const getGroupAttendanceRate = (group: GroupStat) => (
+    group.total > 0 ? Math.round((group.present / group.total) * 100) : null
+);
 
 type UnlinkedAttendanceGroupWarning = {
     groupName: string;
@@ -273,7 +465,7 @@ const fetchMembershipRoster = async (
                 legacy_group_member_id,
                 starts_at,
                 ends_at,
-                groups!group_id(id, name)
+                groups!group_id(id, name, active_from, ended_at)
             `)
             .eq('department_id', departmentId)
             .not('legacy_member_directory_id', 'is', null);
@@ -318,8 +510,8 @@ const fetchMembershipRoster = async (
                     group_member_id: membership.legacy_group_member_id,
                     person_id: membership.person_id,
                     membership_status: membership.status,
-                    starts_at: membership.starts_at,
-                    ends_at: membership.ends_at,
+                    starts_at: maxDateText(membership.starts_at, membership.groups?.active_from) || membership.starts_at,
+                    ends_at: minDateText(membership.ends_at, membership.groups?.ended_at) || membership.ends_at || membership.groups?.ended_at,
                     phase2_membership_source: 'memberships'
                 });
                 return roster;
@@ -328,6 +520,181 @@ const fetchMembershipRoster = async (
         console.warn('Attendance Phase 2 roster read failed. Falling back to legacy member_directory.', error);
         return [];
     }
+};
+
+type AttendanceSeasonContext = {
+    id: string;
+    title?: string | null;
+    status?: string | null;
+    effective_week_date?: string | null;
+    end_week_date?: string | null;
+};
+
+type RegroupingSeasonRow = AttendanceSeasonContext;
+
+type RegroupingPlanGroupRow = {
+    id: string;
+    source_group_id?: string | null;
+    name?: string | null;
+    starts_week_date?: string | null;
+    ends_week_date?: string | null;
+    plan_status?: string | null;
+    sort_order?: number | null;
+};
+
+type RegroupingPlanAssignmentRow = {
+    id: string;
+    plan_group_id?: string | null;
+    person_id?: string | null;
+    role_in_group?: string | null;
+    starts_week_date?: string | null;
+    ends_week_date?: string | null;
+    sort_order?: number | null;
+    source_member_directory_id?: string | null;
+};
+
+const fetchSeasonPlanRoster = async (
+    departmentId: string,
+    weekDate: string
+): Promise<AttendanceDirectoryMember[] | null> => {
+    const { data: seasons, error: seasonsError } = await supabase
+        .from('regrouping_seasons')
+        .select('id')
+        .eq('department_id', departmentId)
+        .eq('status', 'applied')
+        .lte('effective_week_date', weekDate)
+        .or(`end_week_date.is.null,end_week_date.gte.${weekDate}`)
+        .order('effective_week_date', { ascending: false })
+        .limit(1);
+
+    if (seasonsError) throw buildQueryError('attendance season roster season lookup failed', seasonsError);
+    const seasonId = ((seasons || []) as RegroupingSeasonRow[])[0]?.id;
+    if (!seasonId) return null;
+
+    const { data: planGroups, error: planGroupsError } = await supabase
+        .from('regrouping_plan_groups')
+        .select('id, source_group_id, name, starts_week_date, ends_week_date, plan_status, sort_order')
+        .eq('season_id', seasonId)
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true });
+
+    if (planGroupsError) throw buildQueryError('attendance season roster group lookup failed', planGroupsError);
+
+    const { data: assignments, error: assignmentsError } = await supabase
+        .from('regrouping_plan_assignments')
+        .select('id, plan_group_id, person_id, role_in_group, starts_week_date, ends_week_date, sort_order, source_member_directory_id')
+        .eq('season_id', seasonId)
+        .not('plan_group_id', 'is', null)
+        .order('sort_order', { ascending: true });
+
+    if (assignmentsError) throw buildQueryError('attendance season roster assignment lookup failed', assignmentsError);
+
+    const typedAssignments = (assignments || []) as RegroupingPlanAssignmentRow[];
+    if (typedAssignments.length === 0) return null;
+
+    const directoryIds = Array.from(new Set(
+        typedAssignments
+            .map((assignment) => assignment.source_member_directory_id)
+            .filter((id): id is string => Boolean(id))
+    ));
+    const personIds = Array.from(new Set(
+        typedAssignments
+            .map((assignment) => assignment.person_id)
+            .filter((id): id is string => Boolean(id))
+    ));
+    const directoryRowsById = new Map<string, AttendanceDirectoryMember>();
+
+    if (directoryIds.length > 0) {
+        const { data: directoryRows, error: directoryError } = await supabase
+            .from('member_directory')
+            .select('*')
+            .in('id', directoryIds);
+
+        if (directoryError) throw buildQueryError('attendance season roster directory lookup failed', directoryError);
+        ((directoryRows || []) as AttendanceDirectoryMember[]).forEach((row) => {
+            directoryRowsById.set(row.id, row);
+        });
+    }
+
+    if (personIds.length > 0) {
+        const { data: personDirectoryRows, error: personDirectoryError } = await supabase
+            .from('member_directory')
+            .select('*')
+            .eq('department_id', departmentId)
+            .in('person_id', personIds)
+            .order('is_active', { ascending: false });
+
+        if (personDirectoryError) throw buildQueryError('attendance season roster person directory lookup failed', personDirectoryError);
+        ((personDirectoryRows || []) as AttendanceDirectoryMember[]).forEach((row) => {
+            if (!directoryRowsById.has(row.id)) {
+                directoryRowsById.set(row.id, row);
+            }
+        });
+    }
+
+    const seasonPlanGroups: SeasonPlanGroup[] = ((planGroups || []) as RegroupingPlanGroupRow[]).map((group) => ({
+        id: group.id,
+        sourceGroupId: group.source_group_id || null,
+        name: group.name || null,
+        startsWeekDate: group.starts_week_date || null,
+        endsWeekDate: group.ends_week_date || null,
+        planStatus: group.plan_status || null,
+        sortOrder: group.sort_order ?? null,
+    }));
+    const seasonAssignments: SeasonPlanAssignment[] = typedAssignments.map((assignment) => ({
+        id: assignment.id,
+        planGroupId: assignment.plan_group_id || null,
+        personId: assignment.person_id || null,
+        sourceMemberDirectoryId: assignment.source_member_directory_id || null,
+        role: assignment.role_in_group || null,
+        startsWeekDate: assignment.starts_week_date || null,
+        endsWeekDate: assignment.ends_week_date || null,
+        sortOrder: assignment.sort_order ?? null,
+    }));
+
+    return buildSeasonPlanAttendanceRoster({
+        weekDate,
+        planGroups: seasonPlanGroups,
+        assignments: seasonAssignments,
+        directoryMembers: Array.from(directoryRowsById.values()) as SeasonPlanDirectoryMember[],
+    }) as AttendanceDirectoryMember[];
+};
+
+const fetchAttendanceSeasonContext = async (
+    departmentId: string,
+    weekDate: string
+): Promise<AttendanceSeasonContext | null> => {
+    const { data: coveringSeasons, error } = await supabase
+        .from('regrouping_seasons')
+        .select('id, title, status, effective_week_date, end_week_date')
+        .eq('department_id', departmentId)
+        .in('status', ['applied', 'archived'])
+        .lte('effective_week_date', weekDate)
+        .or(`end_week_date.is.null,end_week_date.gte.${weekDate}`)
+        .order('effective_week_date', { ascending: false })
+        .limit(1);
+
+    if (error) {
+        throw buildQueryError('attendance season context lookup failed', error);
+    }
+
+    const coveringSeason = ((coveringSeasons || []) as AttendanceSeasonContext[])[0] || null;
+    if (coveringSeason) return coveringSeason;
+
+    const { data: latestSeasons, error: latestError } = await supabase
+        .from('regrouping_seasons')
+        .select('id, title, status, effective_week_date, end_week_date')
+        .eq('department_id', departmentId)
+        .in('status', ['applied', 'archived'])
+        .lte('effective_week_date', weekDate)
+        .order('effective_week_date', { ascending: false })
+        .limit(1);
+
+    if (latestError) {
+        throw buildQueryError('attendance latest season context lookup failed', latestError);
+    }
+
+    return ((latestSeasons || []) as AttendanceSeasonContext[])[0] || null;
 };
 
 const fetchAttendanceRoster = async (
@@ -344,6 +711,51 @@ const fetchAttendanceRoster = async (
 
     if (error) throw buildQueryError('legacy attendance roster query failed', error);
     return (data || []) as AttendanceDirectoryMember[];
+};
+
+const toAttendanceRosterMembers = (
+    roster: AttendanceDirectoryMember[]
+): AttendanceRosterMember[] => {
+    const byGroupPerson = new Map<string, AttendanceRosterMember>();
+
+    roster
+        .filter((member) => member.person_id && member.id)
+        .forEach((member) => {
+            const rosterMember: AttendanceRosterMember = {
+            directoryMemberId: member.id,
+            personId: String(member.person_id),
+            fullName: member.full_name || '이름 없음',
+            groupId: member.group_id || null,
+            groupName: member.group_name || null,
+            role: member.role_in_group || null,
+            spouseName: member.spouse_name || null,
+            familyName: member.family_name || null,
+            startsAt: member.starts_at || null,
+            endsAt: member.ends_at || null,
+            status: String(member.membership_status || (member.is_active === false ? 'inactive' : 'active')),
+            };
+            const key = `${rosterMember.groupId || rosterMember.groupName || '미편성'}::${rosterMember.personId}`;
+            const previous = byGroupPerson.get(key);
+            if (!previous) {
+                byGroupPerson.set(key, rosterMember);
+                return;
+            }
+
+            const previousRoleRank = previous.role === 'leader' ? 0 : 1;
+            const nextRoleRank = rosterMember.role === 'leader' ? 0 : 1;
+            const shouldReplace = (
+                nextRoleRank < previousRoleRank ||
+                (
+                    nextRoleRank === previousRoleRank &&
+                    (rosterMember.startsAt || '') > (previous.startsAt || '')
+                )
+            );
+            if (shouldReplace) {
+                byGroupPerson.set(key, rosterMember);
+            }
+        });
+
+    return Array.from(byGroupPerson.values());
 };
 
 const getAttendanceItemFamilyKey = (item: AttendanceDashboardItem) => {
@@ -410,6 +822,12 @@ const isLinkedAttendanceRow = (row: AttendanceRow) => (
     Boolean(row.person_id || row.directory_member_id || row.membership_id)
 );
 
+const hasMeaningfulSnapshotEvidence = (member: AttendanceRosterSnapshotMember) => (
+    member.attendanceStatus !== 'unknown' ||
+    member.source !== 'auto_membership' ||
+    Boolean(member.reason)
+);
+
 const getCompactAttendanceLabel = (status?: SnapshotAttendanceStatus | null) => {
     switch (status) {
         case 'present':
@@ -446,14 +864,14 @@ const mergeExportAttendanceStatus = (
     return 'absent';
 };
 
-const formatSnapshotMemberNames = (
-    members: AttendanceRosterSnapshotMember[],
+const formatRosterMemberNames = (
+    members: AttendanceRosterMember[],
     personIds: Set<string>,
     limit = 5
 ) => {
     const names = Array.from(new Set(members
         .filter((member) => personIds.has(member.personId))
-        .map((member) => member.displayName)
+        .map((member) => member.fullName)
     )).filter(Boolean);
 
     if (names.length <= limit) return names.join(', ');
@@ -548,100 +966,6 @@ const getSnapshotMembersForWeek = async (
     };
 };
 
-const getSnapshotMembersForWeeksReadonly = async (
-    departmentId: string,
-    weekIds: string[]
-) => {
-    const uniqueWeekIds = Array.from(new Set(weekIds.filter(Boolean)));
-    const result = new Map<string, AttendanceRosterSnapshotMember[]>();
-    uniqueWeekIds.forEach((weekId) => result.set(weekId, []));
-
-    if (uniqueWeekIds.length === 0) return result;
-
-    const { data: snapshots, error: snapshotError } = await supabase
-        .from('attendance_roster_snapshots')
-        .select('id, week_id')
-        .eq('department_id', departmentId)
-        .in('week_id', uniqueWeekIds);
-
-    if (snapshotError) throw buildQueryError('attendance snapshot readonly query failed', snapshotError);
-
-    const snapshotRows = (snapshots || []) as { id: string; week_id: string }[];
-    if (snapshotRows.length === 0) return result;
-
-    const snapshotIdToWeekId = new Map(snapshotRows.map((snapshot) => [snapshot.id, snapshot.week_id]));
-    const snapshotIds = snapshotRows.map((snapshot) => snapshot.id);
-
-    const { data: memberRows, error: memberError } = await supabase
-        .from('attendance_roster_snapshot_members')
-        .select(`
-            id,
-            snapshot_id,
-            person_id,
-            legacy_member_directory_id,
-            display_name,
-            group_id,
-            group_name,
-            role,
-            attendance_status,
-            included,
-            source,
-            reason
-        `)
-        .in('snapshot_id', snapshotIds)
-        .order('group_name', { ascending: true, nullsFirst: false })
-        .order('display_name', { ascending: true });
-
-    if (memberError) throw buildQueryError('attendance snapshot members readonly query failed', memberError);
-
-    const { data: departmentGroups, error: departmentGroupsError } = await supabase
-        .from('groups')
-        .select('id')
-        .eq('department_id', departmentId);
-
-    if (departmentGroupsError) {
-        throw buildQueryError('attendance readonly department groups query failed', departmentGroupsError);
-    }
-
-    const departmentGroupIds = ((departmentGroups || []) as { id: string }[]).map((group) => group.id);
-    const attendanceRowsByWeekId = new Map<string, AttendanceRow[]>();
-
-    if (departmentGroupIds.length > 0) {
-        const { data: attendanceRows, error: attendanceError } = await supabase
-            .from('attendance')
-            .select('*')
-            .in('week_id', uniqueWeekIds)
-            .in('group_id', departmentGroupIds);
-
-        if (attendanceError) throw buildQueryError('attendance readonly rows query failed', attendanceError);
-
-        ((attendanceRows || []) as AttendanceRow[]).forEach((row) => {
-            if (!row.week_id) return;
-            const rows = attendanceRowsByWeekId.get(row.week_id) || [];
-            rows.push(row);
-            attendanceRowsByWeekId.set(row.week_id, rows);
-        });
-    }
-
-    const rawMembersByWeekId = new Map<string, AttendanceRosterSnapshotMember[]>();
-    ((memberRows || []) as Parameters<typeof mapSnapshotMemberRow>[0][]).forEach((row) => {
-        const weekId = snapshotIdToWeekId.get(row.snapshot_id);
-        if (!weekId) return;
-        const members = rawMembersByWeekId.get(weekId) || [];
-        members.push(mapSnapshotMemberRow(row));
-        rawMembersByWeekId.set(weekId, members);
-    });
-
-    rawMembersByWeekId.forEach((members, weekId) => {
-        result.set(weekId, applyAttendanceRowsToSnapshotMembers(
-            members,
-            attendanceRowsByWeekId.get(weekId) || []
-        ));
-    });
-
-    return result;
-};
-
 export default function AttendancePage() {
     const [loading, setLoading] = useState(true);
     const [profile, setProfile] = useState<ProfileRow | null>(null);
@@ -658,6 +982,7 @@ export default function AttendancePage() {
     const [attendanceData, setAttendanceData] = useState<AttendanceDashboardItem[]>([]);
     const [groupStats, setGroupStats] = useState<GroupStat[]>([]);
     const [selectedWeekMetrics, setSelectedWeekMetrics] = useState<SnapshotAttendanceMetrics | null>(null);
+    const [selectedAttendanceSeason, setSelectedAttendanceSeason] = useState<AttendanceSeasonContext | null>(null);
     const [targetExplanation, setTargetExplanation] = useState<string[]>([]);
     const [snapshotEditLoadingId, setSnapshotEditLoadingId] = useState<string | null>(null);
     const [ignoredSubmissionConflictKeys, setIgnoredSubmissionConflictKeys] = useState<Set<string>>(new Set());
@@ -718,14 +1043,20 @@ export default function AttendancePage() {
     const latestAttendanceRequestKey = useRef('');
     const latestInsightRequestKey = useRef('');
     const attendanceRosterCacheRef = useRef(new Map<string, AttendanceDirectoryMember[]>());
+    const selectedWeekTargetPersonIdsRef = useRef<Set<string>>(new Set());
+    const selectedWeekTargetPersonIdsByGroupRef = useRef<Map<string, Set<string>>>(new Map());
     const router = useRouter();
 
-    const getCachedAttendanceRoster = async (departmentId: string) => {
-        const cachedRoster = attendanceRosterCacheRef.current.get(departmentId);
+    const getCachedAttendanceRoster = async (departmentId: string, weekDate?: string | null) => {
+        const cacheKey = weekDate ? `${departmentId}:${weekDate}` : departmentId;
+        const cachedRoster = attendanceRosterCacheRef.current.get(cacheKey);
         if (cachedRoster) return cachedRoster;
 
-        const roster = await fetchAttendanceRoster(departmentId);
-        attendanceRosterCacheRef.current.set(departmentId, roster);
+        const seasonRoster = weekDate
+            ? await fetchSeasonPlanRoster(departmentId, weekDate)
+            : null;
+        const roster = seasonRoster ?? await fetchAttendanceRoster(departmentId);
+        attendanceRosterCacheRef.current.set(cacheKey, roster);
         return roster;
     };
 
@@ -739,7 +1070,7 @@ export default function AttendancePage() {
 
             const { data } = await supabase
                 .from('profiles')
-                .select('id, full_name, role, admin_status, is_master, church_id, department_id')
+                .select('id, full_name, role, admin_status, is_master, church_id, department_id, churches(name)')
                 .eq('id', session.user.id)
                 .single();
 
@@ -774,6 +1105,7 @@ export default function AttendancePage() {
         setAttendanceData([]);
         setGroupStats([]);
         setSelectedWeekMetrics(null);
+        setSelectedAttendanceSeason(null);
         setTargetExplanation([]);
         setSelectedWeekNoMeetingReason(null);
         setSelectedWeekHasSubmittedAttendance(false);
@@ -789,6 +1121,8 @@ export default function AttendancePage() {
         setIsTrendLoading(false);
         setIsInsightsLoading(false);
         attendanceRosterCacheRef.current.clear();
+        selectedWeekTargetPersonIdsRef.current = new Set();
+        selectedWeekTargetPersonIdsByGroupRef.current = new Map();
         latestTrendRequestKey.current = '';
         latestAttendanceRequestKey.current = '';
         latestInsightRequestKey.current = '';
@@ -821,38 +1155,6 @@ export default function AttendancePage() {
                     setSelectedDeptId(deptList[0].id);
                 } else {
                     setSelectedDeptId('');
-                }
-
-                // 2. Load Weeks - Remove setWeeks here to avoid conflict with monthly filter
-                const { data: weekList } = await supabase
-                    .from('weeks')
-                    .select('*')
-                    .eq('church_id', selectedChurchId)
-                    .eq('is_active', true)
-                    .order('week_date', { ascending: false });
-
-                const sortedWeeks = weekList || [];
-                // setWeeks(sortedWeeks); // Conflicted with monthly filter
-
-                if (sortedWeeks.length > 0) {
-                    // Group by Month for Tabs (if needed in future, but not used now)
-                    /*
-                    const groups: any = {};
-                    sortedWeeks.forEach(w => {
-                        const m = w.week_date.substring(0, 7); 
-                        if (!groups[m]) groups[m] = [];
-                        groups[m].push(w);
-                    });
-                    const mList = Object.keys(groups).sort().reverse();
-                    setMonthWeeks(mList.map(m => ({ month: m, weeks: groups[m].reverse() })));
-                    */
-
-                    // Initial Selection: Latest Week
-                    if (!selectedWeekId) {
-                        setSelectedWeekId(sortedWeeks[0].id);
-                    }
-                } else {
-                    setSelectedWeekId('');
                 }
             };
             fetchData();
@@ -928,15 +1230,59 @@ export default function AttendancePage() {
                     );
 
                     if (trendWeeks && trendWeeks.length > 0) {
-                        const snapshotMembersByWeekId = await getSnapshotMembersForWeeksReadonly(
-                            selectedDeptId,
-                            trendWeeks.map((week) => week.id)
-                        );
+                        const rosterMembersByWeekId = new Map<string, AttendanceRosterMember[]>();
+                        for (const week of trendWeeks as WeekRow[]) {
+                            rosterMembersByWeekId.set(
+                                week.id,
+                                toAttendanceRosterMembers(
+                                    await getCachedAttendanceRoster(selectedDeptId, week.week_date)
+                                )
+                            );
+                        }
+                        const trendWeekIds = trendWeeks.map((week) => week.id);
+                        const { data: trendGroups, error: trendGroupsError } = await supabase
+                            .from('groups')
+                            .select('id')
+                            .eq('department_id', selectedDeptId);
+
+                        if (trendGroupsError) throw buildQueryError('attendance trend groups query failed', trendGroupsError);
+
+                        const trendGroupIds = ((trendGroups || []) as { id: string }[]).map((group) => group.id);
+                        const attendanceRowsByWeekId = new Map<string, AttendanceRow[]>();
+
+                        if (trendWeekIds.length > 0 && trendGroupIds.length > 0) {
+                            const { data: trendAttendanceRows, error: trendAttendanceError } = await supabase
+                                .from('attendance')
+                                .select('week_id, directory_member_id, status, group_id, recorded_group_id')
+                                .in('week_id', trendWeekIds)
+                                .in('group_id', trendGroupIds);
+
+                            if (trendAttendanceError) throw buildQueryError('attendance trend rows query failed', trendAttendanceError);
+
+                            ((trendAttendanceRows || []) as AttendanceRow[]).forEach((row) => {
+                                if (!row.week_id) return;
+                                const rows = attendanceRowsByWeekId.get(row.week_id) || [];
+                                rows.push(row);
+                                attendanceRowsByWeekId.set(row.week_id, rows);
+                            });
+                        }
+
                         const trendData = trendWeeks.map((w) => {
                             const isNoMeetingDay = monthNoMeetingDateSet.has(w.week_date);
+                            const weekRosterMembers = rosterMembersByWeekId.get(w.id) || [];
                             const metrics = isNoMeetingDay
                                 ? { totalPeople: 0, presentPeople: 0, absentPeople: 0, rate: null }
-                                : calculateSnapshotMetrics(snapshotMembersByWeekId.get(w.id) || []);
+                                : calculateWeekAttendanceMetrics({
+                                    weekDate: w.week_date,
+                                    roster: weekRosterMembers,
+                                    attendance: (attendanceRowsByWeekId.get(w.id) || [])
+                                        .filter((row) => row.directory_member_id)
+                                        .map((row) => ({
+                                            directoryMemberId: String(row.directory_member_id),
+                                            status: row.status,
+                                        })),
+                                    noMeetingDates: monthNoMeetingDateSet,
+                                });
 
                             return {
                                 id: w.id,
@@ -1000,6 +1346,7 @@ export default function AttendancePage() {
             setAttendanceData([]);
             setGroupStats([]);
             setSelectedWeekMetrics(null);
+            setSelectedAttendanceSeason(null);
             setTargetExplanation([]);
             setCurrentSnapshotId(null);
             setAttendanceGroups([]);
@@ -1017,6 +1364,9 @@ export default function AttendancePage() {
         try {
             const selectedWeek = weeks.find((week) => week.id === selectedWeekId) as WeekRow | undefined;
             if (!selectedWeek) return;
+            const seasonContext = await fetchAttendanceSeasonContext(selectedDeptId, selectedWeek.week_date);
+            if (latestAttendanceRequestKey.current !== requestKey) return;
+            setSelectedAttendanceSeason(seasonContext);
 
             // 1. Ensure explicit week+department roster snapshot.
             const {
@@ -1048,6 +1398,15 @@ export default function AttendancePage() {
             const linkedAttendanceRows = attendanceRows.filter(isLinkedAttendanceRow);
             setSelectedWeekNoMeetingReason(isNoMeetingDay ? selectedNoMeetingDay?.reason || '' : null);
             setSelectedWeekHasSubmittedAttendance(linkedAttendanceRows.length > 0);
+            const rosterForAttendance = await getCachedAttendanceRoster(selectedDeptId, selectedWeek.week_date);
+            if (latestAttendanceRequestKey.current !== requestKey) return;
+            const rosterMembers = toAttendanceRosterMembers(rosterForAttendance);
+            const linkedAttendanceRecords = linkedAttendanceRows
+                .filter((row) => row.directory_member_id)
+                .map((row) => ({
+                    directoryMemberId: String(row.directory_member_id),
+                    status: row.status,
+                }));
             const rawSnapshotMemberById = new Map(
                 snapshotMembers.map((member) => [member.id, member])
             );
@@ -1056,38 +1415,56 @@ export default function AttendancePage() {
                     .filter((row) => row.directory_member_id)
                     .map((row) => [row.directory_member_id, normalizeSubmittedAttendanceStatus(row.status)])
             );
-            const metrics = isNoMeetingDay
-                ? {
-                    totalPeople: 0,
-                    presentPeople: 0,
-                    absentPeople: 0,
-                    rate: null,
-                }
-                : calculateSnapshotMetrics(snapshotMembersWithAttendance);
+            const metrics = calculateWeekAttendanceMetrics({
+                weekDate: selectedWeek.week_date,
+                roster: rosterMembers,
+                attendance: linkedAttendanceRecords,
+                noMeetingDates: selectedNoMeetingDateSet,
+            });
             setSelectedWeekMetrics(metrics);
-            const selectedTargetPersonIds = new Set(
-                snapshotMembersWithAttendance
-                    .filter((member) => member.included)
-                    .map((member) => member.personId)
+            const selectedTargetDetails = getWeekAttendanceTargetDetails({
+                weekDate: selectedWeek.week_date,
+                roster: rosterMembers,
+                attendance: linkedAttendanceRecords,
+                noMeetingDates: selectedNoMeetingDateSet,
+            });
+            const selectedTargetPersonIds = selectedTargetDetails.targetPersonIds;
+            const activeRosterForSelectedWeek = getActiveRosterForWeek(rosterMembers, selectedWeek.week_date);
+            const activeTargetGroupPersonKeysById = new Set(
+                activeRosterForSelectedWeek
+                    .filter((member) => member.groupId)
+                    .map((member) => `${member.groupId}::${member.personId}`)
             );
-            const explanation: string[] = [];
+            const activeTargetGroupPersonKeysByName = new Set(
+                activeRosterForSelectedWeek
+                    .filter((member) => member.groupName)
+                    .map((member) => `${member.groupName}::${member.personId}`)
+            );
+            const targetPersonIdsByGroupName = new Map<string, Set<string>>();
+            activeRosterForSelectedWeek.forEach((member) => {
+                const groupName = member.groupName || '미편성';
+                const personIds = targetPersonIdsByGroupName.get(groupName) || new Set<string>();
+                personIds.add(member.personId);
+                targetPersonIdsByGroupName.set(groupName, personIds);
+            });
+            selectedWeekTargetPersonIdsRef.current = new Set(selectedTargetPersonIds);
+            selectedWeekTargetPersonIdsByGroupRef.current = targetPersonIdsByGroupName;
+            const explanation: string[] = buildAttendanceTargetExplanation(metrics);
 
             const previousWeek = [...weeks]
                 .filter((week) => week.week_date < selectedWeek.week_date)
                 .sort((a, b) => b.week_date.localeCompare(a.week_date))[0] as WeekRow | undefined;
 
             if (previousWeek) {
-                const previousSnapshotMembersByWeekId = await getSnapshotMembersForWeeksReadonly(
-                    selectedDeptId,
-                    [previousWeek.id]
+                const previousRosterMembers = toAttendanceRosterMembers(
+                    await getCachedAttendanceRoster(selectedDeptId, previousWeek.week_date)
                 );
-                const previousSnapshotMembers = previousSnapshotMembersByWeekId.get(previousWeek.id) || [];
                 if (latestAttendanceRequestKey.current !== requestKey) return;
-                const previousTargetPersonIds = new Set(
-                    previousSnapshotMembers
-                        .filter((member) => member.included)
-                        .map((member) => member.personId)
-                );
+                const previousTargetPersonIds = getWeekAttendanceTargetDetails({
+                    weekDate: previousWeek.week_date,
+                    roster: previousRosterMembers,
+                    attendance: [],
+                }).targetPersonIds;
 
                 const addedPeople = new Set(
                     Array.from(selectedTargetPersonIds)
@@ -1099,10 +1476,10 @@ export default function AttendancePage() {
                 );
 
                 if (addedPeople.size > 0) {
-                    explanation.push(`전주 대비 추가 ${addedPeople.size}명: ${formatSnapshotMemberNames(snapshotMembersWithAttendance, addedPeople)}`);
+                    explanation.push(`전주 대비 추가 ${addedPeople.size}명: ${formatRosterMemberNames(rosterMembers, addedPeople)}`);
                 }
                 if (removedPeople.size > 0) {
-                    explanation.push(`전주 대비 제외 ${removedPeople.size}명: ${formatSnapshotMemberNames(previousSnapshotMembers, removedPeople)}`);
+                    explanation.push(`전주 대비 제외 ${removedPeople.size}명: ${formatRosterMemberNames(previousRosterMembers, removedPeople)}`);
                 }
             }
             setTargetExplanation(explanation);
@@ -1118,13 +1495,15 @@ export default function AttendancePage() {
             if (deptGroupsError) throw buildQueryError('attendance week groups query failed', deptGroupsError);
             if (latestAttendanceRequestKey.current !== requestKey) return;
 
+            const snapshotMembersWithGroupEvidence = snapshotMembersWithAttendance
+                .filter(hasMeaningfulSnapshotEvidence);
             const snapshotGroupIds = new Set(
-                snapshotMembersWithAttendance
+                snapshotMembersWithGroupEvidence
                     .map((member) => member.groupId)
                     .filter((groupId): groupId is string => Boolean(groupId))
             );
             const snapshotGroupNames = new Set(
-                snapshotMembersWithAttendance
+                snapshotMembersWithGroupEvidence
                     .map((member) => member.groupName)
                     .filter((groupName): groupName is string => Boolean(groupName && groupName !== '조 없음'))
             );
@@ -1145,13 +1524,37 @@ export default function AttendancePage() {
                     );
                 });
 
-            const orderedGroups = ((deptGroups || []) as AttendanceGroupRow[])
-                .filter((group) => (
-                    isGroupActiveOnWeek(group, selectedWeek.week_date) ||
-                    snapshotGroupIds.has(group.id) ||
-                    snapshotGroupNames.has(group.name) ||
-                    submittedGroupIds.has(group.id)
-                ));
+            const departmentGroupRows = await applySeasonGroupPeriodsForWeek(
+                selectedDeptId,
+                selectedWeek.week_date,
+                (deptGroups || []) as AttendanceGroupRow[]
+            );
+            const groupActiveById = new Map(
+                departmentGroupRows.map((group) => [group.id, isGroupActiveOnWeek(group, selectedWeek.week_date)])
+            );
+            const groupActiveByName = new Map(
+                departmentGroupRows.map((group) => [group.name, isGroupActiveOnWeek(group, selectedWeek.week_date)])
+            );
+            const selectedWeekGroupNameSources = [
+                ...activeRosterForSelectedWeek.map((member) => ({
+                    groupId: member.groupId,
+                    groupName: member.groupName,
+                })),
+                ...snapshotMembersWithAttendance.map((member) => ({
+                    groupId: member.groupId,
+                    groupName: member.groupName,
+                })),
+            ];
+            const orderedGroups = applyAttendanceWeekGroupDisplayNames(
+                departmentGroupRows
+                    .filter((group) => (
+                        isGroupActiveOnWeek(group, selectedWeek.week_date) ||
+                        snapshotGroupIds.has(group.id) ||
+                        snapshotGroupNames.has(group.name) ||
+                        submittedGroupIds.has(group.id)
+                    )),
+                selectedWeekGroupNameSources
+            );
             const groupOrder = new Map(orderedGroups.map((group, index) => [group.name, index]));
             setAttendanceGroups(orderedGroups);
             setUnlinkedAttendanceGroups(
@@ -1163,10 +1566,8 @@ export default function AttendancePage() {
                     .filter((warning) => warning.count > 0)
             );
 
-            const rosterForFamilySort = await getCachedAttendanceRoster(selectedDeptId);
-            if (latestAttendanceRequestKey.current !== requestKey) return;
             const familySortByPersonId = new Map(
-                rosterForFamilySort
+                rosterForAttendance
                     .filter((member) => member.person_id)
                     .map((member) => [
                         String(member.person_id),
@@ -1176,16 +1577,91 @@ export default function AttendancePage() {
                         },
                     ])
             );
+            const selectedDepartmentName = departments.find(d => d.id === selectedDeptId)?.name || '부서 없음';
+            const getGroupPersonKey = (groupId: string | null | undefined, groupName: string | null | undefined, personId: string | null | undefined) => (
+                `${groupId || groupName || '미편성'}::${personId || 'unknown'}`
+            );
+            const snapshotMemberByGroupPerson = new Map(
+                snapshotMembersWithAttendance.map((member) => [
+                    getGroupPersonKey(member.groupId, member.groupName, member.personId),
+                    member,
+                ])
+            );
+            const attendanceStatusByDirectoryGroup = new Map<string, SnapshotAttendanceStatus>();
+            const submittedStatusByDirectoryGroup = new Map<string, SnapshotAttendanceStatus>();
+            linkedAttendanceRows.forEach((row) => {
+                if (!row.directory_member_id) return;
+                const groupId = row.recorded_group_id || row.group_id || null;
+                const status = normalizeSubmittedAttendanceStatus(row.status);
+                if (!status) return;
+                const key = `${row.directory_member_id}::${groupId || '미편성'}`;
+                attendanceStatusByDirectoryGroup.set(key, status);
+                submittedStatusByDirectoryGroup.set(key, status);
+            });
 
             const finalMerged = sortAttendanceItemsForDisplay(
-                snapshotMembersWithAttendance
+                [
+                    ...activeRosterForSelectedWeek.map((member) => {
+                        const snapshotMember = snapshotMemberByGroupPerson.get(
+                            getGroupPersonKey(member.groupId, member.groupName, member.personId)
+                        );
+                        const groupKey = `${member.directoryMemberId}::${member.groupId || '미편성'}`;
+                        const submittedStatus = submittedStatusByDirectoryGroup.get(groupKey)
+                            || (snapshotMember?.legacyMemberDirectoryId
+                                ? submittedAttendanceByDirectoryId.get(snapshotMember.legacyMemberDirectoryId) || null
+                                : null);
+                        const rawSnapshotStatus = snapshotMember
+                            ? rawSnapshotMemberById.get(snapshotMember.id)?.attendanceStatus || 'unknown'
+                            : 'unknown';
+                        const status = attendanceStatusByDirectoryGroup.get(groupKey)
+                            || 'absent';
+                        const isSubmittedConflictResolved = snapshotMember?.reason === SUBMISSION_CONFLICT_KEEP_ADMIN_REASON;
+                        const hasSubmissionConflict = Boolean(
+                            snapshotMember &&
+                            !isSubmittedConflictResolved &&
+                            submittedStatus &&
+                            rawSnapshotStatus !== 'unknown' &&
+                            rawSnapshotStatus !== submittedStatus
+                        );
+
+                        return {
+                            id: member.directoryMemberId,
+                            snapshotMemberId: snapshotMember?.id || null,
+                            personId: member.personId,
+                            groupId: member.groupId || null,
+                            name: member.fullName || '이름 없음',
+                            department: selectedDepartmentName,
+                            group: member.groupName || '미편성',
+                            role: member.role || 'member',
+                            status,
+                            updatedAt: null,
+                            spouseName: member.spouseName || null,
+                            familyName: member.familyName || null,
+                            included: snapshotMember?.included !== false,
+                            submittedStatus,
+                            hasSubmissionConflict,
+                            reason: snapshotMember?.reason || null,
+                            isTargetMember: true,
+                            isOutOfPeriodRecord: false,
+                        } satisfies AttendanceDashboardItem;
+                    }),
+                    ...snapshotMembersWithAttendance
                     .filter((member) => (
-                        member.included ||
-                        Boolean(
-                            member.legacyMemberDirectoryId &&
-                            submittedAttendanceByDirectoryId.has(member.legacyMemberDirectoryId)
+                        (
+                            member.included ||
+                            Boolean(
+                                member.legacyMemberDirectoryId &&
+                                submittedAttendanceByDirectoryId.has(member.legacyMemberDirectoryId)
+                            )
+                        ) && (
+                            !member.groupId ||
+                            groupActiveById.get(member.groupId) ||
+                            (member.groupName ? groupActiveByName.get(member.groupName) : false) ||
+                            hasMeaningfulSnapshotEvidence(member)
                         )
                     ))
+                    .filter((member) => !activeTargetGroupPersonKeysById.has(`${member.groupId}::${member.personId}`))
+                    .filter((member) => !(member.groupName && activeTargetGroupPersonKeysByName.has(`${member.groupName}::${member.personId}`)))
                     .map((member) => {
                         const familySort = familySortByPersonId.get(member.personId);
                         const submittedStatus = member.legacyMemberDirectoryId
@@ -1205,13 +1681,28 @@ export default function AttendancePage() {
                                 )
                             )
                         );
+                        const isTargetMember = Boolean(
+                            member.included !== false &&
+                            member.personId &&
+                            (
+                                (member.groupId && activeTargetGroupPersonKeysById.has(`${member.groupId}::${member.personId}`)) ||
+                                (member.groupName && activeTargetGroupPersonKeysByName.has(`${member.groupName}::${member.personId}`)) ||
+                                (!member.groupId && !member.groupName && selectedTargetPersonIds.has(member.personId))
+                            )
+                        );
+                        const isOutOfPeriodRecord = Boolean(
+                            !isTargetMember &&
+                            member.attendanceStatus !== 'unknown' &&
+                            hasMeaningfulSnapshotEvidence(member)
+                        );
 
                         return {
                             id: member.legacyMemberDirectoryId || member.id,
                             snapshotMemberId: member.id,
                             personId: member.personId,
+                            groupId: member.groupId || null,
                             name: member.displayName || '이름 없음',
-                            department: departments.find(d => d.id === selectedDeptId)?.name || '부서 없음',
+                            department: selectedDepartmentName,
                             group: member.groupName || '미편성',
                             role: member.role || 'member',
                             status: member.attendanceStatus === 'unknown' ? 'absent' : member.attendanceStatus,
@@ -1222,37 +1713,15 @@ export default function AttendancePage() {
                             submittedStatus,
                             hasSubmissionConflict,
                             reason: member.reason,
+                            isTargetMember,
+                            isOutOfPeriodRecord,
                         };
                     }),
+                ],
                 groupOrder
             );
             setAttendanceData(finalMerged);
-
-            // 4. Calculate Group Stats (All Groups in Dept)
-            const groupsMap = new Map<string, { name: string; total: number; present: number }>();
-            // 먼저 부서 내 모든 조를 0으로 초기화
-            orderedGroups.forEach(g => {
-                groupsMap.set(g.name, { name: g.name, total: 0, present: 0 });
-            });
-
-            finalMerged.forEach(item => {
-                if (!groupsMap.has(item.group)) {
-                    groupsMap.set(item.group, { name: item.group, total: 0, present: 0 });
-                }
-                const g = groupsMap.get(item.group);
-                if (!g) return;
-                if (item.included === false) return;
-                g.total++;
-                if (item.status === 'present' || item.status === 'late') g.present++;
-            });
-
-            const stats = Array.from(groupsMap.values());
-            setGroupStats(stats.sort((a, b) => {
-                const aOrder = groupOrder.get(a.name) ?? 9999;
-                const bOrder = groupOrder.get(b.name) ?? 9999;
-                if (aOrder !== bOrder) return aOrder - bOrder;
-                return a.name.localeCompare(b.name);
-            }));
+            updateLocalAttendanceSummary(finalMerged, isNoMeetingDay, orderedGroups);
 
         } catch (err) {
             if (latestAttendanceRequestKey.current !== requestKey) return;
@@ -1260,8 +1729,12 @@ export default function AttendancePage() {
         }
     };
 
-    const updateLocalAttendanceSummary = (items: AttendanceDashboardItem[]) => {
-        if (selectedWeekNoMeetingReason !== null) {
+    const updateLocalAttendanceSummary = (
+        items: AttendanceDashboardItem[],
+        isNoMeetingOverride = selectedWeekNoMeetingReason !== null,
+        groupsForSummary = attendanceGroups
+    ) => {
+        if (isNoMeetingOverride) {
             setSelectedWeekMetrics({
                 totalPeople: 0,
                 presentPeople: 0,
@@ -1269,32 +1742,81 @@ export default function AttendancePage() {
                 rate: null,
             });
         } else {
-            const includedItems = items.filter((item) => item.included !== false);
-            const presentPeople = includedItems.filter((item) => (
-                item.status === 'present' || item.status === 'late'
-            )).length;
+            const targetPersonIds = selectedWeekTargetPersonIdsRef.current;
+            const presentPersonIds = new Set<string>();
+            items.forEach((item) => {
+                if (!item.personId || item.included === false || !item.isTargetMember) return;
+                if (item.status === 'present' || item.status === 'late') {
+                    presentPersonIds.add(item.personId);
+                }
+            });
+            const totalPeople = targetPersonIds.size;
+            const presentPeople = Array.from(presentPersonIds)
+                .filter((personId) => targetPersonIds.has(personId))
+                .length;
             setSelectedWeekMetrics({
-                totalPeople: includedItems.length,
+                totalPeople,
                 presentPeople,
-                absentPeople: Math.max(includedItems.length - presentPeople, 0),
-                rate: includedItems.length > 0 ? Math.round((presentPeople / includedItems.length) * 100) : null,
+                absentPeople: Math.max(totalPeople - presentPeople, 0),
+                rate: totalPeople > 0 ? Math.round((presentPeople / totalPeople) * 100) : null,
             });
         }
 
-        const groupOrder = new Map(attendanceGroups.map((group, index) => [group.name, index]));
-        const groupsMap = new Map<string, { name: string; total: number; present: number }>();
-        attendanceGroups.forEach((group) => {
-            groupsMap.set(group.name, { name: group.name, total: 0, present: 0 });
+        const groupOrder = new Map(groupsForSummary.map((group, index) => [group.name, index]));
+        const groupsMap = new Map<string, GroupStat>();
+        const targetPersonIdsByGroup = new Map(
+            Array.from(selectedWeekTargetPersonIdsByGroupRef.current.entries())
+                .map(([groupName, personIds]) => [groupName, new Set(personIds)] as const)
+        );
+        groupsForSummary.forEach((group) => {
+            groupsMap.set(group.name, {
+                name: group.name,
+                total: targetPersonIdsByGroup.get(group.name)?.size || 0,
+                present: 0,
+                outOfPeriodPresent: 0,
+                outOfPeriodTotal: 0,
+            });
         });
-
+        targetPersonIdsByGroup.forEach((personIds, groupName) => {
+            if (!groupsMap.has(groupName)) {
+                groupsMap.set(groupName, {
+                    name: groupName,
+                    total: personIds.size,
+                    present: 0,
+                    outOfPeriodPresent: 0,
+                    outOfPeriodTotal: 0,
+                });
+            }
+        });
+        const countedTargetPresentKeys = new Set<string>();
         items.forEach((item) => {
             if (!groupsMap.has(item.group)) {
-                groupsMap.set(item.group, { name: item.group, total: 0, present: 0 });
+                return;
             }
             const group = groupsMap.get(item.group);
             if (!group || item.included === false) return;
-            group.total += 1;
+            if (item.isOutOfPeriodRecord) {
+                group.outOfPeriodTotal = (group.outOfPeriodTotal || 0) + 1;
+                if (item.status === 'present' || item.status === 'late') {
+                    group.outOfPeriodPresent = (group.outOfPeriodPresent || 0) + 1;
+                }
+                return;
+            }
+            if (!item.isTargetMember) return;
+            if (item.personId) {
+                const targetPersonIdsForGroup = targetPersonIdsByGroup.get(item.group) || new Set<string>();
+                if (!targetPersonIdsForGroup.has(item.personId)) {
+                    targetPersonIdsForGroup.add(item.personId);
+                    targetPersonIdsByGroup.set(item.group, targetPersonIdsForGroup);
+                    group.total += 1;
+                }
+            } else {
+                group.total += 1;
+            }
             if (item.status === 'present' || item.status === 'late') {
+                const presentKey = `${item.group}::${item.personId || item.id}`;
+                if (countedTargetPresentKeys.has(presentKey)) return;
+                countedTargetPresentKeys.add(presentKey);
                 group.present += 1;
             }
         });
@@ -1602,14 +2124,51 @@ export default function AttendancePage() {
     };
 
     const toggleSnapshotMemberAttendance = async (member: AttendanceDashboardItem) => {
-        if (!member.snapshotMemberId) return;
+        const nextStatus: SnapshotAttendanceStatus = member.status === 'present' || member.status === 'late' ? 'absent' : 'present';
+        if (!member.snapshotMemberId) {
+            if (!selectedWeekId || !member.personId || !member.groupId) return;
+            try {
+                setSnapshotEditLoadingId(`attendance:${member.id}`);
+                const { error } = await supabase
+                    .from('attendance')
+                    .upsert({
+                        week_id: selectedWeekId,
+                        directory_member_id: member.id,
+                        group_id: member.groupId,
+                        recorded_group_id: member.groupId,
+                        person_id: member.personId,
+                        status: nextStatus,
+                        updated_at: new Date().toISOString(),
+                    }, {
+                        onConflict: 'week_id,directory_member_id',
+                    });
+
+                if (error) throw error;
+
+                const nextAttendanceData = attendanceData.map((item) => (
+                    item.id === member.id && item.groupId === member.groupId
+                        ? { ...item, status: nextStatus, submittedStatus: nextStatus }
+                        : item
+                ));
+                setAttendanceData(nextAttendanceData);
+                updateLocalAttendanceSummary(nextAttendanceData);
+                setAttendanceSnapshotVersion((value) => value + 1);
+            } catch (err) {
+                console.error('Attendance direct update error:', err);
+                alert(err instanceof Error ? err.message : '출석 상태 수정 중 오류가 발생했습니다.');
+                await fetchAttendance();
+            } finally {
+                setSnapshotEditLoadingId(null);
+            }
+            return;
+        }
         if (member.included === false && member.submittedStatus) {
             await restoreSnapshotMemberWithSubmittedStatus(member);
             return;
         }
         await updateSnapshotMemberStatus(
             member.snapshotMemberId,
-            member.status === 'present' || member.status === 'late' ? 'absent' : 'present'
+            nextStatus
         );
     };
 
@@ -1811,6 +2370,16 @@ export default function AttendancePage() {
             const periodGroupRows = (periodGroups || []) as AttendanceGroupRow[];
             const periodWeekIds = meetingWeeks.map((week) => week.id);
             const periodGroupIds = periodGroupRows.map((group) => group.id);
+            const rosterMembersByWeekId = new Map<string, AttendanceRosterMember[]>();
+            for (const week of meetingWeeks) {
+                rosterMembersByWeekId.set(
+                    week.id,
+                    toAttendanceRosterMembers(
+                        await getCachedAttendanceRoster(selectedDeptId, week.week_date)
+                    )
+                );
+            }
+            const attendanceRowsByWeekId = new Map<string, AttendanceRow[]>();
 
             const submittedAttendanceKeys = new Set<string>();
             const submittedPrayerKeys = new Set<string>();
@@ -1818,7 +2387,7 @@ export default function AttendancePage() {
             if (periodWeekIds.length > 0 && periodGroupIds.length > 0) {
                 const { data: submittedAttendanceRows, error: submittedAttendanceError } = await supabase
                     .from('attendance')
-                    .select('week_id, group_id')
+                    .select('week_id, group_id, recorded_group_id, directory_member_id, status')
                     .in('week_id', periodWeekIds)
                     .in('group_id', periodGroupIds);
                 if (submittedAttendanceError) throw buildQueryError('attendance insight submitted attendance query failed', submittedAttendanceError);
@@ -1829,6 +2398,13 @@ export default function AttendancePage() {
                             submittedAttendanceKeys.add(buildWeekGroupKey(row.week_id, row.group_id));
                         }
                     });
+
+                ((submittedAttendanceRows || []) as AttendanceRow[]).forEach((row) => {
+                    if (!row.week_id) return;
+                    const rows = attendanceRowsByWeekId.get(row.week_id) || [];
+                    rows.push(row);
+                    attendanceRowsByWeekId.set(row.week_id, rows);
+                });
 
                 const { data: submittedPrayerRows, error: submittedPrayerError } = await supabase
                     .from('prayer_entries')
@@ -1846,9 +2422,26 @@ export default function AttendancePage() {
                     });
             }
 
-            meetingWeeks.forEach((week) => {
+            const activeGroupsForWeek = await createSeasonGroupPeriodResolver(
+                selectedDeptId,
+                meetingWeeks.map((week) => week.week_date),
                 periodGroupRows
-                    .filter((group) => isGroupActiveOnWeek(group, week.week_date))
+            );
+
+            meetingWeeks.forEach((week) => {
+                const activeRosterForWeek = getActiveRosterForWeek(
+                    rosterMembersByWeekId.get(week.id) || [],
+                    week.week_date
+                );
+                const activePersonIdsByGroupId = new Map<string, Set<string>>();
+                activeRosterForWeek.forEach((member) => {
+                    if (!member.groupId) return;
+                    const personIds = activePersonIdsByGroupId.get(member.groupId) || new Set<string>();
+                    personIds.add(member.personId);
+                    activePersonIdsByGroupId.set(member.groupId, personIds);
+                });
+
+                activeGroupsForWeek(week.week_date)
                     .forEach((group) => {
                         const key = buildWeekGroupKey(week.id, group.id);
                         const hasAttendance = submittedAttendanceKeys.has(key);
@@ -1883,6 +2476,7 @@ export default function AttendancePage() {
                                 existing.noPrayerWeekDates.push(week.week_date);
                             }
                         }
+                        existing.targetPeopleSum += activePersonIdsByGroupId.get(group.id)?.size || 0;
 
                         submissionRiskByGroup.set(group.id, existing);
                     });
@@ -1916,35 +2510,60 @@ export default function AttendancePage() {
                 return report;
             };
 
-            const snapshotMembersByWeekId = await getSnapshotMembersForWeeksReadonly(
-                selectedDeptId,
-                meetingWeeks.map((week) => week.id)
-            );
-
             for (const week of meetingWeeks) {
-                const snapshotMembersWithAttendance = snapshotMembersByWeekId.get(week.id) || [];
-                const includedMembers = snapshotMembersWithAttendance.filter((member) => member.included);
-                const weekMembersByPerson = new Map<string, AttendanceRosterSnapshotMember[]>();
-                const weekMembersByGroupAndPerson = new Map<string, AttendanceRosterSnapshotMember[]>();
+                const activeRoster = getActiveRosterForWeek(
+                    rosterMembersByWeekId.get(week.id) || [],
+                    week.week_date
+                );
+                const directoryToPersonId = new Map(
+                    activeRoster.map((member) => [member.directoryMemberId, member.personId])
+                );
+                const activePersonIds = new Set(activeRoster.map((member) => member.personId));
+                const attendanceRowsForWeek = attendanceRowsByWeekId.get(week.id) || [];
+                const presentPersonIds = new Set<string>();
+                const presentGroupPersonKeys = new Set<string>();
 
-                includedMembers.forEach((member) => {
-                    if (!member.personId) return;
-                    weekMembersByPerson.set(member.personId, [...(weekMembersByPerson.get(member.personId) || []), member]);
+                attendanceRowsForWeek.forEach((row) => {
+                    if (row.status !== 'present' && row.status !== 'late') return;
+                    const personId = row.directory_member_id
+                        ? directoryToPersonId.get(row.directory_member_id)
+                        : row.person_id || null;
+                    if (!personId || !activePersonIds.has(personId)) return;
 
-                    const groupName = member.groupName || '조 없음';
-                    const groupPersonKey = `${groupName}::${member.personId}`;
+                    presentPersonIds.add(personId);
+                    const groupId = row.recorded_group_id || row.group_id;
+                    if (groupId) {
+                        presentGroupPersonKeys.add(`${groupId}::${personId}`);
+                    }
+                });
+
+                const weekMembersByPerson = new Map<string, AttendanceRosterMember[]>();
+                const weekMembersByGroupAndPerson = new Map<string, AttendanceRosterMember[]>();
+
+                activeRoster.forEach((member) => {
+                    weekMembersByPerson.set(member.personId, [
+                        ...(weekMembersByPerson.get(member.personId) || []),
+                        member,
+                    ]);
+
+                    const groupId = member.groupId || 'no-group';
+                    const groupPersonKey = `${groupId}::${member.personId}`;
                     weekMembersByGroupAndPerson.set(groupPersonKey, [
                         ...(weekMembersByGroupAndPerson.get(groupPersonKey) || []),
                         member,
                     ]);
-
                 });
 
                 weekMembersByPerson.forEach((membersForPerson) => {
-                    const displayMember = membersForPerson.find((member) => member.legacyMemberDirectoryId) || membersForPerson[0];
-                    const report = ensurePersonReport(displayMember);
+                    const displayMember = membersForPerson[0];
+                    const report = ensurePersonReport({
+                        personId: displayMember.personId,
+                        legacyMemberDirectoryId: displayMember.directoryMemberId,
+                        displayName: displayMember.fullName,
+                        groupName: displayMember.groupName || '조 없음',
+                    } as AttendanceRosterSnapshotMember);
                     report.totalWeekIds.add(week.id);
-                    if (membersForPerson.some((member) => member.attendanceStatus === 'present' || member.attendanceStatus === 'late')) {
+                    if (presentPersonIds.has(displayMember.personId)) {
                         report.presentWeekIds.add(week.id);
                     }
 
@@ -1963,7 +2582,7 @@ export default function AttendancePage() {
                     };
                     group.weekIds.add(week.id);
                     group.totalAttCount += 1;
-                    if (membersForGroupPerson.some((member) => member.attendanceStatus === 'present' || member.attendanceStatus === 'late')) {
+                    if (presentGroupPersonKeys.has(`${displayMember.groupId || 'no-group'}::${displayMember.personId}`)) {
                         group.presentSum += 1;
                     }
                     groupTotals.set(groupName, group);
@@ -1972,10 +2591,12 @@ export default function AttendancePage() {
 
             const commonTotalWeeks = meetingWeeks.length;
             const report = Array.from(reportByPerson.values()).map((personReport) => {
-                const totalWeeks = commonTotalWeeks;
+                const totalWeeks = personReport.totalWeekIds.size;
                 const presentCount = personReport.presentWeekIds.size;
                 const rate = totalWeeks > 0 ? (presentCount / totalWeeks) * 100 : 0;
-                const last3Weeks = meetingWeeks.slice(0, 3);
+                const last3Weeks = meetingWeeks
+                    .filter((week) => personReport.totalWeekIds.has(week.id))
+                    .slice(0, 3);
                 const consecutiveAbsences = last3Weeks.length >= 3 && last3Weeks.every((week) => (
                     !personReport.presentWeekIds.has(week.id)
                 ));
@@ -2147,12 +2768,17 @@ export default function AttendancePage() {
                     if (row.week_id && row.group_id) {
                         submittedPrayerKeys.add(buildWeekGroupKey(row.week_id, row.group_id));
                     }
-                });
+            });
         }
 
-        meetingWeeks.forEach((week) => {
+        const activeGroupsForWeek = await createSeasonGroupPeriodResolver(
+            selectedDeptId,
+            meetingWeeks.map((week) => week.week_date),
             periodGroupRows
-                .filter((group) => isGroupActiveOnWeek(group, week.week_date))
+        );
+
+        meetingWeeks.forEach((week) => {
+            activeGroupsForWeek(week.week_date)
                 .forEach((group) => {
                     const key = buildWeekGroupKey(week.id, group.id);
                     const hasAttendance = submittedAttendanceKeys.has(key);
@@ -2318,44 +2944,63 @@ export default function AttendancePage() {
                 ((exportGroups || []) as AttendanceGroupRow[])
                     .map((group, index) => [group.name, index])
             );
-            const rosterForFamilySort = await getCachedAttendanceRoster(selectedDeptId);
-            const familySortByPersonId = new Map(
-                rosterForFamilySort
-                    .filter((member) => member.person_id)
-                    .map((member) => [
-                        String(member.person_id),
-                        {
-                            spouseName: member.spouse_name || null,
-                            familyName: member.family_name || null,
-                        },
-                    ])
-            );
 
-            const snapshotMembersByWeekId = new Map<string, AttendanceRosterSnapshotMember[]>();
             const peopleById = new Map<string, ExportAttendancePerson>();
+            const getExportGroupPersonKey = (
+                groupId: string | null | undefined,
+                groupName: string | null | undefined,
+                personId: string | null | undefined
+            ) => `${groupId || groupName || '미편성'}::${personId || 'unknown'}`;
 
             for (const week of rangeWeeks as WeekRow[]) {
                 if (noMeetingDateSet.has(week.week_date)) {
-                    snapshotMembersByWeekId.set(week.id, []);
                     continue;
                 }
 
+                const weekRosterMembers = getActiveRosterForWeek(
+                    toAttendanceRosterMembers(
+                        await getCachedAttendanceRoster(selectedDeptId, week.week_date)
+                    ),
+                    week.week_date
+                );
                 const { snapshotMembersWithAttendance } = await getSnapshotMembersForWeek(
                     selectedDeptId,
                     week.id
                 );
-                const includedMembers = snapshotMembersWithAttendance
-                    .filter((member) => member.included);
-                snapshotMembersByWeekId.set(week.id, includedMembers);
-
-                includedMembers.forEach((member) => {
-                    const familySort = familySortByPersonId.get(member.personId);
+                const snapshotByGroupPerson = new Map(
+                    snapshotMembersWithAttendance
+                        .filter((member) => member.included)
+                        .map((member) => [
+                            getExportGroupPersonKey(member.groupId, member.groupName, member.personId),
+                            member,
+                        ])
+                );
+                const targetMembers = weekRosterMembers.map((member) => {
+                    const snapshotMember = snapshotByGroupPerson.get(
+                        getExportGroupPersonKey(member.groupId, member.groupName, member.personId)
+                    );
+                    return snapshotMember || {
+                        id: `${week.id}:${member.groupId || member.groupName || 'unassigned'}:${member.personId}`,
+                        snapshotId: '',
+                        personId: member.personId,
+                        legacyMemberDirectoryId: member.directoryMemberId,
+                        displayName: member.fullName,
+                        groupId: member.groupId || null,
+                        groupName: member.groupName || '조 없음',
+                        role: member.role || 'member',
+                        attendanceStatus: 'absent',
+                        included: true,
+                        source: 'season_plan_roster',
+                    } satisfies AttendanceRosterSnapshotMember;
+                });
+                targetMembers.forEach((member) => {
+                    const rosterMember = weekRosterMembers.find((candidate) => candidate.personId === member.personId);
                     const existing = peopleById.get(member.personId) || {
                         name: member.displayName || '이름 없음',
                         role: member.role || '성도',
                         groupName: member.groupName || '조 없음',
-                        spouseName: familySort?.spouseName || null,
-                        familyName: familySort?.familyName || null,
+                        spouseName: rosterMember?.spouseName || null,
+                        familyName: rosterMember?.familyName || null,
                         weeks: new Map<string, AttendanceRosterSnapshotMember>(),
                     };
 
@@ -2377,11 +3022,11 @@ export default function AttendancePage() {
                     if (member.role && existing.role === '성도') {
                         existing.role = member.role;
                     }
-                    if (!existing.spouseName && familySort?.spouseName) {
-                        existing.spouseName = familySort.spouseName;
+                    if (!existing.spouseName && rosterMember?.spouseName) {
+                        existing.spouseName = rosterMember.spouseName;
                     }
-                    if (!existing.familyName && familySort?.familyName) {
-                        existing.familyName = familySort.familyName;
+                    if (!existing.familyName && rosterMember?.familyName) {
+                        existing.familyName = rosterMember.familyName;
                     }
 
                     peopleById.set(member.personId, existing);
@@ -2478,18 +3123,39 @@ export default function AttendancePage() {
         setIsExportModalOpen(true);
     };
 
-    const selectedChurchName = churches.find((church) => church.id === selectedChurchId)?.name || '교회 선택 필요';
+    const profileChurchJoin = Array.isArray(profile?.churches)
+        ? profile?.churches[0]
+        : profile?.churches;
+    const selectedChurchName = churches.find((church) => church.id === selectedChurchId)?.name
+        || profileChurchJoin?.name
+        || '교회 선택 필요';
     const selectedDepartmentName = departments.find((department) => department.id === selectedDeptId)?.name || '부서 선택 필요';
+    const selectedWeekForView = weeks.find((week) => week.id === selectedWeekId) as WeekRow | undefined;
+    const attendanceSeasonTitle = selectedAttendanceSeason?.title || (selectedWeekForView ? '등록된 시즌 없음' : '주차 선택 필요');
+    const attendanceSeasonPeriodLabel = selectedAttendanceSeason?.effective_week_date
+        ? `${formatShortWeekDate(selectedAttendanceSeason.effective_week_date)}~${selectedAttendanceSeason.end_week_date ? formatShortWeekDate(selectedAttendanceSeason.end_week_date) : '진행 중'}`
+        : selectedWeekForView
+            ? '현재 명부 기준'
+            : '주차를 먼저 선택하세요';
     const insightPeriodLabel = statsPeriod === 'quarter'
         ? `${insightYear}년 ${insightQuarter}분기`
         : `${insightYear}년`;
+    const openAttendanceSeason = () => {
+        if (!selectedAttendanceSeason?.id) return;
+        const params = new URLSearchParams({
+            seasonId: selectedAttendanceSeason.id,
+            churchId: selectedChurchId,
+            deptId: selectedDeptId,
+        });
+        router.push(`/regrouping?${params.toString()}`);
+    };
 
     return (
         <div className="space-y-8 sm:space-y-10 max-w-7xl mx-auto">
             {/* Header Area */}
             <header className="space-y-8 px-2">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                    <div className="flex items-center gap-4">
+                    <div className="space-y-2">
                         <div className="space-y-1">
                             <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">
                                 출석 현황
@@ -2498,31 +3164,41 @@ export default function AttendancePage() {
                         </div>
                     </div>
 
-                    <div className="inline-flex rounded-2xl border border-indigo-100 bg-indigo-50/70 p-1 shadow-sm dark:border-indigo-500/20 dark:bg-indigo-500/10">
-                        <button
-                            type="button"
-                            onClick={() => setAttendanceView('weekly')}
-                            className={cn(
-                                "rounded-xl px-5 py-2.5 text-xs font-black transition-all",
-                                attendanceView === 'weekly'
-                                    ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-200"
-                                    : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                            )}
-                        >
-                            주차별 출석
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setAttendanceView('insights')}
-                            className={cn(
-                                "rounded-xl px-5 py-2.5 text-xs font-black transition-all",
-                                attendanceView === 'insights'
-                                    ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-200"
-                                    : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                            )}
-                        >
-                            인사이트 리포트
-                        </button>
+                    <div className="flex flex-col items-start gap-3 md:items-end">
+                        <SeasonBadge
+                            title={attendanceSeasonTitle}
+                            periodLabel={attendanceSeasonPeriodLabel}
+                            onClick={openAttendanceSeason}
+                            disabled={!selectedAttendanceSeason?.id}
+                            className="md:self-end"
+                        />
+
+                        <div className="inline-flex rounded-2xl border border-indigo-100 bg-indigo-50/70 p-1 shadow-sm dark:border-indigo-500/20 dark:bg-indigo-500/10">
+                            <button
+                                type="button"
+                                onClick={() => setAttendanceView('weekly')}
+                                className={cn(
+                                    "rounded-xl px-5 py-2.5 text-xs font-black transition-all",
+                                    attendanceView === 'weekly'
+                                        ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-200"
+                                        : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                                )}
+                            >
+                                주차별 출석
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setAttendanceView('insights')}
+                                className={cn(
+                                    "rounded-xl px-5 py-2.5 text-xs font-black transition-all",
+                                    attendanceView === 'insights'
+                                        ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-950 dark:text-indigo-200"
+                                        : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                                )}
+                            >
+                                인사이트 리포트
+                            </button>
+                        </div>
                     </div>
                 </div>
             </header>
@@ -2852,6 +3528,11 @@ export default function AttendancePage() {
                                                                         조장 제출 확인 필요 {conflictMembers.length}
                                                                     </span>
                                                                 )}
+                                                                {(gs.outOfPeriodTotal || 0) > 0 && (
+                                                                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[9px] font-black text-sky-600 ring-1 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20">
+                                                                        기간 밖 기록 {gs.outOfPeriodPresent || 0}/{gs.outOfPeriodTotal}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                             <div className="text-[10px] font-bold text-slate-400">
                                                                 출석: <span className="text-indigo-600">{gs.present}</span> / 전체: {gs.total}
@@ -2885,6 +3566,11 @@ export default function AttendancePage() {
                                                                     {m.hasSubmissionConflict && (
                                                                         <span className="h-1.5 w-1.5 rounded-full bg-amber-400" title="조장 제출값과 다름" />
                                                                     )}
+                                                                    {m.isOutOfPeriodRecord && (
+                                                                        <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[8px] font-black text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
+                                                                            기간 밖
+                                                                        </span>
+                                                                    )}
                                                                     {m.snapshotMemberId && m.included !== false && (
                                                                         <span
                                                                             role="button"
@@ -2906,7 +3592,7 @@ export default function AttendancePage() {
                                                                             ×
                                                                         </span>
                                                                     )}
-                                                                    {snapshotEditLoadingId === m.snapshotMemberId && (
+                                                                    {(snapshotEditLoadingId === m.snapshotMemberId || snapshotEditLoadingId === `attendance:${m.id}`) && (
                                                                         <span className="absolute inset-0 rounded-xl bg-white/60 dark:bg-slate-900/60" />
                                                                     )}
                                                                 </button>
@@ -3031,34 +3717,44 @@ export default function AttendancePage() {
                                             })}
                                         </div>
                                     ) : (
-                                        groupStats.map(gs => (
-                                            <div key={gs.name} className="group/bar relative">
-                                                <div className="flex items-end justify-between mb-3">
-                                                    <span className="text-xs font-black text-slate-700 dark:text-slate-300 group-hover/bar:text-indigo-500 transition-colors uppercase tracking-widest flex items-center gap-2">
-                                                        {gs.name}
-                                                        {(gs.present / gs.total) >= 0.9 && <Trophy className="w-3.5 h-3.5 text-amber-500" />}
-                                                    </span>
-                                                    <span className="text-[10px] font-black text-slate-400 tracking-tight">
-                                                        <span className="text-slate-900 dark:text-white text-sm mr-1">{gs.present}</span>/ {gs.total} 명 ({Math.round((gs.present / gs.total) * 100)}%)
-                                                    </span>
-                                                </div>
-                                                <div className="flex gap-1 h-3">
-                                                    {Array.from({ length: gs.total }).map((_, i) => (
-                                                        <div
-                                                            key={i}
-                                                            className={cn(
-                                                                "flex-1 rounded-sm transition-all duration-500",
-                                                                i < gs.present
-                                                                    ? ((gs.present / gs.total) > 0.8 ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]" :
-                                                                        (gs.present / gs.total) > 0.5 ? "bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.3)]" :
-                                                                            "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.3)]")
-                                                                    : "bg-slate-100 dark:bg-slate-800/50"
+                                        groupStats.map(gs => {
+                                            const rate = getGroupAttendanceRate(gs);
+                                            return (
+                                                <div key={gs.name} className="group/bar relative">
+                                                    <div className="flex items-end justify-between mb-3">
+                                                        <span className="text-xs font-black text-slate-700 dark:text-slate-300 group-hover/bar:text-indigo-500 transition-colors uppercase tracking-widest flex items-center gap-2">
+                                                            {gs.name}
+                                                            {rate !== null && rate >= 90 && <Trophy className="w-3.5 h-3.5 text-amber-500" />}
+                                                            {(gs.outOfPeriodTotal || 0) > 0 && (
+                                                                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[9px] font-black tracking-normal text-sky-600 ring-1 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20">
+                                                                    기간 밖 {gs.outOfPeriodPresent || 0}/{gs.outOfPeriodTotal}
+                                                                </span>
                                                             )}
-                                                        />
-                                                    ))}
+                                                        </span>
+                                                        <span className="text-[10px] font-black text-slate-400 tracking-tight">
+                                                            <span className="text-slate-900 dark:text-white text-sm mr-1">{gs.present}</span>/ {gs.total} 명 ({rate === null ? '-' : `${rate}%`})
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex gap-1 h-3">
+                                                        {gs.total === 0 ? (
+                                                            <div className="h-full flex-1 rounded-sm bg-slate-100 dark:bg-slate-800/50" />
+                                                        ) : Array.from({ length: gs.total }).map((_, i) => (
+                                                            <div
+                                                                key={i}
+                                                                className={cn(
+                                                                    "flex-1 rounded-sm transition-all duration-500",
+                                                                    i < gs.present
+                                                                        ? (rate !== null && rate > 80 ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]" :
+                                                                            rate !== null && rate > 50 ? "bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.3)]" :
+                                                                                "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.3)]")
+                                                                        : "bg-slate-100 dark:bg-slate-800/50"
+                                                                )}
+                                                            />
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))
+                                            );
+                                        })
                                     )}
                                 </div>
                             </div>
@@ -3078,7 +3774,7 @@ export default function AttendancePage() {
                                     <Download className="h-5 w-5 text-indigo-500" />
                                 </div>
                                 <p className="mb-4 text-[11px] font-bold leading-5 text-slate-500 dark:text-slate-400">
-                                    선택한 기간의 snapshot 기준 출석부를 엑셀로 생성합니다.
+                                    선택한 기간의 출석 기록을 엑셀로 생성합니다.
                                 </p>
                                 <button
                                     type="button"
@@ -3095,8 +3791,8 @@ export default function AttendancePage() {
 	                                        <AlertCircle className="h-5 w-5" />
 	                                    </div>
 	                                    <div>
-	                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">인원 변동</p>
-	                                        <h3 className="mt-1 text-lg font-black text-slate-900 dark:text-white">지난 주와 달라진 출석 대상</h3>
+	                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">출석 대상 변화</p>
+	                                        <h3 className="mt-1 text-lg font-black text-slate-900 dark:text-white">이번 주 출석 대상 안내</h3>
 	                                    </div>
 	                                </div>
 

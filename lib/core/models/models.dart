@@ -39,8 +39,12 @@ class AttendanceModel {
       groupMemberId: json['group_member_id'],
       directoryMemberId: json['directory_member_id'] ?? '',
       status: json['status'] ?? 'absent',
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'])
+          : null,
       memberInfo: json['member_directory'],
       personId: json['person_id'],
       membershipId: json['membership_id'],
@@ -113,7 +117,9 @@ class PrayerEntryModel {
       aiRefinedContent: json['ai_refined_content'],
       status: json['status'] ?? 'draft',
       isRefining: json['is_refining'] ?? false,
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'])
+          : null,
       personId: json['person_id'],
       membershipId: json['membership_id'],
       recordedGroupId: json['recorded_group_id'],
@@ -204,8 +210,12 @@ class ProfileModel {
       childrenInfo: json['children_info'],
       isOnboardingComplete: json['is_onboarding_complete'] ?? false,
       avatarUrl: json['avatar_url'],
-      lastNoticeCheckedAt: json['last_notice_checked_at'] != null ? DateTime.parse(json['last_notice_checked_at']) : null,
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
+      lastNoticeCheckedAt: json['last_notice_checked_at'] != null
+          ? DateTime.parse(json['last_notice_checked_at'])
+          : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
       pushPrayerEnabled: json['push_prayer_enabled'] ?? true,
       pushNoticeEnabled: json['push_notice_enabled'] ?? true,
       pushReminderEnabled: json['push_reminder_enabled'] ?? true,
@@ -313,6 +323,10 @@ class UserMembership {
   final String? departmentName;
   final String? departmentId;
   final String? churchId;
+  final String? membershipStartsAt;
+  final String? membershipEndsAt;
+  final String? groupActiveFrom;
+  final String? groupEndedAt;
 
   UserMembership({
     required this.groupId,
@@ -321,6 +335,10 @@ class UserMembership {
     this.departmentName,
     this.departmentId,
     this.churchId,
+    this.membershipStartsAt,
+    this.membershipEndsAt,
+    this.groupActiveFrom,
+    this.groupEndedAt,
   });
 
   factory UserMembership.fromMap(Map<String, dynamic> map) {
@@ -331,7 +349,33 @@ class UserMembership {
       departmentName: map['department_name'],
       departmentId: map['department_id'],
       churchId: map['church_id'],
+      membershipStartsAt: map['membership_starts_at']?.toString(),
+      membershipEndsAt: map['membership_ends_at']?.toString(),
+      groupActiveFrom: map['group_active_from']?.toString(),
+      groupEndedAt: map['group_ended_at']?.toString(),
     );
+  }
+
+  bool isActiveOnWeek(DateTime weekDate) {
+    final weekStart = DateTime(weekDate.year, weekDate.month, weekDate.day);
+    final weekEnd = weekStart.add(const Duration(days: 1));
+
+    DateTime? parseDate(String? value) {
+      if (value == null || value.isEmpty) return null;
+      return DateTime.tryParse(value);
+    }
+
+    final startsAt =
+        parseDate(membershipStartsAt) ?? parseDate(groupActiveFrom);
+    final endsAt = parseDate(membershipEndsAt) ?? parseDate(groupEndedAt);
+    final activeFrom = parseDate(groupActiveFrom);
+    final groupEnded = parseDate(groupEndedAt);
+
+    if (startsAt != null && !startsAt.isBefore(weekEnd)) return false;
+    if (activeFrom != null && !activeFrom.isBefore(weekEnd)) return false;
+    if (endsAt != null && endsAt.isBefore(weekStart)) return false;
+    if (groupEnded != null && groupEnded.isBefore(weekStart)) return false;
+    return true;
   }
 
   String get roleLabel {
@@ -381,7 +425,9 @@ class NoMeetingDayModel {
       weekDate: DateTime.parse(json['week_date']),
       reason: json['reason'],
       createdBy: json['created_by'],
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : null,
     );
   }
 }

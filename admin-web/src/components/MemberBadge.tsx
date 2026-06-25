@@ -1,8 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { User, ShieldCheck, Crown, Trash2 } from 'lucide-react';
+import { PeriodEditPopover } from './kanban/PeriodEditPopover';
+import { isPeriodEdited } from '@/lib/periodBadgeState';
 
 interface MemberBadgeProps {
     member: {
@@ -13,6 +15,10 @@ interface MemberBadgeProps {
         phone?: string;
         avatar_url?: string;
         spouse_name?: string;
+        starts_week_date?: string | null;
+        ends_week_date?: string | null;
+        group_starts_week_date?: string | null;
+        group_ends_week_date?: string | null;
     };
     isSelected?: boolean;
     onClick?: () => void;
@@ -21,6 +27,8 @@ interface MemberBadgeProps {
     profileMode?: string;
     onToggleLeader?: (id: string) => void;
     onDeleteMember?: (id: string) => void;
+    onUpdateMemberPeriod?: (id: string, updates: { starts_week_date: string | null; ends_week_date: string | null }) => void;
+    periodStartMaxDate?: string | null;
     isDeletable?: boolean;
 }
 
@@ -33,9 +41,30 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
     profileMode,
     onToggleLeader,
     onDeleteMember,
+    onUpdateMemberPeriod,
+    periodStartMaxDate,
     isDeletable
 }) => {
     const isLeader = member.role_in_group === 'leader';
+    const [isEditingPeriod, setIsEditingPeriod] = useState(false);
+    const [periodAnchorRect, setPeriodAnchorRect] = useState<DOMRect | null>(null);
+    const [initialPeriod] = useState(() => ({
+        start: member.starts_week_date || null,
+        end: member.ends_week_date || null,
+    }));
+    const formatShortDate = (value?: string | null) => {
+        if (!value) return '';
+        const [, month, day] = value.split('-');
+        return month && day ? `${Number(month)}/${Number(day)}` : value;
+    };
+    const hasCustomPeriod = Boolean(
+        (member.starts_week_date && member.group_starts_week_date && member.starts_week_date !== member.group_starts_week_date) ||
+        (member.ends_week_date && member.group_ends_week_date && member.ends_week_date !== member.group_ends_week_date)
+    );
+    const periodLabel = hasCustomPeriod
+        ? `${formatShortDate(member.starts_week_date)}~${formatShortDate(member.ends_week_date)}`
+        : null;
+    const hasEditedPeriod = isPeriodEdited(initialPeriod.start, initialPeriod.end, member.starts_week_date, member.ends_week_date);
 
     const handleToggleLeader = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -93,6 +122,48 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
                             </span>
                         </div>
                     )}
+                    {periodLabel && (
+                        <span className="relative shrink-0">
+                            <button
+                                type="button"
+                                onClick={(event) => event.stopPropagation()}
+                                onDoubleClick={(event) => {
+                                    event.stopPropagation();
+                                    if (onUpdateMemberPeriod) {
+                                        setPeriodAnchorRect(event.currentTarget.getBoundingClientRect());
+                                        setIsEditingPeriod(true);
+                                    }
+                                }}
+                                className={cn(
+                                    "rounded-md border px-1.5 py-0.5 text-[9px] font-black transition",
+                                    hasEditedPeriod
+                                        ? "border-indigo-200 bg-indigo-50 text-indigo-700 shadow-sm shadow-indigo-500/10 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-200"
+                                        : "border-amber-100 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
+                                    onUpdateMemberPeriod && "cursor-pointer hover:ring-4 hover:ring-indigo-500/10"
+                                )}
+                                title={onUpdateMemberPeriod ? "더블클릭해서 이 소속 기간을 수정합니다." : undefined}
+                            >
+                                {periodLabel}
+                            </button>
+                            {isEditingPeriod && onUpdateMemberPeriod && (
+                                <PeriodEditPopover
+                                    title={`${member.full_name} 소속 기간 수정`}
+                                    startValue={member.starts_week_date}
+                                    endValue={member.ends_week_date}
+                                    minValue={member.group_starts_week_date}
+                                    maxValue={member.group_ends_week_date}
+                                    startMaxValue={periodStartMaxDate || member.group_ends_week_date}
+                                    endMaxValue={member.group_ends_week_date}
+                                    anchorRect={periodAnchorRect}
+                                    onApply={(updates) => onUpdateMemberPeriod(member.id, updates)}
+                                    onClose={() => {
+                                        setIsEditingPeriod(false);
+                                        setPeriodAnchorRect(null);
+                                    }}
+                                />
+                            )}
+                        </span>
+                    )}
                 </div>
             </div>
 
@@ -122,9 +193,7 @@ export const MemberBadge: React.FC<MemberBadgeProps> = ({
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm(`${member.full_name} 성도님을 이 조에서 제외하시겠습니까?`)) {
-                                onDeleteMember(member.id);
-                            }
+                            onDeleteMember(member.id);
                         }}
                         className="p-2 text-slate-200 dark:text-slate-800 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300"
                         title="조에서 제외"

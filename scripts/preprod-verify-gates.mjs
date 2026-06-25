@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { printLocalGateSummary, runLocalGates } from "./preprod-local-gates.mjs";
 
 const gates = [
   "supabase/verify_phase2_people_memberships_schema_summary_dev_2026-05-15.sql",
@@ -76,6 +77,12 @@ const runGate = (file) => {
 
 const summary = [];
 let hasFailure = false;
+
+const localGateSummary = runLocalGates();
+printLocalGateSummary(localGateSummary);
+if (localGateSummary.hasFailure) {
+  hasFailure = true;
+}
 
 for (const gate of gates) {
   try {

@@ -34,11 +34,13 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
+import { SeasonBadge } from '@/components/SeasonBadge';
 import SmartBatchModal from '@/components/SmartBatchModal';
 import RichTextEditor from '@/components/RichTextEditor';
 import { MemberModal, MemberProfile } from '@/components/MemberModal';
 import { Tooltip } from '@/components/Tooltip';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
+import { buildCurrentSeasonPhase2ListCheck } from '@/lib/phase2ListDiagnostics';
 import {
     setMemberDirectoryActiveStatus,
     setPersonDepartmentActiveStatus,
@@ -99,6 +101,60 @@ interface Phase2ListCheck {
 }
 
 const getRosterPersonKey = (member: RosterMember) => member.phase2_person_id || member.person_id || member.id;
+
+const isNonEmptyString = (value: string | null | undefined): value is string => Boolean(value);
+
+const getKoreaDateText = () => {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    });
+    return formatter.format(new Date());
+};
+
+type CurrentSeasonPlanAssignmentRow = {
+    id: string;
+    person_id: string | null;
+};
+
+type CurrentSeasonRow = {
+    id: string;
+    title: string | null;
+    effective_week_date: string | null;
+    end_week_date: string | null;
+};
+
+const isSeasonCoveringDate = (season: CurrentSeasonRow, dateText: string) => (
+    Boolean(season.effective_week_date) &&
+    String(season.effective_week_date) <= dateText &&
+    (!season.end_week_date || dateText <= String(season.end_week_date))
+);
+
+const selectRelevantSeason = (seasons: CurrentSeasonRow[], dateText: string) => {
+    const sortedSeasons = [...seasons].sort((left, right) =>
+        String(right.effective_week_date || '').localeCompare(String(left.effective_week_date || ''))
+    );
+    return sortedSeasons.find(season => isSeasonCoveringDate(season, dateText))
+        || sortedSeasons.find(season => String(season.effective_week_date || '') <= dateText)
+        || sortedSeasons[0]
+        || null;
+};
+
+const formatSeasonShortDate = (value?: string | null) => {
+    if (!value) return '';
+    const [year, month, day] = value.slice(0, 10).split('-');
+    if (!year || !month || !day) return '';
+    return `${Number(month)}/${Number(day)}`;
+};
+
+const formatSeasonPeriodLabel = (season?: CurrentSeasonRow | null) => {
+    if (!season?.effective_week_date) return null;
+    const start = formatSeasonShortDate(season.effective_week_date);
+    const end = season.end_week_date ? formatSeasonShortDate(season.end_week_date) : '진행 중';
+    return `${start}~${end}`;
+};
 
 const selectPreferredInactiveRosterRow = (rows: RosterMember[]) => (
     rows.find(row => row.is_active !== false) ||
@@ -183,6 +239,7 @@ function MembersPageInner() {
     const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
     const [collapsedDepts, setCollapsedDepts] = useState<string[]>([]);
     const [nameSuggestions, setNameSuggestions] = useState<MemberProfile[]>([]);
+    const [currentListSeason, setCurrentListSeason] = useState<CurrentSeasonRow | null>(null);
     const [phase2ListCheck, setPhase2ListCheck] = useState<Phase2ListCheck>({
         status: 'idle',
         legacyActiveCount: 0,
@@ -290,6 +347,35 @@ function MembersPageInner() {
             setNameSuggestions([]);
         }
     }, [isAddModalOpen]);
+
+    useEffect(() => {
+        const fetchCurrentListSeason = async () => {
+            if (!currentChurchId || selectedDeptId === 'all') {
+                setCurrentListSeason(null);
+                return;
+            }
+
+            const todayText = getKoreaDateText();
+            const { data, error } = await supabase
+                .from('regrouping_seasons')
+                .select('id, title, effective_week_date, end_week_date')
+                .eq('church_id', currentChurchId)
+                .eq('department_id', selectedDeptId)
+                .eq('status', 'applied')
+                .order('effective_week_date', { ascending: false })
+                .limit(20);
+
+            if (error) {
+                console.error('Fetch current member list season error:', error);
+                setCurrentListSeason(null);
+                return;
+            }
+
+            setCurrentListSeason(selectRelevantSeason((data || []) as CurrentSeasonRow[], todayText));
+        };
+
+        fetchCurrentListSeason();
+    }, [currentChurchId, selectedDeptId]);
 
     const fetchChurches = async () => {
         try {
@@ -499,15 +585,17 @@ function MembersPageInner() {
     };
 
     const refreshPhase2ListCheck = async (fetchedMembers: RosterMember[], churchId: string, deptId: string = 'all') => {
-        // '미정'(unassigned)은 아직 조에 배정되지 않은 대기 상태 — Phase 2 group membership이 없어도 정상이므로 진단에서 제외
         const activeLegacyMembers = fetchedMembers.filter(member =>
-            member.is_active !== false &&
-            Boolean(member.group_name) &&
-            member.group_name !== '미정'
+            member.is_active !== false
         );
-        const activeLegacyDirectoryIds = new Set(activeLegacyMembers.map(member => member.id));
         const activeLegacyPersonIds = new Set(activeLegacyMembers.map(getRosterPersonKey));
-        const personIds = Array.from(new Set(fetchedMembers.map(member => member.phase2_person_id).filter(Boolean)));
+        const activeLegacyPhase2PersonIds = new Set(
+            activeLegacyMembers
+                .map(member => member.phase2_person_id)
+                .filter(isNonEmptyString)
+        );
+        const personIds = Array.from(new Set(fetchedMembers.map(member => member.phase2_person_id).filter(isNonEmptyString)));
+        const activeLegacyPhase2Rows = activeLegacyMembers.filter(member => Boolean(member.phase2_person_id));
 
         if (fetchedMembers.length === 0) {
             setPhase2ListCheck({
@@ -538,6 +626,58 @@ function MembersPageInner() {
                 return;
             }
 
+            if (deptId !== 'all') {
+                const todayText = getKoreaDateText();
+                const { data: seasons, error: seasonsError } = await supabase
+                    .from('regrouping_seasons')
+                    .select('id, title, effective_week_date, end_week_date')
+                    .eq('church_id', churchId)
+                    .eq('department_id', deptId)
+                    .eq('status', 'applied')
+                    .order('effective_week_date', { ascending: false })
+                    .limit(20);
+
+                if (seasonsError) throw seasonsError;
+
+                const currentSeason = selectRelevantSeason((seasons || []) as CurrentSeasonRow[], todayText);
+                const currentSeasonId = currentSeason?.id;
+
+                if (currentSeasonId) {
+                    const { data: planAssignments, error: planAssignmentsError } = await supabase
+                        .from('regrouping_plan_assignments')
+                        .select('id, person_id')
+                        .eq('season_id', currentSeasonId)
+                        .or('change_type.is.null,change_type.neq.removed');
+
+                    if (planAssignmentsError) throw planAssignmentsError;
+
+                    const planRows = (planAssignments || []) as CurrentSeasonPlanAssignmentRow[];
+                    const check = buildCurrentSeasonPhase2ListCheck({
+                        activeLegacyMembers: activeLegacyMembers.map(member => ({
+                            id: member.id,
+                            phase2PersonId: member.phase2_person_id,
+                            personKey: getRosterPersonKey(member),
+                        })),
+                        planAssignments: planRows.map(row => ({
+                            personId: row.person_id,
+                        })),
+                    });
+
+                    setPhase2ListCheck({
+                        status: check.issueCount === 0 ? 'ok' : 'warning',
+                        legacyActiveCount: check.legacyActiveCount,
+                        phase2ActiveCount: check.phase2ActiveCount,
+                        legacyActivePersonCount: check.legacyActivePersonCount,
+                        phase2ActivePersonCount: check.phase2ActivePersonCount,
+                        issueCount: check.issueCount,
+                        message: check.issueCount === 0
+                            ? '조편성 시즌 기준의 사람 목록이 성도명부와 일치합니다.'
+                            : `시즌 기준 누락 ${check.missingCount}명 / 추가 확인 ${check.extraCount}명`
+                    });
+                    return;
+                }
+            }
+
             const { data: memberships, error: membershipsError } = await supabase
                 .from('memberships')
                 .select('id, person_id, status, department_id, legacy_member_directory_id')
@@ -552,15 +692,12 @@ function MembersPageInner() {
                 return true;
             });
             const phase2ActivePersonIds = new Set(relevantActiveMemberships.map(membership => membership.person_id).filter(Boolean));
-            const phase2ActiveDirectoryIds = new Set(
-                relevantActiveMemberships
-                    .map(membership => membership.legacy_member_directory_id)
-                    .filter(Boolean)
-            );
 
-            const missingPhase2Count = activeLegacyMembers.filter(member => !phase2ActiveDirectoryIds.has(member.id)).length;
-            const extraPhase2Count = relevantActiveMemberships.filter(membership => (
-                !membership.legacy_member_directory_id || !activeLegacyDirectoryIds.has(membership.legacy_member_directory_id)
+            const missingPhase2Count = activeLegacyPhase2Rows.filter(member => (
+                member.phase2_person_id && !phase2ActivePersonIds.has(member.phase2_person_id)
+            )).length + activeLegacyMembers.filter(member => !member.phase2_person_id).length;
+            const extraPhase2Count = Array.from(phase2ActivePersonIds).filter(personId => (
+                !activeLegacyPhase2PersonIds.has(personId)
             )).length;
             const issueCount = missingPhase2Count + extraPhase2Count;
 
@@ -954,17 +1091,39 @@ function MembersPageInner() {
         );
     }
 
+    const selectedDepartmentName = departments.find(d => d.id === selectedDeptId)?.name || (selectedDeptId === 'all' ? '교회 전체' : '부서');
+    const memberListSeasonPeriodLabel = formatSeasonPeriodLabel(currentListSeason);
+    const openMemberListSeason = () => {
+        if (!currentListSeason?.id || !currentChurchId || selectedDeptId === 'all') return;
+        const params = new URLSearchParams({
+            seasonId: currentListSeason.id,
+            churchId: currentChurchId,
+            deptId: selectedDeptId,
+        });
+        router.push(`/regrouping?${params.toString()}`);
+    };
+
     return (
         <div className="space-y-8 sm:space-y-10 max-w-7xl mx-auto">
             <header className="space-y-8">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                    <div className="space-y-1.5">
+                    <div className="space-y-2.5">
                         <h1 className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">성도 명부</h1>
-                        <p className="text-slate-500 dark:text-slate-500 font-bold text-xs sm:text-sm tracking-tight">
-                            {isMaster
-                                ? '성도 개개인의 상세 프로필과 신상 정보를 통합 관리하는 마스터 명부입니다.'
-                                : <><span className="text-indigo-600 dark:text-indigo-400 font-extrabold underline decoration-indigo-200/50 dark:decoration-indigo-500/30 underline-offset-4">{currentChurchName} · {departments.find(d => d.id === selectedDeptId)?.name || (selectedDeptId === 'all' ? '교회 전체' : '부서')}</span> 명부입니다. 실제 사람 기준으로 성도를 관리합니다.</>}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs sm:text-sm font-extrabold tracking-tight text-slate-500 dark:text-slate-400">
+                                <span className="text-slate-900 dark:text-white">{currentChurchName || '교회 선택 필요'}</span>
+                                <span className="mx-1.5 text-slate-300">·</span>
+                                <span className="text-slate-900 dark:text-white">{selectedDepartmentName}</span>
+                                <span className="ml-1.5 text-slate-400">성도 명부</span>
+                            </span>
+                            {selectedDeptId !== 'all' && currentListSeason && (
+                                <SeasonBadge
+                                    title={currentListSeason.title || '현재 시즌'}
+                                    periodLabel={memberListSeasonPeriodLabel}
+                                    onClick={openMemberListSeason}
+                                />
+                            )}
+                        </div>
                     </div>
                     <div className="flex items-center gap-2 sm:gap-3">
                         <Tooltip content="이미지나 CSV 파일을 분석하여 여러 성도를 한 번에 등록합니다.">
@@ -1298,7 +1457,7 @@ function MembersPageInner() {
                                 {phase2ListCheck.message}
                             </p>
                             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                                현재 교회/부서 로드 범위에서 실제 사람 수와 active 소속 수를 함께 비교합니다. 기존 명부 기능에는 영향을 주지 않습니다.
+                                현재 교회/부서 로드 범위에서 성도명부와 현재 시즌 조편성 기준을 함께 비교합니다. 기존 명부 기능에는 영향을 주지 않습니다.
                             </p>
                         </div>
                     </div>
@@ -1311,7 +1470,7 @@ function MembersPageInner() {
                         <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">phase2 people</p>
                             <p className="text-lg font-black text-slate-900 dark:text-white">{phase2ListCheck.phase2ActivePersonCount}</p>
-                            <p className="text-[8px] font-bold text-slate-400">{phase2ListCheck.phase2ActiveCount} memberships</p>
+                            <p className="text-[8px] font-bold text-slate-400">{phase2ListCheck.phase2ActiveCount} rows</p>
                         </div>
                         <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/40 border border-white/80 dark:border-slate-800">
                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">issues</p>

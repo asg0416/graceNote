@@ -16,12 +16,9 @@ import {
     DragEndEvent,
     defaultDropAnimationSideEffects,
 } from '@dnd-kit/core';
-import { Plus } from 'lucide-react';
+import { Check, Plus, X } from 'lucide-react';
 import {
-    arrayMove,
-    SortableContext,
     sortableKeyboardCoordinates,
-    verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { KanbanColumn } from './KanbanColumn';
 import { MemberBadge } from '../MemberBadge';
@@ -32,6 +29,7 @@ const isSameKanbanGroup = (left: any, right: any) => {
     if (left.group_id && right.group_id && left.group_id === right.group_id) return true;
     const leftGroupName = (left.group_name || '').trim();
     const rightGroupName = (right.group_name || '').trim();
+    if (!left.group_id && !right.group_id && !leftGroupName && !rightGroupName) return true;
     return Boolean(leftGroupName) && leftGroupName === rightGroupName;
 };
 
@@ -39,14 +37,18 @@ interface KanbanBoardProps {
     groups: any[];
     members: any[];
     onMoveMembers: (memberIds: string[], targetGroupId: string | null, isCopy?: boolean, targetIndex?: number) => void;
-    onReorderMembers: (memberIds: string[], targetGroupId: string | null) => void;
+    onReorderMembers?: (memberIds: string[], targetGroupId: string | null) => void;
     selectedMemberIds: string[];
     onMemberClick: (id: string) => void;
     onMemberDoubleClick?: (id: string) => void;
-    onAddGroup?: (name: string, color: string) => void;
+    onAddGroup?: (name: string, color: string, meta?: { is_new_member_group?: boolean; climbing_threshold?: number | null }) => void;
     onDeleteGroup?: (id: string) => void;
-    onUpdateGroup?: (id: string, updates: { name?: string, color_hex?: string }) => void;
-    onQuickAddMember?: (groupId: string | null, name: string) => void;
+    onUpdateGroup?: (id: string, updates: { name?: string, color_hex?: string, is_new_member_group?: boolean, climbing_threshold?: number | null }) => void;
+    onUpdateGroupPeriod?: (id: string, updates: { starts_week_date: string | null; ends_week_date: string | null }) => void;
+    onUpdateMemberPeriod?: (id: string, updates: { starts_week_date: string | null; ends_week_date: string | null }) => void;
+    groupPeriodMinDate?: string | null;
+    groupPeriodMaxDate?: string | null;
+    groupPeriodStartMaxDate?: string | null;
     onAddMembers?: (groupId: string | null) => void;
     lastAddedGroupId?: string | null;
     profileMode?: string;
@@ -54,13 +56,14 @@ interface KanbanBoardProps {
     onToggleLeader?: (id: string) => void;
     onDeleteMember?: (id: string) => void;
     isDeletableMap?: Record<string, boolean>;
+    readOnly?: boolean;
+    fillHeight?: boolean;
 }
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     groups,
     members,
     onMoveMembers,
-    onReorderMembers,
     onToggleLeader,
     onDeleteMember,
     isDeletableMap,
@@ -70,11 +73,17 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     onAddGroup,
     onDeleteGroup,
     onUpdateGroup,
-    onQuickAddMember,
+    onUpdateGroupPeriod,
+    onUpdateMemberPeriod,
+    groupPeriodMinDate,
+    groupPeriodMaxDate,
+    groupPeriodStartMaxDate,
     onAddMembers,
     lastAddedGroupId,
     profileMode,
-    autoMoveCouples = true
+    autoMoveCouples = true,
+    readOnly = false,
+    fillHeight = false
 }) => {
     const [activeId, setActiveId] = useState<string | null>(null);
     const [dragSessionMembers, setDragSessionMembers] = useState<any[] | null>(null);
@@ -88,7 +97,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
     // Use local session members if dragging, otherwise use props
     const currentMembers = dragSessionMembers || members;
-    const activeMember = currentMembers.find(m => m.id === activeId);
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -102,12 +110,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     );
 
     const handleDragStart = React.useCallback((event: DragStartEvent) => {
+        if (readOnly) return;
         setActiveId(event.active.id as string);
         // Start a local session with a deep copy of members
         setDragSessionMembers([...members]);
-    }, [members]);
+    }, [members, readOnly]);
 
     const handleDragOver = React.useCallback((event: DragOverEvent) => {
+        if (readOnly) return;
         const { active, over } = event;
         if (!over || !dragSessionMembers) return;
 
@@ -164,9 +174,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 });
             });
         }
-    }, [autoMoveCouples, dragSessionMembers, groups, profileMode]);
+    }, [autoMoveCouples, dragSessionMembers, groups, profileMode, readOnly]);
 
     const handleDragEnd = React.useCallback((event: DragEndEvent) => {
+        if (readOnly) {
+            setActiveId(null);
+            setDragSessionMembers(null);
+            lastMoveRequestRef.current = null;
+            return;
+        }
         const { active, over } = event;
         const finalSessionMembers = dragSessionMembers;
 
@@ -218,20 +234,21 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         idsToMoveSet.add(activeUnitId);
 
         if (autoMoveCouples && profileMode === 'couple' && finalActiveMember.spouse_name) {
-            const originalActiveMember = members.find(m => m.id === activeUnitId);
-            const spouse = members.find(s => // Use members prop to find original spouse
+            const spouse = finalSessionMembers.find(s =>
                 s.full_name === finalActiveMember.spouse_name &&
                 s.spouse_name === finalActiveMember.full_name &&
-                isSameKanbanGroup(s, originalActiveMember)
+                isSameKanbanGroup(s, finalActiveMember)
             );
             if (spouse) idsToMoveSet.add(spouse.id);
         }
 
-        selectedMemberIds.forEach(id => idsToMoveSet.add(id));
+        if (selectedMemberIds.includes(activeUnitId)) {
+            selectedMemberIds.forEach(id => idsToMoveSet.add(id));
+        }
 
         const isCopy = (event.activatorEvent as any)?.shiftKey;
         onMoveMembers(Array.from(idsToMoveSet), targetGroupId, isCopy, targetIndex);
-    }, [autoMoveCouples, dragSessionMembers, groups, members, profileMode, selectedMemberIds, onMoveMembers]);
+    }, [autoMoveCouples, dragSessionMembers, groups, profileMode, selectedMemberIds, onMoveMembers, readOnly]);
 
     const getMembersByGroup = (groupId: string | null) => {
         return currentMembers.filter((m: any) => (m.group_id || null) === groupId);
@@ -240,6 +257,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [newGroupName, setNewGroupName] = useState('');
     const [selectedColor, setSelectedColor] = useState('#4f46e5');
+    const [newGroupIsNewMemberGroup, setNewGroupIsNewMemberGroup] = useState(false);
+    const [newGroupClimbingThreshold, setNewGroupClimbingThreshold] = useState<number | ''>('');
 
     const colorPresets = [
         '#4f46e5', // Indigo
@@ -254,11 +273,22 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
     const handleSubmitNewGroup = () => {
         if (newGroupName.trim()) {
-            onAddGroup?.(newGroupName.trim(), selectedColor);
-            setIsAddingNew(false);
-            setNewGroupName('');
-            setSelectedColor('#4f46e5');
+            onAddGroup?.(newGroupName.trim(), selectedColor, {
+                is_new_member_group: newGroupIsNewMemberGroup,
+                climbing_threshold: newGroupIsNewMemberGroup && newGroupClimbingThreshold !== ''
+                    ? Number(newGroupClimbingThreshold)
+                    : null,
+            });
+            resetNewGroupModal();
         }
+    };
+
+    const resetNewGroupModal = () => {
+        setIsAddingNew(false);
+        setNewGroupName('');
+        setSelectedColor('#4f46e5');
+        setNewGroupIsNewMemberGroup(false);
+        setNewGroupClimbingThreshold('');
     };
 
     // Helper to get all members currently moving (dragged + selected)
@@ -279,7 +309,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             if (spouse) movingIds.add(spouse.id);
         }
 
-        selectedMemberIds.forEach(id => movingIds.add(id));
+        if (selectedMemberIds.includes(activeMemberInSession.id)) {
+            selectedMemberIds.forEach(id => movingIds.add(id));
+        }
         return currentMembers.filter((m: any) => movingIds.has(m.id));
     };
 
@@ -294,9 +326,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
         >
-            <div className="flex gap-8 px-2 items-start pb-20">
+            <div className={cn(
+                "flex items-start gap-8 px-2 pb-20",
+                fillHeight && "h-full min-h-[520px] pb-6"
+            )}>
                 {/* Unassigned Column */}
                 <KanbanColumn
+                    key={`unassigned-${readOnly ? 'readonly' : 'editable'}`}
                     id="unassigned"
                     title="미편성 인원"
                     members={getMembersByGroup(null)}
@@ -307,42 +343,63 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     onDeleteMember={onDeleteMember}
                     isDeletableMap={isDeletableMap}
                     color="#94a3b8"
-                    onQuickAdd={onQuickAddMember ? (name) => onQuickAddMember(null, name) : undefined}
-                    onAddMembers={onAddMembers ? () => onAddMembers(null) : undefined}
+                    onAddMembers={!readOnly && onAddMembers ? () => onAddMembers(null) : undefined}
                     profileMode={profileMode}
                     activeId={activeId}
                     movingMembersCount={movingMembersCount}
+                    onUpdateMemberPeriod={onUpdateMemberPeriod}
+                    periodStartMaxDate={groupPeriodStartMaxDate}
                     autoMoveCouples={autoMoveCouples}
+                    readOnly={readOnly}
+                    fillHeight={fillHeight}
                 />
 
                 {/* Group Columns */}
                 {groups.map(group => (
                     <KanbanColumn
-                        key={group.id}
+                        key={`${group.id}-${readOnly ? 'readonly' : 'editable'}`}
                         id={group.id}
                         title={group.name}
                         color={group.color_hex || '#4f46e5'}
-                        members={getMembersByGroup(group.id)}
+                        isNewMemberGroup={Boolean(group.is_new_member_group)}
+                        climbingThreshold={group.climbing_threshold}
+                        startsWeekDate={group.starts_week_date}
+                        endsWeekDate={group.ends_week_date}
+                        periodMinDate={groupPeriodMinDate}
+                        periodMaxDate={groupPeriodMaxDate}
+                        periodStartMaxDate={groupPeriodStartMaxDate}
+                        members={getMembersByGroup(group.id).map((member: any) => ({
+                            ...member,
+                            group_starts_week_date: group.starts_week_date || null,
+                            group_ends_week_date: group.ends_week_date || null,
+                        }))}
                         selectedMemberIds={selectedMemberIds}
                         onMemberClick={onMemberClick}
                         onMemberDoubleClick={onMemberDoubleClick}
                         onToggleLeader={onToggleLeader}
                         onDeleteMember={onDeleteMember}
                         isDeletableMap={isDeletableMap}
-                        onDelete={onDeleteGroup ? () => onDeleteGroup(group.id) : undefined}
-                        onUpdate={onUpdateGroup ? (updates) => onUpdateGroup(group.id, updates) : undefined}
-                        onQuickAdd={onQuickAddMember ? (name) => onQuickAddMember(group.id, name) : undefined}
-                        onAddMembers={onAddMembers ? () => onAddMembers(group.id) : undefined}
-                        autoFocusRename={lastAddedGroupId === group.id}
+                        onDelete={!readOnly && onDeleteGroup ? () => onDeleteGroup(group.id) : undefined}
+                        onUpdate={!readOnly && onUpdateGroup ? (updates) => onUpdateGroup(group.id, updates) : undefined}
+                        onUpdateGroupPeriod={!readOnly && onUpdateGroupPeriod ? (updates) => onUpdateGroupPeriod(group.id, updates) : undefined}
+                        onUpdateMemberPeriod={!readOnly ? onUpdateMemberPeriod : undefined}
+                        onAddMembers={!readOnly && onAddMembers ? () => onAddMembers(group.id) : undefined}
+                        autoFocusRename={!readOnly && lastAddedGroupId === group.id}
                         profileMode={profileMode}
                         activeId={activeId}
                         movingMembersCount={movingMembersCount}
                         autoMoveCouples={autoMoveCouples}
+                        readOnly={readOnly}
+                        fillHeight={fillHeight}
                     />
                 ))}
 
                 {/* Add Group Placeholder / Button */}
-                {!isAddingNew ? (
+                {readOnly ? (
+                    <div className="w-96 shrink-0 h-24 rounded-2xl flex items-center justify-center border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 text-slate-400 shadow-sm">
+                        <span className="font-black text-xs uppercase tracking-widest">적용 완료 시즌은 읽기 전용입니다</span>
+                    </div>
+                ) : !isAddingNew ? (
                     <button
                         onClick={() => setIsAddingNew(true)}
                         className="w-96 shrink-0 h-24 border-2 border-dashed border-slate-300 dark:border-slate-800 rounded-2xl flex items-center justify-center group cursor-pointer hover:border-indigo-500/50 hover:bg-white dark:hover:bg-slate-900 transition-all active:scale-[0.98] shadow-sm"
@@ -353,31 +410,36 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         </div>
                     </button>
                 ) : (
-                    <div className="w-96 shrink-0 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 p-6 rounded-2xl animate-in zoom-in-95 duration-200">
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 text-slate-400">
-                                    <Plus className="w-4 h-4" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">신규 조 생성</span>
-                                </div>
-                                <div className="flex gap-1.5">
-                                    {colorPresets.map(color => (
-                                        <button
-                                            key={color}
-                                            onClick={() => setSelectedColor(color)}
-                                            className={cn(
-                                                "w-4 h-4 rounded-full transition-all hover:scale-125",
-                                                selectedColor === color && "ring-2 ring-offset-2 ring-indigo-500 shadow-sm scale-110"
-                                            )}
-                                            style={{ backgroundColor: color }}
-                                        />
-                                    ))}
-                                </div>
+                    <div className="w-96 shrink-0 h-24 rounded-2xl flex items-center justify-center border border-indigo-100 bg-indigo-50/60 dark:border-indigo-500/20 dark:bg-indigo-500/10 text-indigo-500 shadow-sm">
+                        <span className="font-black text-xs uppercase tracking-widest">신규 조 정보 입력 중</span>
+                    </div>
+                )}
+            </div>
+
+            {isAddingNew && !readOnly && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm">
+                    <div className="w-full max-w-lg rounded-[32px] border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+                        <div className="mb-5 flex items-start justify-between gap-4">
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-indigo-500">New Group</p>
+                                <h3 className="mt-1 text-2xl font-black text-slate-950 dark:text-white">신규 조 생성</h3>
+                                <p className="mt-1 text-xs font-bold text-slate-400">조 이름, 색상, 새가족 조 설정을 한 번에 입력합니다.</p>
                             </div>
-                            <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={resetNewGroupModal}
+                                className="rounded-2xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-900 dark:hover:text-white"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-5">
+                            <label className="block space-y-2">
+                                <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">조 이름</span>
                                 <input
                                     autoFocus
-                                    placeholder="조 이름을 입력하세요"
+                                    placeholder="예: 새가족 조"
                                     value={newGroupName}
                                     onChange={(e) => setNewGroupName(e.target.value)}
                                     onKeyDown={(e) => {
@@ -386,32 +448,80 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                                             handleSubmitNewGroup();
                                         }
                                         if (e.key === 'Escape') {
-                                            setIsAddingNew(false);
-                                            setNewGroupName('');
+                                            resetNewGroupModal();
                                         }
                                     }}
-                                    className="flex-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all placeholder:text-slate-300"
+                                    className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-black text-slate-900 outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
                                 />
-                                <button
-                                    onClick={handleSubmitNewGroup}
-                                    className="px-6 h-[46px] bg-indigo-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-600/20"
-                                >
-                                    완료
-                                </button>
+                            </label>
+
+                            <div className="space-y-2">
+                                <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">조 색상</span>
+                                <div className="flex flex-wrap gap-2">
+                                    {colorPresets.map(color => (
+                                        <button
+                                            key={color}
+                                            type="button"
+                                            onClick={() => setSelectedColor(color)}
+                                            className={cn(
+                                                "h-9 w-9 rounded-full transition hover:scale-105",
+                                                selectedColor === color && "ring-4 ring-indigo-500/20 ring-offset-2 ring-offset-white dark:ring-offset-slate-950"
+                                            )}
+                                            style={{ backgroundColor: color }}
+                                        />
+                                    ))}
+                                </div>
                             </div>
+
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                                <label className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <p className="text-sm font-black text-slate-900 dark:text-white">새가족 조</p>
+                                        <p className="mt-1 text-xs font-bold text-slate-400">등반 기준이 필요한 조라면 켜두세요.</p>
+                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        checked={newGroupIsNewMemberGroup}
+                                        onChange={(event) => setNewGroupIsNewMemberGroup(event.target.checked)}
+                                        className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                </label>
+                                {newGroupIsNewMemberGroup && (
+                                    <label className="mt-4 block space-y-2">
+                                        <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">등반 기준</span>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={newGroupClimbingThreshold}
+                                            onChange={(event) => setNewGroupClimbingThreshold(event.target.value === '' ? '' : Number(event.target.value))}
+                                            className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-900 outline-none focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                                        />
+                                    </label>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="mt-6 flex justify-end gap-2">
                             <button
-                                onClick={() => {
-                                    setIsAddingNew(false);
-                                    setNewGroupName('');
-                                }}
-                                className="w-full h-10 text-slate-400 hover:text-slate-600 text-[10px] font-black uppercase tracking-widest transition-colors"
+                                type="button"
+                                onClick={resetNewGroupModal}
+                                className="h-11 rounded-2xl border border-slate-200 px-5 text-sm font-black text-slate-500 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
                             >
                                 취소
                             </button>
+                            <button
+                                type="button"
+                                onClick={handleSubmitNewGroup}
+                                disabled={!newGroupName.trim()}
+                                className="inline-flex h-11 items-center gap-2 rounded-2xl bg-indigo-600 px-5 text-sm font-black text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                            >
+                                <Check className="h-4 w-4" />
+                                생성
+                            </button>
                         </div>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
 
             <DragOverlay dropAnimation={{
                 sideEffects: defaultDropAnimationSideEffects({

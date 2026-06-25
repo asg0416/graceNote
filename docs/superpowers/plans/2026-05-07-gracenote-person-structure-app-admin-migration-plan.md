@@ -1079,3 +1079,91 @@ Operational note:
 - Attendance insights are report-style summaries, not authoritative accounting tables.
 - The authoritative denominator for admin reports remains `attendance_roster_snapshots` / `attendance_roster_snapshot_members`.
 - Any future change that merges admin snapshots into leader-submitted `attendance` rows needs a separate conflict policy.
+
+## 2026-05-19 Regrouping Effective Week Plan
+
+Problem:
+- Church regrouping is usually applied from a specific worship week, not from the timestamp when an admin saves the screen.
+- Example: an admin may save the new July arrangement in May, or may backfill an arrangement that started operating in the field two weeks ago.
+- Using `groups.created_at` / save time as the operating period makes app prayer tabs and attendance screens show the wrong groups for historical weeks.
+
+Decision:
+- Treat regrouping changes as period-based membership changes.
+- 1차 implementation supports current/past effective weeks only.
+- Future scheduled arrangements require a separate draft/season table so live app screens are not changed before the effective week.
+
+1차 implementation:
+- Add a 5-parameter overload of `save_regrouping_memberships` with `p_effective_week_date`.
+- Keep the existing 4-parameter RPC for compatibility.
+- Admin regrouping save passes the selected effective week.
+- Newly created groups get `groups.active_from = p_effective_week_date`.
+- Groups removed by that save get `groups.ended_at = p_effective_week_date - 1 second`.
+- Just-ended `member_directory.left_at` and `memberships.ends_at` are corrected to the effective boundary.
+- Active memberships saved in the regrouping batch have `starts_at` corrected back to the effective week when needed.
+
+Admin UI:
+- Add an `적용 주차` selector to 조편성 관리.
+- Dates are snapped to the Sunday of that week.
+- Future dates are intentionally blocked in 1차 because the current save path still writes live compatibility rows.
+
+2차 required for true future scheduling:
+- Add `regrouping_seasons` or `regrouping_drafts` tables.
+- Store future groups/assignments separately from live `groups/member_directory/group_members`.
+- Let admins edit scheduled seasons until activation.
+- On/after effective week, apply the draft to live groups/memberships in one controlled transition.
+- Allow archived/current group operating periods to be corrected from a management UI when needed.
+
+Smoke:
+- Save a regrouping with `적용 주차 = 2026-05-17`.
+- A removed old group should still appear before 2026-05-17 if it existed then.
+- That old group should not appear from 2026-05-17 onward unless it has actual historical records in that selected week.
+- A newly created group should appear from 2026-05-17 onward, not before.
+- App 기도소식 tabs, admin 출석현황, and member detail prayer timeline should agree on group names for the same selected week.
+
+## 2026-05-23 Regrouping Seasons Direction
+
+The 1st-stage `effective_week_date` implementation is useful for current/past correction, but it is not the final UX for future church regrouping.
+
+Decision:
+- Stop treating the temporary effective-week UI as the main smoke target.
+- Move the final feature toward a season/draft/apply model.
+- Future regrouping drafts must not mutate live `groups`, `member_directory`, `group_members`, or `memberships` before the effective week.
+- Normal Flutter prayer/attendance and admin attendance screens should continue reading live/snapshot group state, not draft rows.
+- Applying a season should be one controlled transaction that writes live memberships and legacy compatibility rows.
+
+Design document:
+- `docs/superpowers/specs/2026-05-23-regrouping-seasons-design.md`
+
+Implementation direction:
+1. Add additive `regrouping_seasons`, `regrouping_plan_groups`, and `regrouping_plan_assignments` tables.
+2. Add draft create/save RPCs that write only plan tables.
+3. Convert admin regrouping to season-first UX.
+4. Add `apply_regrouping_season` RPC after draft save/read is stable.
+5. Keep the existing `save_regrouping_memberships(..., p_effective_week_date)` path for past/current correction only.
+
+Progress:
+- 2026-05-23: Additive season schema migration created and applied to dev DB (`eftdfxmdiefdduksdpwg`) through Docker psql without printing DB URL.
+- 2026-05-23: Schema verifier passed: tables 3/3, indexes 9/9, RLS 3/3, policies 6/6.
+- 2026-05-23: Draft RPC migration created and applied to dev DB through Docker psql.
+- 2026-05-23: Draft verifier passed: draft function count 2/2, created season returned 1, plan group count 1, assignment count 1, live `groups/member_directory/group_members/memberships` counts unchanged 1.
+- 2026-05-23: Draft RPC plan group ID handling fixed. Plan rows no longer reuse live `groups.id`, so the same source group can appear in multiple future seasons without primary-key collision.
+- 2026-05-23: Multi-season verifier passed: two seasons for one source group produce 2 distinct plan group IDs and 1 distinct source group ID.
+- 2026-05-23: Admin-web `regroupingSeasonsRpc` wrapper added with Node test coverage for create/save/apply RPC payloads and error propagation.
+- 2026-05-23: RPC wrapper verification passed: `node --test admin-web/src/lib/regroupingSeasonsRpc.test.ts`, targeted admin-web lint, and `npx tsc --noEmit --pretty false`.
+- 2026-05-23: Admin regrouping page now has separate `시즌 초안` and `현재/과거 보정` modes. Season draft save calls only `create_regrouping_season` / `save_regrouping_season_draft`; live correction save is disabled in season mode.
+- 2026-05-23: Regrouping season payload helpers added and tested so temp group IDs are preserved for RPC mapping while live source group IDs remain separate.
+- 2026-05-23: `apply_regrouping_season` RPC added and applied to dev DB. It rejects future effective weeks so drafts do not mutate live data before the target week.
+- 2026-05-23: Apply verifier passed in rollback: season applied 1, active membership from effective week 1, planned rows preserved 1, created group active_from effective week 1.
+- 2026-05-23: Admin regrouping page apply button connected. It is enabled after a season draft is saved and calls `apply_regrouping_season`.
+- 2026-05-23: Admin regrouping page can now list saved season drafts for the selected church/department and reopen a draft into the Kanban board without touching live rows.
+- 2026-05-23: Season controls now show applied/future/current status. Applied seasons cannot be edited or re-applied, and future seasons cannot be applied before the effective week.
+- 2026-05-23: Future draft safety verifier passed on dev: future draft save leaves live counts unchanged 1 and future apply rejection 1.
+- 2026-05-23: Admin regrouping toolbar now separates `시즌 초안` actions from `현재/과거 보정` actions. Season mode no longer shows the live correction week/save control, and explicitly states that drafts do not affect app/attendance/prayer until applied.
+- 2026-05-23: Applied season boards are now read-only at the Kanban interaction level. Drag/drop, group edit, group delete, member add, leader toggle, and member remove controls are disabled after a season is applied.
+- 2026-05-23: Added `node scripts/verify-regrouping-season-boundary.mjs` to guard that regrouping season draft tables/RPCs are not referenced from Flutter/admin operational screens. This keeps future drafts out of high-traffic app/attendance/prayer read paths.
+- 2026-05-23: Added `update_regrouping_season` RPC so saved draft title/effective week changes persist. Admin season save now updates metadata before saving plan rows. Dev rollback verifiers still pass for schema, future draft safety, current-week apply, and preprod gates.
+- 2026-05-23: Added query-compatible `verify_regrouping_season_summary_dev_2026-05-23.sql` and included it in the Docker psql preprod gate. It checks season tables/indexes/RLS/policies/functions plus future-draft no-live-write, early-apply rejection, and current-week apply behavior.
+- 2026-05-25: Started 2차 period model. `regrouping_plan_groups` and `regrouping_plan_assignments` now store `starts_week_date` / `ends_week_date`, existing plan rows are backfilled from the season period, and draft save/current-season registration/sync RPCs preserve these dates. Admin draft load/save payloads now round-trip the period fields without exposing the edit UI yet.
+- 2026-05-25: Added current-season change history model. `regrouping_plan_groups.plan_status` preserves groups removed during the current season as `ended` plan rows instead of dropping them from the plan. Admin regrouping now shows a collapsed `시즌 변경 내역` panel for ended groups, new groups, and moved members. Ended groups can have their active period corrected or be restored into the board.
+- 2026-05-25: Added `update_current_regrouping_group_periods` RPC so ended group period corrections in the current season update live `groups.active_from` / `groups.ended_at` before syncing plan rows. This keeps admin/app historical group visibility aligned with the edited operating period.
+- Next: run end-to-end smoke on dev for future draft save, reopen, blocked early apply, and current-week apply.

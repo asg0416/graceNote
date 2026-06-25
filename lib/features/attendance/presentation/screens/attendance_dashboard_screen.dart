@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
+import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:grace_note/core/utils/route_util.dart';
 import 'package:grace_note/features/attendance/presentation/screens/attendance_check_screen.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:grace_note/core/widgets/season_context_chip.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 class AttendanceDashboardScreen extends ConsumerStatefulWidget {
@@ -31,6 +33,55 @@ class _AttendanceDashboardScreenState
   late int _viewYear;
   late int _viewMonth;
   List<Map<String, dynamic>>? _cachedHistory;
+
+  DateTime? _monthStartFromMembership() {
+    final membership = ref.read(activeMembershipProvider);
+    final candidates = [
+      membership?.groupActiveFrom,
+      membership?.membershipStartsAt,
+    ]
+        .map((value) => DateTime.tryParse(value ?? ''))
+        .whereType<DateTime>()
+        .toList();
+    if (candidates.isEmpty) return null;
+    candidates.sort();
+    final first = candidates.first;
+    return DateTime(first.year, first.month, 1);
+  }
+
+  DateTime? _monthEndFromMembership() {
+    final membership = ref.read(activeMembershipProvider);
+    final candidates = [
+      membership?.groupEndedAt,
+      membership?.membershipEndsAt,
+    ]
+        .map((value) => DateTime.tryParse(value ?? ''))
+        .whereType<DateTime>()
+        .toList();
+    if (candidates.isEmpty) return null;
+    candidates.sort();
+    final last = candidates.last;
+    return DateTime(last.year, last.month, 1);
+  }
+
+  bool _canGoPreviousMonth() {
+    final firstMonth = _monthStartFromMembership();
+    if (firstMonth == null) return true;
+    final currentMonth = DateTime(_viewYear, _viewMonth, 1);
+    return currentMonth.isAfter(firstMonth);
+  }
+
+  bool _canGoNextMonth() {
+    final now = DateTime.now();
+    final currentRealMonth = DateTime(now.year, now.month, 1);
+    final lastMembershipMonth = _monthEndFromMembership();
+    final lastMonth = lastMembershipMonth != null &&
+            lastMembershipMonth.isBefore(currentRealMonth)
+        ? lastMembershipMonth
+        : currentRealMonth;
+    final currentMonth = DateTime(_viewYear, _viewMonth, 1);
+    return currentMonth.isBefore(lastMonth);
+  }
 
   @override
   void initState() {
@@ -63,6 +114,15 @@ class _AttendanceDashboardScreenState
       for (final d in (noMeetingListAsync.value ?? []))
         '${d.weekDate.year}-${d.weekDate.month.toString().padLeft(2, '0')}-${d.weekDate.day.toString().padLeft(2, '0')}'
     };
+    final activeWeek = history.isNotEmpty
+        ? history.firstWhere(
+            (h) => h['week_id'] == (_selectedWeekId ?? history.first['week_id']),
+            orElse: () => history.first,
+          )
+        : null;
+    final activeWeekDate = activeWeek == null
+        ? null
+        : DateTime.tryParse(activeWeek['week_date']?.toString() ?? '');
 
     // [FIX] 에러 발생 시 사용자에게 노출하지 않고 3초 후 자동 재시도
     if (historyAsync.hasError && !historyAsync.isLoading) {
@@ -87,7 +147,15 @@ class _AttendanceDashboardScreenState
         backgroundColor: Colors.white,
         elevation: 0,
         automaticallyImplyLeading: false,
-        actions: const [],
+        actions: [
+          if (activeWeekDate != null && deptId.isNotEmpty)
+            SeasonContextChip(
+              departmentId: deptId,
+              weekDate: activeWeekDate,
+              iconOnly: true,
+              margin: const EdgeInsets.only(right: 12),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -104,7 +172,7 @@ class _AttendanceDashboardScreenState
             // [FIX] 초기 로딩(캐시 없음) 중일 때만 스피너, 그 외에는 항상 전체 UI를 표시
             child: (_cachedHistory == null &&
                     (isLoading || historyAsync.hasError))
-                ? Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
+                ? const Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
                 : RefreshIndicator(
                     onRefresh: () async {
                       ref.invalidate(attendanceHistoryProvider(
@@ -395,6 +463,8 @@ class _AttendanceDashboardScreenState
   }
 
   void _previousMonth() {
+    if (!_canGoPreviousMonth()) return;
+
     setState(() {
       if (_viewMonth == 1) {
         _viewYear--;
@@ -406,8 +476,7 @@ class _AttendanceDashboardScreenState
   }
 
   void _nextMonth() {
-    final now = DateTime.now();
-    if (_viewYear == now.year && _viewMonth == now.month) return;
+    if (!_canGoNextMonth()) return;
 
     setState(() {
       if (_viewMonth == 12) {
@@ -430,7 +499,11 @@ class _AttendanceDashboardScreenState
     if (churchId.isEmpty) return;
 
     // 1. 멤버 목록 및 기존 출석 데이터 가져오기
-    final membersData = await repo.getGroupMembers(widget.groupId);
+    final selectedWeekDate = DateTime.tryParse(weekDateStr);
+    final membersData = await repo.getGroupMembers(
+      widget.groupId,
+      weekDate: selectedWeekDate,
+    );
     final weeklyData = await repo.getWeeklyData(
       widget.groupId,
       weekId,
@@ -492,7 +565,7 @@ class _AttendanceDashboardScreenState
     final hasExistingData = existingAttendance.isNotEmpty;
 
     // 3. 과거 주차 여부 판단
-    final weekDate = DateTime.parse(weekDateStr);
+    final weekDate = selectedWeekDate ?? DateTime.parse(weekDateStr);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final isPastWeek = weekDate.isBefore(today);
@@ -585,17 +658,14 @@ class _AttendanceDashboardScreenState
                     IconButton(
                       icon: Icon(lucide.LucideIcons.chevronLeft,
                           size: 18, color: AppTheme.textSub),
-                      onPressed: _previousMonth,
+                      onPressed: _canGoPreviousMonth() ? _previousMonth : null,
                       tooltip: '이전 달',
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
                       icon: Icon(lucide.LucideIcons.chevronRight,
                           size: 18, color: AppTheme.textSub),
-                      onPressed: (_viewYear == DateTime.now().year &&
-                              _viewMonth == DateTime.now().month)
-                          ? null
-                          : _nextMonth,
+                      onPressed: _canGoNextMonth() ? _nextMonth : null,
                       tooltip: '다음 달',
                       visualDensity: VisualDensity.compact,
                     ),

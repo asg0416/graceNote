@@ -14,8 +14,7 @@ import 'package:grace_note/core/widgets/app_skeleton.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:grace_note/core/services/push_notification_service.dart';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:grace_note/core/services/web_update_runtime.dart';
 
 class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key});
@@ -26,7 +25,9 @@ class MoreScreen extends ConsumerStatefulWidget {
 
 class _MoreScreenState extends ConsumerState<MoreScreen> {
   void _reloadApp() {
-    html.window.location.reload();
+    if (kIsWeb) {
+      reloadBrowserWindow();
+    }
   }
 
   @override
@@ -582,6 +583,70 @@ extension MoreScreenRoleExtension on _MoreScreenState {
   void _showRoleSelectionSheet(BuildContext context, WidgetRef ref) {
     final memberships = ref.watch(availableMembershipsProvider);
     final activeMembership = ref.watch(activeMembershipProvider);
+    final today = DateTime.now();
+    final currentMemberships = memberships
+        .where((membership) =>
+            membership.groupId == 'global_admin' ||
+            membership.isActiveOnWeek(today))
+        .toList();
+    final pastMemberships = memberships
+        .where((membership) =>
+            membership.groupId != 'global_admin' &&
+            !membership.isActiveOnWeek(today))
+        .toList();
+
+    Widget buildMembershipTile(UserMembership membership) {
+      final isSelected = activeMembership == membership;
+      final String label = membership.groupId == 'global_admin'
+          ? '전체 관리자'
+          : '${membership.groupName} ${membership.roleLabel}';
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: InkWell(
+          onTap: () {
+            ref.read(activeMembershipProvider.notifier).setMembership(membership);
+            Navigator.pop(context);
+          },
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? AppTheme.primaryViolet.withOpacity(0.05)
+                  : AppTheme.background,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isSelected
+                    ? AppTheme.primaryViolet.withOpacity(0.3)
+                    : Colors.transparent,
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
+                      color: isSelected
+                          ? AppTheme.primaryViolet
+                          : AppTheme.textMain,
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  const Icon(Icons.check_circle_rounded,
+                      color: AppTheme.primaryViolet, size: 24),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     showModalBottomSheet(
       context: context,
@@ -618,53 +683,36 @@ extension MoreScreenRoleExtension on _MoreScreenState {
             ),
             const SizedBox(height: 24),
             Flexible(
-              child: ListView.builder(
+              child: ListView(
                 shrinkWrap: true,
-                itemCount: memberships.length,
-                itemBuilder: (context, index) {
-                  final membership = memberships[index];
-                  final isSelected = activeMembership == membership;
-                  final String label = membership.groupId == 'global_admin'
-                      ? '전체 관리자'
-                      : '${membership.groupName} ${membership.roleLabel}';
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: InkWell(
-                      onTap: () {
-                        ref.read(activeMembershipProvider.notifier).setMembership(membership);
-                        Navigator.pop(context);
-                      },
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-                        decoration: BoxDecoration(
-                          color: isSelected ? AppTheme.primaryViolet.withOpacity(0.05) : AppTheme.background,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: isSelected ? AppTheme.primaryViolet.withOpacity(0.3) : Colors.transparent,
-                            width: 1.5,
+                children: [
+                  ...currentMemberships.map(buildMembershipTile),
+                  if (pastMemberships.isNotEmpty)
+                    Theme(
+                      data: Theme.of(context)
+                          .copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        childrenPadding: EdgeInsets.zero,
+                        title: const Text(
+                          '과거 소속 보기',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.textSub,
                           ),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              label,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
-                                color: isSelected ? AppTheme.primaryViolet : AppTheme.textMain,
-                              ),
-                            ),
-                            if (isSelected)
-                              const Icon(Icons.check_circle_rounded, color: AppTheme.primaryViolet, size: 24),
-                          ],
+                        subtitle: const Text(
+                          '이전 주차 기록을 확인하거나 보정할 때만 선택하세요.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSub,
+                          ),
                         ),
+                        children: pastMemberships.map(buildMembershipTile).toList(),
                       ),
                     ),
-                  );
-                },
+                ],
               ),
             ),
             const SizedBox(height: 16),

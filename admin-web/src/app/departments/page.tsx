@@ -8,7 +8,6 @@ import {
     Settings,
     Users,
     Trash2,
-    Edit2,
     Search,
     LayoutGrid,
     Check,
@@ -21,6 +20,7 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
+import { SeasonBadge } from '@/components/SeasonBadge';
 import { renameMemberDirectoryGroupAssignments } from '@/lib/memberWriteRpc';
 
 type ChurchOption = {
@@ -39,6 +39,9 @@ type GroupRecord = {
     ended_at?: string | null;
     is_new_member_group?: boolean | null;
     climbing_threshold?: number | null;
+    season_starts_week_date?: string | null;
+    season_ends_week_date?: string | null;
+    season_plan_status?: string | null;
 };
 
 type DepartmentRecord = {
@@ -46,6 +49,10 @@ type DepartmentRecord = {
     name: string;
     color_hex?: string | null;
     profile_mode?: 'individual' | 'couple' | null;
+    current_season_id?: string | null;
+    current_season_title?: string | null;
+    current_season_effective_week_date?: string | null;
+    current_season_end_week_date?: string | null;
     groups?: GroupRecord[];
 };
 
@@ -69,7 +76,8 @@ export default function DepartmentsPage() {
 
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const [editingGroup, setEditingGroup] = useState<GroupRecord | null>(null);
-    const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
+    const [viewingGroup, setViewingGroup] = useState<(GroupRecord & { departmentName?: string }) | null>(null);
+    const [selectedDeptId] = useState<string | null>(null);
 
     // 부서 삭제 확인 모달
     const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -88,6 +96,28 @@ export default function DepartmentsPage() {
     ];
 
     const router = useRouter();
+    const todayInputValue = new Date().toISOString().slice(0, 10);
+
+    const formatDateLabel = (value?: string | null) => {
+        if (!value) return '설정 없음';
+        const date = new Date(`${value}T00:00:00`);
+        if (Number.isNaN(date.getTime())) return '설정 없음';
+        return date.toLocaleDateString('ko-KR');
+    };
+
+    const formatSeasonShortDate = (value?: string | null) => {
+        if (!value) return '';
+        const [year, month, day] = value.slice(0, 10).split('-');
+        if (!year || !month || !day) return '';
+        return `${Number(month)}/${Number(day)}`;
+    };
+
+    const formatSeasonPeriodLabel = (dept: DepartmentRecord) => {
+        if (!dept.current_season_effective_week_date) return null;
+        const start = formatSeasonShortDate(dept.current_season_effective_week_date);
+        const end = dept.current_season_end_week_date ? formatSeasonShortDate(dept.current_season_end_week_date) : '진행 중';
+        return `${start}~${end}`;
+    };
 
     useEffect(() => {
         const init = async () => {
@@ -175,9 +205,60 @@ export default function DepartmentsPage() {
             const { data, error } = await query.order('name');
 
             if (error) throw error;
+            const departmentsData = data || [];
+            const departmentIds = departmentsData.map(dept => dept.id).filter(Boolean);
+            const { data: seasons } = departmentIds.length > 0
+                ? await supabase
+                    .from('regrouping_seasons')
+                    .select('id, department_id, title, effective_week_date, end_week_date, status')
+                    .eq('church_id', churchId)
+                    .in('department_id', departmentIds)
+                    .eq('status', 'applied')
+                    .order('effective_week_date', { ascending: false })
+                : { data: [] };
+            const seasonCoversToday = (season?: { effective_week_date?: string | null; end_week_date?: string | null }) => (
+                Boolean(season?.effective_week_date) &&
+                String(season?.effective_week_date) <= todayInputValue &&
+                (!season?.end_week_date || todayInputValue <= String(season.end_week_date))
+            );
+            const seasonByDepartmentId = new Map<string, { id: string; title?: string | null; effective_week_date?: string | null; end_week_date?: string | null }>();
+            (seasons || []).forEach((season: { id: string; department_id: string; title?: string | null; effective_week_date?: string | null; end_week_date?: string | null }) => {
+                const existing = seasonByDepartmentId.get(season.department_id);
+                if (!existing || (seasonCoversToday(season) && !seasonCoversToday(existing))) {
+                    seasonByDepartmentId.set(season.department_id, season);
+                }
+            });
+            const seasonIds = Array.from(seasonByDepartmentId.values()).map(season => season.id);
+            const { data: planGroups } = seasonIds.length > 0
+                ? await supabase
+                    .from('regrouping_plan_groups')
+                    .select('season_id, source_group_id, starts_week_date, ends_week_date, plan_status')
+                    .in('season_id', seasonIds)
+                    .not('source_group_id', 'is', null)
+                : { data: [] };
+            const planGroupBySourceGroupId = new Map<string, { starts_week_date?: string | null; ends_week_date?: string | null; plan_status?: string | null }>();
+            (planGroups || []).forEach((planGroup: { source_group_id?: string | null; starts_week_date?: string | null; ends_week_date?: string | null; plan_status?: string | null }) => {
+                if (!planGroup.source_group_id) return;
+                planGroupBySourceGroupId.set(planGroup.source_group_id, planGroup);
+            });
+
             setDepartments((data || []).map((dept) => ({
                 ...dept,
-                groups: (dept.groups || []).filter((group: { is_active?: boolean }) => group.is_active !== false)
+                current_season_id: seasonByDepartmentId.get(dept.id)?.id || null,
+                current_season_title: seasonByDepartmentId.get(dept.id)?.title || null,
+                current_season_effective_week_date: seasonByDepartmentId.get(dept.id)?.effective_week_date || null,
+                current_season_end_week_date: seasonByDepartmentId.get(dept.id)?.end_week_date || null,
+                groups: (dept.groups || [])
+                    .filter((group: { is_active?: boolean }) => group.is_active !== false)
+                    .map((group: GroupRecord) => {
+                        const planGroup = planGroupBySourceGroupId.get(group.id);
+                        return {
+                            ...group,
+                            season_starts_week_date: planGroup?.starts_week_date || null,
+                            season_ends_week_date: planGroup?.ends_week_date || null,
+                            season_plan_status: planGroup?.plan_status || null,
+                        };
+                    })
             })));
         } catch (err) {
             console.error('Fetch Data Error:', err);
@@ -191,6 +272,16 @@ export default function DepartmentsPage() {
         setCurrentChurchName(name);
         setIsChurchSelectOpen(false);
         await fetchData(id);
+    };
+
+    const openDepartmentSeason = (dept: DepartmentRecord) => {
+        if (!currentChurchId || !dept.current_season_id) return;
+        const params = new URLSearchParams({
+            seasonId: dept.current_season_id,
+            churchId: currentChurchId,
+            deptId: dept.id,
+        });
+        router.push(`/regrouping?${params.toString()}`);
     };
 
 
@@ -275,22 +366,6 @@ export default function DepartmentsPage() {
             alert('부서 종료 중 오류가 발생했습니다.');
         } finally {
             setDeleting(false);
-        }
-    };
-
-    const handleDeleteGroup = async (e: React.MouseEvent, id: string) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!confirm('조를 종료하시겠습니까? 조원 정보와 이력은 보존되며 현재 조 목록에서는 숨겨집니다.')) return;
-        try {
-            const { error } = await supabase
-                .from('groups')
-                .update({ is_active: false })
-                .eq('id', id);
-            if (error) throw error;
-            fetchData(currentChurchId!);
-        } catch {
-            alert('조 종료 중 오류가 발생했습니다.');
         }
     };
 
@@ -406,7 +481,7 @@ export default function DepartmentsPage() {
                                     </div>
                                     <div>
                                         <h3 className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">{dept.name}</h3>
-                                        <div className="flex items-center gap-1.5 mt-1 sm:mt-1.5">
+                                        <div className="flex flex-wrap items-center gap-1.5 mt-1 sm:mt-1.5">
                                             <span className={cn(
                                                 "text-[8px] sm:text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border",
                                                 dept.profile_mode === 'couple'
@@ -415,6 +490,14 @@ export default function DepartmentsPage() {
                                             )}>
                                                 {dept.profile_mode === 'couple' ? '부부/가족형' : '개인별 관리'}
                                             </span>
+                                            {dept.current_season_title && (
+                                                <SeasonBadge
+                                                    title={dept.current_season_title}
+                                                    periodLabel={formatSeasonPeriodLabel(dept)}
+                                                    onClick={() => openDepartmentSeason(dept)}
+                                                    className="shadow-none"
+                                                />
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -438,59 +521,44 @@ export default function DepartmentsPage() {
                             </div>
                             <div className="p-6 sm:p-10 space-y-6 sm:space-y-8">
                                 <div className="flex items-center justify-between">
-                                    <span className="text-[10px] sm:text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-2.5">
-                                        <Users className="w-3.5 h-3.5" />
-                                        소속 조 관리 ({dept.groups?.length || 0})
-                                    </span>
-                                    <button
-                                        onClick={() => {
-                                            setSelectedDeptId(dept.id);
-                                            setEditingGroup(null);
-                                            setGroupName('');
-                                            setGroupColor(dept.color_hex || '#4f46e5');
-                                            setGroupActiveFrom(new Date().toISOString().slice(0, 10));
-                                            setGroupEndedAt('');
-                                            setIsNewMemberGroup(false);
-                                            setClimbingThreshold(4);
-                                            setIsGroupModalOpen(true);
-                                        }}
+                                    <div>
+                                        <span className="text-[10px] sm:text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2.5">
+                                            <Users className="w-3.5 h-3.5" />
+                                            현재 시즌 조편성 ({dept.groups?.length || 0})
+                                        </span>
+                                        <p className="mt-1 text-[11px] font-bold text-slate-400">
+                                            앱, 출석, 기도 화면에 반영되는 현재 시즌 기준 조 목록입니다.
+                                        </p>
+                                    </div>
+                                    <Link
+                                        href={`/regrouping?deptId=${dept.id}${currentChurchId ? `&churchId=${currentChurchId}` : ''}`}
                                         className="text-[10px] sm:text-[11px] font-black text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 transition-all flex items-center gap-2 uppercase tracking-widest bg-indigo-50 dark:bg-indigo-500/10 px-3 py-1.5 rounded-lg"
                                     >
-                                        <Plus className="w-4 h-4" />
-                                        조 추가
-                                    </button>
+                                        <Layers className="w-4 h-4" />
+                                        조편성 관리
+                                    </Link>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 max-h-[400px] sm:max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
                                     {dept.groups?.map((group) => (
-                                        <div key={group.id} className="flex items-center justify-between p-3.5 sm:p-4 bg-slate-50 dark:bg-slate-800/20 border border-slate-200 dark:border-slate-800 rounded-2xl group/item hover:bg-white dark:hover:bg-slate-800/40 transition-all border-l-4" style={{ borderLeftColor: group.color_hex || dept.color_hex || '#4f46e5' }}>
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: group.color_hex || dept.color_hex || '#4f46e5' }} />
-                                                <span className="font-bold text-slate-700 dark:text-white group-hover/item:text-indigo-600 dark:group-hover/item:text-indigo-400 transition-colors text-xs sm:text-sm">{group.name}</span>
+                                        <div key={group.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 transition-all hover:border-slate-300 hover:shadow-sm dark:border-slate-800 dark:bg-slate-900/40 dark:hover:border-slate-700">
+                                            <div className="min-w-0">
+                                                <div className="flex min-w-0 items-center gap-2">
+                                                    <div className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: group.color_hex || dept.color_hex || '#4f46e5' }} />
+                                                    <span className="truncate text-sm font-black text-slate-800 dark:text-white">{group.name}</span>
+                                                </div>
+                                                {group.is_new_member_group && (
+                                                    <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20">
+                                                        새가족 조
+                                                    </span>
+                                                )}
                                             </div>
-                                            <div className="flex gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                                                <button
-                                                    onClick={() => {
-                                                        setEditingGroup(group);
-                                                        setGroupName(group.name);
-                                                        setGroupColor(group.color_hex || dept.color_hex || '#4f46e5');
-                                                        setGroupActiveFrom(group.active_from?.slice(0, 10) || group.created_at?.slice(0, 10) || '');
-                                                        setGroupEndedAt(group.ended_at?.slice(0, 10) || '');
-                                                        setIsNewMemberGroup(group.is_new_member_group || false);
-                                                        setClimbingThreshold(group.climbing_threshold || 4);
-                                                        setSelectedDeptId(dept.id);
-                                                        setIsGroupModalOpen(true);
-                                                    }}
-                                                    className="p-1 px-1.5 text-slate-400 hover:text-indigo-600 transition-colors"
-                                                >
-                                                    <Edit2 className="w-3 h-3" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => handleDeleteGroup(e, group.id)}
-                                                    className="p-1 px-1.5 text-slate-400 hover:text-red-500 transition-colors"
-                                                >
-                                                    <Trash2 className="w-3 h-3" />
-                                                </button>
-                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setViewingGroup({ ...group, departmentName: dept.name })}
+                                                className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-black text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
+                                            >
+                                                보기
+                                            </button>
                                         </div>
                                     ))}
                                     {(!dept.groups || dept.groups.length === 0) && (
@@ -663,6 +731,86 @@ export default function DepartmentsPage() {
                 </form>
             </Modal>
 
+            <Modal
+                isOpen={!!viewingGroup}
+                onClose={() => setViewingGroup(null)}
+                title=""
+                subtitle=""
+                maxWidth="md"
+                hideHeader
+                contentClassName="p-5 sm:p-6"
+            >
+                {viewingGroup && (
+                    <div className="space-y-5">
+                        <div className="rounded-3xl bg-slate-50 px-5 py-5 dark:bg-slate-900/60">
+                            <div className="flex items-start justify-between gap-4 pr-12">
+                                <div className="min-w-0">
+                                    <p className="text-xs font-black text-slate-400">현재 시즌 조 정보</p>
+                                    <h3 className="mt-2 truncate text-2xl font-black tracking-tight text-slate-950 dark:text-white">
+                                        {viewingGroup.name}
+                                    </h3>
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                        <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-slate-600 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-800">
+                                            {viewingGroup.departmentName || '부서 없음'}
+                                        </span>
+                                        <span className={cn(
+                                            'rounded-full px-3 py-1 text-[11px] font-black ring-1',
+                                            viewingGroup.season_plan_status === 'ended'
+                                                ? 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20'
+                                                : 'bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20'
+                                        )}>
+                                            {viewingGroup.season_plan_status === 'ended' ? '종료됨' : '운영 중'}
+                                        </span>
+                                        {viewingGroup.is_new_member_group && (
+                                            <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20">
+                                                새가족 조
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div
+                                    className="mt-1 h-10 w-10 shrink-0 rounded-2xl border-4 border-white shadow-sm dark:border-slate-950"
+                                    style={{ backgroundColor: viewingGroup.color_hex || '#4f46e5' }}
+                                    aria-label="조 색상"
+                                />
+                            </div>
+                        </div>
+
+                        <dl className="divide-y divide-slate-100 rounded-3xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-950">
+                            <GroupDetailItem
+                                label="조 시작일"
+                                value={formatDateLabel(viewingGroup.season_starts_week_date || viewingGroup.active_from)}
+                            />
+                            <GroupDetailItem
+                                label="조 종료일"
+                                value={viewingGroup.season_ends_week_date || viewingGroup.ended_at ? formatDateLabel(viewingGroup.season_ends_week_date || viewingGroup.ended_at) : '현재 운영 중'}
+                            />
+                            {viewingGroup.is_new_member_group && (
+                                <GroupDetailItem
+                                    label="등반 기준"
+                                    value={`${viewingGroup.climbing_threshold || 4}회 출석`}
+                                />
+                            )}
+                        </dl>
+
+                        <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-900/60">
+                            <p className="text-xs font-bold leading-relaxed text-slate-500 dark:text-slate-400">
+                                조 정보는 현재 시즌 조편성 기준입니다. 이름, 기간, 새가족 설정 변경은 조편성 관리에서 처리합니다.
+                            </p>
+                        </div>
+
+                        <div>
+                            <Link
+                                href={`/regrouping?deptId=${viewingGroup.department_id}${currentChurchId ? `&churchId=${currentChurchId}` : ''}`}
+                                className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-indigo-600 px-5 text-sm font-black text-white transition hover:bg-indigo-500"
+                            >
+                                조편성에서 수정
+                            </Link>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
             {/* 부서 종료 확인 모달 */}
             <Modal
                 isOpen={!!deleteTarget}
@@ -707,6 +855,15 @@ export default function DepartmentsPage() {
                 </div>
             </Modal>
 
+        </div>
+    );
+}
+
+function GroupDetailItem({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="grid grid-cols-[110px_1fr] items-center gap-4 px-4 py-3.5">
+            <dt className="text-xs font-black text-slate-400">{label}</dt>
+            <dd className="text-right text-sm font-black text-slate-950 dark:text-white">{value}</dd>
         </div>
     );
 }

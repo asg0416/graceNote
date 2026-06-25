@@ -21,6 +21,33 @@ const profileBelongsToPerson = (memberProfile: any): boolean => {
   );
 };
 
+const matchingProfilesForMembership = (
+  membership: any,
+  profilesByPerson: Map<string, any[]>,
+): any[] => {
+  const profiles = profilesByPerson.get(membership.person_id) || [];
+  const directoryId = membership.legacy_member_directory_id;
+  const exactProfiles = directoryId
+    ? profiles.filter(profile => profile.member_directory_id === directoryId)
+    : [];
+
+  if (exactProfiles.length > 0) return exactProfiles;
+
+  return profiles.filter(profile => !profile.member_directory_id);
+};
+
+const buildProfilesByPerson = (memberProfiles: any[] = []): Map<string, any[]> => {
+  const profilesByPerson = new Map<string, any[]>();
+
+  for (const profile of memberProfiles.filter(profileBelongsToPerson)) {
+    const existing = profilesByPerson.get(profile.person_id) || [];
+    existing.push(profile);
+    profilesByPerson.set(profile.person_id, existing);
+  }
+
+  return profilesByPerson;
+};
+
 async function getAccessToken(): Promise<string> {
   const privateKey = FIREBASE_PRIVATE_KEY!.replace(/\\n/g, "\n");
   const header = { alg: "RS256", typ: "JWT" };
@@ -97,7 +124,7 @@ async function getLeaderRowsByGroups(
 
   const { data: phase2Memberships, error: phase2Error } = await supabase
     .from("memberships")
-    .select("person_id, group_id")
+    .select("person_id, group_id, legacy_member_directory_id")
     .in("group_id", groupIds)
     .eq("role", "leader")
     .eq("status", "active");
@@ -105,8 +132,8 @@ async function getLeaderRowsByGroups(
   if (!phase2Error && (phase2Memberships || []).length > 0) {
     const personIds = [...new Set((phase2Memberships || []).map((leader: any) => leader.person_id).filter(Boolean))];
     const memberProfileSelect = includePushPreference
-      ? "person_id, profile_id, profiles(person_id, push_reminder_enabled)"
-      : "person_id, profile_id, profiles(person_id)";
+      ? "person_id, profile_id, member_directory_id, profiles(person_id, push_reminder_enabled)"
+      : "person_id, profile_id, member_directory_id, profiles(person_id)";
     const { data: memberProfiles, error: profileError } = await supabase
       .from("member_profiles")
       .select(memberProfileSelect)
@@ -114,16 +141,10 @@ async function getLeaderRowsByGroups(
       .not("profile_id", "is", null);
 
     if (!profileError && (memberProfiles || []).length > 0) {
-      const profilesByPerson = new Map<string, any[]>();
-      for (const profile of (memberProfiles || []).filter(profileBelongsToPerson)) {
-        const existing = profilesByPerson.get(profile.person_id) || [];
-        existing.push(profile);
-        profilesByPerson.set(profile.person_id, existing);
-      }
-
+      const profilesByPerson = buildProfilesByPerson(memberProfiles || []);
       const rows: any[] = [];
       for (const membership of phase2Memberships || []) {
-        for (const profile of profilesByPerson.get(membership.person_id) || []) {
+        for (const profile of matchingProfilesForMembership(membership, profilesByPerson)) {
           rows.push({
             profile_id: profile.profile_id,
             group_id: membership.group_id,

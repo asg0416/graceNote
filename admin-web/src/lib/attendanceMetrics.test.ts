@@ -148,9 +148,8 @@ test('retroactive backfill includes current active roster when historical starts
   assert.equal(metrics.backfilledPeople, 2);
   assert.equal(metrics.usedRetroactiveBackfill, true);
   assert.deepEqual(buildAttendanceTargetExplanation(metrics), [
-    '주차 기준 active person 0명',
-    '출석 기록에 포함된 person 1명',
-    '과거 입력 보정으로 현재 active roster 2명 추가 반영',
+    '선택 주차 조편성 대상 0명',
+    '과거 입력 보정으로 현재 명부 2명 추가 반영',
   ]);
 });
 

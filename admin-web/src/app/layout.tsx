@@ -50,6 +50,9 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const isDevProject = process.env.NEXT_PUBLIC_SUPABASE_URL?.includes('eftdf') ?? false;
+  const showDevToolLink = isDevProject && process.env.NODE_ENV !== 'production';
+
   return (
     <html lang="ko" suppressHydrationWarning>
       <body
@@ -63,11 +66,19 @@ export default function RootLayout({
         >
           <SidebarWrapper>{children}</SidebarWrapper>
 
-          {/* DEV MODE INDICATOR */}
-          {process.env.NEXT_PUBLIC_SUPABASE_URL?.includes('eftdf') && (
-            <div className="fixed bottom-4 right-4 bg-red-500/90 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg z-50 pointer-events-none border-2 border-white/20 animate-pulse">
-              🚧 DEV MODE 🚧
-            </div>
+          {isDevProject && (
+            showDevToolLink ? (
+              <a
+                href="/dev-tools/social-auth"
+                className="fixed bottom-4 right-4 z-50 rounded-full border-2 border-white/20 bg-red-500/90 px-4 py-1.5 text-sm font-bold text-white shadow-lg hover:bg-red-400"
+              >
+                DEV MODE
+              </a>
+            ) : (
+              <div className="fixed bottom-4 right-4 z-50 rounded-full border-2 border-white/20 bg-red-500/90 px-4 py-1.5 text-sm font-bold text-white shadow-lg">
+                DEV MODE
+              </div>
+            )
           )}
         </ThemeProvider>
       </body>

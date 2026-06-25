@@ -1,11 +1,10 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/constants/app_constants.dart';
+import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/utils/auth_error_helper.dart';
 import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -34,6 +33,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _otpFocusNode = FocusNode();
   bool _isLoading = false;
   bool _isOtpSent = false;
+  String? _devOtpCode;
   Timer? _resendTimer;
   int _resendSeconds = 0;
 
@@ -83,8 +83,44 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     });
   }
 
-  bool get _isPasswordValid => 
-      _hasMinLength && _hasUppercase && _hasLowercase && _hasDigit && _hasSpecialChar;
+  bool get _isPasswordValid =>
+      _hasMinLength &&
+      _hasUppercase &&
+      _hasLowercase &&
+      _hasDigit &&
+      _hasSpecialChar;
+
+  bool get _isDevOtpMode =>
+      kDebugMode && AppConstants.supabaseUrl.contains('eftdf');
+
+  Future<String?> _requestDevSignupOtp(String email, String password) async {
+    if (!_isDevOtpMode) return null;
+
+    final response = await Supabase.instance.client.functions.invoke(
+      'dev-auth-signup-otp',
+      body: {
+        'email': email,
+        'password': password,
+        'metadata': {
+          'full_name': _nameController.text.trim(),
+        },
+      },
+    );
+
+    if (response.status != 200) {
+      final error = response.data is Map
+          ? response.data['error'] ?? '개발 인증 번호 생성에 실패했습니다.'
+          : '개발 인증 번호 생성에 실패했습니다.';
+      throw Exception(error);
+    }
+
+    final data = response.data;
+    if (data is Map && data['email_otp'] is String) {
+      return data['email_otp'] as String;
+    }
+
+    throw Exception('개발 인증 번호 응답이 올바르지 않습니다.');
+  }
 
   Future<void> _handleSignUp() async {
     final name = _nameController.text.trim();
@@ -93,39 +129,57 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     final confirmPassword = _confirmPasswordController.text.trim();
 
     if (name.isEmpty || email.isEmpty || password.isEmpty) {
-      SnackBarUtil.showSnackBar(context, message: '모든 필드를 입력해주세요.', isError: true);
+      SnackBarUtil.showSnackBar(context,
+          message: '모든 필드를 입력해주세요.', isError: true);
       return;
     }
 
     if (!_isPasswordValid) {
-      SnackBarUtil.showSnackBar(context, message: '비밀번호 보안 규칙을 모두 충족해야 합니다.', isError: true);
+      SnackBarUtil.showSnackBar(context,
+          message: '비밀번호 보안 규칙을 모두 충족해야 합니다.', isError: true);
       return;
     }
 
     if (password != confirmPassword) {
-      SnackBarUtil.showSnackBar(context, message: '비밀번호가 일치하지 않습니다.', isError: true);
+      SnackBarUtil.showSnackBar(context,
+          message: '비밀번호가 일치하지 않습니다.', isError: true);
       return;
     }
 
     setState(() => _isLoading = true);
     try {
-      final response = await Supabase.instance.client.auth.signUp(
-        email: email,
-        password: password,
-        data: {'full_name': name},
-        emailRedirectTo: kIsWeb ? null : 'io.supabase.flutter://registration-callback',
-      );
-      
-      if (mounted) {
-        if (response.session != null) {
-          Navigator.of(context).pop();
-        } else {
+      if (_isDevOtpMode) {
+        final devOtp = await _requestDevSignupOtp(email, password);
+        if (mounted) {
           setState(() => _isOtpSent = true);
+          setState(() => _devOtpCode = devOtp);
           _startResendTimer();
-          SnackBarUtil.showSnackBar(context, message: '인증 번호가 이메일로 발송되었습니다.');
+          SnackBarUtil.showSnackBar(context, message: '개발 인증 번호가 생성되었습니다.');
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _otpFocusNode.requestFocus();
           });
+        }
+      } else {
+        final response = await Supabase.instance.client.auth.signUp(
+          email: email,
+          password: password,
+          data: {'full_name': name},
+        );
+
+        if (mounted) {
+          if (response.session != null) {
+            Navigator.of(context).pop();
+          } else {
+            setState(() {
+              _isOtpSent = true;
+              _devOtpCode = null;
+            });
+            _startResendTimer();
+            SnackBarUtil.showSnackBar(context, message: '인증 번호가 이메일로 발송되었습니다.');
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _otpFocusNode.requestFocus();
+            });
+          }
         }
       }
     } catch (e) {
@@ -156,23 +210,36 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   Future<void> _handleResendOtp() async {
     if (_resendSeconds > 0) return;
-    
+
     final email = _emailController.text.trim();
     _callOtpResend(email);
   }
-  
+
   Future<void> _callOtpResend(String email) async {
     setState(() => _isLoading = true);
     try {
-      await Supabase.instance.client.auth.resend(
-        type: OtpType.signup,
-        email: email,
-        emailRedirectTo: kIsWeb ? null : 'io.supabase.flutter://registration-callback',
-      );
-      
+      if (_isDevOtpMode) {
+        final devOtp = await _requestDevSignupOtp(
+          email,
+          _passwordController.text.trim(),
+        );
+        if (mounted) {
+          setState(() => _devOtpCode = devOtp);
+        }
+      } else {
+        await Supabase.instance.client.auth.resend(
+          type: OtpType.signup,
+          email: email,
+        );
+      }
+
       _startResendTimer();
       if (mounted) {
-        SnackBarUtil.showSnackBar(context, message: '인증 번호가 다시 발송되었습니다.');
+        SnackBarUtil.showSnackBar(
+          context,
+          message:
+              _isDevOtpMode ? '개발 인증 번호가 다시 생성되었습니다.' : '인증 번호가 다시 발송되었습니다.',
+        );
         _otpFocusNode.requestFocus();
       }
     } catch (e) {
@@ -189,19 +256,20 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     }
   }
 
-
   Future<void> _handleVerifyOtp() async {
     final email = _emailController.text.trim();
     final otp = _otpController.text.trim();
 
     if (email.isEmpty) {
-      SnackBarUtil.showSnackBar(context, message: '이메일 정보가 없습니다. 다시 시도해주세요.', isError: true);
+      SnackBarUtil.showSnackBar(context,
+          message: '이메일 정보가 없습니다. 다시 시도해주세요.', isError: true);
       setState(() => _isOtpSent = false);
       return;
     }
 
-    if (otp.length < 6) {
-      SnackBarUtil.showSnackBar(context, message: '인증 번호 6자리를 입력해주세요.', isError: true);
+    if (otp.length != 6) {
+      SnackBarUtil.showSnackBar(context,
+          message: '인증 번호 6자리를 입력해주세요.', isError: true);
       return;
     }
 
@@ -250,8 +318,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(_isOtpSent ? '인증 번호 확인' : '회원가입', 
-            style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
+        title: Text(_isOtpSent ? '인증 번호 확인' : '회원가입',
+            style: const TextStyle(
+                color: AppTheme.textMain,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Pretendard')),
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
@@ -263,7 +334,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               Navigator.pop(context);
             }
           },
-          child: Icon(LucideIcons.chevronLeft, size: 24, color: AppTheme.textMain),
+          child:
+              Icon(LucideIcons.chevronLeft, size: 24, color: AppTheme.textMain),
         ),
       ),
       body: SafeArea(
@@ -295,6 +367,52 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   ),
                 ),
                 const SizedBox(height: 48),
+                if (_isDevOtpMode && _devOtpCode != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFFED7AA)),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'DEV ONLY EMAIL OTP',
+                          style: TextStyle(
+                            color: Color(0xFFC2410C),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.8,
+                            fontFamily: 'Pretendard',
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _devOtpCode!,
+                          style: const TextStyle(
+                            color: AppTheme.textMain,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 10,
+                            fontFamily: 'Pretendard',
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          '개발 서버 디버그 실행에서만 표시됩니다.',
+                          style: TextStyle(
+                            color: Color(0xFF9A3412),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Pretendard',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
                 // Modern Pin Code Input Layout
                 Stack(
                   alignment: Alignment.center,
@@ -308,7 +426,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         keyboardType: TextInputType.number,
                         autofocus: true,
                         maxLength: 6,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly
+                        ],
                         onChanged: (val) {
                           setState(() {});
                           if (val.length == 6) {
@@ -319,33 +439,40 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     ),
                     // Visual Boxes
                     GestureDetector(
-                      onTap: () => _otpFocusNode.requestFocus(), // Trigger hidden field focus
+                      onTap: () => _otpFocusNode
+                          .requestFocus(), // Trigger hidden field focus
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: List.generate(6, (index) {
-                          final char = _otpController.text.length > index 
-                              ? _otpController.text[index] 
+                          final char = _otpController.text.length > index
+                              ? _otpController.text[index]
                               : '';
                           final isFocused = _otpController.text.length == index;
-                          
+
                           return Container(
                             width: 1400 / 33, // Approximately 42-45
-                            constraints: const BoxConstraints(maxWidth: 50, minWidth: 44),
+                            constraints: const BoxConstraints(
+                                maxWidth: 50, minWidth: 44),
                             height: 60,
                             decoration: BoxDecoration(
                               color: AppTheme.secondaryBackground,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isFocused ? AppTheme.primaryViolet : AppTheme.border.withOpacity(0.5),
+                                color: isFocused
+                                    ? AppTheme.primaryViolet
+                                    : AppTheme.border.withOpacity(0.5),
                                 width: isFocused ? 2 : 1,
                               ),
-                              boxShadow: isFocused ? [
-                                BoxShadow(
-                                  color: AppTheme.primaryViolet.withOpacity(0.1),
-                                  blurRadius: 8,
-                                  spreadRadius: 1,
-                                )
-                              ] : null,
+                              boxShadow: isFocused
+                                  ? [
+                                      BoxShadow(
+                                        color: AppTheme.primaryViolet
+                                            .withOpacity(0.1),
+                                        blurRadius: 8,
+                                        spreadRadius: 1,
+                                      )
+                                    ]
+                                  : null,
                             ),
                             alignment: Alignment.center,
                             child: Text(
@@ -365,22 +492,34 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 ),
                 const SizedBox(height: 48),
                 ShadButton(
-                  onPressed: _isLoading || _otpController.text.length < 6 ? null : _handleVerifyOtp,
+                  onPressed: _isLoading || _otpController.text.length != 6
+                      ? null
+                      : _handleVerifyOtp,
                   size: ShadButtonSize.lg,
-                  child: _isLoading 
+                  child: _isLoading
                       ? ShadcnSpinner(color: Colors.white, size: 20)
-                      : const Text('인증 및 가입 완료', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
+                      : const Text('인증 및 가입 완료',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: 'Pretendard')),
                 ),
                 const SizedBox(height: 24),
                 Center(
                   child: Column(
                     children: [
                       ShadButton.ghost(
-                        onPressed: _isLoading || _resendSeconds > 0 ? null : _handleResendOtp,
+                        onPressed: _isLoading || _resendSeconds > 0
+                            ? null
+                            : _handleResendOtp,
                         child: Text(
-                          _resendSeconds > 0 ? '인증 번호 재전송 ($_resendSeconds초)' : '인증 번호를 받지 못하셨나요? 재전송하기',
+                          _resendSeconds > 0
+                              ? '인증 번호 재전송 ($_resendSeconds초)'
+                              : '인증 번호를 받지 못하셨나요? 재전송하기',
                           style: TextStyle(
-                            color: _resendSeconds > 0 ? AppTheme.textSub.withOpacity(0.5) : AppTheme.primaryViolet,
+                            color: _resendSeconds > 0
+                                ? AppTheme.textSub.withOpacity(0.5)
+                                : AppTheme.primaryViolet,
                             fontWeight: FontWeight.w700,
                             fontSize: 14,
                             fontFamily: 'Pretendard',
@@ -393,7 +532,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                           _resendTimer?.cancel();
                           _resendSeconds = 0;
                         }),
-                        child: const Text('이메일 주소 수정하기', style: TextStyle(color: AppTheme.textSub, fontSize: 13, fontFamily: 'Pretendard')),
+                        child: const Text('이메일 주소 수정하기',
+                            style: TextStyle(
+                                color: AppTheme.textSub,
+                                fontSize: 13,
+                                fontFamily: 'Pretendard')),
                       ),
                     ],
                   ),
@@ -413,77 +556,125 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 const SizedBox(height: 24),
                 const ShadAlert(
                   icon: Icon(LucideIcons.info, size: 18),
-                  title: Text('등록 안내', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
-                  description: Text('성도 등록이 완료된 분만 가입이 가능하며,\n미등록 시 관리자에게 문의바랍니다.', style: TextStyle(fontFamily: 'Pretendard')),
+                  title: Text('등록 안내',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Pretendard')),
+                  description: Text(
+                      '성도 등록이 완료된 분만 가입이 가능하며,\n미등록 시 관리자에게 문의바랍니다.',
+                      style: TextStyle(fontFamily: 'Pretendard')),
                 ),
                 const SizedBox(height: 36),
-                
-                const Text('이름', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.2)),
+                const Text('이름',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textSub,
+                        fontFamily: 'Pretendard',
+                        letterSpacing: -0.2)),
                 const SizedBox(height: 10),
                 ShadInput(
                   controller: _nameController,
-                  placeholder: Text('실명을 입력해주세요', style: TextStyle(color: AppTheme.textSub.withOpacity(0.4), fontSize: 15)),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  placeholder: Text('실명을 입력해주세요',
+                      style: TextStyle(
+                          color: AppTheme.textSub.withOpacity(0.4),
+                          fontSize: 15)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   constraints: const BoxConstraints(minHeight: 56),
                   leading: const Padding(
                     padding: EdgeInsets.only(left: 12, right: 8),
-                    child: Icon(LucideIcons.user, size: 20, color: AppTheme.textSub),
+                    child: Icon(LucideIcons.user,
+                        size: 20, color: AppTheme.textSub),
                   ),
                 ),
                 const SizedBox(height: 24),
-                
-                const Text('이메일', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.2)),
+                const Text('이메일',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textSub,
+                        fontFamily: 'Pretendard',
+                        letterSpacing: -0.2)),
                 const SizedBox(height: 10),
                 ShadInput(
                   controller: _emailController,
-                  placeholder: Text('example@email.com', style: TextStyle(color: AppTheme.textSub.withOpacity(0.4), fontSize: 15)),
+                  placeholder: Text('example@email.com',
+                      style: TextStyle(
+                          color: AppTheme.textSub.withOpacity(0.4),
+                          fontSize: 15)),
                   keyboardType: TextInputType.emailAddress,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   constraints: const BoxConstraints(minHeight: 56),
                   leading: const Padding(
                     padding: EdgeInsets.only(left: 12, right: 8),
-                    child: Icon(LucideIcons.mail, size: 20, color: AppTheme.textSub),
+                    child: Icon(LucideIcons.mail,
+                        size: 20, color: AppTheme.textSub),
                   ),
                 ),
                 const SizedBox(height: 24),
-                
-                const Text('비밀번호', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.2)),
+                const Text('비밀번호',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textSub,
+                        fontFamily: 'Pretendard',
+                        letterSpacing: -0.2)),
                 const SizedBox(height: 10),
                 ShadInput(
                   controller: _passwordController,
-                  placeholder: Text('••••••••', style: TextStyle(color: AppTheme.textSub.withOpacity(0.4), fontSize: 15)),
+                  placeholder: Text('••••••••',
+                      style: TextStyle(
+                          color: AppTheme.textSub.withOpacity(0.4),
+                          fontSize: 15)),
                   obscureText: true,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   leading: const Padding(
                     padding: EdgeInsets.only(left: 12, right: 8),
-                    child: Icon(LucideIcons.lock, size: 20, color: AppTheme.textSub),
+                    child: Icon(LucideIcons.lock,
+                        size: 20, color: AppTheme.textSub),
                   ),
                 ),
                 const SizedBox(height: 12),
-                
                 _buildPasswordRequirements(),
                 const SizedBox(height: 24),
-                
-                const Text('비밀번호 확인', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.2)),
+                const Text('비밀번호 확인',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textSub,
+                        fontFamily: 'Pretendard',
+                        letterSpacing: -0.2)),
                 const SizedBox(height: 10),
                 ShadInput(
                   controller: _confirmPasswordController,
-                  placeholder: Text('••••••••', style: TextStyle(color: AppTheme.textSub.withOpacity(0.4), fontSize: 15)),
+                  placeholder: Text('••••••••',
+                      style: TextStyle(
+                          color: AppTheme.textSub.withOpacity(0.4),
+                          fontSize: 15)),
                   obscureText: true,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   leading: const Padding(
                     padding: EdgeInsets.only(left: 12, right: 8),
-                    child: Icon(Icons.check_circle_outline, size: 20, color: AppTheme.textSub),
+                    child: Icon(Icons.check_circle_outline,
+                        size: 20, color: AppTheme.textSub),
                   ),
                 ),
                 const SizedBox(height: 48),
-                
                 ShadButton(
-                  onPressed: _isLoading || !_isPasswordValid ? null : _handleSignUp,
+                  onPressed:
+                      _isLoading || !_isPasswordValid ? null : _handleSignUp,
                   size: ShadButtonSize.lg,
-                  child: _isLoading 
+                  child: _isLoading
                       ? ShadcnSpinner(color: Colors.white, size: 20)
-                      : const Text('가입하기', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, fontFamily: 'Pretendard')),
+                      : const Text('가입하기',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: 'Pretendard')),
                 ),
                 const SizedBox(height: 20),
               ],
@@ -507,7 +698,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         children: [
           Text(
             '보안 규칙을 충족해야 합니다',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.textSub.withOpacity(0.8), fontFamily: 'Pretendard'),
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textSub.withOpacity(0.8),
+                fontFamily: 'Pretendard'),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -540,7 +735,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           text,
           style: TextStyle(
             fontSize: 12,
-            color: isValid ? AppTheme.success : AppTheme.textSub.withOpacity(0.6),
+            color:
+                isValid ? AppTheme.success : AppTheme.textSub.withOpacity(0.6),
             fontWeight: isValid ? FontWeight.w700 : FontWeight.w500,
             fontFamily: 'Pretendard',
           ),

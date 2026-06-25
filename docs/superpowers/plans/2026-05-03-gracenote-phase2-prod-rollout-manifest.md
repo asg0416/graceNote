@@ -28,10 +28,10 @@
 | --- | --- | --- |
 | Phase 1 FK guardrails | Applied | `prayer_entries.group_id`, `attendance.group_member_id` cascade 위험 차단 완료 |
 | Phase 1.5 FK guardrails | Applied | `attendance.directory_member_id`, `prayer_entries.directory_member_id` cascade 위험 차단 완료 |
-| Phase 2 schema | Not applied | `people`, `person_identifiers`, `member_profiles`, `memberships` 운영 미적용 |
-| Phase 2 backfill | Not applied | 운영 데이터 기준 dry-run 필요 |
-| Phase 2 dual-write triggers | Not applied | dev에서만 검증 중 |
-| Admin Phase 2 diagnostics | Code exists locally | 운영 배포 전 Phase 2 테이블/RLS 존재 여부 확인 필요 |
+| Phase 2 schema | Applied | 운영 DB migration history 기준 `20260517002000`까지 적용됨 |
+| Phase 2 backfill | Applied through 20260517 repair | 운영 데이터 보정은 5/17 repair까지 적용됨. 5/19 이후 조편성 시즌 migration은 미적용 |
+| Phase 2 dual-write triggers | Applied | 5/17 기준 write compatibility까지 운영 적용됨 |
+| Admin Phase 2 diagnostics | Code exists locally | 5/19 이후 조편성 시즌/출석 snapshot 보정 배포 전 gate 재확인 필요 |
 
 ## Current Work Position
 
@@ -59,16 +59,22 @@ Prod dry-run runbook: `docs/superpowers/plans/2026-05-15-gracenote-prod-dry-run-
 
 Preprod data audit package:
 - `supabase/preprod_data_audit_summary_2026-05-15.sql`
+- `supabase/preprod_identity_link_audit_2026-05-22.sql`
 - `supabase/preprod_auto_repair_candidates_2026-05-15.sql`
 - `supabase/preprod_manual_review_candidates_2026-05-15.sql`
+- `supabase/preprod_identity_link_candidates_2026-05-22.sql`
+- `supabase/preprod_identity_link_auto_repair_2026-05-22.sql`
+- `supabase/preprod_membership_state_auto_repair_2026-05-22.sql`
+- `supabase/preprod_legacy_mirror_and_attendance_period_repair_2026-05-23.sql`
 
-운영 복제본/staging에는 migration dry-run 직후 위 3개 SQL을 실행한다. 목적은 dev에서 이미 발견한 김보영/유성열류 legacy drift를 운영에서 다시 재현하는 것이 아니라, 같은 패턴을 적용 전 숫자와 후보 목록으로 잡아 자동 보정/수동 검토로 분류하는 것이다.
+운영 복제본/staging에는 migration dry-run 직후 위 audit SQL을 실행한다. 목적은 dev에서 이미 발견한 김보영/유성열류 legacy drift를 운영에서 다시 재현하는 것이 아니라, 같은 패턴을 적용 전 숫자와 후보 목록으로 잡아 자동 보정/수동 검토로 분류하는 것이다. 자동 보정은 운영 복제본에서 `scripts/preprod-identity-repair-psql.mjs --apply-auto-repair`, `scripts/preprod-membership-state-repair-psql.mjs --apply-auto-repair`, `scripts/preprod-legacy-mirror-repair-psql.mjs --apply-auto-repair`로 검증한 뒤 승인된 항목만 운영 maintenance window에서 다룬다.
 
 | Audit Output | Meaning | Prod Rule |
 | --- | --- | --- |
 | `blocking_gate` issue | people/membership/snapshot FK 또는 snapshot source-of-truth integrity 문제 | 운영 반영 전 0이어야 함 |
-| `auto_repair_candidate` issue | inactive/ended 상태 불일치, legacy 호환 row drift처럼 규칙 기반 보정 가능성이 높은 문제 | 운영 복제본에서 보정 SQL 작성/검증 후 승인된 항목만 prod 적용 |
+| `auto_repair_candidate` issue | inactive/ended 상태 불일치, legacy 호환 row drift, auth/profile id drift, cross-church stale profile link처럼 규칙 기반 보정 가능성이 높은 문제 | 운영 복제본에서 보정 SQL 작성/검증 후 승인된 항목만 prod 적용 |
 | `manual_review` issue | 같은 교회 전화번호 중복, 같은 이름 다중 person, cross-church same phone 등 자동 병합 위험 후보 | 자동 수정 금지. 운영자 확인 리포트로 관리 |
+| `identity_link` issue | auth user와 `profiles.id` 불일치, profile-only row, cross-church profile link, `member_profiles`/`group_members` stale profile link | `blocking_gate=0`이어야 앱 로그인/온보딩을 신뢰할 수 있음. email이 같아도 target profile이 이미 있으면 자동 병합 금지. 다른 교회 profile link는 병합하지 않고 detach만 허용 |
 
 2026-05-06 resync: 다른 AI 작업 이후 현재 상태를 재검증했다. 이후 Flutter 앱 smoke와 SmartBatch 브라우저 smoke까지 통과했고, 최종 DB rollback/consistency gate도 통과했다. Phase 2C는 dev 기준 완료로 본다.
 
@@ -164,8 +170,52 @@ Preprod data audit package:
 | 47 | `supabase/migrations/20260517000000_phase3_prod_clone_backfill_repair.sql` | 운영 복제본 dry-run에서 드러난 기존 운영 데이터 backfill gap 보정. pre-Phase2 row의 people/member_profiles/memberships와 attendance/prayer snapshot을 재완성 | stale missing directory membership 0, attendance/prayer missing person 0. 동일 교회 동일 전화번호 후보는 자동 병합하지 않고 manual review로 남김 |
 | 48 | `supabase/migrations/20260517001000_prod_data_repair_minjaehong_phone.sql` | 운영 복제본 audit에서 확인된 민재홍/임진슬 동일 전화번호를 민재홍 실제 번호로 정정 | `identity_candidate_same_church_phone = 0`, duplicate phone manual review 0 |
 | 49 | `supabase/migrations/20260517002000_guard_prayer_notification_updates.sql` | published 기도제목 row의 metadata/backfill update가 push 알림을 다시 발송하지 않도록 `notify_on_event()` 가드 추가 | 신규 published insert 또는 draft→published 전환만 기도 알림 발송. Phase 3 person snapshot 보정/운영 backfill 중 알림 폭주 방지 |
+| 50 | `supabase/migrations/20260519000000_phase3_regrouping_effective_week.sql` | 앱/관리자 조 이동의 적용 시작 주차를 저장할 수 있도록 보강 | 조 이동 후 출석/기도/명부 소속 기준이 선택 주차부터 반영됨 |
+| 51 | `supabase/migrations/20260523000000_phase3_regrouping_seasons_schema.sql` | 시즌 조편성 draft/applied 모델의 기본 테이블 추가 | `regrouping_seasons`, plan group/assignment 테이블과 RLS 존재 확인 |
+| 52 | `supabase/migrations/20260523001000_phase3_regrouping_season_draft_rpc.sql` | 시즌 조편성 초안 저장 RPC 추가 | 초안 저장 후 plan group/assignment 수와 카드 수 일치 |
+| 53 | `supabase/migrations/20260523001500_phase3_regrouping_season_draft_plan_group_ids.sql` | 초안 plan group id 안정화 | 초안 재저장/새로고침 후 조 이름과 카드가 유지됨 |
+| 54 | `supabase/migrations/20260523002000_phase3_regrouping_season_apply_rpc.sql` | 초안을 실제 소속에 적용하는 RPC 추가 | 적용 후 memberships/member_directory/group_members 동기화 확인 |
+| 55 | `supabase/migrations/20260523003000_phase3_regrouping_season_update_rpc.sql` | 적용/대기 시즌의 기간·계획 수정 RPC 추가 | 수정 저장 후 시즌 기간과 보드 기간 표시 일치 |
+| 56 | `supabase/migrations/20260523075852_phase3_regrouping_season_end_week.sql` | 시즌 마지막 적용 주차 저장 | 시즌 종료 주차 이후 소속/출석 대상이 과다 포함되지 않음 |
+| 57 | `supabase/migrations/20260523152525_phase3_register_current_regrouping_season.sql` | 현재 운영 조편성을 applied season으로 등록 | 현재 시즌 로딩 시 기존 조/성도 수 보존 |
+| 58 | `supabase/migrations/20260523161128_phase3_edit_current_applied_regrouping_season.sql` | 적용 완료 시즌 편집 지원 | 현재 시즌 조 이동/기간 조정 저장 후 live membership과 일치 |
+| 59 | `supabase/migrations/20260523161241_phase3_sync_current_regrouping_season_plan.sql` | 현재 live 조편성과 season plan 동기화 | season board와 실제 현재 소속의 그룹/인원 수 일치 |
+| 60 | `supabase/migrations/20260525000000_phase3_regrouping_plan_periods.sql` | plan assignment별 소속 시작/종료 주차 추가 | 시즌 변경 내역에서 기간 차이를 검토 가능 |
+| 61 | `supabase/migrations/20260525001000_phase3_regrouping_plan_group_status.sql` | plan group 상태/메타 보강 | 미편성/편성/삭제 조 상태가 새로고침 후 유지됨 |
+| 62 | `supabase/migrations/20260525002000_phase3_sync_current_regrouping_overlap_guard.sql` | 현재 시즌 저장 시 중복 active membership 방지 | 같은 사람/부서의 기간 겹침 active membership 0 |
+| 63 | `supabase/migrations/20260526000000_phase3_sync_current_regrouping_unassigned.sql` | 현재 시즌 미편성 소속 처리 보강 | 미편성 이동이 성도명부 Phase 2 이슈로 오탐되지 않음 |
+| 64 | `supabase/migrations/20260526001000_phase3_unassigned_directory_memberships.sql` | 미편성 membership 표현 보강 | 미편성 카드 수와 전체 사람 수 보존 |
+| 65 | `supabase/migrations/20260528135349_phase3_regrouping_assignment_periods.sql` | 조편성 assignment 기간 저장 정교화 | 조 카드 기간 배지와 변경 내역 기간이 일치 |
+| 66 | `supabase/migrations/20260529032534_phase3_dedupe_active_memberships.sql` | 중복 active memberships 정리 | active overlap/duplicate gate 0 |
+| 67 | `supabase/migrations/20260529043418_phase3_membership_sync_unique_guard.sql` | membership sync 중 unique 충돌 방지 | 조편성 저장/이동 시 중복 소속 생성 방지 |
+| 68 | `supabase/migrations/20260529051328_phase3_regrouping_save_unique_guard.sql` | 조편성 저장 RPC unique guard 보강 | 저장 실패 시 데이터 부분 반영 없이 rollback |
+| 69 | `supabase/migrations/20260529053359_phase3_regrouping_period_sync_exact.sql` | 조편성 기간 sync를 정확 기간 기준으로 보정 | 시즌 기간 변경 후 기본 기간 assignment만 자동 동기화 |
+| 70 | `supabase/migrations/20260529141752_phase3_app_member_move_effective_week.sql` | 앱 조 이동 effective week 반영 | 앱에서 이동한 성도가 선택 주차부터 변경 이력/출석에 반영 |
+| 71 | `supabase/migrations/20260530000000_phase3_regrouping_plan_group_meta.sql` | plan group 메타데이터 보강 | 조 이름 변경/표시 메타가 적용 후 보존 |
+| 72 | `supabase/migrations/20260602000000_phase3_attendance_snapshot_group_period.sql` | 출석 snapshot에 조 활성 기간 반영 | 과거 주차에는 당시 유효 조만 표시 |
+| 73 | `supabase/migrations/20260609000000_admin_social_auth_profile_flow.sql` | admin social auth/profile flow 지원 | dev/prod auth 환경 분리와 profile linkage smoke |
+| 74 | `supabase/migrations/20260614000000_admin_social_phone_person_relink.sql` | 소셜 로그인 전화번호 기반 person 재연결 보정 | 동일 교회 person/profile linkage 정상화 |
+| 75 | `supabase/migrations/20260615000000_phase3_profile_sync_no_legacy_reactivate.sql` | profile sync가 과거 legacy row를 재활성화하지 않도록 보정 | 비활성/과거 row가 로그인 sync로 현재 소속에 섞이지 않음 |
+| 76 | `supabase/migrations/20260620000000_phase3_regrouping_assignment_change_meta.sql` | 조편성 변경 이력 분류용 메타 추가 | 소속 이동/다중 소속/기간 조정 분류가 안정적으로 표시 |
+| 77 | `supabase/migrations/20260620001000_phase3_member_directory_profile_sync_scope.sql` | member_directory/profile sync 범위 보정 | 다른 교회/과거 row 재연결 방지 |
+| 78 | `supabase/migrations/20260620002000_phase3_regrouping_removed_assignment_uniques.sql` | 제거된 assignment가 unique 충돌을 만들지 않도록 보정 | 삭제/미편성 후 재편성 저장 가능 |
+| 79 | `supabase/migrations/20260620003000_phase3_regrouping_save_keep_department_members_active.sql` | 조편성 저장 중 부서 소속 active 상태 보존 | 조 미편성이 부서 탈퇴처럼 처리되지 않음 |
+| 80 | `supabase/migrations/20260621000000_phase3_current_group_period_exact.sql` | 현재 조 기간을 season/live 기준으로 정확히 보정 | 현재 시즌 전체/조별 인원 수가 보드와 요약에서 일치 |
+| 81 | `supabase/migrations/20260622032609_phase3_attendance_snapshot_season_plan.sql` | 출석 snapshot이 시즌 plan을 기준으로 대상 산정 | 시즌 시작/종료와 조 이동 이력이 출석 대상에 반영 |
+| 82 | `supabase/migrations/20260622050000_phase3_regrouping_season_period_guard.sql` | 시즌 범위를 벗어난 조 이동/기간 입력 차단 | 과거 시즌/미래 주차 이동이 저장 전 차단됨 |
+| 83 | `supabase/migrations/20260622061000_phase3_delete_pending_regrouping_season.sql` | 적용 전 시즌 삭제 RPC 추가 | 초안/대기 시즌 삭제 후 live membership 영향 없음 |
+| 84 | `supabase/migrations/20260622164916_phase3_update_applied_season_period.sql` | 적용 완료 시즌 기간 수정 RPC 추가 | 시즌 기간 저장 후 기본 기간 대상만 동기화 |
+| 85 | `supabase/migrations/20260622172034_phase3_sync_default_periods_on_season_update.sql` | 시즌 기간 변경 시 기본 기간 assignment 동기화 | 전체 인원 수 보존, 불필요한 기간 조정 이력 폭증 방지 |
+| 86 | `supabase/migrations/20260622173430_phase3_sync_default_period_assignment_scope.sql` | 기본 기간 동기화 범위를 기본 assignment로 제한 | 앱/수동 이동 이력이 기간 조정으로 중복 분류되지 않음 |
+| 87 | `supabase/migrations/20260623102122_app_member_move_current_season_history.sql` | 앱 조 이동을 현재 시즌 변경 이력에 기록 | 앱 이동 내역이 admin 시즌 변경 내역의 소속 이동에 표시 |
+| 88 | `supabase/migrations/20260624022429_fix_app_member_move_directory_only_membership.sql` | directory-only 성도 앱 이동 처리 보정 | 새가족/프로필 없는 성도 이동이 실패하지 않음 |
+| 89 | `supabase/migrations/20260624035058_fix_app_member_move_season_bounds_and_history.sql` | 앱 이동 주차를 현재 시즌 범위로 제한하고 이력 보정 | 시즌 시작 전 이동 차단, 출석/변경 내역 기준 일치 |
+| 90 | `supabase/migrations/20260624045725_clamp_group_move_starts_to_current_week.sql` | 조 이동 시작 주차를 현재 주차 이전으로 내려가지 않게 보정 | 미래/과거 범위 오입력으로 출석 대상이 깨지지 않음 |
+| 91 | `supabase/migrations/20260624062000_secure_regrouping_write_rpcs.sql` | 조편성 write RPC 실행 권한과 내부 권한 확인 보강 | anon 실행 차단, authenticated/admin 권한 smoke |
+| 92 | `supabase/migrations/20260624071000_allow_pending_regrouping_season_delete.sql` | pending/초안 시즌 삭제 허용 범위 보정 | 초안 삭제 가능, applied/live 시즌 오삭제 차단 |
+| 93 | `supabase/migrations/20260625053000_prod_attendance_group_active_period_repair.sql` | 기존 출석 기록이 조 `active_from`보다 앞선 운영 데이터 보정 | `attendance_rows_group_outside_active_period = 0` |
 
-주의: 22~49는 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다.
+주의: 22~93은 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다. 현재 운영 DB는 Supabase migration history 기준 92번(`20260624071000`)까지 적용되어 있으므로, 이번 추가 보정 후보는 93번이다.
 
 ## Hard Delete Gate
 
@@ -189,7 +239,7 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 
 | Category | Files | Prod Rule |
 | --- | --- | --- |
-| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260517002000_*` | 운영 적용 후보. 순서와 gate를 통과해야 함 |
+| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260625053000_*` | 운영 적용 후보. 운영 DB는 20260624071000까지 적용되어 있어 이번 추가 보정 후보는 20260625053000 |
 | DB already prod-applied candidates | `20260429000000_phase1_fk_guardrails.sql`, `20260430000000_phase1_5_directory_member_guardrails.sql` | 운영 적용 완료 상태와 실제 schema 재확인 후 중복 적용 금지 |
 | Admin UI prod candidates | `admin-web/src/app/churches/page.tsx`, `admin-web/src/app/departments/page.tsx`, `admin-web/src/app/regrouping/page.tsx`, `admin-web/src/app/members/page.tsx`, `admin-web/src/app/members/[id]/page.tsx`, `admin-web/src/app/archive/page.tsx`, `admin-web/src/app/attendance/page.tsx`, `admin-web/src/app/page.tsx`, `admin-web/src/components/MemberModal.tsx`, `admin-web/src/components/SmartBatchModal.tsx`, `admin-web/src/components/Sidebar.tsx`, `admin-web/src/components/MemberBadge.tsx`, `admin-web/src/components/kanban/KanbanColumn.tsx`, `admin-web/src/components/RichTextEditor.tsx` | person 구조 read/write, 비활성 관리, 조편성, 출석 snapshot, UI polish 운영 후보. 운영 배포 전 role별 UI smoke 필요 |
 | Admin active-filter candidates | `admin-web/src/app/in-app-messages/IamForm.tsx`, `admin-web/src/app/notices/NoticeForm.tsx` | inactive 부서/조 노출 방지. 기존 화면 회귀 확인 필요 |
@@ -427,6 +477,9 @@ Latest known-good after `20260502000000_phase2_member_directory_delete_sync.sql`
 | 2026-05-16 Edge notification profile ownership filter | `member_profiles.profile_id`가 다른 `profiles.person_id`에 명시 연결된 경우 알림 대상으로 쓰지 않도록 보정 | dev data에서 stale legacy profile link 2건이 있었지만 잘못된 profile로 알림을 보내지 않도록 `notify-event`, `notify-scheduler`, `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql` 보정. full psql gate all 0 |
 | 2026-05-18 Edge scheduler person-count refinement | 등반 예정자 알림이 legacy `directory_member_id` 기준으로 출석 횟수를 세면 같은 사람이 여러 legacy row를 가진 경우 중복/누락 가능 | `notify-scheduler` 등반 후보 계산을 `attendance.person_id` 우선으로 전환하고, person 없는 과거 row만 `directory_member_id` fallback 사용. 조장 제외도 person 기준 우선. `deno check notify-event notify-scheduler verify-sms` 통과. 운영 복제본 `preprod-verify-gates-psql`: all PASS. `preprod-data-audit`: blocking/auto-repair 0 |
 | 2026-05-18 Admin web prod build gate | 운영 적용 전 admin-web TypeScript/build 오류 제거 | `npx tsc --noEmit --pretty false`: PASS. `npm run build`: PASS after network-enabled Google Fonts fetch. targeted lint: 0 errors, existing warnings only. Node attendance tests: 12 passed |
+| 2026-05-23 Edge notification scoped profile targets + preprod local gate | 한 person에 scoped/global/orphan `member_profiles`가 섞이면 알림 대상이 같은 person의 다른 조 profile까지 퍼질 수 있음. 조편성 시즌 초안 테이블도 앱/운영 조회 경로에 섞이면 안 됨 | `notify-event`, `notify-scheduler`는 active membership의 `legacy_member_directory_id`에 matching되는 `member_profiles`를 우선 사용하고, matching row가 없을 때만 person-level profile fallback 사용. `preprod-verify-gates*`에 `verify-regrouping-season-boundary` local gate 포함. dev DB에서 `preprod-legacy-mirror-repair-psql --apply-auto-repair` 후 `preprod-verify-gates-psql`: all PASS |
+| 2026-05-23 Regrouping season metadata update | 저장된 시즌 초안을 다시 열어 제목/적용 주차를 수정해도 plan rows만 저장되고 시즌 메타가 갱신되지 않으면, UI의 적용 주차와 실제 적용 주차가 달라질 수 있음 | `update_regrouping_season` RPC 추가. 시즌 초안 저장 시 기존 시즌은 title/effective_week_date를 먼저 갱신한 뒤 plan groups/assignments를 저장. `node --test regroupingSeason*`, targeted lint, `npx tsc --noEmit`, regrouping schema/future/apply verifiers, preprod gate PASS |
+| 2026-05-23 Regrouping season preprod psql gate | 시즌제 조편성 schema/future/apply verifier가 별도 실행에만 있으면 운영 전 점검에서 누락될 수 있음 | `verify_regrouping_season_summary_dev_2026-05-23.sql` 추가 후 `scripts/preprod-verify-gates-psql.mjs`에 포함. dev DB full preprod psql gate에서 season summary 포함 all PASS |
 
 ## Pre-Prod UI Polish Backlog
 

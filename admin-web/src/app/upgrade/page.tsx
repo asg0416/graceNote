@@ -3,17 +3,72 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { Church, Mail, User, ShieldCheck, Moon, Sun, ChevronLeft, ArrowRight, Loader2, Lock } from 'lucide-react';
+import { Church, User, ShieldCheck, Moon, Sun, ArrowRight, Loader2, Lock } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import Link from 'next/link';
+
+type SelectOption = {
+    id: string;
+    name: string;
+};
+
+type ExistingLoginCheck = {
+    p_exists: boolean;
+    p_provider: string | null;
+    p_message: string | null;
+};
+
+function normalizePhone(phone: string) {
+    return phone.replace(/[^0-9]/g, '');
+}
+
+function getProviderLabel(provider: string | undefined) {
+    if (provider === 'kakao') return '카카오 계정';
+    if (provider === 'google') return 'Google 계정';
+    if (provider === 'email') return '이메일 계정';
+    return '현재 로그인 계정';
+}
+
+async function getFunctionErrorMessage(error: unknown, fallback: string) {
+    const maybeError = error as { message?: string; context?: Response };
+    if (maybeError?.context) {
+        try {
+            const details = await maybeError.context.clone().json();
+            if (typeof details?.message === 'string') return details.message;
+            if (typeof details?.error === 'string') return details.error;
+        } catch {
+            // Fall through to the default message.
+        }
+    }
+    return maybeError?.message || fallback;
+}
+
+function getErrorMessage(error: unknown) {
+    if (error instanceof Error) return error.message;
+    if (error && typeof error === 'object') {
+        const maybeError = error as {
+            message?: unknown;
+            error?: unknown;
+            details?: unknown;
+            hint?: unknown;
+            code?: unknown;
+        };
+        for (const value of [maybeError.message, maybeError.error, maybeError.details, maybeError.hint]) {
+            if (typeof value === 'string' && value.trim()) return value;
+        }
+        if (typeof maybeError.code === 'string' && maybeError.code.trim()) {
+            return `요청 처리 중 오류가 발생했습니다. (${maybeError.code})`;
+        }
+    }
+    return String(error);
+}
 
 export default function UpgradePage() {
     const [fullName, setFullName] = useState('');
     const [phone, setPhone] = useState('');
     const [selectedChurchId, setSelectedChurchId] = useState('');
     const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
-    const [churches, setChurches] = useState<any[]>([]);
-    const [departments, setDepartments] = useState<any[]>([]);
+    const [churches, setChurches] = useState<SelectOption[]>([]);
+    const [departments, setDepartments] = useState<SelectOption[]>([]);
 
     const [loading, setLoading] = useState(false);
     const [pageLoading, setPageLoading] = useState(true);
@@ -21,7 +76,14 @@ export default function UpgradePage() {
     const [fetchingDepartments, setFetchingDepartments] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
-    const [currentUserEmail, setCurrentUserEmail] = useState('');
+    const [currentAccountLabel, setCurrentAccountLabel] = useState('현재 로그인 계정');
+    const [verificationCode, setVerificationCode] = useState('');
+    const [isCodeSent, setIsCodeSent] = useState(false);
+    const [verifiedPhone, setVerifiedPhone] = useState('');
+    const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
+    const [existingLoginMessage, setExistingLoginMessage] = useState<string | null>(null);
+    const [sendingCode, setSendingCode] = useState(false);
+    const [verifyingCode, setVerifyingCode] = useState(false);
 
     const { theme, setTheme } = useTheme();
     const router = useRouter();
@@ -35,7 +97,15 @@ export default function UpgradePage() {
                     router.replace('/login');
                     return;
                 }
-                setCurrentUserEmail(session.user.email || '');
+
+                const provider = session.user.app_metadata?.provider as string | undefined;
+                const displayName =
+                    typeof session.user.user_metadata?.full_name === 'string'
+                        ? session.user.user_metadata.full_name
+                        : typeof session.user.user_metadata?.name === 'string'
+                            ? session.user.user_metadata.name
+                            : null;
+                setCurrentAccountLabel(session.user.email || displayName || getProviderLabel(provider));
 
                 // Load existing profile data
                 const { data: profile } = await supabase
@@ -54,7 +124,7 @@ export default function UpgradePage() {
                     // We don't pre-fill church/dept to force them to select consciously, 
                     // unless they really want to keep it. Let's pre-fill if valid.
                     if (profile.church_id) setSelectedChurchId(profile.church_id);
-                    // Note: department fetching will trigger on church_id change
+                    if (profile.department_id) setSelectedDepartmentId(profile.department_id);
                 }
 
                 // Load Churches
@@ -102,10 +172,126 @@ export default function UpgradePage() {
         fetchDepartments();
     }, [selectedChurchId]);
 
+    useEffect(() => {
+        const sanitizedPhone = normalizePhone(phone);
+        if (verifiedPhone && verifiedPhone !== sanitizedPhone) {
+            setVerifiedPhone('');
+            setVerificationCode('');
+            setIsCodeSent(false);
+            setVerificationMessage('휴대폰 번호가 변경되었습니다. 다시 인증해 주세요.');
+            setExistingLoginMessage(null);
+        }
+    }, [phone, verifiedPhone]);
+
+    useEffect(() => {
+        setExistingLoginMessage(null);
+    }, [fullName, selectedChurchId]);
+
+    const checkExistingLogin = async (sanitizedPhone: string) => {
+        if (!fullName.trim() || !selectedChurchId || !sanitizedPhone) return null;
+
+        const { data, error: checkError } = await supabase.rpc('check_admin_existing_login', {
+            p_full_name: fullName.trim(),
+            p_church_id: selectedChurchId,
+            p_phone: sanitizedPhone,
+        });
+
+        if (checkError) throw checkError;
+
+        const result = Array.isArray(data) ? data[0] as ExistingLoginCheck | undefined : null;
+        if (result?.p_exists) {
+            return result.p_message || '이미 가입된 계정이 있습니다. 기존 로그인 방식으로 로그인해 주세요.';
+        }
+
+        return null;
+    };
+
+    const handleSendSms = async () => {
+        const sanitizedPhone = normalizePhone(phone);
+        setError(null);
+        setVerificationMessage(null);
+        setExistingLoginMessage(null);
+
+        if (!sanitizedPhone || sanitizedPhone.length < 10) {
+            setError('올바른 휴대폰 번호를 입력해 주세요.');
+            return;
+        }
+
+        setSendingCode(true);
+        try {
+            const { error: functionError } = await supabase.functions.invoke('send-sms', {
+                body: {
+                    phone: sanitizedPhone,
+                    purpose: 'admin_upgrade',
+                },
+            });
+
+            if (functionError) {
+                throw new Error(await getFunctionErrorMessage(functionError, '인증번호 발송에 실패했습니다.'));
+            }
+
+            setIsCodeSent(true);
+            setVerificationCode('');
+            setVerifiedPhone('');
+            setVerificationMessage('인증번호를 발송했습니다. 3분 안에 입력해 주세요.');
+        } catch (err) {
+            setError(getErrorMessage(err));
+        } finally {
+            setSendingCode(false);
+        }
+    };
+
+    const handleVerifySms = async () => {
+        const sanitizedPhone = normalizePhone(phone);
+        setError(null);
+        setVerificationMessage(null);
+
+        if (!sanitizedPhone || sanitizedPhone.length < 10) {
+            setError('올바른 휴대폰 번호를 입력해 주세요.');
+            return;
+        }
+
+        if (verificationCode.trim().length < 4) {
+            setError('인증번호를 입력해 주세요.');
+            return;
+        }
+
+        setVerifyingCode(true);
+        try {
+            const { error: functionError } = await supabase.functions.invoke('verify-sms', {
+                body: {
+                    phone: sanitizedPhone,
+                    code: verificationCode.trim(),
+                    ...(fullName.trim() ? { fullName: fullName.trim() } : {}),
+                },
+            });
+
+            if (functionError) {
+                throw new Error(await getFunctionErrorMessage(functionError, '인증번호 확인에 실패했습니다.'));
+            }
+
+            setVerifiedPhone(sanitizedPhone);
+            const existingLogin = await checkExistingLogin(sanitizedPhone);
+            if (existingLogin) {
+                setVerifiedPhone('');
+                setExistingLoginMessage(existingLogin);
+                setVerificationMessage(null);
+                return;
+            }
+
+            setVerificationMessage('휴대폰 인증이 완료되었습니다.');
+        } catch (err) {
+            setError(getErrorMessage(err));
+        } finally {
+            setVerifyingCode(false);
+        }
+    };
+
     const handleUpgrade = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError(null);
+        setExistingLoginMessage(null);
 
         if (!selectedChurchId) {
             setError('관리할 교회를 선택해 주세요.');
@@ -119,19 +305,40 @@ export default function UpgradePage() {
             return;
         }
 
-        if (!phone || phone.length < 10) {
+        const sanitizedPhone = normalizePhone(phone);
+
+        if (!sanitizedPhone || sanitizedPhone.length < 10) {
             setError('올바른 휴대폰 번호를 입력해 주세요.');
             setLoading(false);
             return;
         }
 
+        if (verifiedPhone !== sanitizedPhone) {
+            setError('관리자 신청 전에 휴대폰 인증을 완료해 주세요.');
+            setLoading(false);
+            return;
+        }
+
         try {
+            const existingLogin = await checkExistingLogin(sanitizedPhone);
+            if (existingLogin) {
+                setExistingLoginMessage(existingLogin);
+                setLoading(false);
+                return;
+            }
+
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                router.replace('/login');
+                return;
+            }
+
             // Call the RPC to upgrade profile
             const { error: rpcError } = await supabase.rpc('submit_admin_request', {
                 p_full_name: fullName,
                 p_church_id: selectedChurchId,
                 p_department_id: selectedDepartmentId,
-                p_phone: phone
+                p_phone: sanitizedPhone
             });
 
             if (rpcError) throw rpcError;
@@ -139,8 +346,8 @@ export default function UpgradePage() {
             // Success: Sign out and show success message
             await supabase.auth.signOut();
             setSuccess(true);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(getErrorMessage(err));
         } finally {
             setLoading(false);
         }
@@ -219,7 +426,7 @@ export default function UpgradePage() {
                     <div className="space-y-2">
                         <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">관리자 신청</h1>
                         <p className="text-slate-500 dark:text-slate-500 font-bold text-sm tracking-tight text-balance">
-                            이미 <span className="text-indigo-600 dark:text-indigo-400">({currentUserEmail})</span> 계정으로 가입되어 있습니다.<br />관리자 권한을 위해 아래 정보를 확인해 주세요.
+                            <span className="text-indigo-600 dark:text-indigo-400">{currentAccountLabel}</span>으로 관리자 가입을 진행합니다.<br />관리자 권한을 위해 아래 정보를 확인해 주세요.
                         </p>
                     </div>
 
@@ -227,11 +434,11 @@ export default function UpgradePage() {
                         <div className="absolute -right-4 -top-4 w-24 h-24 bg-indigo-600/5 rounded-full blur-2xl transition-all group-hover:scale-150" />
                         <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400">
                             <ShieldCheck className="w-5 h-5" />
-                            <span className="text-xs font-black uppercase tracking-widest">기존 계정 발견</span>
+                            <span className="text-xs font-black uppercase tracking-widest">휴대폰 본인 확인</span>
                         </div>
                         <p className="text-[13px] text-slate-600 dark:text-slate-400 font-bold leading-relaxed">
-                            성도님, 안녕하세요! 이미 앱 계정이 있으시군요.<br />
-                            관리자 시스템을 이용하시려면 추가 정보(교회/부서)를 입력하여 관리자 승인을 요청해 주세요.
+                            입력한 휴대폰 번호로 본인 확인을 완료한 뒤 관리자 권한을 신청합니다.<br />
+                            같은 이름과 인증 번호로 이미 가입된 계정이 있으면 기존 로그인 방식을 안내합니다.
                         </p>
                     </div>
 
@@ -241,6 +448,30 @@ export default function UpgradePage() {
                                 <div className="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-600 dark:text-red-400 text-xs font-black text-center flex items-center justify-center gap-2">
                                     <ShieldCheck className="w-4 h-4" />
                                     {error}
+                                </div>
+                            )}
+
+                            {existingLoginMessage && (
+                                <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-500/20 dark:bg-amber-500/10">
+                                    <div className="flex items-start gap-3">
+                                        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" />
+                                        <div className="space-y-1">
+                                            <p className="text-sm font-black text-amber-900 dark:text-amber-100">기존 계정이 있습니다</p>
+                                            <p className="text-xs font-bold leading-5 text-amber-800 dark:text-amber-200">
+                                                {existingLoginMessage}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            await supabase.auth.signOut();
+                                            router.push('/login');
+                                        }}
+                                        className="w-full rounded-xl bg-amber-900 px-4 py-3 text-xs font-black text-white transition hover:bg-amber-800 dark:bg-amber-300 dark:text-amber-950"
+                                    >
+                                        기존 방식으로 로그인하기
+                                    </button>
                                 </div>
                             )}
 
@@ -262,17 +493,53 @@ export default function UpgradePage() {
 
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] ml-1">휴대폰 번호</label>
-                                    <div className="relative group">
-                                        <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
-                                        <input
-                                            type="tel"
-                                            required
-                                            value={phone}
-                                            onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                                            className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-sm"
-                                            placeholder="01012345678"
-                                        />
+                                    <div className="flex gap-2">
+                                        <div className="relative group flex-1">
+                                            <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
+                                            <input
+                                                type="tel"
+                                                required
+                                                value={phone}
+                                                onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                                                className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-sm"
+                                                placeholder="01012345678"
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleSendSms}
+                                            disabled={sendingCode || loading || normalizePhone(phone).length < 10}
+                                            className="min-w-[112px] px-4 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-black disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                                        >
+                                            {sendingCode ? <Loader2 className="w-4 h-4 animate-spin" /> : verifiedPhone === normalizePhone(phone) ? '인증 완료' : isCodeSent ? '재발송' : '인증요청'}
+                                        </button>
                                     </div>
+                                    {isCodeSent && verifiedPhone !== normalizePhone(phone) && (
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                inputMode="numeric"
+                                                value={verificationCode}
+                                                onChange={(e) => setVerificationCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                                                className="flex-1 px-5 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-sm"
+                                                placeholder="인증번호 6자리"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handleVerifySms}
+                                                disabled={verifyingCode || verificationCode.length < 4}
+                                                className="min-w-[112px] px-4 rounded-2xl bg-indigo-600 text-white text-xs font-black disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                                            >
+                                                {verifyingCode ? <Loader2 className="w-4 h-4 animate-spin" /> : '확인'}
+                                            </button>
+                                        </div>
+                                    )}
+                                    {verificationMessage && (
+                                        <p className={`text-xs font-bold ml-1 ${verifiedPhone === normalizePhone(phone) ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                                            {verificationMessage}
+                                            {normalizePhone(phone) === '01000000000' && verifiedPhone !== normalizePhone(phone) ? ' 테스트 번호 인증번호는 123456입니다.' : ''}
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="space-y-2">
@@ -322,7 +589,7 @@ export default function UpgradePage() {
 
                             <button
                                 type="submit"
-                                disabled={loading}
+                                disabled={loading || verifiedPhone !== normalizePhone(phone)}
                                 className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600"
                             >
                                 {loading ? (

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
+import 'package:grace_note/features/admin/presentation/widgets/effective_week_picker_field.dart';
+import 'package:grace_note/features/admin/presentation/widgets/move_group_effective_week.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' hide DateFormat;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdminMemberDetailScreen extends ConsumerStatefulWidget {
@@ -553,8 +555,10 @@ class _AdminMemberDetailScreenState
     );
   }
 
-  void _showMoveGroupDialog() {
-    showDialog(
+  Future<void> _showMoveGroupDialog() async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final movedGroupName = await showDialog<String>(
       context: context,
       builder: (context) => _MoveGroupDialog(
         departmentId: widget.departmentId,
@@ -563,6 +567,13 @@ class _AdminMemberDetailScreenState
         directoryMemberId: widget.directoryMemberId,
         memberFullName: widget.fullName,
       ),
+    );
+
+    if (!mounted || movedGroupName == null) return;
+
+    await navigator.maybePop();
+    messenger.showSnackBar(
+      SnackBar(content: Text('$movedGroupName로 이동되었습니다.')),
     );
   }
 }
@@ -591,6 +602,87 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
   String? _selectedGroupId;
   bool _isSaving = false;
   String _groupSearchQuery = '';
+  late DateTime _effectiveWeekDate;
+  DateTime? _seasonStartWeek;
+  DateTime? _seasonEndWeek;
+  bool _seasonBoundsLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _effectiveWeekDate = weekStart(now);
+    _loadCurrentSeasonBounds();
+  }
+
+  Future<void> _loadCurrentSeasonBounds() async {
+    try {
+      final season = await ref
+          .read(repositoryProvider)
+          .getRegroupingSeasonForWeek(widget.departmentId, DateTime.now());
+      if (!mounted) return;
+
+      final seasonStart = parseWeekDateText(season?['effective_week_date']);
+      final seasonEnd = parseWeekDateText(season?['end_week_date']);
+
+      setState(() {
+        _seasonStartWeek = seasonStart;
+        _seasonEndWeek = seasonEnd;
+        _effectiveWeekDate = resolveMoveEffectiveWeek(
+          requestedWeek: _effectiveWeekDate,
+          seasonStartWeek: _seasonStartWeek,
+          seasonEndWeek: _seasonEndWeek,
+          currentWeek: DateTime.now(),
+        );
+        _seasonBoundsLoaded = true;
+      });
+    } catch (e) {
+      debugPrint('MoveGroupDialog: current season bounds read failed: $e');
+      if (!mounted) return;
+      setState(() => _seasonBoundsLoaded = true);
+    }
+  }
+
+  DateTime _datePickerLastDate() {
+    final fallbackLastDate = DateTime.now().add(const Duration(days: 365));
+    final firstDate = _seasonStartWeek ?? DateTime(2020);
+    final currentWeek = weekStart(DateTime.now());
+    var lastDate = _seasonEndWeek ?? fallbackLastDate;
+    if (currentWeek.isBefore(lastDate)) {
+      lastDate = currentWeek;
+    }
+    return lastDate.isBefore(firstDate) ? firstDate : lastDate;
+  }
+
+  Future<void> _pickEffectiveWeek() async {
+    final firstDate = _seasonStartWeek ?? DateTime(2020);
+    final lastDate = _datePickerLastDate();
+    final initialDate = resolveMoveEffectiveWeek(
+      requestedWeek: _effectiveWeekDate,
+      seasonStartWeek: firstDate,
+      seasonEndWeek: lastDate,
+      currentWeek: DateTime.now(),
+    );
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      helpText: '적용 시작 주차 선택',
+      locale: const Locale('ko', 'KR'),
+      selectableDayPredicate: (date) => date.weekday == DateTime.sunday,
+    );
+    if (picked != null) {
+      setState(() {
+        _effectiveWeekDate = resolveMoveEffectiveWeek(
+          requestedWeek: picked,
+          seasonStartWeek: _seasonStartWeek,
+          seasonEndWeek: _seasonEndWeek,
+          currentWeek: DateTime.now(),
+        );
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -727,6 +819,20 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
               loading: () => Center(child: ShadcnSpinner()),
               error: (e, _) => Text('조 목록 로딩 실패: $e'),
             ),
+            const SizedBox(height: 18),
+            const Text('적용 시작 주차',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textSub,
+                    fontFamily: 'Pretendard',
+                    letterSpacing: -0.2)),
+            const SizedBox(height: 10),
+            EffectiveWeekPickerField(
+              effectiveWeekDate: _effectiveWeekDate,
+              enabled: !_isSaving && _seasonBoundsLoaded,
+              onTap: _pickEffectiveWeek,
+            ),
           ],
         ),
       ),
@@ -738,7 +844,10 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
                   TextStyle(color: AppTheme.textSub, fontFamily: 'Pretendard')),
         ),
         ShadButton(
-          onPressed: _isSaving || _selectedGroupId == null ? null : _save,
+          onPressed:
+              _isSaving || _selectedGroupId == null || !_seasonBoundsLoaded
+                  ? null
+                  : _save,
           child: _isSaving
               ? SizedBox(
                   width: 16,
@@ -767,26 +876,23 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
           .single();
 
       final String? profileId = memberRes['profile_id'];
-      final String churchId = memberRes['church_id'];
 
-      if (profileId != null) {
-        // 2-A. 프로필이 있는 경우: completeOnboarding 등으로 전체 업데이트
-        await repo.completeOnboarding(
-          profileId: profileId,
-          fullName: memberRes['full_name'],
-          churchId: churchId,
-          groupId: _selectedGroupId,
-        );
-      }
-
-      // 2-B. Directory 정보 업데이트
       final groups =
           await ref.read(departmentGroupsProvider(widget.departmentId).future);
       final targetGroup = groups.firstWhere((g) => g['id'] == _selectedGroupId);
+      final effectiveWeekDate = resolveMoveEffectiveWeek(
+        requestedWeek: _effectiveWeekDate,
+        seasonStartWeek: _seasonStartWeek,
+        seasonEndWeek: _seasonEndWeek,
+        currentWeek: DateTime.now(),
+      );
 
-      await repo.updateDirectoryMember(widget.directoryMemberId, {
-        'group_name': targetGroup['name'],
-      });
+      await repo.moveDirectoryMemberToGroup(
+        memberDirectoryId: widget.directoryMemberId,
+        sourceGroupId: widget.currentGroupId,
+        targetGroupId: _selectedGroupId!,
+        effectiveWeekDate: effectiveWeekDate,
+      );
 
       // Refresh providers — invalidate both old and new group member lists
       ref.invalidate(departmentGroupsProvider(widget.departmentId));
@@ -795,11 +901,7 @@ class _MoveGroupDialogState extends ConsumerState<_MoveGroupDialog> {
       if (profileId != null) ref.invalidate(userProfileProvider);
 
       if (mounted) {
-        Navigator.pop(context); // Close dialog
-        Navigator.pop(context); // Go back
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${targetGroup['name']}로 이동되었습니다.')),
-        );
+        Navigator.of(context).pop(targetGroup['name']?.toString() ?? '선택한 조');
       }
     } catch (e) {
       if (mounted) {

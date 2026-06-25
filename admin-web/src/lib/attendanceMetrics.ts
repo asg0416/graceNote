@@ -214,14 +214,10 @@ export const buildAttendanceTargetExplanation = (
     return details;
   }
 
-  details.push(`주차 기준 active person ${metrics.activeWindowPeople}명`);
-
-  if (metrics.snapshotPeople > 0) {
-    details.push(`출석 기록에 포함된 person ${metrics.snapshotPeople}명`);
-  }
+  details.push(`선택 주차 조편성 대상 ${metrics.activeWindowPeople}명`);
 
   if (metrics.usedRetroactiveBackfill) {
-    details.push(`과거 입력 보정으로 현재 active roster ${metrics.backfilledPeople}명 추가 반영`);
+    details.push(`과거 입력 보정으로 현재 명부 ${metrics.backfilledPeople}명 추가 반영`);
   }
 
   return details;

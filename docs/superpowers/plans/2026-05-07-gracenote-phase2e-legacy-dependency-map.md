@@ -68,11 +68,42 @@ Phase 2E는 legacy 테이블을 바로 삭제하는 단계가 아니다.
 2. fresh DB 또는 운영 복제본에서 migration 전체 dry-run을 실행한다.
 3. 운영 복제본 데이터 감사 패키지를 실행한다:
    - `preprod_data_audit_summary_2026-05-15.sql`
+   - `preprod_identity_link_audit_2026-05-22.sql`
    - `preprod_auto_repair_candidates_2026-05-15.sql`
    - `preprod_manual_review_candidates_2026-05-15.sql`
-4. 운영 전 필수 gate를 한 번에 실행한다: Phase 2 summary, attendance/prayer snapshot, attendance roster snapshot integrity, edge notification targets.
-5. role별 smoke를 실행한다: master/admin/leader/member, admin-web/Flutter, 성도 추가/수정/비활성/복구, 조편성 저장, 출석/기도 저장.
-6. legacy FK 제거 계획은 별도 Phase 4로 둔다. 지금 운영 후보는 “person source-of-truth + legacy compatibility” 구조다.
+   - `preprod_identity_link_candidates_2026-05-22.sql`
+4. `auto_repair_candidate`가 있으면 dev/staging/운영 복제본에서만 승인된 repair를 실행한다:
+   - identity link repair: `node scripts/preprod-identity-repair-psql.mjs --db-url-file <clone-url-file> --apply-auto-repair`
+   - membership state repair: `node scripts/preprod-membership-state-repair-psql.mjs --db-url-file <clone-url-file> --apply-auto-repair`
+   - repair 후 `scripts/preprod-data-audit-psql.mjs`를 다시 실행해 `blocking_gate=0`과 auto-repair count 감소를 확인한다.
+   - 알려진 운영 DB ref는 기본적으로 repair runner가 거부한다. 운영 직접 실행은 별도 maintenance window와 명시 승인 없이는 금지한다.
+5. 운영 전 필수 gate를 한 번에 실행한다: Phase 2 summary, attendance/prayer snapshot, attendance roster snapshot integrity, edge notification targets.
+6. role별 smoke를 실행한다: master/admin/leader/member, admin-web/Flutter, 성도 추가/수정/비활성/복구, 조편성 저장, 출석/기도 저장.
+7. legacy FK 제거 계획은 별도 Phase 4로 둔다. 지금 운영 후보는 “person source-of-truth + legacy compatibility” 구조다.
+
+## Identity Link Repair Policy
+
+운영 적용 전 identity/link 문제는 다음 기준으로 분리한다.
+
+| Pattern | Handling | Reason |
+| --- | --- | --- |
+| `auth.users`가 있는데 `profiles.id = auth.users.id`가 없음 | `blocking_gate` | 앱 로그인/온보딩/권한 메뉴가 깨질 수 있어 운영 전 0이어야 함 |
+| email이 같은 orphan profile이 있고 auth uid profile이 없음 | `auto_repair_candidate` | source profile을 auth uid로 복사하고 같은 교회 reference만 옮길 수 있음 |
+| email이 같지만 auth uid profile이 이미 있음 | `manual_review` | 두 profile 중 어느 쪽이 진짜 소유자인지 자동 판단 불가 |
+| 다른 교회 profile_id가 `member_directory`/`member_profiles`/`group_members`/`people.primary_profile_id`에 붙음 | `auto_repair_candidate` | 다른 교회 profile link는 항상 잘못된 소유권이므로 profile link만 detach. 사람 병합은 하지 않음 |
+| 같은 교회 같은 이름/전화번호 다중 person | `manual_review` | 부부/동명이인/테스트 데이터 가능성이 있어 자동 병합 금지 |
+| `member_profiles.person_id`와 `profiles.person_id`가 다름 | `manual_review` | 같은 교회 내부에서도 실제 계정 소유자 확인이 필요함 |
+
+## Membership State Repair Policy
+
+운영 적용 전 소속 상태 문제는 “active membership이 비활성 source를 가리키지 않는다”를 기준으로 처리한다.
+
+| Pattern | Handling | Reason |
+| --- | --- | --- |
+| inactive `member_directory` row에 active membership이 남음 | `auto_repair_candidate` 후 membership 종료 | 비활성 성도가 person 구조에서 다시 active로 보이면 안 됨 |
+| inactive `group_members` row에 active membership이 남음 | `auto_repair_candidate` 후 membership 종료 | legacy 조 배정과 memberships가 서로 다른 active 상태를 만들면 조편성/명부가 흔들림 |
+| inactive group/department를 active membership이 가리킴 | `auto_repair_candidate` 후 membership 종료 | 삭제/비활성 조직은 현재 소속으로 노출되면 안 됨 |
+| 같은 사람/이름/전화번호 병합 필요 | `manual_review` | 실제 동일인 여부를 자동 판단하지 않음 |
 
 ## Attendance Snapshot Dependency
 
@@ -122,7 +153,7 @@ docs/superpowers/specs/2026-05-08-gracenote-attendance-roster-snapshot-design.md
 | Edge function smoke | 알림 대상 read-switch는 dev 함수 dry-run까지 확인됨 | 운영 전 prod env vars, scheduled trigger, 실제 FCM 발송 권한만 재확인 |
 | Attendance history/snapshot integrity | 삭제 조 과거 출석, unlinked attendance row, submitted attendance snapshot 반영은 운영 데이터에서 새로 드러날 수 있음 | `verify_attendance_roster_snapshot_integrity_dev_2026-05-15.sql`와 `verify_attendance_unlinked_rows_detail_dev_2026-05-16.sql` 실행. unlinked rows/detail이 있으면 운영 반영 전 cleanup 또는 수동 연결 |
 | Edge profile ownership integrity | 운영 데이터에도 stale `group_members.profile_id` 또는 `member_profiles.profile_id`가 있을 수 있음 | `verify_phase2d_edge_notification_targets_dev_2026-05-09.sql` all 0. profile이 다른 person으로 명시 연결된 경우 알림 대상에서 제외 |
-| Preprod data audit | dev에서 발견한 legacy/person drift 패턴을 운영 복제본에서 사전 탐지해야 함 | `preprod_data_audit_summary_2026-05-15.sql` 실행. `blocking_gate=0`, `auto_repair_candidate`는 승인된 repair SQL 작성, `manual_review`는 자동 수정 금지 |
+| Preprod data audit | dev에서 발견한 legacy/person drift 패턴을 운영 복제본에서 사전 탐지해야 함 | `preprod_data_audit_summary_2026-05-15.sql`, `preprod_identity_link_audit_2026-05-22.sql` 실행. `blocking_gate=0`, `auto_repair_candidate`는 승인된 repair SQL 작성, `manual_review`는 자동 수정 금지 |
 | Role-based app/admin smoke | 권한별 메뉴가 다르므로 한 계정 smoke만으로 부족 | master/admin/leader/member 체크리스트 수행 |
 | Legacy cleanup decision | legacy 테이블 삭제는 아직 위험 | 운영 1차에서는 삭제 금지. 이후 Phase 4에서 FK/backfill/report 영향 재설계 |
 

@@ -1,5 +1,3 @@
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -7,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../firebase_options.dart';
 import 'package:grace_note/features/home/presentation/screens/notice_list_screen.dart';
+import 'package:grace_note/core/services/web_push_runtime.dart';
 
 /// Push 알림 서비스
 /// - Firebase 초기화
@@ -14,11 +13,13 @@ import 'package:grace_note/features/home/presentation/screens/notice_list_screen
 /// - FCM 토큰 획득 및 Supabase 저장
 /// - 포그라운드 메시지 수신 처리
 class PushNotificationService {
-  static final PushNotificationService _instance = PushNotificationService._internal();
+  static final PushNotificationService _instance =
+      PushNotificationService._internal();
   factory PushNotificationService() => _instance;
   PushNotificationService._internal();
 
-  static const String _vapidKey = 'BKs48C2r24xErHWw892q9JK7IQbBY4fkcI_yEPSpZVWNR10iOz5sdCrYOVT1s0WJs2JgnDwQ-yrVM4Q2WaDUOvo';
+  static const String _vapidKey =
+      'BKs48C2r24xErHWw892q9JK7IQbBY4fkcI_yEPSpZVWNR10iOz5sdCrYOVT1s0WJs2JgnDwQ-yrVM4Q2WaDUOvo';
 
   bool _initialized = false;
   String? _currentToken;
@@ -76,10 +77,12 @@ class PushNotificationService {
         debugPrint('PushNotificationService: Permission granted');
 
         // 2. FCM 토큰 획득 (Service Worker 업데이트 후 새 토큰이 발급됐을 수 있음)
-        final token = await FirebaseMessaging.instance.getToken(vapidKey: _vapidKey);
+        final token =
+            await FirebaseMessaging.instance.getToken(vapidKey: _vapidKey);
         if (token != null) {
           _currentToken = token;
-          debugPrint('PushNotificationService: Token acquired (${token.substring(0, 20)}...)');
+          debugPrint(
+              'PushNotificationService: Token acquired (${token.substring(0, 20)}...)');
 
           // 3. Supabase에 토큰 저장 (항상 upsert → 배포 후 토큰 갱신 대응)
           await _saveTokenToSupabase(token);
@@ -87,7 +90,8 @@ class PushNotificationService {
           // 4. 토큰 갱신 리스너 (런타임 중 FCM이 토큰을 교체하는 경우 대응)
           FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
             _currentToken = newToken;
-            debugPrint('PushNotificationService: Token refreshed, updating DB...');
+            debugPrint(
+                'PushNotificationService: Token refreshed, updating DB...');
             _saveTokenToSupabase(newToken);
           });
 
@@ -107,12 +111,13 @@ class PushNotificationService {
     try {
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId == null) {
-        debugPrint('PushNotificationService: No user logged in, skipping token save');
+        debugPrint(
+            'PushNotificationService: No user logged in, skipping token save');
         return;
       }
 
       // 브라우저 정보
-      final userAgent = html.window.navigator.userAgent;
+      final userAgent = getBrowserUserAgent();
       final deviceInfo = _parseDeviceInfo(userAgent);
 
       // 같은 토큰이 다른 사용자에게 등록되어 있으면 삭제 (기기 전환 대응)
@@ -158,11 +163,8 @@ class PushNotificationService {
   /// Service Worker 등록
   Future<void> _registerServiceWorker() async {
     try {
-      final sw = html.window.navigator.serviceWorker;
-      if (sw != null) {
-        await sw.register('/firebase-messaging-sw.js');
-        debugPrint('PushNotificationService: Service worker registered');
-      }
+      await registerBrowserServiceWorker('/firebase-messaging-sw.js');
+      debugPrint('PushNotificationService: Service worker registered');
     } catch (e) {
       debugPrint('PushNotificationService: SW registration error: $e');
     }
@@ -179,7 +181,11 @@ class PushNotificationService {
 
     if (title.isNotEmpty) {
       try {
-        html.Notification(title, body: body, icon: '/icons/Icon-192.png');
+        showBrowserNotification(
+          title,
+          body: body,
+          icon: '/icons/Icon-192.png',
+        );
       } catch (e) {
         debugPrint('PushNotificationService: Notification display error: $e');
       }
@@ -189,20 +195,12 @@ class PushNotificationService {
   /// Service Worker에서 알림 클릭 메시지 수신
   void _listenForNotificationClicks() {
     try {
-      final sw = html.window.navigator.serviceWorker;
-      if (sw != null) {
-        sw.onMessage.listen((event) {
-          final data = event.data;
-          if (data is Map && data['type'] == 'notification_click') {
-            final link = data['link'] as String?;
-            if (link != null) {
-              debugPrint('PushNotificationService: Deep link from notification: $link');
-              _handleDeepLink(link);
-            }
-          }
-        });
-        debugPrint('PushNotificationService: SW message listener registered');
-      }
+      listenForBrowserServiceWorkerMessages((link) {
+        debugPrint(
+            'PushNotificationService: Deep link from notification: $link');
+        _handleDeepLink(link);
+      });
+      debugPrint('PushNotificationService: SW message listener registered');
     } catch (e) {
       debugPrint('PushNotificationService: SW message listener error: $e');
     }
@@ -211,12 +209,12 @@ class PushNotificationService {
   /// 앱 시작 시 URL의 deeplink 쿼리 파라미터 확인 (새 창으로 열린 경우)
   void checkInitialDeepLink() {
     try {
-      final uri = Uri.parse(html.window.location.href);
+      final uri = Uri.parse(getBrowserLocationHref());
       final deeplink = uri.queryParameters['deeplink'];
       if (deeplink != null && deeplink.isNotEmpty) {
         debugPrint('PushNotificationService: Initial deep link: $deeplink');
         // URL에서 deeplink 파라미터 제거
-        html.window.history.replaceState(null, '', '/');
+        replaceBrowserHistoryUrl('/');
         // 앱 로딩 완료 후 네비게이션
         Future.delayed(const Duration(milliseconds: 800), () {
           _handleDeepLink(deeplink);

@@ -123,14 +123,29 @@ export const saveRegroupingMemberships = async (
         departmentId: string;
         groups: Array<Record<string, unknown>>;
         assignments: Array<Record<string, unknown>>;
+        effectiveWeekDate?: string | null;
     }
 ) => {
-    const { data, error } = await supabase.rpc('save_regrouping_memberships', {
+    const baseParams = {
         p_church_id: payload.churchId,
         p_department_id: payload.departmentId,
         p_groups: payload.groups,
         p_assignments: payload.assignments,
+    };
+
+    const firstAttempt = await supabase.rpc('save_regrouping_memberships', {
+        ...baseParams,
+        ...(payload.effectiveWeekDate ? { p_effective_week_date: payload.effectiveWeekDate } : {}),
     });
+
+    const shouldFallbackToLegacyRpc =
+        firstAttempt.error &&
+        payload.effectiveWeekDate &&
+        /function|schema cache|p_effective_week_date|PGRST202/i.test(firstAttempt.error.message || '');
+
+    const { data, error } = shouldFallbackToLegacyRpc
+        ? await supabase.rpc('save_regrouping_memberships', baseParams)
+        : firstAttempt;
 
     if (error) {
         throw new Error(error.message || '조편성 저장 RPC 실행에 실패했습니다.');

@@ -6,6 +6,7 @@ import 'package:grace_note/core/models/models.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
+import 'package:grace_note/core/widgets/season_context_chip.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
 
 class DepartmentAttendanceDashboardScreen extends ConsumerStatefulWidget {
@@ -75,6 +76,15 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
       for (final d in noMeetingList)
         '${d.weekDate.year}-${d.weekDate.month.toString().padLeft(2, '0')}-${d.weekDate.day.toString().padLeft(2, '0')}'
     };
+    final activeWeek = history.isNotEmpty
+        ? history.firstWhere(
+            (h) => h['week_id'] == (_selectedWeekId ?? history.first['week_id']),
+            orElse: () => history.first,
+          )
+        : null;
+    final activeWeekDate = activeWeek == null
+        ? null
+        : DateTime.tryParse(activeWeek['week_date']?.toString() ?? '');
 
     // [FIX] 에러 발생 시 사용자에게 노출하지 않고 3초 후 자동 재시도
     if (historyAsync.hasError && !historyAsync.isLoading) {
@@ -92,6 +102,15 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          if (activeWeekDate != null && widget.departmentId.isNotEmpty)
+            SeasonContextChip(
+              departmentId: widget.departmentId,
+              weekDate: activeWeekDate,
+              iconOnly: true,
+              margin: const EdgeInsets.only(right: 12),
+            ),
+        ],
       ),
       body: Column(
         children: [

@@ -54,6 +54,128 @@ const formatShortDate = (value?: string | null) => {
     return value.slice(0, 10).replaceAll('-', '. ');
 };
 
+const getDateValue = (value?: string | null) => {
+    if (!value) return null;
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) ? time : null;
+};
+
+const isAfterDate = (left?: string | null, right?: string | null) => {
+    const leftValue = getDateValue(left);
+    const rightValue = getDateValue(right);
+    if (leftValue === null || rightValue === null) return false;
+    return leftValue > rightValue;
+};
+
+const maxDateText = (...values: Array<string | null | undefined>) => {
+    const validValues = values
+        .filter((value): value is string => Boolean(value))
+        .sort((left, right) => (getDateValue(right) ?? 0) - (getDateValue(left) ?? 0));
+
+    return validValues[0] || null;
+};
+
+const minDateText = (...values: Array<string | null | undefined>) => {
+    const validValues = values
+        .filter((value): value is string => Boolean(value))
+        .sort((left, right) => (getDateValue(left) ?? 0) - (getDateValue(right) ?? 0));
+
+    return validValues[0] || null;
+};
+
+const clampMembershipToGroupPeriod = (membership: any) => {
+    const startsAt = maxDateText(membership.starts_at, membership.groups?.active_from);
+    const endsAt = minDateText(membership.ends_at, membership.groups?.ended_at);
+
+    if (startsAt && endsAt && isAfterDate(startsAt, endsAt)) {
+        return null;
+    }
+
+    return {
+        ...membership,
+        starts_at: startsAt || membership.starts_at,
+        ends_at: endsAt || membership.ends_at,
+    };
+};
+
+const isMembershipActiveToday = (membership: any) => {
+    if (membership.status !== 'active') return false;
+
+    const today = new Date();
+    const todayText = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const effective = clampMembershipToGroupPeriod(membership);
+    if (!effective) return false;
+
+    const startsAt = effective.starts_at;
+    const endsAt = effective.ends_at;
+    if (startsAt && isAfterDate(startsAt, todayText)) return false;
+    if (endsAt && isAfterDate(todayText, endsAt)) return false;
+    return true;
+};
+
+const getMembershipHistoryKey = (membership: any) => [
+    membership.departments?.name || '부서 없음',
+    membership.groups?.name || '조 미배정',
+    membership.role || 'member',
+    membership.status || 'history',
+].join('|');
+
+const rangesOverlapOrTouch = (left: any, right: any) => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const leftStart = getDateValue(left.starts_at) ?? 0;
+    const rightStart = getDateValue(right.starts_at) ?? 0;
+    const leftEnd = getDateValue(left.ends_at) ?? leftStart;
+    const rightEnd = getDateValue(right.ends_at) ?? rightStart;
+
+    return rightStart <= leftEnd + dayMs && rightEnd + dayMs >= leftStart;
+};
+
+const consolidateHistoricalMemberships = (memberships: any[]) => {
+    const sorted = memberships
+        .map(clampMembershipToGroupPeriod)
+        .filter((membership): membership is any => Boolean(membership))
+        .sort((left, right) => {
+            const leftStart = getDateValue(left.starts_at) ?? 0;
+            const rightStart = getDateValue(right.starts_at) ?? 0;
+            if (leftStart !== rightStart) return leftStart - rightStart;
+            return String(left.id || '').localeCompare(String(right.id || ''));
+        });
+
+    const consolidated: any[] = [];
+
+    sorted.forEach((membership) => {
+        const key = getMembershipHistoryKey(membership);
+        const existing = consolidated.find((item) => (
+            item.__historyKey === key && rangesOverlapOrTouch(item, membership)
+        ));
+
+        if (!existing) {
+            consolidated.push({ ...membership, __historyKey: key });
+            return;
+        }
+
+        const existingStart = getDateValue(existing.starts_at);
+        const incomingStart = getDateValue(membership.starts_at);
+        const existingEnd = getDateValue(existing.ends_at);
+        const incomingEnd = getDateValue(membership.ends_at);
+
+        if (incomingStart !== null && (existingStart === null || incomingStart < existingStart)) {
+            existing.starts_at = membership.starts_at;
+        }
+
+        if (incomingEnd !== null && (existingEnd === null || incomingEnd > existingEnd)) {
+            existing.ends_at = membership.ends_at;
+        }
+    });
+
+    return consolidated
+        .sort((left, right) => {
+            const leftStart = getDateValue(left.starts_at) ?? 0;
+            const rightStart = getDateValue(right.starts_at) ?? 0;
+            return rightStart - leftStart;
+        });
+};
+
 export default function MemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const [loading, setLoading] = useState(true);
@@ -205,7 +327,7 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
                                 .order('created_at', { ascending: true }),
                             supabase
                                 .from('memberships')
-                                .select('id, role, status, starts_at, ends_at, legacy_group_member_id, legacy_member_directory_id, departments!department_id(name, color_hex), groups!group_id(name, color_hex)')
+                                .select('id, role, status, starts_at, ends_at, legacy_group_member_id, legacy_member_directory_id, departments!department_id(name, color_hex), groups!group_id(name, color_hex, active_from, ended_at, is_active)')
                                 .eq('person_id', personId)
                                 .eq('church_id', memberData.church_id)
                                 .order('starts_at', { ascending: false })
@@ -496,8 +618,10 @@ export default function MemberDetailPage({ params }: { params: Promise<{ id: str
     }
 
     const phase2Memberships = phase2Data?.memberships || [];
-    const phase2ActiveAffiliations = phase2Memberships.filter((membership: any) => membership.status === 'active');
-    const phase2HistoricalAffiliations = phase2Memberships.filter((membership: any) => membership.status !== 'active');
+    const phase2ActiveAffiliations = phase2Memberships.filter(isMembershipActiveToday);
+    const phase2HistoricalAffiliations = consolidateHistoricalMemberships(
+        phase2Memberships.filter((membership: any) => !isMembershipActiveToday(membership))
+    );
     const linkedProfileCount = phase2Data?.memberProfiles?.filter((mp: any) => mp.profile_id).length || 0;
     const legacyAffiliations = member._affiliations?.length > 0 ? member._affiliations : [member];
     const usesPhase2Affiliations = Boolean(phase2Data?.person);
