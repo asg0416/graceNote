@@ -42,6 +42,7 @@ phase2_leader_profiles as (
     on p.id = mp.profile_id
    and (p.person_id is null or p.person_id = mp.person_id)
   where m.status = 'active'
+    and m.group_id is not null
     and m.role = 'leader'
     and (
       mp.member_directory_id = m.legacy_member_directory_id
@@ -91,6 +92,7 @@ phase2_active_profiles as (
     on p.id = mp.profile_id
    and (p.person_id is null or p.person_id = mp.person_id)
   where m.status = 'active'
+    and m.group_id is not null
     and (
       mp.member_directory_id = m.legacy_member_directory_id
       or (

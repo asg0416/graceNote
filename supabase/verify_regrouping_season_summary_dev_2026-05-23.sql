@@ -57,7 +57,7 @@ from pg_policies
 where schemaname = 'public';
 
 select 'regrouping_season_functions_missing' as check_name,
-  case when count(*) filter (
+  case when count(distinct proname) filter (
     where proname in (
       'create_regrouping_season',
       'save_regrouping_season_draft',
@@ -128,7 +128,9 @@ select
   tp.source_membership_id,
   tp.source_member_directory_id,
   (current_date - extract(dow from current_date)::integer)::date as current_week_date,
-  ((current_date - extract(dow from current_date)::integer)::date + interval '28 days')::date as future_week_date
+  (current_date - extract(dow from current_date)::integer)::date as current_end_week_date,
+  ((current_date - extract(dow from current_date)::integer)::date + interval '28 days')::date as future_week_date,
+  ((current_date - extract(dow from current_date)::integer)::date + interval '28 days')::date as future_end_week_date
 from target_department td
 cross join auth_context
 cross join target_person tp;
@@ -166,7 +168,8 @@ select
     church_id,
     department_id,
     'verify summary future regrouping draft',
-    future_week_date
+    future_week_date,
+    future_end_week_date
   )
 from pg_temp.verify_regrouping_summary_target;
 
@@ -205,7 +208,8 @@ begin
   perform public.update_regrouping_season(
     (select season_id from pg_temp.verify_regrouping_summary_seasons where label = 'future'),
     'verify summary future regrouping draft updated',
-    (select future_week_date from pg_temp.verify_regrouping_summary_target)
+    (select future_week_date from pg_temp.verify_regrouping_summary_target),
+    (select future_end_week_date from pg_temp.verify_regrouping_summary_target)
   );
 end;
 $$;
@@ -244,7 +248,8 @@ select
     church_id,
     department_id,
     'verify summary current regrouping apply',
-    current_week_date
+    current_week_date,
+    current_end_week_date
   )
 from pg_temp.verify_regrouping_summary_target;
 
@@ -283,7 +288,8 @@ begin
   perform public.update_regrouping_season(
     (select season_id from pg_temp.verify_regrouping_summary_seasons where label = 'current'),
     'verify summary current regrouping apply updated',
-    (select current_week_date from pg_temp.verify_regrouping_summary_target)
+    (select current_week_date from pg_temp.verify_regrouping_summary_target),
+    (select current_end_week_date from pg_temp.verify_regrouping_summary_target)
   );
 
   perform public.apply_regrouping_season(

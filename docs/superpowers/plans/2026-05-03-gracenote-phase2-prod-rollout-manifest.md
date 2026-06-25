@@ -213,8 +213,9 @@ Preprod data audit package:
 | 90 | `supabase/migrations/20260624045725_clamp_group_move_starts_to_current_week.sql` | 조 이동 시작 주차를 현재 주차 이전으로 내려가지 않게 보정 | 미래/과거 범위 오입력으로 출석 대상이 깨지지 않음 |
 | 91 | `supabase/migrations/20260624062000_secure_regrouping_write_rpcs.sql` | 조편성 write RPC 실행 권한과 내부 권한 확인 보강 | anon 실행 차단, authenticated/admin 권한 smoke |
 | 92 | `supabase/migrations/20260624071000_allow_pending_regrouping_season_delete.sql` | pending/초안 시즌 삭제 허용 범위 보정 | 초안 삭제 가능, applied/live 시즌 오삭제 차단 |
+| 93 | `supabase/migrations/20260625053000_prod_attendance_group_active_period_repair.sql` | 기존 출석 기록이 조 `active_from`보다 앞선 운영 데이터 보정 | `attendance_rows_group_outside_active_period = 0` |
 
-주의: 22~92는 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다. 현재 운영 DB는 Supabase migration history 기준 49번(`20260517002000`)까지 적용되어 있으므로, 이번 운영 반영의 DB 후보는 50~92다.
+주의: 22~93은 현재 dev 기준 운영 후보지만, 운영 DB에 바로 `db push`하지 않는다. 운영 적용 전 fresh DB 또는 운영 복제본에서 위 순서대로 dry-run하고, 아래 “Prod Execution Gates”를 통과해야 한다. 현재 운영 DB는 Supabase migration history 기준 92번(`20260624071000`)까지 적용되어 있으므로, 이번 추가 보정 후보는 93번이다.
 
 ## Hard Delete Gate
 
@@ -238,7 +239,7 @@ Phase 2 운영 반영 전에는 hard delete 전수조사에서 `P0`로 분류된
 
 | Category | Files | Prod Rule |
 | --- | --- | --- |
-| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260624071000_*` | 운영 적용 후보. 운영 DB는 20260517002000까지 적용되어 있어 이번 추가 반영 후보는 20260519000000~20260624071000 |
+| DB prod candidates | `supabase/migrations/20260430010000_*` ~ `20260625053000_*` | 운영 적용 후보. 운영 DB는 20260624071000까지 적용되어 있어 이번 추가 보정 후보는 20260625053000 |
 | DB already prod-applied candidates | `20260429000000_phase1_fk_guardrails.sql`, `20260430000000_phase1_5_directory_member_guardrails.sql` | 운영 적용 완료 상태와 실제 schema 재확인 후 중복 적용 금지 |
 | Admin UI prod candidates | `admin-web/src/app/churches/page.tsx`, `admin-web/src/app/departments/page.tsx`, `admin-web/src/app/regrouping/page.tsx`, `admin-web/src/app/members/page.tsx`, `admin-web/src/app/members/[id]/page.tsx`, `admin-web/src/app/archive/page.tsx`, `admin-web/src/app/attendance/page.tsx`, `admin-web/src/app/page.tsx`, `admin-web/src/components/MemberModal.tsx`, `admin-web/src/components/SmartBatchModal.tsx`, `admin-web/src/components/Sidebar.tsx`, `admin-web/src/components/MemberBadge.tsx`, `admin-web/src/components/kanban/KanbanColumn.tsx`, `admin-web/src/components/RichTextEditor.tsx` | person 구조 read/write, 비활성 관리, 조편성, 출석 snapshot, UI polish 운영 후보. 운영 배포 전 role별 UI smoke 필요 |
 | Admin active-filter candidates | `admin-web/src/app/in-app-messages/IamForm.tsx`, `admin-web/src/app/notices/NoticeForm.tsx` | inactive 부서/조 노출 방지. 기존 화면 회귀 확인 필요 |
