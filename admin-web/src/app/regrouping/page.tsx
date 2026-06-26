@@ -48,6 +48,7 @@ import {
     shouldKeepMappedRegroupingSeasonMember,
     shouldUseRegroupingSeasonMemberAsVisibleAssigned,
     shouldUseRegroupingSeasonMemberAsVisibleUnassigned,
+    isUnassignedPlaceholderPairedWithRemovedMembership,
     buildRegroupingSuppressedHistoricalTargetKeys,
 } from '@/lib/regroupingSeasonUiState';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
@@ -3368,6 +3369,9 @@ function RegroupingPageInner() {
                 const baseline = baselineById.get(member.id) ||
                     (memberStableKey ? baselineByStableKey.get(memberStableKey) : undefined);
                 const nextGroupId = member.group_id || null;
+                if (isUnassignedPlaceholderPairedWithRemovedMembership({ member, allMembers: localMembers })) {
+                    return null;
+                }
                 if (!baseline) {
                     const persistedChangeType = member.plan_change_type || member.change_type || null;
                     if (isRegroupingRemovedMembershipRow(member)) {

@@ -92,6 +92,11 @@ export const shouldKeepMappedRegroupingSeasonMember = (member: SeasonMembershipR
   return member.is_active !== false;
 };
 
+const isRemovedSeasonMembershipRow = (member: SeasonMembershipRow) => {
+  const changeType = normalizeText(member.plan_change_type) || normalizeText(member.change_type);
+  return changeType === 'removed' || Boolean(normalizeText(member.id)?.startsWith('removed-'));
+};
+
 export const shouldUseRegroupingSeasonMemberAsVisibleUnassigned = (member: SeasonMembershipRow) => {
   const changeType = normalizeText(member.plan_change_type) || normalizeText(member.change_type);
   return changeType !== 'removed' &&
@@ -107,6 +112,39 @@ export const shouldUseRegroupingSeasonMemberAsVisibleAssigned = (member: SeasonM
       member.is_active !== false ||
       Boolean(normalizeText(member.season_assignment_id))
     );
+};
+
+export const isUnassignedPlaceholderPairedWithRemovedMembership = ({
+  member,
+  allMembers,
+}: {
+  member: SeasonMembershipRow;
+  allMembers: SeasonMembershipRow[];
+}) => {
+  const changeType = normalizeText(member.plan_change_type) || normalizeText(member.change_type);
+  if (changeType || normalizeText(member.group_id)) return false;
+
+  const identityKey = getSeasonMembershipIdentityKey(member);
+  const sourceGroupId = normalizeText(member.source_membership_group_id)
+    || normalizeText(member.previous_source_group_id);
+  const sourceGroupName = normalizeText(member.source_membership_group_name)
+    || normalizeText(member.previous_group_name);
+  if (!identityKey || (!sourceGroupId && !sourceGroupName)) return false;
+
+  return allMembers.some(candidate => {
+    if (candidate === member || !isRemovedSeasonMembershipRow(candidate)) return false;
+    if (getSeasonMembershipIdentityKey(candidate) !== identityKey) return false;
+
+    const candidateSourceGroupId = normalizeText(candidate.source_membership_group_id)
+      || normalizeText(candidate.previous_source_group_id);
+    const candidateSourceGroupName = normalizeText(candidate.source_membership_group_name)
+      || normalizeText(candidate.previous_group_name);
+
+    return Boolean(
+      (sourceGroupId && candidateSourceGroupId && sourceGroupId === candidateSourceGroupId) ||
+      (sourceGroupName && candidateSourceGroupName && sourceGroupName === candidateSourceGroupName)
+    );
+  });
 };
 
 const getSeasonMembershipIdentityKey = (member: SeasonMembershipRow) => {
