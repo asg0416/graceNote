@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/core/models/models.dart';
+import 'package:grace_note/core/utils/attendance_summary.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:grace_note/core/widgets/shadcn_spinner.dart';
@@ -261,14 +262,10 @@ class _DepartmentAttendanceDashboardScreenState extends ConsumerState<Department
         final submittedGroups = validGroups.where((g) => g['is_submitted'] == true).toList();
         final isAllSubmitted = totalGroups > 0 && submittedGroups.length == totalGroups;
 
-        int totalPresent = 0;
-        int totalCount = 0;
-
-        for (final g in submittedGroups) {
-          totalPresent += (g['present_count'] as num).toInt();
-          totalCount += (g['total_count'] as num).toInt();
-        }
-        final rate = totalCount > 0 ? (totalPresent / totalCount * 100).toInt() : 0;
+        final summary = summarizeSubmittedDepartmentAttendance(submittedGroups);
+        final totalPresent = summary.presentCount;
+        final totalCount = summary.totalCount;
+        final rate = summary.ratePercent;
 
         return Container(
           margin: const EdgeInsets.fromLTRB(20, 20, 20, 10),
