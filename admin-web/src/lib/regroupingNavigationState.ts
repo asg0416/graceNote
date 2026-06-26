@@ -14,3 +14,9 @@ export const shouldReturnToSeasonListOnMissingSeasonQuery = ({
   Boolean(selectedSeasonId) &&
   pendingSeasonUrlSyncId !== selectedSeasonId
 );
+
+export const shouldFetchLiveRegroupingBoardForDepartment = ({
+  seasonIdFromQuery,
+}: {
+  seasonIdFromQuery?: string | null;
+}) => !seasonIdFromQuery;

@@ -68,7 +68,10 @@ import {
     mapRegroupingSeasonDraftToBoard,
 } from '@/lib/regroupingSeasonPayloads';
 import { applyBulkMemberPeriods, clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
-import { shouldReturnToSeasonListOnMissingSeasonQuery } from '@/lib/regroupingNavigationState';
+import {
+    shouldFetchLiveRegroupingBoardForDepartment,
+    shouldReturnToSeasonListOnMissingSeasonQuery,
+} from '@/lib/regroupingNavigationState';
 import { canApplyRegroupingSeason, canDeletePendingRegroupingSeason } from '@/lib/regroupingSeasonActions';
 import { SeasonChangeHistoryPanel } from './SeasonChangeHistoryPanel';
 
@@ -946,6 +949,13 @@ function RegroupingPageInner() {
             if (dept) {
                 setSelectedDeptId(dept.id);
                 setAutoMoveCouples(dept.profile_mode === 'couple');
+                const seasonIdFromQuery = searchParams.get('seasonId');
+
+                if (!shouldFetchLiveRegroupingBoardForDepartment({ seasonIdFromQuery })) {
+                    await fetchRegroupingSeasons(churchId, dept.id);
+                    return;
+                }
+
                 // Fetch groups and members in parallel for visual smoothness
                 await Promise.all([
                     fetchGroups(dept.id),
