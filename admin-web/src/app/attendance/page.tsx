@@ -3140,12 +3140,6 @@ export default function AttendancePage() {
     const insightPeriodLabel = statsPeriod === 'quarter'
         ? `${insightYear}년 ${insightQuarter}분기`
         : `${insightYear}년`;
-    const hallOfFamePerfectCount = hallOfFameTarget === 'rate'
-        ? hallOfFame.filter((member) => Math.round(member.rate) >= 100).length
-        : 0;
-    const hallOfFameBelowPerfectCount = hallOfFameTarget === 'rate'
-        ? Math.max(hallOfFame.length - hallOfFamePerfectCount, 0)
-        : 0;
     const openAttendanceSeason = () => {
         if (!selectedAttendanceSeason?.id) return;
         const params = new URLSearchParams({
@@ -3975,11 +3969,7 @@ export default function AttendancePage() {
                                     <Trophy className="h-4 w-4 text-amber-500" />
                                 </div>
                                 <p className="mt-3 text-3xl font-black text-slate-900 dark:text-white">{hallOfFame.length}</p>
-                                <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                                    {hallOfFameTarget === 'rate'
-                                        ? `100% ${hallOfFamePerfectCount}명 · ${hallOfFameValue}% 이상 ${hallOfFame.length}명`
-                                        : `${hallOfFameValue}회 이상 출석한 성도`}
-                                </p>
+                                <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">{hallOfFameValue}% 이상 출석한 성도</p>
                             </div>
                             <div className="order-3 rounded-3xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
                                 <div className="flex items-center justify-between">
@@ -4034,18 +4024,6 @@ export default function AttendancePage() {
                                         <div>
                                             <span className="text-sm font-black text-slate-900 dark:text-white">출석 우수자</span>
                                             <p className="text-[10px] font-bold text-slate-400">{hallOfFameValue}% 이상, 총 {hallOfFame.length}명</p>
-                                            {hallOfFameTarget === 'rate' && (
-                                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                                    <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-600 ring-1 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20">
-                                                        100% {hallOfFamePerfectCount}명
-                                                    </span>
-                                                    {hallOfFameBelowPerfectCount > 0 && (
-                                                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-500 ring-1 ring-slate-200 dark:bg-slate-800/60 dark:text-slate-300 dark:ring-slate-700">
-                                                            {hallOfFameValue}~99% {hallOfFameBelowPerfectCount}명
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl">
