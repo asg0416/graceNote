@@ -99,6 +99,16 @@ export const shouldUseRegroupingSeasonMemberAsVisibleUnassigned = (member: Seaso
     Boolean(normalizeText(member.season_assignment_id));
 };
 
+export const shouldUseRegroupingSeasonMemberAsVisibleAssigned = (member: SeasonMembershipRow) => {
+  const changeType = normalizeText(member.plan_change_type) || normalizeText(member.change_type);
+  return changeType !== 'removed' &&
+    Boolean(normalizeText(member.group_id)) &&
+    (
+      member.is_active !== false ||
+      Boolean(normalizeText(member.season_assignment_id))
+    );
+};
+
 const getSeasonMembershipIdentityKey = (member: SeasonMembershipRow) => {
   const id = normalizeText(member.phase2_person_id)
     || normalizeText(member.person_id)

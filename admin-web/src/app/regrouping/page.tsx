@@ -46,6 +46,7 @@ import {
     shouldAutoSyncRegroupingSeasonPeriodRows,
     shouldShowSeasonMemberPeriodChange,
     shouldKeepMappedRegroupingSeasonMember,
+    shouldUseRegroupingSeasonMemberAsVisibleAssigned,
     shouldUseRegroupingSeasonMemberAsVisibleUnassigned,
     buildRegroupingSuppressedHistoricalTargetKeys,
 } from '@/lib/regroupingSeasonUiState';
@@ -423,7 +424,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[], seasonEffective
             Boolean(row.phase2_person_id) &&
             Boolean(row.phase2_membership_id) &&
             Boolean(row.group_id) &&
-            row.is_active !== false
+            shouldUseRegroupingSeasonMemberAsVisibleAssigned(row)
         );
         if (activeMembershipRows.length > 0) {
             activeMembershipRows.forEach(pushVisibleRow);
@@ -436,7 +437,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[], seasonEffective
             !activeMembershipRows.includes(row) &&
             !historicalMoveSourceRows.includes(row) &&
             Boolean(row.group_id) &&
-            row.is_active !== false
+            shouldUseRegroupingSeasonMemberAsVisibleAssigned(row)
         );
         if (assignedLegacyRows.length > 0) {
             assignedLegacyRows.forEach(pushVisibleRow);

@@ -9,6 +9,7 @@ import {
   buildRegroupingSuppressedHistoricalTargetKeys,
   shouldKeepMappedRegroupingSeasonMember,
   shouldHideHistoricalMoveSourceOnBoard,
+  shouldUseRegroupingSeasonMemberAsVisibleAssigned,
   shouldUseRegroupingSeasonMemberAsVisibleUnassigned,
   isMoveSourceMembershipPeriodClosure,
   isRegroupingBoardReadonly,
@@ -82,6 +83,29 @@ test('inactive unassigned season assignment rows stay visible as planned unassig
   assert.equal(
     shouldUseRegroupingSeasonMemberAsVisibleUnassigned(plannedUnassignedMember),
     true
+  );
+});
+
+test('inactive season assignment rows stay visible after assigning to a group', () => {
+  const movedFromUnassignedMember = {
+    season_assignment_id: 'assignment-unassigned',
+    group_id: 'plan-group-1',
+    is_active: false,
+    plan_change_type: 'moved',
+  };
+  const inactiveDirectoryOnlyMember = {
+    group_id: 'plan-group-1',
+    is_active: false,
+    plan_change_type: null,
+  };
+
+  assert.equal(
+    shouldUseRegroupingSeasonMemberAsVisibleAssigned(movedFromUnassignedMember),
+    true
+  );
+  assert.equal(
+    shouldUseRegroupingSeasonMemberAsVisibleAssigned(inactiveDirectoryOnlyMember),
+    false
   );
 });
 
