@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../error/exceptions.dart';
 import 'package:grace_note/core/models/models.dart';
+import 'package:grace_note/core/utils/attendance_summary.dart';
 import 'package:flutter/foundation.dart';
 
 class _SeasonPlanMembersResult {
@@ -343,6 +344,89 @@ class GraceNoteRepository {
       debugPrint(
           'GraceNoteRepository: season plan group list read failed, using live groups fallback: $e');
       return const _SeasonPlanGroupsResult.notApplicable();
+    }
+  }
+
+  Future<Set<String>?> _getSeasonPlanTargetPersonKeysForWeek(
+    String departmentId,
+    DateTime? weekDate,
+  ) async {
+    if (weekDate == null || departmentId.isEmpty) return null;
+
+    try {
+      final weekText = _snapToSundayStr(weekDate);
+      final snappedWeekDate = DateTime.parse(weekText);
+
+      final seasons = await _supabase
+          .from('regrouping_seasons')
+          .select('id')
+          .eq('department_id', departmentId)
+          .eq('status', 'applied')
+          .lte('effective_week_date', weekText)
+          .or('end_week_date.is.null,end_week_date.gte.$weekText')
+          .order('effective_week_date', ascending: false)
+          .limit(1);
+
+      final seasonRows = List<Map<String, dynamic>>.from(seasons);
+      if (seasonRows.isEmpty) return null;
+
+      final seasonId = seasonRows.first['id']?.toString();
+      if (seasonId == null || seasonId.isEmpty) return null;
+
+      final planGroupsResponse = await _supabase
+          .from('regrouping_plan_groups')
+          .select('id, starts_week_date, ends_week_date, plan_status')
+          .eq('season_id', seasonId);
+
+      final activePlanGroupIds = List<Map<String, dynamic>>.from(
+        planGroupsResponse,
+      )
+          .where((row) => _membershipWasInUseOnWeek({
+                'starts_at': row['starts_week_date'],
+                'ends_at': row['ends_week_date'],
+                'groups': {
+                  'active_from': row['starts_week_date'],
+                  'ended_at': row['ends_week_date'],
+                },
+              }, snappedWeekDate))
+          .map((row) => row['id']?.toString())
+          .whereType<String>()
+          .toList();
+
+      if (activePlanGroupIds.isEmpty) return <String>{};
+
+      final assignmentsResponse = await _supabase
+          .from('regrouping_plan_assignments')
+          .select(
+              'person_id, source_member_directory_id, starts_week_date, ends_week_date, plan_group_id')
+          .eq('season_id', seasonId)
+          .inFilter('plan_group_id', activePlanGroupIds);
+
+      final keys = <String>{};
+      for (final assignment
+          in List<Map<String, dynamic>>.from(assignmentsResponse)) {
+        final activeOnWeek = _membershipWasInUseOnWeek({
+          'starts_at': assignment['starts_week_date'],
+          'ends_at': assignment['ends_week_date'],
+          'groups': {
+            'active_from': weekText,
+            'ended_at': null,
+          },
+        }, snappedWeekDate);
+        if (!activeOnWeek) continue;
+
+        final key = attendancePersonKey({
+          'person_id': assignment['person_id'],
+          'id': assignment['source_member_directory_id'],
+        });
+        if (key != null) keys.add(key);
+      }
+
+      return keys;
+    } catch (e) {
+      debugPrint(
+          'GraceNoteRepository: season plan target summary failed, using legacy fallback: $e');
+      return null;
     }
   }
 
@@ -2110,23 +2194,41 @@ class GraceNoteRepository {
     final groupsResponse = await _supabase
         .from('groups')
         .select('id')
-        .eq('department_id', departmentId)
-        .eq('is_active', true);
+        .eq('department_id', departmentId);
     final groupIds =
         (groupsResponse as List).map((g) => g['id'] as String).toList();
 
-    // [NEW] 부서 내 전체 활성 멤버 수 조회 (안정적인 통계를 위해)
-    final directoryResponse = await _supabase
-        .from('member_directory')
-        .select('id')
-        .eq('department_id', departmentId)
-        .eq('is_active', true);
-    final totalMembersInDept = (directoryResponse as List).length;
+    // 시즌 조편성 적용 이후에는 한 사람이 새가족조와 일반조에 동시에 속할 수 있다.
+    // 월별 히스토리는 row 수가 아니라 사람 기준으로 dedupe해서 관리자 웹과 같은 숫자를 사용한다.
+    final targetPersonKeysByWeekId = <String, Set<String>>{};
+    for (final week in weeks) {
+      final weekDate = DateTime.tryParse(week['week_date']?.toString() ?? '');
+      final targetKeys =
+          await _getSeasonPlanTargetPersonKeysForWeek(departmentId, weekDate);
+      if (targetKeys != null) {
+        targetPersonKeysByWeekId[week['id'] as String] = targetKeys;
+      }
+    }
+
+    int fallbackTotalMembersInDept = 0;
+    if (targetPersonKeysByWeekId.length < weeks.length) {
+      final directoryResponse = await _supabase
+          .from('member_directory')
+          .select('id, person_id')
+          .eq('department_id', departmentId)
+          .eq('is_active', true);
+      final keys = <String>{};
+      for (final row in List<Map<String, dynamic>>.from(directoryResponse)) {
+        final key = attendancePersonKey(row);
+        if (key != null) keys.add(key);
+      }
+      fallbackTotalMembersInDept = keys.length;
+    }
 
     // 4. 출석 데이터 조회
     final attendanceResponse = await _supabase
         .from('attendance')
-        .select('week_id, status')
+        .select('week_id, status, person_id, directory_member_id')
         .inFilter('week_id', weekIds)
         .inFilter('group_id', groupIds);
 
@@ -2138,10 +2240,13 @@ class GraceNoteRepository {
           attendanceData.where((a) => a['week_id'] == weekId).toList();
 
       final presentCount = weekAttendance
-          .where((a) => a['status'] == 'present' || a['status'] == 'late')
+          .where((a) => isAttendancePresent(a['status']))
+          .map(attendancePersonKey)
+          .whereType<String>()
+          .toSet()
           .length;
-      // 출석을 제출하지 않은 조가 있더라도 전체 인원수는 부서 총원으로 고정
-      final totalCount = totalMembersInDept;
+      final totalCount = targetPersonKeysByWeekId[weekId]?.length ??
+          fallbackTotalMembersInDept;
 
       return {
         'week_id': weekId,
@@ -2170,7 +2275,7 @@ class GraceNoteRepository {
     // 2. 부서 내 모든 멤버 조회 (매칭용)
     final directoryResponse = await _supabase
         .from('member_directory')
-        .select('id, full_name, group_name, profile_id, spouse_name')
+        .select('id, person_id, full_name, group_name, profile_id, spouse_name')
         .eq('department_id', departmentId)
         .eq('is_active', true);
     final allMembers = List<Map<String, dynamic>>.from(directoryResponse);
@@ -2178,7 +2283,7 @@ class GraceNoteRepository {
     // 3. 해당 주차의 출석 데이터 조회
     final attendanceResponse = await _supabase
         .from('attendance')
-        .select('directory_member_id, status, group_id')
+        .select('directory_member_id, person_id, status, group_id')
         .eq('week_id', weekId);
     final attendanceData = List<Map<String, dynamic>>.from(attendanceResponse);
 
@@ -2195,7 +2300,7 @@ class GraceNoteRepository {
       try {
         final missingResponse = await _supabase
             .from('member_directory')
-            .select('id, full_name, group_name')
+            .select('id, person_id, full_name, group_name')
             .inFilter('id', missingMemberIds);
         for (final m in missingResponse) {
           missingMembersMap[m['id']] = m;
@@ -2274,6 +2379,7 @@ class GraceNoteRepository {
         // 정보가 삭제된 성도여도 고유 식별 명단을 위해 남겨둠
         return {
           if (memberInfo.isNotEmpty) ...memberInfo else 'id': dirId,
+          'person_id': a['person_id'] ?? memberInfo['person_id'],
           'status': a['status'],
           'source': 'snapshot',
         };

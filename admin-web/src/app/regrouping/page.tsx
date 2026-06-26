@@ -46,7 +46,9 @@ import {
     shouldAutoSyncRegroupingSeasonPeriodRows,
     shouldShowSeasonMemberPeriodChange,
     shouldKeepMappedRegroupingSeasonMember,
+    shouldUseRegroupingSeasonMemberAsVisibleAssigned,
     shouldUseRegroupingSeasonMemberAsVisibleUnassigned,
+    isUnassignedPlaceholderPairedWithRemovedMembership,
     buildRegroupingSuppressedHistoricalTargetKeys,
 } from '@/lib/regroupingSeasonUiState';
 import { assertPhase2MemberDirectorySync } from '@/lib/phase2WriteGuards';
@@ -66,7 +68,10 @@ import {
     mapRegroupingSeasonDraftToBoard,
 } from '@/lib/regroupingSeasonPayloads';
 import { applyBulkMemberPeriods, clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
-import { shouldReturnToSeasonListOnMissingSeasonQuery } from '@/lib/regroupingNavigationState';
+import {
+    shouldFetchLiveRegroupingBoardForDepartment,
+    shouldReturnToSeasonListOnMissingSeasonQuery,
+} from '@/lib/regroupingNavigationState';
 import { canApplyRegroupingSeason, canDeletePendingRegroupingSeason } from '@/lib/regroupingSeasonActions';
 import { SeasonChangeHistoryPanel } from './SeasonChangeHistoryPanel';
 
@@ -423,7 +428,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[], seasonEffective
             Boolean(row.phase2_person_id) &&
             Boolean(row.phase2_membership_id) &&
             Boolean(row.group_id) &&
-            row.is_active !== false
+            shouldUseRegroupingSeasonMemberAsVisibleAssigned(row)
         );
         if (activeMembershipRows.length > 0) {
             activeMembershipRows.forEach(pushVisibleRow);
@@ -436,7 +441,7 @@ const normalizeRegroupingDisplayMembers = (sourceMembers: any[], seasonEffective
             !activeMembershipRows.includes(row) &&
             !historicalMoveSourceRows.includes(row) &&
             Boolean(row.group_id) &&
-            row.is_active !== false
+            shouldUseRegroupingSeasonMemberAsVisibleAssigned(row)
         );
         if (assignedLegacyRows.length > 0) {
             assignedLegacyRows.forEach(pushVisibleRow);
@@ -944,6 +949,13 @@ function RegroupingPageInner() {
             if (dept) {
                 setSelectedDeptId(dept.id);
                 setAutoMoveCouples(dept.profile_mode === 'couple');
+                const seasonIdFromQuery = searchParams.get('seasonId');
+
+                if (!shouldFetchLiveRegroupingBoardForDepartment({ seasonIdFromQuery })) {
+                    await fetchRegroupingSeasons(churchId, dept.id);
+                    return;
+                }
+
                 // Fetch groups and members in parallel for visual smoothness
                 await Promise.all([
                     fetchGroups(dept.id),
@@ -3367,6 +3379,9 @@ function RegroupingPageInner() {
                 const baseline = baselineById.get(member.id) ||
                     (memberStableKey ? baselineByStableKey.get(memberStableKey) : undefined);
                 const nextGroupId = member.group_id || null;
+                if (isUnassignedPlaceholderPairedWithRemovedMembership({ member, allMembers: localMembers })) {
+                    return null;
+                }
                 if (!baseline) {
                     const persistedChangeType = member.plan_change_type || member.change_type || null;
                     if (isRegroupingRemovedMembershipRow(member)) {

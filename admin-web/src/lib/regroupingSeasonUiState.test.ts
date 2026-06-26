@@ -9,7 +9,9 @@ import {
   buildRegroupingSuppressedHistoricalTargetKeys,
   shouldKeepMappedRegroupingSeasonMember,
   shouldHideHistoricalMoveSourceOnBoard,
+  shouldUseRegroupingSeasonMemberAsVisibleAssigned,
   shouldUseRegroupingSeasonMemberAsVisibleUnassigned,
+  isUnassignedPlaceholderPairedWithRemovedMembership,
   isMoveSourceMembershipPeriodClosure,
   isRegroupingBoardReadonly,
   shouldShowSeasonMemberPeriodChange,
@@ -82,6 +84,71 @@ test('inactive unassigned season assignment rows stay visible as planned unassig
   assert.equal(
     shouldUseRegroupingSeasonMemberAsVisibleUnassigned(plannedUnassignedMember),
     true
+  );
+});
+
+test('inactive season assignment rows stay visible after assigning to a group', () => {
+  const movedFromUnassignedMember = {
+    season_assignment_id: 'assignment-unassigned',
+    group_id: 'plan-group-1',
+    is_active: false,
+    plan_change_type: 'moved',
+  };
+  const inactiveDirectoryOnlyMember = {
+    group_id: 'plan-group-1',
+    is_active: false,
+    plan_change_type: null,
+  };
+
+  assert.equal(
+    shouldUseRegroupingSeasonMemberAsVisibleAssigned(movedFromUnassignedMember),
+    true
+  );
+  assert.equal(
+    shouldUseRegroupingSeasonMemberAsVisibleAssigned(inactiveDirectoryOnlyMember),
+    false
+  );
+});
+
+test('unassigned placeholder paired with removed membership is not a separate move history row', () => {
+  const removedMembership = {
+    id: 'removed-source',
+    phase2_person_id: 'person-1',
+    group_id: null,
+    plan_change_type: 'removed',
+    previous_source_group_id: 'live-group-1',
+    source_membership_group_id: 'live-group-1',
+  };
+  const unassignedPlaceholder = {
+    id: 'temp-unassigned-person-1',
+    phase2_person_id: 'person-1',
+    group_id: null,
+    plan_change_type: null,
+    previous_source_group_id: 'live-group-1',
+    source_membership_group_id: 'live-group-1',
+  };
+  const standaloneUnassigned = {
+    id: 'temp-unassigned-person-2',
+    phase2_person_id: 'person-2',
+    group_id: null,
+    plan_change_type: null,
+    previous_source_group_id: 'live-group-1',
+    source_membership_group_id: 'live-group-1',
+  };
+
+  assert.equal(
+    isUnassignedPlaceholderPairedWithRemovedMembership({
+      member: unassignedPlaceholder,
+      allMembers: [removedMembership, unassignedPlaceholder],
+    }),
+    true
+  );
+  assert.equal(
+    isUnassignedPlaceholderPairedWithRemovedMembership({
+      member: standaloneUnassigned,
+      allMembers: [removedMembership, standaloneUnassigned],
+    }),
+    false
   );
 });
 
