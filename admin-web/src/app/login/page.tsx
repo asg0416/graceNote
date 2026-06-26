@@ -228,7 +228,7 @@ export default function LoginPage() {
                                             aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
                                             aria-pressed={showPassword}
                                             onClick={() => setShowPassword((current) => !current)}
-                                            className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
+                                            className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-xl border-0 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 dark:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
                                         >
                                             {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                                         </button>
