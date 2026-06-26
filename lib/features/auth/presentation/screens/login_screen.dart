@@ -21,6 +21,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isLoading = false;
+  bool _showPassword = false;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
@@ -274,12 +275,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ShadInput(
                       controller: _passwordController,
                       placeholder: Text('••••••••', style: TextStyle(color: AppTheme.textSub.withOpacity(0.4), fontSize: 15)),
-                      obscureText: true,
+                      obscureText: !_showPassword,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       constraints: const BoxConstraints(minHeight: 56),
                       leading: const Padding(
                         padding: EdgeInsets.only(left: 12, right: 8),
                         child: Icon(LucideIcons.lock, size: 20, color: AppTheme.textSub),
+                      ),
+                      trailing: SizedBox.square(
+                        dimension: 36,
+                        child: Semantics(
+                          label: _showPassword ? '비밀번호 숨기기' : '비밀번호 보기',
+                          button: true,
+                          child: ShadIconButton.ghost(
+                            width: 36,
+                            height: 36,
+                            padding: EdgeInsets.zero,
+                            iconSize: 20,
+                            foregroundColor: AppTheme.textSub,
+                            hoverForegroundColor: AppTheme.primaryViolet,
+                            icon: Icon(_showPassword ? LucideIcons.eyeOff : LucideIcons.eye),
+                            onPressed: () => setState(() => _showPassword = !_showPassword),
+                          ),
+                        ),
                       ),
                     ),
                     

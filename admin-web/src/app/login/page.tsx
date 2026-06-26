@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, Loader2, ArrowRight, ShieldCheck, Moon, Sun } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, ShieldCheck, Moon, Sun, Eye, EyeOff } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import AdminSocialAuthButtons from '@/components/AdminSocialAuthButtons';
@@ -22,6 +22,7 @@ function getAuthQueryErrorMessage(errorCode: string | null) {
 export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { theme, setTheme } = useTheme();
@@ -215,13 +216,22 @@ export default function LoginPage() {
                                     <div className="relative group">
                                         <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />
                                         <input
-                                            type="password"
+                                            type={showPassword ? 'text' : 'password'}
                                             required
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
-                                            className="w-full pl-14 pr-6 py-4.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-all text-sm"
+                                            className="w-full pl-14 pr-14 py-4.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl focus:outline-none focus:border-indigo-500/50 text-slate-900 dark:text-white font-bold placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-colors text-sm"
                                             placeholder="••••••••"
                                         />
+                                        <button
+                                            type="button"
+                                            aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                                            aria-pressed={showPassword}
+                                            onClick={() => setShowPassword((current) => !current)}
+                                            className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 dark:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
+                                        >
+                                            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                                        </button>
                                     </div>
                                 </div>
                             </div>
