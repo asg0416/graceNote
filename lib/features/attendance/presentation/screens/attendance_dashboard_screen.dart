@@ -116,7 +116,8 @@ class _AttendanceDashboardScreenState
     };
     final activeWeek = history.isNotEmpty
         ? history.firstWhere(
-            (h) => h['week_id'] == (_selectedWeekId ?? history.first['week_id']),
+            (h) =>
+                h['week_id'] == (_selectedWeekId ?? history.first['week_id']),
             orElse: () => history.first,
           )
         : null;
@@ -172,7 +173,8 @@ class _AttendanceDashboardScreenState
             // [FIX] 초기 로딩(캐시 없음) 중일 때만 스피너, 그 외에는 항상 전체 UI를 표시
             child: (_cachedHistory == null &&
                     (isLoading || historyAsync.hasError))
-                ? const Center(child: ShadcnSpinner(color: AppTheme.primaryViolet))
+                ? const Center(
+                    child: ShadcnSpinner(color: AppTheme.primaryViolet))
                 : RefreshIndicator(
                     onRefresh: () async {
                       ref.invalidate(attendanceHistoryProvider(
@@ -606,10 +608,24 @@ class _AttendanceDashboardScreenState
       }
       await repo
           .saveAttendanceAndPrayers(attendanceList: attendance, prayerList: []);
+      final activeMembership = ref.read(activeMembershipProvider);
+      final profile = ref.read(userProfileProvider).value;
+      final departmentId =
+          activeMembership?.departmentId ?? profile?.departmentId ?? '';
+      if (departmentId.isNotEmpty) {
+        await repo.markGroupWeekRecordSubmitted(
+          churchId: churchId,
+          departmentId: departmentId,
+          weekId: weekIdResult,
+          groupId: widget.groupId,
+          kind: 'attendance',
+        );
+      }
 
       // 7. 대시보드 데이터 갱신
       ref.invalidate(weeklyDataProvider);
       ref.invalidate(attendanceHistoryProvider);
+      ref.invalidate(recordCompletionStatusesProvider);
     }
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/repositories/grace_note_repository.dart';
 import 'package:grace_note/core/models/models.dart';
+import 'package:grace_note/core/utils/record_completion_status.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
@@ -725,6 +726,34 @@ final weeklyDataProvider = FutureProvider.family<Map<String, dynamic>, String>(
   if (weekId == null) return {'attendance': [], 'prayers': []};
   return ref.watch(repositoryProvider).getWeeklyData(groupId, weekId);
 });
+
+// Record completion statuses for a group date range.
+// Params: "groupId:churchId:departmentId:YYYY-MM-DD:YYYY-MM-DD"
+final recordCompletionStatusesProvider =
+    FutureProvider.family<Map<String, RecordCompletionStatus>, String>(
+        (ref, String paramString) async {
+  final parts = paramString.split(':');
+  if (parts.length < 5) return {};
+  final groupId = parts[0];
+  final churchId = parts[1];
+  final departmentId = parts[2];
+  final startDate = DateTime.tryParse(parts[3]);
+  final endDate = DateTime.tryParse(parts[4]);
+  if (groupId.isEmpty ||
+      churchId.isEmpty ||
+      startDate == null ||
+      endDate == null) {
+    return {};
+  }
+  return ref.watch(repositoryProvider).getGroupRecordCompletionStatusesInRange(
+        groupId: groupId,
+        churchId: churchId,
+        departmentId: departmentId,
+        startDate: startDate,
+        endDate: endDate,
+      );
+});
+
 // Attendance History Provider for Dashboard (Params: "groupId:year:month")
 final attendanceHistoryProvider =
     FutureProvider.family<List<Map<String, dynamic>>, String>(

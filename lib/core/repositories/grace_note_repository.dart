@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../error/exceptions.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:grace_note/core/utils/attendance_summary.dart';
+import 'package:grace_note/core/utils/record_completion_status.dart';
 import 'package:flutter/foundation.dart';
 
 class _SeasonPlanMembersResult {
@@ -914,6 +915,52 @@ class GraceNoteRepository {
     }
   }
 
+  Future<void> markGroupWeekRecordSubmitted({
+    required String churchId,
+    required String departmentId,
+    required String weekId,
+    required String groupId,
+    required String kind,
+    String source = 'app',
+  }) async {
+    if (churchId.isEmpty ||
+        departmentId.isEmpty ||
+        weekId.isEmpty ||
+        groupId.isEmpty) {
+      return;
+    }
+
+    final submittedAt = DateTime.now().toUtc().toIso8601String();
+    final userId = _supabase.auth.currentUser?.id;
+    final payload = <String, dynamic>{
+      'church_id': churchId,
+      'department_id': departmentId,
+      'week_id': weekId,
+      'group_id': groupId,
+    };
+
+    if (kind == 'attendance') {
+      payload.addAll({
+        'attendance_submitted_at': submittedAt,
+        'attendance_submitted_by': userId,
+        'attendance_source': source,
+      });
+    } else if (kind == 'prayer') {
+      payload.addAll({
+        'prayer_submitted_at': submittedAt,
+        'prayer_submitted_by': userId,
+        'prayer_source': source,
+      });
+    } else {
+      throw ArgumentError.value(kind, 'kind', 'Unsupported record kind');
+    }
+
+    await _supabase.from('group_week_record_submissions').upsert(
+          payload,
+          onConflict: 'week_id,group_id',
+        );
+  }
+
   Future<Map<String, dynamic>> getWeeklyData(
     String groupId,
     String weekId, {
@@ -1040,6 +1087,108 @@ class GraceNoteRepository {
       'attendance': enrichedRows.take(attendanceWithInfo.length).toList(),
       'prayers': enrichedRows.skip(attendanceWithInfo.length).toList(),
     };
+  }
+
+  Future<Map<String, RecordCompletionStatus>>
+      getGroupRecordCompletionStatusesInRange({
+    required String groupId,
+    required String churchId,
+    required String departmentId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    if (groupId.isEmpty || churchId.isEmpty) return {};
+
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    var cursor = DateTime(startDate.year, startDate.month, startDate.day)
+        .subtract(Duration(days: startDate.weekday % 7));
+    var end = DateTime(endDate.year, endDate.month, endDate.day)
+        .subtract(Duration(days: endDate.weekday % 7));
+    final todayWeek = todayDate.subtract(Duration(days: todayDate.weekday % 7));
+    if (end.isAfter(todayWeek)) end = todayWeek;
+    if (cursor.isAfter(end)) return {};
+
+    final startStr = _snapToSundayStr(cursor);
+    final endStr = _snapToSundayStr(end);
+
+    final weeksResponse = await _supabase
+        .from('weeks')
+        .select('id, week_date')
+        .eq('church_id', churchId)
+        .eq('is_active', true)
+        .gte('week_date', startStr)
+        .lte('week_date', endStr);
+
+    final weekIdByDate = <String, String>{};
+    for (final week in List<Map<String, dynamic>>.from(weeksResponse)) {
+      final weekDate = DateTime.tryParse(week['week_date']?.toString() ?? '');
+      final weekId = week['id']?.toString();
+      if (weekDate == null || weekId == null) continue;
+      weekIdByDate[_snapToSundayStr(weekDate)] = weekId;
+    }
+
+    final weekIds = weekIdByDate.values.toList();
+    final submittedAttendanceCountByWeekId = <String, int>{};
+    final publishedPrayerCountByWeekId = <String, int>{};
+    final noMeetingDates = <String>{};
+
+    if (departmentId.isNotEmpty) {
+      final noMeetingResponse = await _supabase
+          .from('no_meeting_days')
+          .select('week_date')
+          .eq('department_id', departmentId)
+          .gte('week_date', startStr)
+          .lte('week_date', endStr);
+      for (final row in List<Map<String, dynamic>>.from(noMeetingResponse)) {
+        final weekDate = DateTime.tryParse(row['week_date']?.toString() ?? '');
+        if (weekDate != null) {
+          noMeetingDates.add(_snapToSundayStr(weekDate));
+        }
+      }
+    }
+
+    if (weekIds.isNotEmpty) {
+      final submissionResponse = await _supabase
+          .from('group_week_record_submissions')
+          .select('week_id, attendance_submitted_at, prayer_submitted_at')
+          .inFilter('week_id', weekIds)
+          .eq('group_id', groupId);
+      for (final row in List<Map<String, dynamic>>.from(submissionResponse)) {
+        final weekId = row['week_id']?.toString();
+        if (weekId == null) continue;
+        final attendanceSubmittedAt =
+            row['attendance_submitted_at']?.toString();
+        if (attendanceSubmittedAt != null && attendanceSubmittedAt.isNotEmpty) {
+          submittedAttendanceCountByWeekId[weekId] = 1;
+        }
+        final prayerSubmittedAt = row['prayer_submitted_at']?.toString();
+        if (prayerSubmittedAt != null && prayerSubmittedAt.isNotEmpty) {
+          publishedPrayerCountByWeekId[weekId] = 1;
+        }
+      }
+    }
+
+    final statuses = <String, RecordCompletionStatus>{};
+    while (!cursor.isAfter(end)) {
+      final dateKey = _snapToSundayStr(cursor);
+      final weekId = weekIdByDate[dateKey];
+      final status = resolveRecordCompletionStatus(
+        isActiveWeek: true,
+        isNoMeetingWeek: noMeetingDates.contains(dateKey),
+        isFutureWeek: cursor.isAfter(todayDate),
+        submittedAttendanceCount: weekId == null
+            ? 0
+            : (submittedAttendanceCountByWeekId[weekId] ?? 0),
+        publishedPrayerCount:
+            weekId == null ? 0 : (publishedPrayerCountByWeekId[weekId] ?? 0),
+      );
+      if (status != RecordCompletionStatus.normal) {
+        statuses[dateKey] = status;
+      }
+      cursor = cursor.add(const Duration(days: 7));
+    }
+    return statuses;
   }
 
   // 부서 전체의 특정 주차 데이터 가져오기 (전체 탭용)
@@ -2283,7 +2432,8 @@ class GraceNoteRepository {
     // 3. 해당 주차의 출석 데이터 조회
     final attendanceResponse = await _supabase
         .from('attendance')
-        .select('directory_member_id, person_id, status, group_id')
+        .select(
+            'directory_member_id, person_id, status, group_id, recorded_group_id')
         .eq('week_id', weekId);
     final attendanceData = List<Map<String, dynamic>>.from(attendanceResponse);
 
@@ -2312,7 +2462,8 @@ class GraceNoteRepository {
     }
 
     final attendanceGroupIds = attendanceData
-        .map((row) => row['group_id']?.toString())
+        .map((row) =>
+            row['recorded_group_id']?.toString() ?? row['group_id']?.toString())
         .whereType<String>()
         .toSet();
     final seasonPlanGroups = await _getSeasonPlanGroupsForWeek(
@@ -2338,8 +2489,11 @@ class GraceNoteRepository {
       final groupName = group['name'];
       final groupId = group['id'];
 
-      final groupAttendanceData =
-          attendanceData.where((a) => a['group_id'] == groupId).toList();
+      final groupAttendanceData = attendanceData.where((a) {
+        final recordGroupId =
+            a['recorded_group_id']?.toString() ?? a['group_id']?.toString();
+        return recordGroupId == groupId;
+      }).toList();
 
       final List<Map<String, dynamic>> membersWithStatus = [];
 

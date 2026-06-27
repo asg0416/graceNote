@@ -63,7 +63,9 @@ type SeasonMembershipRow = {
   phone?: string | null;
   group_id?: string | null;
   source_membership_group_id?: string | null;
+  source_membership_group_name?: string | null;
   previous_source_group_id?: string | null;
+  previous_group_name?: string | null;
   starts_week_date?: string | null;
   ends_week_date?: string | null;
   plan_change_type?: string | null;

@@ -49,6 +49,11 @@ import {
 } from '@/lib/attendanceMetrics';
 import { applyAttendanceWeekGroupDisplayNames } from '@/lib/attendanceGroupDisplay';
 import {
+    buildSubmittedRecordKeys,
+    buildWeekGroupKey,
+    type GroupWeekRecordSubmissionRow,
+} from '@/lib/groupWeekRecordSubmissions';
+import {
     buildSeasonPlanAttendanceRoster,
     type SeasonPlanAssignment,
     type SeasonPlanDirectoryMember,
@@ -189,7 +194,7 @@ const applySeasonGroupPeriodsForWeek = async (
 
     const { data: planGroups, error: planGroupsError } = await supabase
         .from('regrouping_plan_groups')
-        .select('source_group_id, starts_week_date, ends_week_date, plan_status')
+        .select('source_group_id, name, starts_week_date, ends_week_date, plan_status')
         .eq('season_id', seasonId)
         .in('source_group_id', sourceGroupIds);
 
@@ -208,6 +213,7 @@ const applySeasonGroupPeriodsForWeek = async (
 
         return {
             ...group,
+            name: plan.name || group.name,
             active_from: plan.starts_week_date || group.active_from,
             ended_at: plan.ends_week_date || group.ended_at,
             is_active: plan.plan_status === 'ended' ? false : group.is_active,
@@ -258,13 +264,14 @@ const createSeasonGroupPeriodResolver = async (
 
     const { data: planGroups, error: planGroupsError } = await supabase
         .from('regrouping_plan_groups')
-        .select('season_id, source_group_id, starts_week_date, ends_week_date, plan_status')
+        .select('season_id, source_group_id, name, starts_week_date, ends_week_date, plan_status')
         .in('season_id', seasonIds)
         .in('source_group_id', sourceGroupIds);
 
     if (planGroupsError) throw buildQueryError('attendance season resolver group periods lookup failed', planGroupsError);
 
     const planBySeasonAndGroupId = new Map<string, Map<string, {
+        name?: string | null;
         starts_week_date?: string | null;
         ends_week_date?: string | null;
         plan_status?: string | null;
@@ -275,11 +282,13 @@ const createSeasonGroupPeriodResolver = async (
         const groupId = row.source_group_id as string | null;
         if (!seasonId || !groupId) return;
         const groupPlan = planBySeasonAndGroupId.get(seasonId) || new Map<string, {
+            name?: string | null;
             starts_week_date?: string | null;
             ends_week_date?: string | null;
             plan_status?: string | null;
         }>();
         groupPlan.set(groupId, {
+            name: row.name as string | null,
             starts_week_date: row.starts_week_date as string | null,
             ends_week_date: row.ends_week_date as string | null,
             plan_status: row.plan_status as string | null,
@@ -306,6 +315,7 @@ const createSeasonGroupPeriodResolver = async (
 
             return {
                 ...group,
+                name: plan.name || group.name,
                 active_from: plan.starts_week_date || group.active_from,
                 ended_at: plan.ends_week_date || group.ended_at,
                 is_active: plan.plan_status === 'ended' ? false : group.is_active,
@@ -316,7 +326,9 @@ const createSeasonGroupPeriodResolver = async (
     };
 };
 
-const buildWeekGroupKey = (weekId: string, groupId: string) => `${weekId}:${groupId}`;
+const toDateKey = (value?: string | null) => value?.slice(0, 10) || '';
+const getRecordGroupId = (row: { group_id?: string | null; recorded_group_id?: string | null }) =>
+    row.recorded_group_id || row.group_id || null;
 
 type AttendanceStatusRow = {
     status?: string | null;
@@ -410,6 +422,7 @@ type InsightGroupRanking = {
     rate: number;
     weekCount: number;
     dataWeekCount: number;
+    periodWeekCount: number;
     averagePresent: number;
     averageTarget: number;
 };
@@ -827,6 +840,13 @@ const hasMeaningfulSnapshotEvidence = (member: AttendanceRosterSnapshotMember) =
     member.source !== 'auto_membership' ||
     Boolean(member.reason)
 );
+
+const hasAdminSnapshotDecision = (member?: AttendanceRosterSnapshotMember | null) => {
+    if (!member) return false;
+    if (member.included === false) return true;
+    if (member.reason) return true;
+    return Boolean(member.source && member.source !== 'attendance_snapshot' && member.source !== 'auto_membership');
+};
 
 const getCompactAttendanceLabel = (status?: SnapshotAttendanceStatus | null) => {
     switch (status) {
@@ -1356,6 +1376,46 @@ export default function AttendancePage() {
         }
     }, [selectedWeekId]);
 
+    const markGroupWeekRecordSubmitted = async (
+        groupId: string | null | undefined,
+        kind: 'attendance' | 'prayer',
+        source: 'admin_web' | 'manual' = 'admin_web'
+    ) => {
+        if (!groupId || !selectedChurchId || !selectedDeptId || !selectedWeekId) return;
+
+        const submittedAt = new Date().toISOString();
+        const payload = {
+            church_id: selectedChurchId,
+            department_id: selectedDeptId,
+            week_id: selectedWeekId,
+            group_id: groupId,
+            ...(kind === 'attendance'
+                ? {
+                    attendance_submitted_at: submittedAt,
+                    attendance_submitted_by: profile?.id || null,
+                    attendance_source: source,
+                }
+                : {
+                    prayer_submitted_at: submittedAt,
+                    prayer_submitted_by: profile?.id || null,
+                    prayer_source: source,
+                }),
+        };
+
+        const { error } = await supabase
+            .from('group_week_record_submissions')
+            .upsert(payload, {
+                onConflict: 'week_id,group_id',
+            });
+
+        if (error) {
+            throw buildQueryError('group week record submission marker upsert failed', error);
+        }
+        if (kind === 'attendance') {
+            setSelectedWeekHasSubmittedAttendance(true);
+        }
+    };
+
     const fetchAttendance = async () => {
         if (!selectedDeptId || !selectedWeekId) return;
         const requestKey = `${selectedDeptId}:${selectedWeekId}`;
@@ -1396,8 +1456,20 @@ export default function AttendancePage() {
 
             const isNoMeetingDay = selectedNoMeetingDateSet.has(selectedWeek.week_date);
             const linkedAttendanceRows = attendanceRows.filter(isLinkedAttendanceRow);
+            const { data: selectedWeekSubmissionRows, error: selectedWeekSubmissionRowsError } = await supabase
+                .from('group_week_record_submissions')
+                .select('id')
+                .eq('department_id', selectedDeptId)
+                .eq('week_id', selectedWeekId)
+                .not('attendance_submitted_at', 'is', null)
+                .limit(1);
+            if (selectedWeekSubmissionRowsError) {
+                throw buildQueryError('selected week attendance submission marker query failed', selectedWeekSubmissionRowsError);
+            }
+            if (latestAttendanceRequestKey.current !== requestKey) return;
+
             setSelectedWeekNoMeetingReason(isNoMeetingDay ? selectedNoMeetingDay?.reason || '' : null);
-            setSelectedWeekHasSubmittedAttendance(linkedAttendanceRows.length > 0);
+            setSelectedWeekHasSubmittedAttendance((selectedWeekSubmissionRows || []).length > 0);
             const rosterForAttendance = await getCachedAttendanceRoster(selectedDeptId, selectedWeek.week_date);
             if (latestAttendanceRequestKey.current !== requestKey) return;
             const rosterMembers = toAttendanceRosterMembers(rosterForAttendance);
@@ -1616,9 +1688,11 @@ export default function AttendancePage() {
                         const status = attendanceStatusByDirectoryGroup.get(groupKey)
                             || 'absent';
                         const isSubmittedConflictResolved = snapshotMember?.reason === SUBMISSION_CONFLICT_KEEP_ADMIN_REASON;
+                        const hasAdminDecision = hasAdminSnapshotDecision(snapshotMember);
                         const hasSubmissionConflict = Boolean(
                             snapshotMember &&
                             !isSubmittedConflictResolved &&
+                            hasAdminDecision &&
                             submittedStatus &&
                             rawSnapshotStatus !== 'unknown' &&
                             rawSnapshotStatus !== submittedStatus
@@ -1670,11 +1744,13 @@ export default function AttendancePage() {
                         const rawSnapshotStatus = rawSnapshotMemberById.get(member.id)?.attendanceStatus || 'unknown';
                         const isExcludedButSubmitted = member.included === false && Boolean(submittedStatus);
                         const isSubmittedConflictResolved = member.reason === SUBMISSION_CONFLICT_KEEP_ADMIN_REASON;
+                        const hasAdminDecision = hasAdminSnapshotDecision(member);
                         const hasSubmissionConflict = Boolean(
                             !isSubmittedConflictResolved &&
                             (
                                 isExcludedButSubmitted ||
                                 (
+                                    hasAdminDecision &&
                                     submittedStatus &&
                                     rawSnapshotStatus !== 'unknown' &&
                                     rawSnapshotStatus !== submittedStatus
@@ -1831,7 +1907,8 @@ export default function AttendancePage() {
 
     const updateSnapshotMemberStatus = async (
         snapshotMemberId: string,
-        status: SnapshotAttendanceStatus
+        status: SnapshotAttendanceStatus,
+        groupId?: string | null
     ) => {
         try {
             setSnapshotEditLoadingId(snapshotMemberId);
@@ -1841,6 +1918,7 @@ export default function AttendancePage() {
                 status,
                 'admin attendance dashboard edit'
             );
+            await markGroupWeekRecordSubmitted(groupId, 'attendance');
             const nextAttendanceData = attendanceData.map((item) => (
                 item.snapshotMemberId === snapshotMemberId
                     ? {
@@ -1904,6 +1982,7 @@ export default function AttendancePage() {
                 member.submittedStatus,
                 'admin attendance dashboard apply submitted status'
             );
+            await markGroupWeekRecordSubmitted(member.groupId, 'attendance');
             setAttendanceSnapshotVersion((value) => value + 1);
             await fetchAttendance();
         } catch (err) {
@@ -1943,6 +2022,9 @@ export default function AttendancePage() {
                     member.submittedStatus,
                     'admin attendance dashboard apply group submitted status'
                 );
+            }
+            for (const groupId of new Set(targets.map((member) => member.groupId).filter(Boolean))) {
+                await markGroupWeekRecordSubmitted(groupId, 'attendance');
             }
             setAttendanceSnapshotVersion((value) => value + 1);
             await fetchAttendance();
@@ -1997,6 +2079,9 @@ export default function AttendancePage() {
                     SUBMISSION_CONFLICT_KEEP_ADMIN_REASON
                 );
             }
+            for (const groupId of new Set([...excludedSubmittedTargets, ...keepAdminTargets].map((member) => member.groupId).filter(Boolean))) {
+                await markGroupWeekRecordSubmitted(groupId, 'attendance');
+            }
             setAttendanceSnapshotVersion((value) => value + 1);
             await fetchAttendance();
         } catch (err) {
@@ -2040,6 +2125,9 @@ export default function AttendancePage() {
                             SUBMISSION_CONFLICT_KEEP_ADMIN_REASON
                         );
                     }
+                }
+                for (const groupId of new Set(targets.map((member) => member.groupId).filter(Boolean))) {
+                    await markGroupWeekRecordSubmitted(groupId, 'attendance');
                 }
                 setIgnoredSubmissionConflictKeys((previous) => {
                     const next = new Set(previous);
@@ -2145,6 +2233,7 @@ export default function AttendancePage() {
 
                 if (error) throw error;
 
+                await markGroupWeekRecordSubmitted(member.groupId, 'attendance');
                 const nextAttendanceData = attendanceData.map((item) => (
                     item.id === member.id && item.groupId === member.groupId
                         ? { ...item, status: nextStatus, submittedStatus: nextStatus }
@@ -2168,7 +2257,8 @@ export default function AttendancePage() {
         }
         await updateSnapshotMemberStatus(
             member.snapshotMemberId,
-            nextStatus
+            nextStatus,
+            member.groupId
         );
     };
 
@@ -2340,10 +2430,11 @@ export default function AttendancePage() {
                 throw buildQueryError('attendance insight no-meeting query failed', noMeetingDaysForInsightError);
             }
             ((noMeetingDaysForInsight || []) as { week_date: string }[]).forEach((day) => {
-                noMeetingDateSet.add(day.week_date);
+                const weekDate = toDateKey(day.week_date);
+                if (weekDate) noMeetingDateSet.add(weekDate);
             });
 
-            const meetingWeeks = (periodWeeks as WeekRow[]).filter((week) => !noMeetingDateSet.has(week.week_date));
+            const meetingWeeks = (periodWeeks as WeekRow[]).filter((week) => !noMeetingDateSet.has(toDateKey(week.week_date)));
 
             const reportByPerson = new Map<string, InsightPersonReport>();
             const groupTotals = new Map<string, { name: string; presentSum: number; totalAttCount: number; weekIds: Set<string> }>();
@@ -2385,41 +2476,34 @@ export default function AttendancePage() {
             const submittedPrayerKeys = new Set<string>();
 
             if (periodWeekIds.length > 0 && periodGroupIds.length > 0) {
-                const { data: submittedAttendanceRows, error: submittedAttendanceError } = await supabase
-                    .from('attendance')
-                    .select('week_id, group_id, recorded_group_id, directory_member_id, status')
+                const periodGroupIdSet = new Set(periodGroupIds);
+
+                const { data: submissionRows, error: submissionRowsError } = await supabase
+                    .from('group_week_record_submissions')
+                    .select('week_id, group_id, attendance_submitted_at, prayer_submitted_at')
                     .in('week_id', periodWeekIds)
                     .in('group_id', periodGroupIds);
-                if (submittedAttendanceError) throw buildQueryError('attendance insight submitted attendance query failed', submittedAttendanceError);
+                if (submissionRowsError) throw buildQueryError('attendance insight submission marker query failed', submissionRowsError);
 
-                ((submittedAttendanceRows || []) as { week_id?: string | null; group_id?: string | null }[])
-                    .forEach((row) => {
-                        if (row.week_id && row.group_id) {
-                            submittedAttendanceKeys.add(buildWeekGroupKey(row.week_id, row.group_id));
-                        }
-                    });
+                buildSubmittedRecordKeys((submissionRows || []) as GroupWeekRecordSubmissionRow[], 'attendance')
+                    .forEach((key) => submittedAttendanceKeys.add(key));
+                buildSubmittedRecordKeys((submissionRows || []) as GroupWeekRecordSubmissionRow[], 'prayer')
+                    .forEach((key) => submittedPrayerKeys.add(key));
 
-                ((submittedAttendanceRows || []) as AttendanceRow[]).forEach((row) => {
+                const { data: attendanceRows, error: attendanceRowsError } = await supabase
+                    .from('attendance')
+                    .select('week_id, group_id, recorded_group_id, directory_member_id, status')
+                    .in('week_id', periodWeekIds);
+                if (attendanceRowsError) throw buildQueryError('attendance insight attendance rows query failed', attendanceRowsError);
+
+                ((attendanceRows || []) as AttendanceRow[]).forEach((row) => {
                     if (!row.week_id) return;
+                    const recordGroupId = getRecordGroupId(row);
+                    if (!recordGroupId || !periodGroupIdSet.has(recordGroupId)) return;
                     const rows = attendanceRowsByWeekId.get(row.week_id) || [];
                     rows.push(row);
                     attendanceRowsByWeekId.set(row.week_id, rows);
                 });
-
-                const { data: submittedPrayerRows, error: submittedPrayerError } = await supabase
-                    .from('prayer_entries')
-                    .select('week_id, group_id')
-                    .eq('status', 'published')
-                    .in('week_id', periodWeekIds)
-                    .in('group_id', periodGroupIds);
-                if (submittedPrayerError) throw buildQueryError('attendance insight submitted prayer query failed', submittedPrayerError);
-
-                ((submittedPrayerRows || []) as { week_id?: string | null; group_id?: string | null }[])
-                    .forEach((row) => {
-                        if (row.week_id && row.group_id) {
-                            submittedPrayerKeys.add(buildWeekGroupKey(row.week_id, row.group_id));
-                        }
-                    });
             }
 
             const activeGroupsForWeek = await createSeasonGroupPeriodResolver(
@@ -2446,7 +2530,8 @@ export default function AttendancePage() {
                         const key = buildWeekGroupKey(week.id, group.id);
                         const hasAttendance = submittedAttendanceKeys.has(key);
                         const hasPrayer = submittedPrayerKeys.has(key);
-                        const existing = submissionRiskByGroup.get(group.id) || {
+                        const riskGroupKey = `${group.id}::${group.name}`;
+                        const existing = submissionRiskByGroup.get(riskGroupKey) || {
                             id: group.id,
                             name: group.name,
                             expectedWeeks: 0,
@@ -2478,7 +2563,7 @@ export default function AttendancePage() {
                         }
                         existing.targetPeopleSum += activePersonIdsByGroupId.get(group.id)?.size || 0;
 
-                        submissionRiskByGroup.set(group.id, existing);
+                        submissionRiskByGroup.set(riskGroupKey, existing);
                     });
             });
 
@@ -2621,14 +2706,15 @@ export default function AttendancePage() {
 
             const rankings = Array.from(groupTotals.values())
                 .map((g) => {
-                    const weekCount = Math.max(1, commonTotalWeeks);
                     const dataWeekCount = g.weekIds.size;
+                    const weekCount = Math.max(1, dataWeekCount);
                     return {
                         name: g.name,
                         presentSum: g.presentSum,
                         totalAttCount: g.totalAttCount,
                         weekCount,
                         dataWeekCount,
+                        periodWeekCount: commonTotalWeeks,
                         averagePresent: g.presentSum / weekCount,
                         averageTarget: g.totalAttCount / weekCount,
                         rate: g.totalAttCount > 0 ? (g.presentSum / g.totalAttCount) * 100 : 0
@@ -2659,7 +2745,7 @@ export default function AttendancePage() {
                         riskRate: group.expectedWeeks > 0 ? (missedWeeks / group.expectedWeeks) * 100 : 0,
                     };
                 })
-                .filter((group) => group.expectedWeeks >= 2 && group.missedWeeks >= 2)
+                .filter((group) => group.missedWeeks > 0)
                 .sort((a, b) => {
                     const missedDiff = b.missedWeeks - a.missedWeeks;
                     if (missedDiff !== 0) return missedDiff;
@@ -2712,8 +2798,12 @@ export default function AttendancePage() {
             .lte('week_date', endDate);
         if (noMeetingDaysError) throw buildQueryError('submission risk export no-meeting query failed', noMeetingDaysError);
 
-        const noMeetingDateSet = new Set(((noMeetingDays || []) as { week_date: string }[]).map((day) => day.week_date));
-        const meetingWeeks = ((periodWeeks || []) as WeekRow[]).filter((week) => !noMeetingDateSet.has(week.week_date));
+        const noMeetingDateSet = new Set(
+            ((noMeetingDays || []) as { week_date: string }[])
+                .map((day) => toDateKey(day.week_date))
+                .filter(Boolean)
+        );
+        const meetingWeeks = ((periodWeeks || []) as WeekRow[]).filter((week) => !noMeetingDateSet.has(toDateKey(week.week_date)));
         const submissionRiskByGroup = new Map<string, {
             id: string;
             name: string;
@@ -2741,34 +2831,17 @@ export default function AttendancePage() {
         const submittedPrayerKeys = new Set<string>();
 
         if (periodWeekIds.length > 0 && periodGroupIds.length > 0) {
-            const { data: submittedAttendanceRows, error: submittedAttendanceError } = await supabase
-                .from('attendance')
-                .select('week_id, group_id')
+            const { data: submissionRows, error: submissionRowsError } = await supabase
+                .from('group_week_record_submissions')
+                .select('week_id, group_id, attendance_submitted_at, prayer_submitted_at')
                 .in('week_id', periodWeekIds)
                 .in('group_id', periodGroupIds);
-            if (submittedAttendanceError) throw buildQueryError('submission risk export submitted attendance query failed', submittedAttendanceError);
+            if (submissionRowsError) throw buildQueryError('submission risk export marker query failed', submissionRowsError);
 
-            ((submittedAttendanceRows || []) as { week_id?: string | null; group_id?: string | null }[])
-                .forEach((row) => {
-                    if (row.week_id && row.group_id) {
-                        submittedAttendanceKeys.add(buildWeekGroupKey(row.week_id, row.group_id));
-                    }
-                });
-
-            const { data: submittedPrayerRows, error: submittedPrayerError } = await supabase
-                .from('prayer_entries')
-                .select('week_id, group_id')
-                .eq('status', 'published')
-                .in('week_id', periodWeekIds)
-                .in('group_id', periodGroupIds);
-            if (submittedPrayerError) throw buildQueryError('submission risk export submitted prayer query failed', submittedPrayerError);
-
-            ((submittedPrayerRows || []) as { week_id?: string | null; group_id?: string | null }[])
-                .forEach((row) => {
-                    if (row.week_id && row.group_id) {
-                        submittedPrayerKeys.add(buildWeekGroupKey(row.week_id, row.group_id));
-                    }
-            });
+            buildSubmittedRecordKeys((submissionRows || []) as GroupWeekRecordSubmissionRow[], 'attendance')
+                .forEach((key) => submittedAttendanceKeys.add(key));
+            buildSubmittedRecordKeys((submissionRows || []) as GroupWeekRecordSubmissionRow[], 'prayer')
+                .forEach((key) => submittedPrayerKeys.add(key));
         }
 
         const activeGroupsForWeek = await createSeasonGroupPeriodResolver(
@@ -2783,7 +2856,8 @@ export default function AttendancePage() {
                     const key = buildWeekGroupKey(week.id, group.id);
                     const hasAttendance = submittedAttendanceKeys.has(key);
                     const hasPrayer = submittedPrayerKeys.has(key);
-                    const existing = submissionRiskByGroup.get(group.id) || {
+                    const riskGroupKey = `${group.id}::${group.name}`;
+                    const existing = submissionRiskByGroup.get(riskGroupKey) || {
                         id: group.id,
                         name: group.name,
                         expectedWeeks: 0,
@@ -2814,7 +2888,7 @@ export default function AttendancePage() {
                         }
                     }
 
-                    submissionRiskByGroup.set(group.id, existing);
+                    submissionRiskByGroup.set(riskGroupKey, existing);
                 });
         });
 
@@ -2839,7 +2913,7 @@ export default function AttendancePage() {
                     riskRate: group.expectedWeeks > 0 ? (missedWeeks / group.expectedWeeks) * 100 : 0,
                 };
             })
-            .filter((group) => group.expectedWeeks >= 2 && group.missedWeeks >= 2)
+            .filter((group) => group.missedWeeks > 0)
             .sort((a, b) => {
                 const missedDiff = b.missedWeeks - a.missedWeeks;
                 if (missedDiff !== 0) return missedDiff;
@@ -2861,7 +2935,7 @@ export default function AttendancePage() {
 
             const reportGroups = await buildSubmissionRiskGroupsForRange(startStr, endStr);
             if (reportGroups.length === 0) {
-                alert('선택한 기간에 반복 미제출 조가 없습니다.');
+                alert('선택한 기간에 제출 누락 조가 없습니다.');
                 return;
             }
 
@@ -3995,7 +4069,7 @@ export default function AttendancePage() {
                                     <AlertCircle className="h-4 w-4 text-orange-500" />
                                 </div>
                                 <p className="mt-3 text-3xl font-black text-slate-900 dark:text-white">{submissionRiskGroups.length}</p>
-                                <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">반복 미제출 조</p>
+                                <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">제출 누락 조</p>
                             </div>
                                 </>
                             )}
@@ -4107,8 +4181,8 @@ export default function AttendancePage() {
                                                     </div>
                                                     <div className="flex items-center justify-between text-[9px] font-black text-slate-400">
                                                         <span>
-                                                            {group.weekCount}개 모임 주차 기준
-                                                            {group.dataWeekCount < group.weekCount ? ` · ${group.dataWeekCount}주 데이터` : ''}
+                                                            {group.weekCount}개 활동 주차 기준
+                                                            {group.dataWeekCount < group.periodWeekCount ? ` · 선택 기간 ${group.periodWeekCount}주 중` : ''}
                                                         </span>
                                                         <span>기간 누적 {group.presentSum}/{group.totalAttCount}</span>
                                                     </div>
@@ -4140,7 +4214,7 @@ export default function AttendancePage() {
                                         </div>
                                         <div>
                                             <span className="text-sm font-black text-slate-900 dark:text-white">출석 제출 점검 조</span>
-                                            <p className="text-[10px] font-bold text-slate-400">출석 또는 기도제목 제출이 반복 누락된 조</p>
+                                            <p className="text-[10px] font-bold text-slate-400">출석 또는 기도제목 제출 확인이 필요한 조</p>
                                         </div>
                                     </div>
                                     <button
@@ -4156,7 +4230,7 @@ export default function AttendancePage() {
                                 <div className="max-h-[460px] space-y-3 overflow-y-auto pr-1">
                                     {submissionRiskGroups.length > 0 ? (
                                         submissionRiskGroups.map((group) => (
-                                            <div key={group.id} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-orange-100 dark:bg-slate-900/70 dark:ring-orange-500/20">
+                                            <div key={`${group.id}:${group.name}`} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-orange-100 dark:bg-slate-900/70 dark:ring-orange-500/20">
                                                 <div className="flex items-start justify-between gap-4">
                                                     <div>
                                                         <p className="text-xs font-black text-slate-900 dark:text-white">{group.name}</p>
@@ -4171,7 +4245,7 @@ export default function AttendancePage() {
                                                 <div className="mt-3 flex flex-wrap gap-1.5">
                                                     {group.missedWeekLabels.map((label) => (
                                                         <span
-                                                            key={`${group.id}-${label}`}
+                                                            key={`${group.id}-${group.name}-${label}`}
                                                             className="rounded-xl bg-slate-50 px-2.5 py-1 text-[9px] font-black text-slate-500 ring-1 ring-slate-100 dark:bg-slate-950/40 dark:text-slate-300 dark:ring-slate-800"
                                                         >
                                                             {label}
@@ -4190,7 +4264,7 @@ export default function AttendancePage() {
                                         ))
                                     ) : (
                                         <div className="py-8 text-center bg-orange-50/30 dark:bg-orange-900/10 rounded-2xl border border-dashed border-orange-200/50 dark:border-orange-900/30">
-                                            <p className="text-[10px] font-bold text-orange-400 uppercase tracking-tight">반복적으로 제출이 누락된 조가 없습니다.</p>
+                                            <p className="text-[10px] font-bold text-orange-400 uppercase tracking-tight">제출 확인이 필요한 조가 없습니다.</p>
                                         </div>
                                     )}
                                 </div>
@@ -4309,7 +4383,7 @@ export default function AttendancePage() {
                     <div className="rounded-3xl border border-orange-100 bg-orange-50/60 p-5 dark:border-orange-500/20 dark:bg-orange-500/10">
                         <p className="text-sm font-black text-slate-900 dark:text-white">{selectedDepartmentName}</p>
                         <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">
-                            선택한 기간 안에서 출석 대상은 있었지만 제출이 반복 누락된 조를 엑셀로 정리합니다.
+                            선택한 기간 안에서 출석 또는 기도제목 제출 확인이 필요한 조를 엑셀로 정리합니다.
                         </p>
                     </div>
 

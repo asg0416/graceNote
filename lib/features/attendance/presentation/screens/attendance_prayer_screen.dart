@@ -10,7 +10,7 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/attendance/presentation/screens/attendance_check_screen.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
 import 'package:grace_note/core/widgets/ai_processing_loader.dart';
-import 'package:grace_note/core/widgets/season_context_chip.dart';
+import 'package:grace_note/core/utils/record_completion_status.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../core/utils/snack_bar_util.dart';
 import 'package:lucide_icons/lucide_icons.dart' as lucide;
@@ -29,7 +29,7 @@ class AttendancePrayerScreen extends ConsumerStatefulWidget {
 }
 
 class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
-    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
+    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
   @override
   bool get wantKeepAlive => true;
   bool _isRefining = false;
@@ -52,6 +52,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   bool _isDirty = false;
   bool _isAutoSaving = false;
   late AnimationController _animationController;
+  late AnimationController _datePromptController;
+  String? _lastDatePromptKey;
 
   @override
   void dispose() {
@@ -83,6 +85,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       }).catchError((_) {});
     }
     _animationController.dispose();
+    _datePromptController.dispose();
     _editingDebounceTimer?.cancel();
     for (final controller in _controllers.values) {
       controller.removeListener(_onTextChanged);
@@ -172,6 +175,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
+    _datePromptController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    );
   }
 
   @override
@@ -222,6 +229,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   DateTime _weekStart(DateTime value) {
     final date = DateTime(value.year, value.month, value.day);
     return date.subtract(Duration(days: date.weekday % 7));
+  }
+
+  String _dateKey(DateTime value) {
+    final week = _weekStart(value);
+    return '${week.year}-${week.month.toString().padLeft(2, '0')}-${week.day.toString().padLeft(2, '0')}';
   }
 
   DateTime? _parseDateOnly(String? value) {
@@ -288,6 +300,60 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     }
 
     return candidate;
+  }
+
+  DateTimeRange _recordCompletionRange(
+    UserMembership? membership,
+    DateTime selectedWeek,
+  ) {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final startBoundary = membership == null
+        ? null
+        : _latestDate([
+            _parseDateOnly(membership.groupActiveFrom),
+            _parseDateOnly(membership.membershipStartsAt),
+          ]);
+    final endBoundary = membership == null
+        ? null
+        : _earliestDate([
+            _parseDateOnly(membership.groupEndedAt),
+            _parseDateOnly(membership.membershipEndsAt),
+          ]);
+
+    final fallbackStart = DateTime(selectedWeek.year, selectedWeek.month, 1);
+    final start = _weekStart(startBoundary ?? fallbackStart);
+    final boundedEnd = endBoundary != null && endBoundary.isBefore(todayDate)
+        ? endBoundary
+        : todayDate;
+    var end = _weekStart(boundedEnd);
+    if (end.isBefore(start)) end = start;
+    return DateTimeRange(start: start, end: end);
+  }
+
+  String? _recordStatusKey({
+    required String? groupId,
+    required String? churchId,
+    required String departmentId,
+    required DateTimeRange range,
+  }) {
+    if (groupId == null ||
+        groupId.isEmpty ||
+        churchId == null ||
+        churchId.isEmpty ||
+        departmentId.isEmpty) {
+      return null;
+    }
+    return '$groupId:$churchId:$departmentId:${_dateKey(range.start)}:${_dateKey(range.end)}';
+  }
+
+  void _triggerDatePromptPulse(String recordStatusKey) {
+    if (_lastDatePromptKey == recordStatusKey) return;
+    _lastDatePromptKey = recordStatusKey;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _datePromptController.forward(from: 0);
+    });
   }
 
   Future<void> _refreshData() async {
@@ -574,7 +640,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         _sortMembers();
         _isCheckScreenShowing = false;
       });
-      await _saveData(status: 'draft');
+      await _saveData(status: 'draft', saveAttendance: true);
     } else {
       // 취소되거나 완료 없이 닫힌 경우
       if (mounted) setState(() => _isCheckScreenShowing = false);
@@ -1216,7 +1282,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     }
   }
 
-  Future<void> _saveData({required String status, bool silent = false}) async {
+  Future<void> _saveData({
+    required String status,
+    bool silent = false,
+    bool saveAttendance = false,
+  }) async {
     if (_currentChurchId == null || _currentGroupId == null) {
       if (!silent)
         SnackBarUtil.showSnackBar(context,
@@ -1256,13 +1326,15 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         final dirId = m['directoryMemberId'];
         final memberId = m['id'];
         final String modelNote = (m['prayerNote'] as String? ?? '');
-        attendance.add(AttendanceModel(
-          weekId: weekId,
-          groupId: _currentGroupId,
-          groupMemberId: m['groupMemberId'],
-          directoryMemberId: dirId,
-          status: m['isPresent'] ? 'present' : 'absent',
-        ));
+        if (saveAttendance) {
+          attendance.add(AttendanceModel(
+            weekId: weekId,
+            groupId: _currentGroupId,
+            groupMemberId: m['groupMemberId'],
+            directoryMemberId: dirId,
+            status: m['isPresent'] ? 'present' : 'absent',
+          ));
+        }
         final note = modelNote.trim();
         if (note.isNotEmpty) {
           // [FIX] 사용자가 '임시 저장'을 명시적으로 눌렀다면, 기존 상태가 published라도 draft로 변경(Unpublish)해야 함.
@@ -1284,9 +1356,38 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       }
       await repo.saveAttendanceAndPrayers(
           attendanceList: attendance, prayerList: prayers);
+      final activeMembership = ref.read(activeMembershipProvider);
+      final profile = ref.read(userProfileProvider).value;
+      final departmentId =
+          activeMembership?.departmentId ?? profile?.departmentId ?? '';
+      if (departmentId.isNotEmpty) {
+        if (saveAttendance) {
+          await repo.markGroupWeekRecordSubmitted(
+            churchId: _currentChurchId!,
+            departmentId: departmentId,
+            weekId: weekId,
+            groupId: _currentGroupId!,
+            kind: 'attendance',
+          );
+        }
+        if (status == 'published' && prayers.isNotEmpty) {
+          await repo.markGroupWeekRecordSubmitted(
+            churchId: _currentChurchId!,
+            departmentId: departmentId,
+            weekId: weekId,
+            groupId: _currentGroupId!,
+            kind: 'prayer',
+          );
+        }
+      }
+      if (saveAttendance) {
+        _hasExistingData = true;
+      }
       ref.invalidate(weeklyDataProvider);
       ref.invalidate(departmentWeeklyDataProvider);
       ref.invalidate(attendanceHistoryProvider);
+      ref.invalidate(recordCompletionStatusesProvider);
+      _lastDatePromptKey = null;
 
       if (mounted && !silent) setState(() => _isLoading = false);
       if (mounted && !silent)
@@ -1488,6 +1589,27 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         ? ref.watch(noMeetingDayProvider('$departmentId:$weekStr'))
         : const AsyncValue<NoMeetingDayModel?>.data(null);
     final noMeeting = noMeetingAsync.value;
+    final recordRange = _recordCompletionRange(activeMembership, selectedWeek);
+    final recordStatusKey = _recordStatusKey(
+      groupId: _currentGroupId ?? activeMembership?.groupId,
+      churchId: _currentChurchId ?? activeMembership?.churchId,
+      departmentId: departmentId,
+      range: recordRange,
+    );
+    final recordStatusesAsync = recordStatusKey == null
+        ? const AsyncValue<Map<String, RecordCompletionStatus>>.data({})
+        : ref.watch(recordCompletionStatusesProvider(recordStatusKey));
+    final recordStatuses = recordStatusesAsync.valueOrNull ?? {};
+    final selectedRecordStatus = noMeeting != null
+        ? RecordCompletionStatus.normal
+        : recordStatuses[_dateKey(selectedWeek)] ??
+            RecordCompletionStatus.normal;
+    final hasPendingRecords = recordStatuses.isNotEmpty;
+    if (hasPendingRecords && recordStatusKey != null) {
+      _triggerDatePromptPulse(recordStatusKey);
+    } else if (!hasPendingRecords) {
+      _lastDatePromptKey = null;
+    }
 
     // [FIX] 타이틀도 선택된 그룹명으로 표시
     String groupName = '우리 조';
@@ -1526,13 +1648,6 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           },
         ),
         actions: [
-          if (departmentId.isNotEmpty)
-            SeasonContextChip(
-              departmentId: departmentId,
-              weekDate: selectedWeek,
-              iconOnly: true,
-              margin: const EdgeInsets.only(right: 4),
-            ),
           IconButton(
             icon: Icon(lucide.LucideIcons.clipboardPaste,
                 color: noMeeting != null
@@ -1569,7 +1684,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         ],
       ),
       // [FIX] 로컬 상태 기반 렌더링 — provider AsyncLoading 전환 시 위젯 트리 교체 방지
-      body: _buildBody(noMeeting, departmentId, selectedWeek),
+      body: _buildBody(
+        noMeeting,
+        departmentId,
+        selectedWeek,
+        selectedRecordStatus,
+        hasPendingRecords,
+        recordStatusKey,
+      ),
       bottomNavigationBar: _buildBottomActions(noMeeting),
     );
   }
@@ -1578,6 +1700,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     NoMeetingDayModel? noMeeting,
     String departmentId,
     DateTime selectedWeek,
+    RecordCompletionStatus selectedRecordStatus,
+    bool hasPendingRecords,
+    String? recordStatusKey,
   ) {
     if (!_isInitialized || (_members.isEmpty && (_isLoading || _isFetching))) {
       return const Center(
@@ -1596,8 +1721,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       children: [
         Column(
           children: [
-            _buildAIHeader(),
+            _buildAIHeader(
+              hasPendingRecords,
+              recordStatusKey,
+              selectedRecordStatus,
+            ),
             if (noMeeting != null) _buildNoMeetingBanner(noMeeting),
+            if (noMeeting == null)
+              _buildRecordCompletionNotice(selectedRecordStatus),
             if (_isRefining)
               const LinearProgressIndicator(
                   backgroundColor: Colors.transparent,
@@ -1671,89 +1802,220 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     );
   }
 
-  Widget _buildWeekSelector() {
+  Widget _buildWeekSelector(
+    bool hasPendingRecords,
+    String? recordStatusKey,
+    RecordCompletionStatus selectedRecordStatus,
+  ) {
     final selectedDate = ref.watch(attendanceSelectedWeekProvider);
-    return InkWell(
-      onTap: () {
-        showDialog(
-          context: context,
-          builder: (context) => Center(
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                width: 340,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10))
-                  ],
-                ),
-                child: Column(
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedBuilder(
+          animation: _datePromptController,
+          builder: (context, _) {
+            final hasSelectedIssue =
+                selectedRecordStatus != RecordCompletionStatus.normal;
+            final pulse = hasPendingRecords
+                ? math.sin(_datePromptController.value * math.pi * 4).abs()
+                : 0.0;
+            final dotColor = hasSelectedIssue
+                ? _recordStatusColor(selectedRecordStatus)
+                : const Color(0xFFF59E0B).withValues(
+                    alpha: hasPendingRecords ? 0.45 + pulse * 0.45 : 0,
+                  );
+            final showDot = hasSelectedIssue || hasPendingRecords;
+
+            return InkWell(
+              onTap: () => _showWeekPicker(recordStatusKey),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text('주차 선택 (일요일)',
-                          style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.textMain,
-                              fontFamily: 'Pretendard')),
+                    if (showDot) ...[
+                      _RecordStatusDot(color: dotColor, size: 6),
+                      const SizedBox(width: 7),
+                    ],
+                    Text(
+                      DateFormat('yyyy.MM.dd').format(selectedDate),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: Color(0xFF1A1A1A),
+                        fontFamily: 'Pretendard',
+                        letterSpacing: -0.5,
+                      ),
                     ),
-                    const Divider(height: 24),
-                    ShadCalendar(
-                      key: ValueKey(selectedDate),
-                      selected: selectedDate,
-                      initialMonth:
-                          DateTime(selectedDate.year, selectedDate.month, 1),
-                      weekStartsOn: 7, // [FIX] 일요일이 가장 왼쪽에 오도록 설정
-                      selectableDayPredicate: (date) {
-                        final now = DateTime.now();
-                        final today = DateTime(now.year, now.month, now.day);
-                        return date.weekday == DateTime.sunday &&
-                            !date.isAfter(today) &&
-                            _isActiveMembershipWeek(date);
-                      },
-                      onChanged: (date) {
-                        if (date != null) {
-                          ref
-                              .read(attendanceSelectedWeekProvider.notifier)
-                              .state = date;
-                          _refreshData();
-                          Navigator.pop(context);
-                        }
-                      },
-                    ),
+                    const SizedBox(width: 4),
+                    const Icon(lucide.LucideIcons.chevronDown,
+                        size: 20, color: AppTheme.textSub),
                   ],
                 ),
               ),
-            ),
-          ),
-        );
-      },
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            DateFormat('yyyy.MM.dd').format(selectedDate),
-            style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 15,
-                color: Color(0xFF1A1A1A),
-                fontFamily: 'Pretendard',
-                letterSpacing: -0.5),
-          ),
-          const SizedBox(width: 4),
-          const Icon(lucide.LucideIcons.chevronDown,
-              size: 20, color: AppTheme.textSub),
-          const SizedBox(width: 8),
-          _buildStatusBadge(),
-        ],
+            );
+          },
+        ),
+        const SizedBox(width: 8),
+        _buildStatusBadge(),
+      ],
+    );
+  }
+
+  Color _recordStatusColor(RecordCompletionStatus status) {
+    return switch (status) {
+      RecordCompletionStatus.attendanceMissing => const Color(0xFFEF4444),
+      RecordCompletionStatus.prayerMissing => const Color(0xFFF59E0B),
+      RecordCompletionStatus.normal => AppTheme.primaryViolet,
+    };
+  }
+
+  Color _recordStatusBackgroundColor(RecordCompletionStatus status) {
+    return switch (status) {
+      RecordCompletionStatus.attendanceMissing => const Color(0xFFFEF2F2),
+      RecordCompletionStatus.prayerMissing => const Color(0xFFFFFBEB),
+      RecordCompletionStatus.normal => Colors.transparent,
+    };
+  }
+
+  Color _recordStatusBorderColor(RecordCompletionStatus status) {
+    return switch (status) {
+      RecordCompletionStatus.attendanceMissing => const Color(0xFFFECACA),
+      RecordCompletionStatus.prayerMissing => const Color(0xFFFCD34D),
+      RecordCompletionStatus.normal => Colors.transparent,
+    };
+  }
+
+  String _recordStatusShortLabel(RecordCompletionStatus status) {
+    return switch (status) {
+      RecordCompletionStatus.attendanceMissing => '출석 체크 필요',
+      RecordCompletionStatus.prayerMissing => '기도제목 등록 필요',
+      RecordCompletionStatus.normal => '',
+    };
+  }
+
+  Widget _buildRecordCompletionNotice(RecordCompletionStatus status) {
+    if (status == RecordCompletionStatus.normal) {
+      return const SizedBox.shrink();
+    }
+
+    final color = _recordStatusColor(status);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _recordStatusBackgroundColor(status),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _recordStatusBorderColor(status)),
+      ),
+      child: Text(
+        _recordStatusShortLabel(status),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: color,
+          fontFamily: 'Pretendard',
+          letterSpacing: -0.2,
+        ),
+      ),
+    );
+  }
+
+  void _showWeekPicker(String? recordStatusKey) {
+    final selectedDate = ref.read(attendanceSelectedWeekProvider);
+    var visibleMonth = DateTime(selectedDate.year, selectedDate.month, 1);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Consumer(
+            builder: (context, dialogRef, _) {
+              final statuses = recordStatusKey == null
+                  ? const <String, RecordCompletionStatus>{}
+                  : dialogRef
+                          .watch(
+                              recordCompletionStatusesProvider(recordStatusKey))
+                          .valueOrNull ??
+                      const <String, RecordCompletionStatus>{};
+
+              return Center(
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    width: 340,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        )
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            '주차 선택 (일요일)',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.textMain,
+                              fontFamily: 'Pretendard',
+                            ),
+                          ),
+                        ),
+                        const Divider(height: 24),
+                        _RecordWeekCalendar(
+                          visibleMonth: visibleMonth,
+                          selectedDate: selectedDate,
+                          statusesByDate: statuses,
+                          isSelectable: (date) {
+                            final now = DateTime.now();
+                            final today =
+                                DateTime(now.year, now.month, now.day);
+                            return date.weekday == DateTime.sunday &&
+                                !date.isAfter(today) &&
+                                _isActiveMembershipWeek(date);
+                          },
+                          onPreviousMonth: () {
+                            setDialogState(() {
+                              visibleMonth = DateTime(
+                                  visibleMonth.year, visibleMonth.month - 1);
+                            });
+                          },
+                          onNextMonth: () {
+                            setDialogState(() {
+                              visibleMonth = DateTime(
+                                  visibleMonth.year, visibleMonth.month + 1);
+                            });
+                          },
+                          onDateSelected: (date) {
+                            ref
+                                .read(attendanceSelectedWeekProvider.notifier)
+                                .state = date;
+                            _refreshData();
+                            Navigator.pop(dialogContext);
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                        const _RecordCalendarLegend(),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -1861,7 +2123,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     );
   }
 
-  Widget _buildAIHeader() {
+  Widget _buildAIHeader(
+    bool hasPendingRecords,
+    String? recordStatusKey,
+    RecordCompletionStatus selectedRecordStatus,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: const BoxDecoration(
@@ -1870,7 +2136,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _buildWeekSelector(),
+          _buildWeekSelector(
+            hasPendingRecords,
+            recordStatusKey,
+            selectedRecordStatus,
+          ),
           const Spacer(),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -2231,6 +2501,265 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                   fontFamily: 'Pretendard')))))),
         ],
       ),
+    );
+  }
+}
+
+class _RecordWeekCalendar extends StatelessWidget {
+  final DateTime visibleMonth;
+  final DateTime selectedDate;
+  final Map<String, RecordCompletionStatus> statusesByDate;
+  final bool Function(DateTime date) isSelectable;
+  final VoidCallback onPreviousMonth;
+  final VoidCallback onNextMonth;
+  final ValueChanged<DateTime> onDateSelected;
+
+  const _RecordWeekCalendar({
+    required this.visibleMonth,
+    required this.selectedDate,
+    required this.statusesByDate,
+    required this.isSelectable,
+    required this.onPreviousMonth,
+    required this.onNextMonth,
+    required this.onDateSelected,
+  });
+
+  String _dateKey(DateTime value) {
+    final date = DateTime(value.year, value.month, value.day);
+    final sunday = date.subtract(Duration(days: date.weekday % 7));
+    return '${sunday.year}-${sunday.month.toString().padLeft(2, '0')}-${sunday.day.toString().padLeft(2, '0')}';
+  }
+
+  Color _statusColor(RecordCompletionStatus status) {
+    return switch (status) {
+      RecordCompletionStatus.attendanceMissing => const Color(0xFFEF4444),
+      RecordCompletionStatus.prayerMissing => const Color(0xFFF59E0B),
+      RecordCompletionStatus.normal => AppTheme.primaryViolet,
+    };
+  }
+
+  Color _textColor({
+    required bool selected,
+    required bool selectable,
+    required bool inMonth,
+    required bool isSunday,
+  }) {
+    if (!selectable) return const Color(0xFFCBD5E1);
+    if (selected) return Colors.white;
+    if (!isSunday) return const Color(0xFFCBD5E1);
+    return inMonth ? AppTheme.primaryViolet : const Color(0xFFB8A6F5);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final firstOfMonth = DateTime(visibleMonth.year, visibleMonth.month, 1);
+    final gridStart =
+        firstOfMonth.subtract(Duration(days: firstOfMonth.weekday % 7));
+    final days =
+        List.generate(42, (index) => gridStart.add(Duration(days: index)));
+    const weekdayLabels = ['일', '월', '화', '수', '목', '금', '토'];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              onPressed: onPreviousMonth,
+              icon: const Icon(lucide.LucideIcons.chevronLeft, size: 18),
+              color: AppTheme.textSub,
+              splashRadius: 20,
+            ),
+            Expanded(
+              child: Text(
+                DateFormat('yyyy년 M월').format(visibleMonth),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textMain,
+                  fontFamily: 'Pretendard',
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: onNextMonth,
+              icon: const Icon(lucide.LucideIcons.chevronRight, size: 18),
+              color: AppTheme.textSub,
+              splashRadius: 20,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: weekdayLabels
+              .map(
+                (label) => Expanded(
+                  child: Center(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: label == '일'
+                            ? AppTheme.primaryViolet
+                            : AppTheme.textSub.withValues(alpha: 0.55),
+                        fontFamily: 'Pretendard',
+                      ),
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 8),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: days.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+          ),
+          itemBuilder: (context, index) {
+            final day = days[index];
+            final inMonth = day.month == visibleMonth.month;
+            final isSunday = day.weekday == DateTime.sunday;
+            final selectable = isSelectable(day);
+            final selected = DateUtils.isSameDay(day, selectedDate);
+            final status = isSunday
+                ? statusesByDate[_dateKey(day)] ?? RecordCompletionStatus.normal
+                : RecordCompletionStatus.normal;
+            final hasIssue = status != RecordCompletionStatus.normal;
+            final bgColor = selected
+                ? (hasIssue ? _statusColor(status) : AppTheme.primaryViolet)
+                : Colors.transparent;
+            final textColor = _textColor(
+              selected: selected,
+              selectable: selectable,
+              inMonth: inMonth,
+              isSunday: isSunday,
+            );
+
+            return Opacity(
+              opacity: inMonth ? 1 : 0.38,
+              child: InkWell(
+                onTap: selectable ? () => onDateSelected(day) : null,
+                borderRadius: BorderRadius.circular(12),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 140),
+                  decoration: BoxDecoration(
+                    color: selectable ? bgColor : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Text(
+                        day.day.toString(),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight:
+                              isSunday ? FontWeight.w800 : FontWeight.w600,
+                          color: textColor,
+                          fontFamily: 'Pretendard',
+                        ),
+                      ),
+                      if (isSunday && hasIssue && !selected)
+                        Positioned(
+                          bottom: 5,
+                          child: _RecordStatusDot(
+                            color: _statusColor(status),
+                            size: 5,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _RecordStatusDot extends StatelessWidget {
+  final Color color;
+  final double size;
+
+  const _RecordStatusDot({
+    required this.color,
+    this.size = 6,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+}
+
+class _RecordCalendarLegend extends StatelessWidget {
+  const _RecordCalendarLegend();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _RecordLegendItem(
+          color: Color(0xFFEF4444),
+          label: '출석 미제출',
+        ),
+        SizedBox(width: 12),
+        _RecordLegendItem(
+          color: Color(0xFFF59E0B),
+          label: '기도제목 미제출',
+        ),
+      ],
+    );
+  }
+}
+
+class _RecordLegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _RecordLegendItem({
+    required this.color,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textSub,
+            fontFamily: 'Pretendard',
+          ),
+        ),
+      ],
     );
   }
 }
