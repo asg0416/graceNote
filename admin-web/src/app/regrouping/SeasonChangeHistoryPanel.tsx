@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { ClipboardEvent, DragEvent, KeyboardEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { clampDateToRange, clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
 
 type SeasonGroup = {
@@ -88,6 +89,8 @@ interface SeasonChangeHistoryPanelProps {
     onMovedMemberEndChange: (memberId: string, value: string) => void;
     onBulkUpdateMovedMemberPeriods: (memberIds: string[], updates: { starts_week_date?: string | null; ends_week_date?: string | null }) => void;
     onRestoreArchivedGroup: (groupId: string) => void;
+    className?: string;
+    defaultOpen?: boolean;
 }
 
 export function SeasonChangeHistoryPanel({
@@ -106,6 +109,8 @@ export function SeasonChangeHistoryPanel({
     onMovedMemberEndChange,
     onBulkUpdateMovedMemberPeriods,
     onRestoreArchivedGroup,
+    className,
+    defaultOpen = false,
 }: SeasonChangeHistoryPanelProps) {
     const [memberTab, setMemberTab] = useState<'all' | MovedSeasonMember['changeType']>('all');
     const [selectedPeriodMemberIds, setSelectedPeriodMemberIds] = useState<string[]>([]);
@@ -236,8 +241,8 @@ export function SeasonChangeHistoryPanel({
     };
 
     return (
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <details className="group">
+        <section className={cn("rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900", className)}>
+            <details className="group" open={defaultOpen ? true : undefined}>
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">

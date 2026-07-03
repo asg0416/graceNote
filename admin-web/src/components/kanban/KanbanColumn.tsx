@@ -200,7 +200,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
     return (
         <div className={cn(
             "flex w-96 shrink-0 flex-col rounded-2xl border border-slate-200/80 bg-white shadow-sm transition-shadow group/column hover:shadow-xl hover:shadow-slate-200/40 dark:border-slate-800/60 dark:bg-slate-900/60 dark:hover:shadow-none",
-            fillHeight ? "h-full min-h-[520px] max-h-none" : "max-h-[820px]"
+            fillHeight ? "h-full min-h-0 max-h-none" : "max-h-[820px]"
         )}>
             {/* Header - Sticky within column */}
             <div className="sticky top-0 z-20 p-5 flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800/60 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-t-[31px]">
