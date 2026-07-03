@@ -327,8 +327,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             onDragEnd={handleDragEnd}
         >
             <div className={cn(
-                "flex items-start gap-8 px-2 pb-20",
-                fillHeight && "h-full min-h-[520px] pb-6"
+                "box-border flex items-start gap-8 px-2 pb-20",
+                fillHeight && "h-full min-h-0 pb-3"
             )}>
                 {/* Unassigned Column */}
                 <KanbanColumn
