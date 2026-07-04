@@ -600,3 +600,23 @@ test('mergeAppliedSeasonMemberWithLiveMembership clears historical apply markers
   assert.equal(result.source_membership_group_id, 'live-group-1');
   assert.equal(result.source_membership_group_name, '현권 영미 조');
 });
+
+test('mergeAppliedSeasonMemberWithLiveMembership keeps applied season period over stale live period', () => {
+  const result = mergeAppliedSeasonMemberWithLiveMembership(
+    {
+      id: 'season-assignment-1',
+      group_id: 'plan-group-1',
+      full_name: '김적용',
+      starts_week_date: '2026-07-05',
+      ends_week_date: '2026-11-29',
+    },
+    {
+      group_id: 'plan-group-1',
+      starts_week_date: '2026-06-28',
+      ends_week_date: '2026-11-29',
+    },
+  );
+
+  assert.equal(result.starts_week_date, '2026-07-05');
+  assert.equal(result.ends_week_date, '2026-11-29');
+});

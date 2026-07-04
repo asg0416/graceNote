@@ -1112,6 +1112,11 @@ function RegroupingPageInner() {
             const endsDate = typeof membership?.ends_at === 'string'
                 ? membership.ends_at.slice(0, 10)
                 : season.end_week_date || null;
+            const startsWeekDate = maxDateInput(snapDateInputToSunday(startsDate), season.effective_week_date);
+            const rawEndsWeekDate = endsDate ? snapDateInputToSunday(endsDate) : season.end_week_date || null;
+            const endsWeekDate = rawEndsWeekDate && season.end_week_date
+                ? minDateInput(rawEndsWeekDate, season.end_week_date)
+                : rawEndsWeekDate;
 
             return {
                 ...member,
@@ -1123,8 +1128,8 @@ function RegroupingPageInner() {
                 source_membership_group_id: liveGroupId,
                 source_membership_group_name: liveGroup?.name || member.group_name || null,
                 source_member_directory_id: member.id,
-                starts_week_date: snapDateInputToSunday(startsDate),
-                ends_week_date: endsDate ? snapDateInputToSunday(endsDate) : season.end_week_date || null,
+                starts_week_date: startsWeekDate,
+                ends_week_date: endsWeekDate,
             };
         }));
     };
@@ -1199,6 +1204,11 @@ function RegroupingPageInner() {
                 const endsDate = typeof membership.ends_at === 'string'
                     ? membership.ends_at.slice(0, 10)
                     : season.end_week_date || null;
+                const startsWeekDate = maxDateInput(snapDateInputToSunday(startsDate), seasonStart);
+                const rawEndsWeekDate = endsDate ? snapDateInputToSunday(endsDate) : season.end_week_date || null;
+                const endsWeekDate = rawEndsWeekDate && season.end_week_date
+                    ? minDateInput(rawEndsWeekDate, season.end_week_date)
+                    : rawEndsWeekDate;
 
                 return {
                     ...directoryMember,
@@ -1211,8 +1221,8 @@ function RegroupingPageInner() {
                     source_membership_group_id: membership.group_id || null,
                     source_membership_group_name: liveGroup?.name || directoryMember.group_name || null,
                     source_member_directory_id: directoryMemberId,
-                    starts_week_date: snapDateInputToSunday(startsDate),
-                    ends_week_date: endsDate ? snapDateInputToSunday(endsDate) : season.end_week_date || null,
+                    starts_week_date: startsWeekDate,
+                    ends_week_date: endsWeekDate,
                 };
             })
             .filter((member): member is NonNullable<typeof member> => Boolean(member)));
