@@ -992,7 +992,7 @@ function RegroupingPageInner() {
     const fetchGroups = async (deptId: string) => {
         const { data } = await supabase
             .from('groups')
-            .select('id, name, color_hex, department_id')
+            .select('id, name, color_hex, department_id, is_new_member_group, climbing_threshold')
             .eq('department_id', deptId)
             .eq('is_active', true)
             .order('name');
@@ -1024,19 +1024,27 @@ function RegroupingPageInner() {
 
         const { data, error } = await supabase
             .from('memberships')
-            .select('id, person_id, legacy_member_directory_id, group_id, role')
+            .select('id, person_id, legacy_member_directory_id, group_id, role, starts_at, ends_at, updated_at')
             .eq('church_id', churchId)
             .eq('department_id', deptId)
             .eq('status', 'active')
-            .in('legacy_member_directory_id', directoryIds);
+            .in('legacy_member_directory_id', directoryIds)
+            .or(`starts_at.is.null,starts_at.lt.${addWeeksToDateInput(getCurrentSundayInputValue(), 1)}`)
+            .or(`ends_at.is.null,ends_at.gte.${getCurrentSundayInputValue()}`)
+            .order('starts_at', { ascending: false })
+            .order('updated_at', { ascending: false });
 
         if (error) throw error;
 
-        return new Map(
-            (data || [])
-                .filter(membership => membership.legacy_member_directory_id)
-                .map(membership => [membership.legacy_member_directory_id as string, membership])
-        );
+        const membershipByDirectoryId = new Map<string, any>();
+        for (const membership of data || []) {
+            if (!membership.legacy_member_directory_id) continue;
+            const directoryId = membership.legacy_member_directory_id as string;
+            if (!membershipByDirectoryId.has(directoryId)) {
+                membershipByDirectoryId.set(directoryId, membership);
+            }
+        }
+        return membershipByDirectoryId;
     };
 
     const fetchLiveMembersForCurrentSeasonPlan = async (
@@ -1064,21 +1072,28 @@ function RegroupingPageInner() {
         const [{ data: membershipRows, error: membershipsError }, phase2PersonMap] = await Promise.all([
             supabase
                 .from('memberships')
-                .select('id, person_id, legacy_member_directory_id, group_id, role, starts_at, ends_at, group:group_id(name)')
+                .select('id, person_id, legacy_member_directory_id, group_id, role, starts_at, ends_at, updated_at, group:group_id(name)')
                 .eq('church_id', season.church_id)
                 .eq('department_id', season.department_id)
                 .eq('status', 'active')
-                .in('legacy_member_directory_id', directoryIds),
+                .in('legacy_member_directory_id', directoryIds)
+                .or(`starts_at.is.null,starts_at.lt.${addWeeksToDateInput(currentWeek, 1)}`)
+                .or(`ends_at.is.null,ends_at.gte.${currentWeek}`)
+                .order('starts_at', { ascending: false })
+                .order('updated_at', { ascending: false }),
             fetchPhase2PersonMap(directoryIds),
         ]);
 
         if (membershipsError) throw membershipsError;
 
-        const membershipByDirectoryId = new Map(
-            (membershipRows || [])
-                .filter(membership => membership.legacy_member_directory_id)
-                .map(membership => [membership.legacy_member_directory_id as string, membership])
-        );
+        const membershipByDirectoryId = new Map<string, NonNullable<typeof membershipRows>[number]>();
+        for (const membership of membershipRows || []) {
+            if (!membership.legacy_member_directory_id) continue;
+            const directoryId = membership.legacy_member_directory_id as string;
+            if (!membershipByDirectoryId.has(directoryId)) {
+                membershipByDirectoryId.set(directoryId, membership);
+            }
+        }
         const planGroupIdBySourceGroupId = new Map(
             planGroups
                 .filter(group => group.source_group_id)
