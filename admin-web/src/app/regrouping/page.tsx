@@ -3116,7 +3116,7 @@ function RegroupingPageInner() {
                     liveMemberByIdentityAndGroup.get(`${identityKey}|${member.group_id || 'unassigned'}`) ||
                     liveMemberByIdentity.get(identityKey);
                 if (isSeasonCurrentForToday) {
-                    if (!liveMatch && (member.plan_change_type || member.change_type)) return null;
+                    if (!liveMatch && member.plan_change_type) return null;
                     if (liveMatch) {
                         return mergeAppliedSeasonMemberWithLiveMembership(member, liveMatch);
                     }
