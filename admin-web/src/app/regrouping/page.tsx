@@ -68,6 +68,7 @@ import {
     buildRegroupingSeasonGroupsPayload,
     isUuid,
     mapRegroupingSeasonDraftToBoard,
+    mergeAppliedSeasonMemberWithLiveMembership,
 } from '@/lib/regroupingSeasonPayloads';
 import { applyBulkMemberPeriods, clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
 import {
@@ -2973,9 +2974,19 @@ function RegroupingPageInner() {
 
         try {
             await applyRegroupingSeason(supabase, { seasonId: selectedSeasonId });
-            alert('조편성 계획이 실제 소속으로 적용되었습니다.');
-            await fetchData();
+            const reloaded = await fetchSeasonPlanBoard(selectedSeasonId);
+            setGroups(reloaded.activeGroups);
+            setSeasonArchivedGroups(reloaded.endedGroups);
+            setLocalMembers(reloaded.members);
+            setMembers(reloaded.members);
+            setBoardBaselineGroups(JSON.parse(JSON.stringify(reloaded.activeGroups)));
+            setBoardBaselineArchivedGroups(JSON.parse(JSON.stringify(reloaded.endedGroups)));
+            setBoardBaselineMembers(JSON.parse(JSON.stringify(reloaded.members)));
+            if (selectedChurch?.id && selectedDepartment?.id) {
+                await fetchRegroupingSeasons(selectedChurch.id, selectedDepartment.id);
+            }
             setHasChanges(false);
+            alert('조편성 계획이 실제 소속으로 적용되었습니다.');
         } catch (error) {
             console.error('Apply regrouping season error:', error);
             alert(error instanceof Error ? error.message : '조편성 계획 적용 중 오류가 발생했습니다.');
@@ -3104,6 +3115,13 @@ function RegroupingPageInner() {
                 const liveMatch =
                     liveMemberByIdentityAndGroup.get(`${identityKey}|${member.group_id || 'unassigned'}`) ||
                     liveMemberByIdentity.get(identityKey);
+                if (isSeasonCurrentForToday) {
+                    if (!liveMatch && (member.plan_change_type || member.change_type)) return null;
+                    if (liveMatch) {
+                        return mergeAppliedSeasonMemberWithLiveMembership(member, liveMatch);
+                    }
+                }
+
                 if (!liveMatch) return member;
 
                 return {
@@ -3119,7 +3137,8 @@ function RegroupingPageInner() {
                     profile_id: member.profile_id || liveMatch.profile_id || null,
                     source_member_directory_id: member.source_member_directory_id || liveMatch.source_member_directory_id || null,
                 };
-            });
+            })
+            .filter((member): member is NonNullable<typeof member> => Boolean(member));
         const plannedTargets = new Set(
             mappedCurrentMembers
                 .filter(member => !isRegroupingRemovedMembershipRow(member))
@@ -3360,11 +3379,17 @@ function RegroupingPageInner() {
 
     const seasonNewGroups = useMemo(() => (
         groups.filter(group => {
+            if (
+                isSelectedCurrentAppliedSeason &&
+                boardBaselineGroups.some(baselineGroup => baselineGroup.id === group.id)
+            ) {
+                return false;
+            }
             if (!group.source_group_id) return true;
             const startsWeekDate = group.starts_week_date || seasonEffectiveWeekDate;
             return startsWeekDate > seasonEffectiveWeekDate;
         })
-    ), [groups, seasonEffectiveWeekDate]);
+    ), [boardBaselineGroups, groups, isSelectedCurrentAppliedSeason, seasonEffectiveWeekDate]);
 
     const movedSeasonMembers = useMemo(() => {
         const baselineById = new Map(boardBaselineMembers.map(member => [member.id, member]));

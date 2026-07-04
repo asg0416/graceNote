@@ -103,6 +103,42 @@ export const buildRegroupingSeasonAssignmentsPayload = (members: Array<Record<st
         })
         .filter((assignment): assignment is NonNullable<typeof assignment> => assignment !== null);
 
+export const mergeAppliedSeasonMemberWithLiveMembership = (
+    member: Record<string, unknown>,
+    liveMember?: Record<string, unknown> | null
+) => {
+    if (!liveMember) return member;
+
+    return {
+        ...member,
+        phone: member.phone || liveMember.phone || null,
+        group_id: liveMember.group_id || member.group_id || null,
+        group_name: liveMember.group_name || member.group_name || null,
+        role_in_group: liveMember.role_in_group || member.role_in_group || 'member',
+        family_name: member.family_name || liveMember.family_name || null,
+        spouse_name: member.spouse_name || liveMember.spouse_name || null,
+        children_info: member.children_info || liveMember.children_info || null,
+        birth_date: member.birth_date || liveMember.birth_date || null,
+        wedding_anniversary: member.wedding_anniversary || liveMember.wedding_anniversary || null,
+        notes: member.notes || liveMember.notes || null,
+        avatar_url: member.avatar_url || liveMember.avatar_url || null,
+        profile_id: member.profile_id || liveMember.profile_id || null,
+        phase2_membership_id: liveMember.phase2_membership_id || member.phase2_membership_id || null,
+        membership_id: liveMember.membership_id || member.membership_id || null,
+        phase2_person_id: member.phase2_person_id || liveMember.phase2_person_id || null,
+        person_id: member.person_id || liveMember.person_id || null,
+        source_member_directory_id: member.source_member_directory_id || liveMember.source_member_directory_id || null,
+        source_membership_group_id: liveMember.source_membership_group_id || null,
+        source_membership_group_name: liveMember.source_membership_group_name || null,
+        starts_week_date: liveMember.starts_week_date || member.starts_week_date || null,
+        ends_week_date: liveMember.ends_week_date ?? member.ends_week_date ?? null,
+        plan_change_type: null,
+        change_type: null,
+        previous_source_group_id: null,
+        previous_group_name: null,
+    };
+};
+
 const getNestedRecord = (value: unknown) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     return value as Record<string, unknown>;
