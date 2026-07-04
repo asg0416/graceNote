@@ -115,6 +115,39 @@ async function sendPush(accessToken: string, token: string, title: string, body:
   return res.ok;
 }
 
+function getCurrentSundayDateKey(nowKST: Date): string {
+  const sunday = new Date(nowKST);
+  sunday.setDate(nowKST.getDate() - nowKST.getDay());
+  return sunday.toISOString().split("T")[0];
+}
+
+async function ensureCurrentWeekRows(
+  supabase: SupabaseClientLike,
+  nowKST: Date,
+  force: boolean,
+  log: string[],
+) {
+  const dayOfWeek = nowKST.getDay();
+  if (!force && dayOfWeek !== 0) {
+    log.push("[week_bootstrap] Skipped: not Sunday KST");
+    return;
+  }
+
+  const weekDate = getCurrentSundayDateKey(nowKST);
+  const { data, error } = await supabase.rpc("ensure_current_week_exists_for_active_churches", {
+    p_week_date: weekDate,
+  });
+
+  if (error) {
+    log.push(`[week_bootstrap] Failed for ${weekDate}: ${error.message}`);
+    return;
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  const createdCount = rows.filter((row: any) => row?.created === true).length;
+  log.push(`[week_bootstrap] Week ${weekDate}: ensured ${rows.length}, created ${createdCount}`);
+}
+
 async function getLeaderRowsByGroups(
   supabase: SupabaseClientLike,
   groupIds: string[],
@@ -274,7 +307,7 @@ Deno.serve(async (req: Request) => {
   const force = url.searchParams.get("force") === "true"; // bypass time/day check for manual testing
   const dryRun = url.searchParams.get("dry_run") === "true"; // calculate targets without sending push
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const accessToken = dryRun ? "" : await getAccessToken();
+  const accessToken = dryRun || task === "ensure_current_week" ? "" : await getAccessToken();
 
   const nowKST = new Date(new Date().getTime() + (9 * 60 * 60 * 1000));
   const dayOfWeek = nowKST.getDay();
@@ -286,6 +319,10 @@ Deno.serve(async (req: Request) => {
 
   const { data: activeDepts } = await supabase.from("departments").select("id, name, church_id, leader_reminder_enabled, leader_reminder_days, leader_reminder_time, climbing_alert_enabled, climbing_alert_day, climbing_alert_time");
   if (!activeDepts?.length) return new Response(JSON.stringify({ log: ["No departments found"] }));
+
+  if (task === "all_tasks" || task === "ensure_current_week") {
+    await ensureCurrentWeekRows(supabase, nowKST, force, log);
+  }
 
   if (task === "all_tasks" || task === "leader_reminder") {
     // 1. Leader Reminder
@@ -300,9 +337,7 @@ Deno.serve(async (req: Request) => {
     log.push(`[leader_reminder] Matched depts: ${reminderDepts.map(d => d.name).join(', ') || 'none'}`);
 
     if (reminderDepts.length > 0) {
-      const lastSunday = new Date(nowKST);
-      lastSunday.setDate(nowKST.getDate() - dayOfWeek);
-      const dateStr = lastSunday.toISOString().split('T')[0];
+      const dateStr = getCurrentSundayDateKey(nowKST);
       log.push(`[leader_reminder] Week date: ${dateStr}`);
 
       const reminderDeptIds = reminderDepts.map(c => c.id);
