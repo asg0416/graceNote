@@ -66,6 +66,7 @@ import {
 import {
     buildRegroupingSeasonAssignmentsPayload,
     buildRegroupingSeasonGroupsPayload,
+    isUuid,
     mapRegroupingSeasonDraftToBoard,
 } from '@/lib/regroupingSeasonPayloads';
 import { applyBulkMemberPeriods, clampPeriodUpdate } from '@/lib/regroupingPeriodBulk';
@@ -269,6 +270,16 @@ const getValidRegroupingGroupLabel = (value?: string | null) => {
     const label = typeof value === 'string' ? value.trim() : '';
     if (!label || label === '추가 소속') return null;
     return label;
+};
+
+const getRegroupingPersistedSourceGroupId = (group?: any | null) => {
+    if (!group) return null;
+    if (typeof group.source_group_id === 'string' && isUuid(group.source_group_id)) {
+        return group.source_group_id;
+    }
+    if (group.plan_group_id) return null;
+    const groupId = typeof group.id === 'string' ? group.id : null;
+    return groupId && isUuid(groupId) && !groupId.startsWith('temp-') ? groupId : null;
 };
 
 const getRegroupingSourceMembershipKey = (member: any) =>
@@ -733,8 +744,7 @@ function RegroupingPageInner() {
             const previousSourceGroupId =
                 baseline.source_membership_group_id ||
                 baseline.previous_source_group_id ||
-                previousGroup?.source_group_id ||
-                (previousGroup?.id && !String(previousGroup.id).startsWith('temp-') ? previousGroup.id : null);
+                getRegroupingPersistedSourceGroupId(previousGroup);
             const previousGroupName =
                 previousGroup?.name ||
                 getValidRegroupingGroupLabel(baseline.group_name) ||
@@ -1359,11 +1369,17 @@ function RegroupingPageInner() {
         endWeekDate: string
     ) => {
         const sourceGroupId =
-            sourceGroup?.source_group_id ||
-            (sourceGroup?.id && !String(sourceGroup.id).startsWith('temp-') ? sourceGroup.id : null) ||
-            member.source_membership_group_id ||
-            member.previous_source_group_id ||
-            null;
+            getRegroupingPersistedSourceGroupId(sourceGroup) ||
+            (
+                member.source_membership_group_id && member.source_membership_group_id !== sourceGroup?.id
+                    ? member.source_membership_group_id
+                    : null
+            ) ||
+            (
+                member.previous_source_group_id && member.previous_source_group_id !== sourceGroup?.id
+                    ? member.previous_source_group_id
+                    : null
+            );
         const sourceGroupName =
             sourceGroup?.name ||
             getValidRegroupingGroupLabel(member.source_membership_group_name) ||
@@ -1401,9 +1417,9 @@ function RegroupingPageInner() {
         sourceGroup?: any
     ) => {
         const sourceGroupId =
-            sourceGroup?.source_group_id ||
-            (sourceGroup?.id && !String(sourceGroup.id).startsWith('temp-') ? sourceGroup.id : null) ||
-            member.group_id ||
+            getRegroupingPersistedSourceGroupId(sourceGroup) ||
+            member.source_membership_group_id ||
+            member.previous_source_group_id ||
             null;
         const sourceGroupName =
             sourceGroup?.name ||
@@ -1482,8 +1498,7 @@ function RegroupingPageInner() {
             const isReassigningRemovedMembership = !member.group_id && Boolean(sourceGroupId || sourceGroupName);
             const sourceGroup = member.group_id ? groups.find(group => group.id === member.group_id) : null;
             const movedSourceGroupId =
-                sourceGroup?.source_group_id ||
-                (sourceGroup?.id && !String(sourceGroup.id).startsWith('temp-') ? sourceGroup.id : null) ||
+                getRegroupingPersistedSourceGroupId(sourceGroup) ||
                 sourceGroupId;
             const movedSourceGroupName =
                 sourceGroup?.name ||
@@ -1743,8 +1758,7 @@ function RegroupingPageInner() {
         if (isCopy) {
             const membersToCopy = currentBoardMembers.filter(m => finalIdsToMove.includes(m.id));
             const targetSourceGroupId =
-                targetGroup?.source_group_id ||
-                (targetGroup?.id && !String(targetGroup.id).startsWith('temp-') ? targetGroup.id : null);
+                getRegroupingPersistedSourceGroupId(targetGroup);
             const newCopies = membersToCopy.map(m => ({
                 ...m,
                 id: `temp-copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -1845,8 +1859,7 @@ function RegroupingPageInner() {
         const removedFromGroup = member.group_id ? groups.find(group => group.id === member.group_id) : null;
         const removedFromSourceGroupId =
             member.source_membership_group_id ||
-            removedFromGroup?.source_group_id ||
-            (removedFromGroup?.id && !String(removedFromGroup.id).startsWith('temp-') ? removedFromGroup.id : null);
+            getRegroupingPersistedSourceGroupId(removedFromGroup);
         const removedFromGroupName =
             getValidRegroupingGroupLabel(member.source_membership_group_name) ||
             removedFromGroup?.name ||
@@ -2322,8 +2335,7 @@ function RegroupingPageInner() {
                 const hasOtherAssignments = (assignmentCountByIdentity.get(identityKey) || 0) > 1;
                 const sourceGroupId =
                     member.source_membership_group_id ||
-                    deletedGroup.source_group_id ||
-                    (deletedGroup.id && !String(deletedGroup.id).startsWith('temp-') ? deletedGroup.id : null);
+                    getRegroupingPersistedSourceGroupId(deletedGroup);
 
                 if (hasOtherAssignments) {
                     return [buildRemovedMembershipRow(
@@ -3404,7 +3416,7 @@ function RegroupingPageInner() {
                     }
                     if (!nextGroupId) return null;
                     const nextGroup = groups.find(group => group.id === nextGroupId);
-                    const currentSourceGroupId = nextGroup?.source_group_id || (nextGroup?.id && !String(nextGroup.id).startsWith('temp-') ? nextGroup.id : null);
+                    const currentSourceGroupId = getRegroupingPersistedSourceGroupId(nextGroup);
                     if (
                         !persistedChangeType &&
                         isMoveSourceMembershipPeriodClosure({
@@ -3441,7 +3453,7 @@ function RegroupingPageInner() {
                 const startsWeekDate = member.starts_week_date || seasonEffectiveWeekDate;
                 const endsWeekDate = member.ends_week_date || seasonEndWeekDate || null;
                 const targetGroup = nextGroupId ? groups.find(group => group.id === nextGroupId) : null;
-                const currentSourceGroupId = targetGroup?.source_group_id || (targetGroup?.id && !String(targetGroup.id).startsWith('temp-') ? targetGroup.id : null);
+                const currentSourceGroupId = getRegroupingPersistedSourceGroupId(targetGroup);
                 const originalSourceGroupId = member.source_membership_group_id || null;
                 const originalSourceGroupName = member.source_membership_group_name || null;
                 const persistedChangeType = member.plan_change_type || null;

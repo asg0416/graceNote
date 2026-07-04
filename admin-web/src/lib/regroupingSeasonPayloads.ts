@@ -5,6 +5,9 @@ export const isUuid = (value: unknown) =>
 const getDateText = (value: unknown) =>
     typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 
+const getUuidText = (value: unknown) =>
+    typeof value === 'string' && isUuid(value) ? value : null;
+
 export const buildRegroupingSeasonGroupsPayload = (groups: Array<Record<string, unknown>>) =>
     groups.map((group, index) => {
         const id = typeof group.id === 'string' ? group.id : null;
@@ -69,6 +72,11 @@ export const buildRegroupingSeasonAssignmentsPayload = (members: Array<Record<st
             const previousGroupName = changeType === 'removed'
                 ? getGroupLabel(rawPreviousGroupName) || getGroupLabel(sourceGroupName) || null
                 : rawPreviousGroupName || sourceGroupName || null;
+            const sourceMembershipGroupId = getUuidText(member.source_membership_group_id);
+            const previousSourceGroupId = getUuidText(member.previous_source_group_id);
+            const safePreviousSourceGroupId = changeType === 'added'
+                ? null
+                : previousSourceGroupId || sourceMembershipGroupId;
 
             return {
                 group_id: groupId,
@@ -77,11 +85,7 @@ export const buildRegroupingSeasonAssignmentsPayload = (members: Array<Record<st
                 role_in_group: role,
                 sort_order: index,
                 change_type: changeType,
-                previous_source_group_id: typeof member.previous_source_group_id === 'string' && isUuid(member.previous_source_group_id)
-                    ? member.previous_source_group_id
-                    : typeof member.source_membership_group_id === 'string' && isUuid(member.source_membership_group_id)
-                        ? member.source_membership_group_id
-                        : null,
+                previous_source_group_id: safePreviousSourceGroupId || null,
                 previous_group_name: previousGroupName,
                 source_membership_id: typeof member.phase2_membership_id === 'string' && isUuid(member.phase2_membership_id)
                     ? member.phase2_membership_id
