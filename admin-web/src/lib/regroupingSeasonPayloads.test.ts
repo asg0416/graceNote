@@ -4,6 +4,7 @@ import {
   buildRegroupingSeasonAssignmentsPayload,
   buildRegroupingSeasonGroupsPayload,
   mapRegroupingSeasonDraftToBoard,
+  mergeAppliedSeasonMemberWithLiveMembership,
 } from './regroupingSeasonPayloads.ts';
 
 test('buildRegroupingSeasonGroupsPayload keeps client id and separates source group id', () => {
@@ -562,4 +563,40 @@ test('mapRegroupingSeasonDraftToBoard restores removed group name from previous 
   });
 
   assert.equal(result.members[0].source_membership_group_name, '귀동 선경 조');
+});
+
+test('mergeAppliedSeasonMemberWithLiveMembership clears historical apply markers', () => {
+  const result = mergeAppliedSeasonMemberWithLiveMembership(
+    {
+      id: 'season-assignment-1',
+      group_id: 'plan-group-1',
+      full_name: '김적용',
+      plan_change_type: 'added',
+      change_type: 'added',
+      previous_group_name: '추가 소속',
+      previous_source_group_id: 'old-plan-group',
+      phase2_membership_id: null,
+      source_membership_group_id: null,
+      source_membership_group_name: null,
+      starts_week_date: '2026-07-05',
+      ends_week_date: '2026-11-29',
+    },
+    {
+      group_id: 'plan-group-1',
+      group_name: '현권 영미 조',
+      phase2_membership_id: 'membership-1',
+      source_membership_group_id: 'live-group-1',
+      source_membership_group_name: '현권 영미 조',
+      starts_week_date: '2026-07-05',
+      ends_week_date: '2026-11-29',
+    },
+  );
+
+  assert.equal(result.plan_change_type, null);
+  assert.equal(result.change_type, null);
+  assert.equal(result.previous_group_name, null);
+  assert.equal(result.previous_source_group_id, null);
+  assert.equal(result.phase2_membership_id, 'membership-1');
+  assert.equal(result.source_membership_group_id, 'live-group-1');
+  assert.equal(result.source_membership_group_name, '현권 영미 조');
 });
