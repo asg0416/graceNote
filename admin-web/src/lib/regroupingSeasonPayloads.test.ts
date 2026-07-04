@@ -211,7 +211,7 @@ test('buildRegroupingSeasonAssignmentsPayload keeps removed history and unassign
   );
 });
 
-test('buildRegroupingSeasonAssignmentsPayload keeps added copy display source and target source group', () => {
+test('buildRegroupingSeasonAssignmentsPayload does not persist previous source group for added copies', () => {
   assert.deepEqual(
     buildRegroupingSeasonAssignmentsPayload([
       {
@@ -237,7 +237,7 @@ test('buildRegroupingSeasonAssignmentsPayload keeps added copy display source an
         role_in_group: 'member',
         sort_order: 0,
         change_type: 'added',
-        previous_source_group_id: '77777777-7777-4777-8777-777777777777',
+        previous_source_group_id: null,
         previous_group_name: '추가 소속',
         source_membership_id: null,
         source_member_directory_id: '22222222-2222-4222-8222-222222222222',
