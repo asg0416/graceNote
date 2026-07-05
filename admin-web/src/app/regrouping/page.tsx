@@ -1086,13 +1086,13 @@ function RegroupingPageInner() {
 
         if (membershipsError) throw membershipsError;
 
-        const membershipByDirectoryId = new Map<string, NonNullable<typeof membershipRows>[number]>();
+        const membershipsByDirectoryId = new Map<string, NonNullable<typeof membershipRows>[number][]>();
         for (const membership of membershipRows || []) {
             if (!membership.legacy_member_directory_id) continue;
             const directoryId = membership.legacy_member_directory_id as string;
-            if (!membershipByDirectoryId.has(directoryId)) {
-                membershipByDirectoryId.set(directoryId, membership);
-            }
+            const rows = membershipsByDirectoryId.get(directoryId) || [];
+            rows.push(membership);
+            membershipsByDirectoryId.set(directoryId, rows);
         }
         const planGroupIdBySourceGroupId = new Map(
             planGroups
@@ -1100,37 +1100,42 @@ function RegroupingPageInner() {
                 .map(group => [group.source_group_id, group.id])
         );
 
-        return applyCanonicalFamilyInfo((directoryRows || []).map(member => {
-            const membership = membershipByDirectoryId.get(member.id);
-            const liveGroupId = membership?.group_id || null;
-            const liveGroup = membership?.group && !Array.isArray(membership.group)
-                ? membership.group as { name?: string | null }
-                : null;
-            const startsDate = typeof membership?.starts_at === 'string'
-                ? membership.starts_at.slice(0, 10)
-                : season.effective_week_date;
-            const endsDate = typeof membership?.ends_at === 'string'
-                ? membership.ends_at.slice(0, 10)
-                : season.end_week_date || null;
-            const startsWeekDate = maxDateInput(snapDateInputToSunday(startsDate), season.effective_week_date);
-            const rawEndsWeekDate = endsDate ? snapDateInputToSunday(endsDate) : season.end_week_date || null;
-            const endsWeekDate = rawEndsWeekDate && season.end_week_date
-                ? minDateInput(rawEndsWeekDate, season.end_week_date)
-                : rawEndsWeekDate;
+        return applyCanonicalFamilyInfo((directoryRows || []).flatMap(member => {
+            const memberships = membershipsByDirectoryId.get(member.id) || [];
+            const memberRows = memberships.length > 0 ? memberships : [null];
 
-            return {
-                ...member,
-                group_id: liveGroupId ? planGroupIdBySourceGroupId.get(liveGroupId) || null : null,
-                group_name: liveGroup?.name || member.group_name || null,
-                role_in_group: membership?.role || member.role_in_group || 'member',
-                phase2_membership_id: membership?.id || null,
-                phase2_person_id: membership?.person_id || phase2PersonMap.get(member.id) || null,
-                source_membership_group_id: liveGroupId,
-                source_membership_group_name: liveGroup?.name || member.group_name || null,
-                source_member_directory_id: member.id,
-                starts_week_date: startsWeekDate,
-                ends_week_date: endsWeekDate,
-            };
+            return memberRows.map(membership => {
+                const liveGroupId = membership?.group_id || null;
+                const liveGroup = membership?.group && !Array.isArray(membership.group)
+                    ? membership.group as { name?: string | null }
+                    : null;
+                const startsDate = typeof membership?.starts_at === 'string'
+                    ? membership.starts_at.slice(0, 10)
+                    : season.effective_week_date;
+                const endsDate = typeof membership?.ends_at === 'string'
+                    ? membership.ends_at.slice(0, 10)
+                    : season.end_week_date || null;
+                const startsWeekDate = maxDateInput(snapDateInputToSunday(startsDate), season.effective_week_date);
+                const rawEndsWeekDate = endsDate ? snapDateInputToSunday(endsDate) : season.end_week_date || null;
+                const endsWeekDate = rawEndsWeekDate && season.end_week_date
+                    ? minDateInput(rawEndsWeekDate, season.end_week_date)
+                    : rawEndsWeekDate;
+
+                return {
+                    ...member,
+                    id: membership?.id ? `live-membership-${membership.id}` : member.id,
+                    group_id: liveGroupId ? planGroupIdBySourceGroupId.get(liveGroupId) || null : null,
+                    group_name: liveGroup?.name || member.group_name || null,
+                    role_in_group: membership?.role || member.role_in_group || 'member',
+                    phase2_membership_id: membership?.id || null,
+                    phase2_person_id: membership?.person_id || phase2PersonMap.get(member.id) || null,
+                    source_membership_group_id: liveGroupId,
+                    source_membership_group_name: liveGroup?.name || member.group_name || null,
+                    source_member_directory_id: member.id,
+                    starts_week_date: startsWeekDate,
+                    ends_week_date: endsWeekDate,
+                };
+            });
         }));
     };
 
@@ -3137,9 +3142,10 @@ function RegroupingPageInner() {
             .filter(shouldKeepMappedRegroupingSeasonMember)
             .map(member => {
                 const identityKey = getRegroupingIdentityKey(member);
-                const liveMatch =
-                    liveMemberByIdentityAndGroup.get(`${identityKey}|${member.group_id || 'unassigned'}`) ||
-                    liveMemberByIdentity.get(identityKey);
+                const liveGroupMatch = liveMemberByIdentityAndGroup.get(`${identityKey}|${member.group_id || 'unassigned'}`);
+                const liveMatch = isSeasonCurrentForToday
+                    ? liveGroupMatch
+                    : liveGroupMatch || liveMemberByIdentity.get(identityKey);
                 if (isSeasonCurrentForToday) {
                     if (!liveMatch && member.plan_change_type) return null;
                     if (liveMatch) {
