@@ -11,6 +11,7 @@ import 'package:grace_note/core/providers/user_role_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import 'package:grace_note/core/widgets/app_skeleton.dart';
 import 'package:grace_note/core/widgets/season_context_chip.dart';
+import 'package:grace_note/core/utils/group_record_submission_status.dart';
 import 'package:grace_note/core/utils/snack_bar_util.dart';
 
 class PrayerListScreen extends ConsumerStatefulWidget {
@@ -580,8 +581,16 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
           data: (data) {
             final groups = List<Map<String, dynamic>>.from(data['groups']);
             final allPrayers = List<Map<String, dynamic>>.from(data['prayers']);
+            final noMeetingGroupIds = groups
+                .where((group) => isRecordNoMeetingSubmission(
+                      group,
+                      RecordSubmissionKind.prayer,
+                    ))
+                .map((group) => (group['id'] ?? '').toString())
+                .where((id) => id.isNotEmpty)
+                .toSet();
 
-            if (allPrayers.isEmpty) {
+            if (allPrayers.isEmpty && noMeetingGroupIds.isEmpty) {
               return RefreshIndicator(
                 onRefresh: _refreshData,
                 color: AppTheme.primaryViolet,
@@ -659,24 +668,30 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
 
             // Separate groups into those with prayers and those without
             final groupsWithPrayers = <Map<String, dynamic>>[];
+            final groupsWithNoMeeting = <Map<String, dynamic>>[];
             final groupsWithoutPrayers = <Map<String, dynamic>>[];
             for (final group in groups) {
               final gId = (group['id'] ?? '').toString();
               final hasPrayers = allPrayers.any((p) => p['group_id'] == gId);
               if (hasPrayers) {
                 groupsWithPrayers.add(group);
+              } else if (noMeetingGroupIds.contains(gId)) {
+                groupsWithNoMeeting.add(group);
               } else {
                 groupsWithoutPrayers.add(group);
               }
             }
             final totalGroups = groups.length;
-            final completedGroups = groupsWithPrayers.length;
+            final completedGroups =
+                groupsWithPrayers.length + groupsWithNoMeeting.length;
             final allComplete = completedGroups == totalGroups;
 
             // itemCount: 1 (progress bar) + groupsWithPrayers + (empty section if needed)
             final hasEmptySection = groupsWithoutPrayers.isNotEmpty;
-            final totalItems =
-                1 + groupsWithPrayers.length + (hasEmptySection ? 1 : 0);
+            final totalItems = 1 +
+                groupsWithPrayers.length +
+                groupsWithNoMeeting.length +
+                (hasEmptySection ? 1 : 0);
 
             return RefreshIndicator(
               onRefresh: _refreshData,
@@ -833,6 +848,46 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
                     );
                   }
 
+                  final noMeetingIndex = groupIndex - groupsWithPrayers.length;
+                  if (noMeetingIndex < groupsWithNoMeeting.length) {
+                    final group = groupsWithNoMeeting[noMeetingIndex];
+                    final gId = (group['id'] ?? '').toString();
+                    final gName = group['name'] ?? '';
+                    final gColor = _parseColor(group['color_hex']);
+                    final isExpanded = _expandedStates[gId] ?? true;
+
+                    return Padding(
+                      padding: groupIndex == 0
+                          ? const EdgeInsets.only(top: 12)
+                          : EdgeInsets.zero,
+                      child: Theme(
+                        data: Theme.of(context)
+                            .copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          key: PageStorageKey('group_no_meeting_$gId'),
+                          initiallyExpanded: isExpanded,
+                          onExpansionChanged: (expanded) {
+                            _expandedStates[gId] = expanded;
+                          },
+                          tilePadding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 8),
+                          title: Text('$gName (1)',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.primaryViolet,
+                                  fontSize: 16)),
+                          childrenPadding:
+                              const EdgeInsets.symmetric(horizontal: 20),
+                          children: [
+                            const SizedBox(height: 12),
+                            _buildNoMeetingPrayerItemInList(gName,
+                                groupColor: gColor),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
                   // --- Empty groups section (at the bottom) ---
                   return Padding(
                     padding: const EdgeInsets.only(top: 8, bottom: 24),
@@ -937,6 +992,18 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
                 List<Map<String, dynamic>>.from(weeklyData['prayers']);
             final publishedPrayers =
                 prayers.where((p) => p['status'] == 'published').toList();
+            final recordSubmission = weeklyData['record_submission'] is Map
+                ? Map<String, dynamic>.from(weeklyData['record_submission'])
+                : <String, dynamic>{};
+            final isGroupNoMeeting = isRecordNoMeetingSubmission(
+              recordSubmission,
+              RecordSubmissionKind.prayer,
+            );
+            final groupInfo = _allGroups.firstWhere(
+                (g) => (g['id'] ?? g['group_id']) == groupId,
+                orElse: () => {});
+            final gName = groupInfo['name'] ?? groupInfo['group_name'] ?? '';
+            final gColor = _parseColor(groupInfo['color_hex']);
 
             if (publishedPrayers.isEmpty) {
               return RefreshIndicator(
@@ -949,6 +1016,12 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
                     if (noMeeting != null)
                       _buildNoMeetingCardInFeed(noMeeting, deptId, selectedDate,
                           showCancelButton: activeRole == AppRole.admin)
+                    else if (isGroupNoMeeting)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: _buildNoMeetingPrayerItemInList(gName,
+                            groupColor: gColor),
+                      )
                     else
                       const Center(child: Text('아직 등록된 기도제목이 없습니다.')),
                   ],
@@ -979,11 +1052,6 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
               final n2 = (m2['full_name'] as String?)?.trim() ?? '';
               return n1.compareTo(n2);
             });
-
-            final groupInfo = _allGroups.firstWhere(
-                (g) => (g['id'] ?? g['group_id']) == groupId,
-                orElse: () => {});
-            final gName = groupInfo['name'] ?? groupInfo['group_name'] ?? '';
 
             return RefreshIndicator(
               onRefresh: _refreshData,
@@ -1060,6 +1128,113 @@ class _PrayerListScreenState extends ConsumerState<PrayerListScreen>
             return const PrayerCardSkeleton();
           },
         );
+  }
+
+  Widget _buildNoMeetingPrayerItemInList(String groupName,
+      {Color? groupColor}) {
+    final accent = groupColor ?? AppTheme.primaryViolet;
+    final displayGroupName = groupName.isEmpty ? '새가족 조' : groupName;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppTheme.divider),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: accent.withOpacity(0.1),
+                  child:
+                      Icon(Icons.event_busy_rounded, size: 18, color: accent),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '새가족 모임 없음',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14.5,
+                          color: AppTheme.textMain,
+                          fontFamily: 'Pretendard',
+                        ),
+                      ),
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: accent.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: accent.withOpacity(0.1)),
+                        ),
+                        child: Text(
+                          displayGroupName,
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Pretendard',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Text(
+              '이번 주 새가족 조모임은 진행하지 않았습니다.',
+              style: TextStyle(
+                fontSize: 14.5,
+                height: 1.6,
+                color: AppTheme.textMain,
+                fontFamily: 'Pretendard',
+              ),
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle_rounded, size: 18, color: accent),
+                const SizedBox(width: 8),
+                Text(
+                  '모임 없음 제출 완료',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: accent,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Pretendard',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildSkeletonList() {

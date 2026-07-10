@@ -2,6 +2,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../error/exceptions.dart';
 import 'package:grace_note/core/models/models.dart';
 import 'package:grace_note/core/utils/attendance_summary.dart';
+import 'package:grace_note/core/utils/group_record_submission_status.dart';
+import 'package:grace_note/core/utils/prayer_entry_draft_state.dart';
 import 'package:grace_note/core/utils/record_completion_status.dart';
 import 'package:flutter/foundation.dart';
 
@@ -889,7 +891,7 @@ class GraceNoteRepository {
       groupIds: snapshotGroupIds,
     );
 
-    // 1. Attendance Upsert (directory_member_id 기반)
+    // 1. Attendance Upsert (group-scoped for multi-membership weeks)
     if (attendanceList.isNotEmpty) {
       // 팁: attendanceList의 각 항목에는 저장 시점의 groupId가 이미 포함되어 있어야 함
       final attendancePayloads = await _buildPhase3AttendancePayloads(
@@ -898,7 +900,7 @@ class GraceNoteRepository {
       );
       await _supabase.from('attendance').upsert(
             attendancePayloads,
-            onConflict: 'week_id,directory_member_id',
+            onConflict: 'week_id,directory_member_id,group_id',
           );
     }
 
@@ -908,10 +910,89 @@ class GraceNoteRepository {
         prayerList,
         preloadedSnapshots: snapshots,
       );
-      await _supabase.from('prayer_entries').upsert(
-            prayerPayloads,
-            onConflict: 'week_id,directory_member_id',
-          );
+      final existingRowsByKey = <String, Map<String, dynamic>>{};
+      final weekIds = prayerPayloads
+          .map((payload) => payload['week_id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      final directoryMemberIds = prayerPayloads
+          .map((payload) => payload['directory_member_id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (weekIds.isNotEmpty && directoryMemberIds.isNotEmpty) {
+        final existingRows = await _supabase
+            .from('prayer_entries')
+            .select('id, week_id, directory_member_id, status')
+            .inFilter('week_id', weekIds)
+            .inFilter('directory_member_id', directoryMemberIds);
+        for (final row in List<Map<String, dynamic>>.from(existingRows)) {
+          final key = '${row['week_id']}:${row['directory_member_id']}';
+          existingRowsByKey[key] = row;
+        }
+      }
+
+      final upsertPayloads = <Map<String, dynamic>>[];
+      final draftUpdates = <Map<String, dynamic>>[];
+      final draftClears = <String>[];
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      for (final payload in prayerPayloads) {
+        final key = '${payload['week_id']}:${payload['directory_member_id']}';
+        final existing = existingRowsByKey[key];
+        final requestedStatus = payload['status']?.toString() ?? 'draft';
+
+        if (shouldWriteDraftBesidePublished(
+          requestedStatus: requestedStatus,
+          existingStatus: existing?['status']?.toString(),
+        )) {
+          draftUpdates.add({
+            'id': existing!['id'],
+            'draft_content': payload['content'],
+            'draft_updated_at': now,
+          });
+          continue;
+        }
+
+        final nextPayload = Map<String, dynamic>.from(payload);
+        if (requestedStatus == 'published') {
+          nextPayload.remove('draft_content');
+          nextPayload.remove('draft_updated_at');
+          final existingId = existing?['id']?.toString();
+          if (existingId != null && existingId.isNotEmpty) {
+            draftClears.add(existingId);
+          }
+        }
+        upsertPayloads.add(nextPayload);
+      }
+
+      if (upsertPayloads.isNotEmpty) {
+        await _supabase.from('prayer_entries').upsert(
+              upsertPayloads,
+              onConflict: 'week_id,directory_member_id',
+            );
+      }
+
+      for (final draftUpdate in draftUpdates) {
+        final id = draftUpdate.remove('id');
+        await _supabase.from('prayer_entries').update(draftUpdate).eq('id', id);
+      }
+
+      for (final id in draftClears) {
+        try {
+          await _supabase.from('prayer_entries').update({
+            'draft_content': null,
+            'draft_updated_at': null,
+          }).eq('id', id);
+        } catch (e) {
+          debugPrint(
+              'GraceNoteRepository: clearing pending prayer draft failed: $e');
+        }
+      }
     }
   }
 
@@ -944,12 +1025,14 @@ class GraceNoteRepository {
         'attendance_submitted_at': submittedAt,
         'attendance_submitted_by': userId,
         'attendance_source': source,
+        'attendance_submission_kind': 'records',
       });
     } else if (kind == 'prayer') {
       payload.addAll({
         'prayer_submitted_at': submittedAt,
         'prayer_submitted_by': userId,
         'prayer_source': source,
+        'prayer_submission_kind': 'records',
       });
     } else {
       throw ArgumentError.value(kind, 'kind', 'Unsupported record kind');
@@ -959,6 +1042,66 @@ class GraceNoteRepository {
           payload,
           onConflict: 'week_id,group_id',
         );
+  }
+
+  Future<Map<String, dynamic>?> markNewMemberGroupNoMeeting({
+    required String churchId,
+    required String departmentId,
+    required String weekId,
+    required String groupId,
+    String reason = '새가족 모임 없음',
+  }) async {
+    if (churchId.isEmpty ||
+        departmentId.isEmpty ||
+        weekId.isEmpty ||
+        groupId.isEmpty) {
+      return null;
+    }
+
+    final response = await _supabase.rpc(
+      'mark_new_member_group_no_meeting',
+      params: {
+        'p_church_id': churchId,
+        'p_department_id': departmentId,
+        'p_week_id': weekId,
+        'p_group_id': groupId,
+        'p_reason': reason,
+      },
+    );
+
+    final rows = response is List
+        ? List<Map<String, dynamic>>.from(response)
+        : <Map<String, dynamic>>[];
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<Map<String, dynamic>?> cancelNewMemberGroupNoMeeting({
+    required String churchId,
+    required String departmentId,
+    required String weekId,
+    required String groupId,
+  }) async {
+    if (churchId.isEmpty ||
+        departmentId.isEmpty ||
+        weekId.isEmpty ||
+        groupId.isEmpty) {
+      return null;
+    }
+
+    final response = await _supabase.rpc(
+      'cancel_new_member_group_no_meeting',
+      params: {
+        'p_church_id': churchId,
+        'p_department_id': departmentId,
+        'p_week_id': weekId,
+        'p_group_id': groupId,
+      },
+    );
+
+    final rows = response is List
+        ? List<Map<String, dynamic>>.from(response)
+        : <Map<String, dynamic>>[];
+    return rows.isEmpty ? null : rows.first;
   }
 
   Future<Map<String, dynamic>> getWeeklyData(
@@ -1083,9 +1226,26 @@ class GraceNoteRepository {
     final enrichedRows =
         await _enrichPrayerRowsWithPhase2MemberInfo(combinedRows);
 
+    Map<String, dynamic>? submission;
+    try {
+      final submissionRows = await _supabase
+          .from('group_week_record_submissions')
+          .select(
+              'attendance_submitted_at, attendance_submission_kind, prayer_submitted_at, prayer_submission_kind, submission_note')
+          .eq('week_id', weekId)
+          .eq('group_id', groupId)
+          .limit(1);
+      final rows = List<Map<String, dynamic>>.from(submissionRows);
+      if (rows.isNotEmpty) submission = rows.first;
+    } catch (e) {
+      debugPrint(
+          'GraceNoteRepository: group week submission lookup failed: $e');
+    }
+
     return {
       'attendance': enrichedRows.take(attendanceWithInfo.length).toList(),
       'prayers': enrichedRows.skip(attendanceWithInfo.length).toList(),
+      'record_submission': submission,
     };
   }
 
@@ -1256,8 +1416,44 @@ class GraceNoteRepository {
             recordGroupIds: prayerGroupIds,
           );
 
+    final groupIdsForWeek = groups
+        .map((group) => group['id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toList();
+    final submissionByGroupId = <String, Map<String, dynamic>>{};
+    if (groupIdsForWeek.isNotEmpty) {
+      final submissionResponse = await _supabase
+          .from('group_week_record_submissions')
+          .select(
+              'group_id, attendance_submitted_at, attendance_submission_kind, prayer_submitted_at, prayer_submission_kind, submission_note')
+          .eq('week_id', weekId)
+          .inFilter('group_id', groupIdsForWeek);
+      for (final row in List<Map<String, dynamic>>.from(submissionResponse)) {
+        final groupId = row['group_id']?.toString();
+        if (groupId != null && groupId.isNotEmpty) {
+          submissionByGroupId[groupId] = row;
+        }
+      }
+    }
+
+    final groupsWithSubmissionState = groups.map((group) {
+      final groupId = group['id']?.toString();
+      final submission = groupId == null ? null : submissionByGroupId[groupId];
+      return {
+        ...group,
+        'attendance_submitted_at': submission?['attendance_submitted_at'],
+        'attendance_submission_kind':
+            submission?['attendance_submission_kind'] ?? 'records',
+        'prayer_submitted_at': submission?['prayer_submitted_at'],
+        'prayer_submission_kind':
+            submission?['prayer_submission_kind'] ?? 'records',
+        'submission_note': submission?['submission_note'],
+      };
+    }).toList();
+
     return {
-      'groups': groups,
+      'groups': groupsWithSubmissionState,
       'prayers': enrichedPrayers,
     };
   }
@@ -2484,10 +2680,37 @@ class GraceNoteRepository {
             recordGroupIds: attendanceGroupIds,
           );
 
+    final groupIdsForWeek = groups
+        .map((group) => group['id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toList();
+    final submissionByGroupId = <String, Map<String, dynamic>>{};
+    if (groupIdsForWeek.isNotEmpty) {
+      final submissionResponse = await _supabase
+          .from('group_week_record_submissions')
+          .select(
+              'group_id, attendance_submitted_at, attendance_submission_kind, prayer_submitted_at, prayer_submission_kind, submission_note')
+          .eq('week_id', weekId)
+          .inFilter('group_id', groupIdsForWeek);
+      for (final row in List<Map<String, dynamic>>.from(submissionResponse)) {
+        final groupId = row['group_id']?.toString();
+        if (groupId != null && groupId.isNotEmpty) {
+          submissionByGroupId[groupId] = row;
+        }
+      }
+    }
+
     // 5. 데이터를 조별로 가공
     final resultGroups = await Future.wait(groups.map((group) async {
       final groupName = group['name'];
       final groupId = group['id'];
+      final groupSubmission =
+          groupId == null ? null : submissionByGroupId[groupId.toString()];
+      final isGroupNoMeeting = isRecordNoMeetingSubmission(
+        groupSubmission,
+        RecordSubmissionKind.attendance,
+      );
 
       final groupAttendanceData = attendanceData.where((a) {
         final recordGroupId =
@@ -2515,7 +2738,9 @@ class GraceNoteRepository {
         return {
           'id': groupId,
           'name': groupName,
-          'is_submitted': false,
+          'is_submitted': isGroupNoMeeting,
+          'is_group_no_meeting': isGroupNoMeeting,
+          'submission_note': groupSubmission?['submission_note'],
           'present_count': 0,
           'total_count': groupMemberCount,
           'members': <Map<String, dynamic>>[],
@@ -2547,6 +2772,8 @@ class GraceNoteRepository {
         'id': groupId,
         'name': groupName,
         'is_submitted': true,
+        'is_group_no_meeting': isGroupNoMeeting,
+        'submission_note': groupSubmission?['submission_note'],
         'present_count': presentCount,
         'total_count': membersWithStatus.length,
         'members': membersWithStatus,

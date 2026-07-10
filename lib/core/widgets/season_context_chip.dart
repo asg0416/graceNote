@@ -154,7 +154,7 @@ class SeasonContextChip extends ConsumerWidget {
               tooltip: '조편성 시즌',
               style: IconButton.styleFrom(
                 minimumSize: const Size(40, 40),
-                backgroundColor: const Color(0xFFF7F4FF),
+                backgroundColor: Colors.transparent,
                 foregroundColor: AppTheme.primaryViolet,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -176,7 +176,8 @@ class SeasonContextChip extends ConsumerWidget {
               onPressed: showSeasonSheet,
               style: TextButton.styleFrom(
                 minimumSize: const Size(40, 34),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 foregroundColor: AppTheme.textSub,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 shape: RoundedRectangleBorder(

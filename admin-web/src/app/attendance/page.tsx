@@ -1394,11 +1394,13 @@ export default function AttendancePage() {
                     attendance_submitted_at: submittedAt,
                     attendance_submitted_by: profile?.id || null,
                     attendance_source: source,
+                    attendance_submission_kind: 'records',
                 }
                 : {
                     prayer_submitted_at: submittedAt,
                     prayer_submitted_by: profile?.id || null,
                     prayer_source: source,
+                    prayer_submission_kind: 'records',
                 }),
         };
 
@@ -2228,7 +2230,7 @@ export default function AttendancePage() {
                         status: nextStatus,
                         updated_at: new Date().toISOString(),
                     }, {
-                        onConflict: 'week_id,directory_member_id',
+                        onConflict: 'week_id,directory_member_id,group_id',
                     });
 
                 if (error) throw error;
@@ -2480,7 +2482,7 @@ export default function AttendancePage() {
 
                 const { data: submissionRows, error: submissionRowsError } = await supabase
                     .from('group_week_record_submissions')
-                    .select('week_id, group_id, attendance_submitted_at, prayer_submitted_at')
+                    .select('week_id, group_id, attendance_submitted_at, attendance_submission_kind, prayer_submitted_at, prayer_submission_kind')
                     .in('week_id', periodWeekIds)
                     .in('group_id', periodGroupIds);
                 if (submissionRowsError) throw buildQueryError('attendance insight submission marker query failed', submissionRowsError);
@@ -2833,7 +2835,7 @@ export default function AttendancePage() {
         if (periodWeekIds.length > 0 && periodGroupIds.length > 0) {
             const { data: submissionRows, error: submissionRowsError } = await supabase
                 .from('group_week_record_submissions')
-                .select('week_id, group_id, attendance_submitted_at, prayer_submitted_at')
+                .select('week_id, group_id, attendance_submitted_at, attendance_submission_kind, prayer_submitted_at, prayer_submission_kind')
                 .in('week_id', periodWeekIds)
                 .in('group_id', periodGroupIds);
             if (submissionRowsError) throw buildQueryError('submission risk export marker query failed', submissionRowsError);

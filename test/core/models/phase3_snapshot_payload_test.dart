@@ -35,6 +35,8 @@ void main() {
       memberId: 'profile-member',
       directoryMemberId: 'directory-member-1',
       content: '기도제목',
+      draftContent: '수정 중인 기도제목',
+      draftUpdatedAt: DateTime.utc(2026, 7, 10, 1, 2, 3),
       status: 'published',
       personId: 'person-1',
       membershipId: 'membership-1',
@@ -42,9 +44,15 @@ void main() {
       recordedDepartmentId: 'recorded-department-1',
     );
 
+    expect(prayer.toJson(), containsPair('draft_content', '수정 중인 기도제목'));
+    expect(
+      prayer.toJson(),
+      containsPair('draft_updated_at', '2026-07-10T01:02:03.000Z'),
+    );
     expect(prayer.toJson(), containsPair('person_id', 'person-1'));
     expect(prayer.toJson(), containsPair('membership_id', 'membership-1'));
-    expect(prayer.toJson(), containsPair('recorded_group_id', 'recorded-group-1'));
+    expect(
+        prayer.toJson(), containsPair('recorded_group_id', 'recorded-group-1'));
     expect(
       prayer.toJson(),
       containsPair('recorded_department_id', 'recorded-department-1'),

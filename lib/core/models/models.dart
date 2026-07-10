@@ -79,9 +79,11 @@ class PrayerEntryModel {
   final String directoryMemberId; // New primary source
   final String? content;
   final String? aiRefinedContent;
+  final String? draftContent;
   final String status; // 'draft', 'published'
   final bool isRefining;
   final DateTime? updatedAt;
+  final DateTime? draftUpdatedAt;
   final String? personId;
   final String? membershipId;
   final String? recordedGroupId;
@@ -96,9 +98,11 @@ class PrayerEntryModel {
     required this.directoryMemberId,
     this.content,
     this.aiRefinedContent,
+    this.draftContent,
     this.status = 'draft',
     this.isRefining = false,
     this.updatedAt,
+    this.draftUpdatedAt,
     this.personId,
     this.membershipId,
     this.recordedGroupId,
@@ -115,10 +119,14 @@ class PrayerEntryModel {
       directoryMemberId: json['directory_member_id'] ?? '',
       content: json['content'],
       aiRefinedContent: json['ai_refined_content'],
+      draftContent: json['draft_content'],
       status: json['status'] ?? 'draft',
       isRefining: json['is_refining'] ?? false,
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'])
+          : null,
+      draftUpdatedAt: json['draft_updated_at'] != null
+          ? DateTime.parse(json['draft_updated_at'])
           : null,
       personId: json['person_id'],
       membershipId: json['membership_id'],
@@ -137,8 +145,11 @@ class PrayerEntryModel {
       'directory_member_id': directoryMemberId,
       'content': content,
       'ai_refined_content': aiRefinedContent,
+      if (draftContent != null) 'draft_content': draftContent,
       'status': status,
       'is_refining': isRefining,
+      if (draftUpdatedAt != null)
+        'draft_updated_at': draftUpdatedAt!.toUtc().toIso8601String(),
       if (personId != null) 'person_id': personId,
       if (membershipId != null) 'membership_id': membershipId,
       if (recordedGroupId != null) 'recorded_group_id': recordedGroupId,

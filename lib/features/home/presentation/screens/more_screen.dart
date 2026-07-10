@@ -48,11 +48,18 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('더보기', style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 17, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+        title: const Text('더보기',
+            style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textMain,
+                fontSize: 17,
+                fontFamily: 'Pretendard',
+                letterSpacing: -0.5)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
-        shape: const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
+        shape:
+            const Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -66,10 +73,9 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               title: '즐겨찾기',
               items: [
                 _MenuItem(
-                  icon: lucide.LucideIcons.bookmark, 
-                  label: '저장된 기도제목', 
-                  onTap: () => context.push('/more/saved-prayers')
-                ),
+                    icon: lucide.LucideIcons.bookmark,
+                    label: '저장된 기도제목',
+                    onTap: () => context.push('/more/saved-prayers')),
               ],
             ),
             const SizedBox(height: 20),
@@ -79,7 +85,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               data: (groups) {
                 final activeRole = ref.watch(activeRoleProvider);
                 final isLeaderMode = activeRole == AppRole.leader;
-                
+
                 return Column(
                   children: [
                     if (isLeaderMode) ...[
@@ -88,31 +94,36 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                         title: '사역 관리',
                         items: [
                           _MenuItem(
-                            icon: lucide.LucideIcons.users, 
-                            label: '조원 관리', 
-                            onTap: () {
-                              final activeMembership = ref.read(activeMembershipProvider);
-                              if (activeMembership == null) {
-                                SnackBarUtil.showSnackBar(context, message: '활성화된 소속 정보가 없습니다.', isError: true);
-                                return;
-                              }
-                              
-                              final group = groups.firstWhere(
-                                (g) => g['group_id'] == activeMembership.groupId,
-                                orElse: () => <String, dynamic>{},
-                              );
-                              
-                              if (group.isEmpty) {
-                                SnackBarUtil.showSnackBar(context, message: '관리할 수 있는 조가 없습니다.', isError: true);
-                                return;
-                              }
-                              
-                              context.push('/more/group-admin', extra: {
-                                'groupId': group['group_id'],
-                                'groupName': group['group_name'],
-                              });
-                            }
-                          ),
+                              icon: lucide.LucideIcons.users,
+                              label: '조원 관리',
+                              onTap: () {
+                                final activeMembership =
+                                    ref.read(activeMembershipProvider);
+                                if (activeMembership == null) {
+                                  SnackBarUtil.showSnackBar(context,
+                                      message: '활성화된 소속 정보가 없습니다.',
+                                      isError: true);
+                                  return;
+                                }
+
+                                final group = groups.firstWhere(
+                                  (g) =>
+                                      g['group_id'] == activeMembership.groupId,
+                                  orElse: () => <String, dynamic>{},
+                                );
+
+                                if (group.isEmpty) {
+                                  SnackBarUtil.showSnackBar(context,
+                                      message: '관리할 수 있는 조가 없습니다.',
+                                      isError: true);
+                                  return;
+                                }
+
+                                context.push('/more/group-admin', extra: {
+                                  'groupId': group['group_id'],
+                                  'groupName': group['group_name'],
+                                });
+                              }),
                         ],
                       ),
                       const SizedBox(height: 20),
@@ -123,26 +134,23 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                       items: [
                         if (isLeaderMode)
                           _MenuItem(
-                            icon: lucide.LucideIcons.sparkles, 
-                            label: 'AI 스타일 설정', 
+                              icon: lucide.LucideIcons.sparkles,
+                              label: 'AI 스타일 설정',
+                              onTap: () {
+                                context.push('/more/ai-settings');
+                              }),
+                        _MenuItem(
+                            icon: lucide.LucideIcons.user,
+                            label: '프로필 및 계정 관리',
                             onTap: () {
-                              context.push('/more/ai-settings');
-                            }
-                          ),
+                              context.push('/more/profile');
+                            }),
                         _MenuItem(
-                          icon: lucide.LucideIcons.user, 
-                          label: '프로필 및 계정 관리', 
-                          onTap: () {
-                            context.push('/more/profile');
-                          }
-                        ),
-                        _MenuItem(
-                          icon: lucide.LucideIcons.bell, 
-                          label: '알림 설정', 
-                          onTap: () {
-                            context.push('/more/notifications');
-                          }
-                        ),
+                            icon: lucide.LucideIcons.bell,
+                            label: '알림 설정',
+                            onTap: () {
+                              context.push('/more/notifications');
+                            }),
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -157,28 +165,26 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               title: '고객지원',
               items: [
                 _MenuItem(
-                  icon: lucide.LucideIcons.megaphone, 
-                  label: '공지사항', 
-                  showBadge: ref.watch(hasNewNoticesProvider).value ?? false,
-                  onTap: () {
-                    context.push('/more/notices');
-                  }
-                ),
+                    icon: lucide.LucideIcons.megaphone,
+                    label: '공지사항',
+                    showBadge: ref.watch(hasNewNoticesProvider).value ?? false,
+                    onTap: () {
+                      context.push('/more/notices');
+                    }),
                 _MenuItem(
-                  icon: lucide.LucideIcons.messageSquare, 
-                  label: '1:1 문의하기', 
-                  showBadge: (ref.watch(unreadInquiryCountProvider).value ?? 0) > 0,
-                  onTap: () {
-                    context.push('/more/inquiry');
-                  }
-                ),
+                    icon: lucide.LucideIcons.messageSquare,
+                    label: '1:1 문의하기',
+                    showBadge:
+                        (ref.watch(unreadInquiryCountProvider).value ?? 0) > 0,
+                    onTap: () {
+                      context.push('/more/inquiry');
+                    }),
                 _MenuItem(
-                  icon: lucide.LucideIcons.bookOpen, 
-                  label: '서비스 가이드 및 FAQ', 
-                  onTap: () {
-                    context.push('/more/guide');
-                  }
-                ),
+                    icon: lucide.LucideIcons.bookOpen,
+                    label: '서비스 가이드 및 FAQ',
+                    onTap: () {
+                      context.push('/more/guide');
+                    }),
               ],
             ),
             const SizedBox(height: 48),
@@ -207,19 +213,30 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                           color: AppTheme.primaryViolet.withOpacity(0.07),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(lucide.LucideIcons.refreshCw, size: 20, color: AppTheme.primaryViolet),
+                        child: Icon(lucide.LucideIcons.refreshCw,
+                            size: 20, color: AppTheme.primaryViolet),
                       ),
-                      title: const Text('앱 새로고침', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textMain, fontFamily: 'Pretendard', letterSpacing: -0.5)),
-                      trailing: Icon(lucide.LucideIcons.chevronRight, color: AppTheme.textSub, size: 16),
+                      title: const Text('앱 새로고침',
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textMain,
+                              fontFamily: 'Pretendard',
+                              letterSpacing: -0.5)),
+                      trailing: Icon(lucide.LucideIcons.chevronRight,
+                          color: AppTheme.textSub, size: 16),
                       onTap: _reloadApp,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 8),
                       shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(24)),
                       ),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Divider(height: 1, color: AppTheme.divider.withOpacity(0.5)),
+                      child: Divider(
+                          height: 1, color: AppTheme.divider.withOpacity(0.5)),
                     ),
                     ListTile(
                       leading: Container(
@@ -228,28 +245,48 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                           color: AppTheme.error.withOpacity(0.07),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.logout_rounded, size: 20, color: AppTheme.error),
+                        child: const Icon(Icons.logout_rounded,
+                            size: 20, color: AppTheme.error),
                       ),
-                      title: const Text('로그아웃', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.error, fontFamily: 'Pretendard', letterSpacing: -0.5)),
-                      trailing: Icon(lucide.LucideIcons.chevronRight, color: AppTheme.textSub, size: 16),
+                      title: const Text('로그아웃',
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.error,
+                              fontFamily: 'Pretendard',
+                              letterSpacing: -0.5)),
+                      trailing: Icon(lucide.LucideIcons.chevronRight,
+                          color: AppTheme.textSub, size: 16),
                       onTap: () async {
                         final confirm = await showDialog<bool>(
                           context: context,
                           builder: (context) => AlertDialog(
                             backgroundColor: Colors.white,
                             surfaceTintColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                            title: const Text('로그아웃', style: TextStyle(fontWeight: FontWeight.w900, fontFamily: 'Pretendard')),
-                            content: const Text('정말 로그아웃 하시겠습니까?', style: TextStyle(fontWeight: FontWeight.w500, fontFamily: 'Pretendard')),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24)),
+                            title: const Text('로그아웃',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontFamily: 'Pretendard')),
+                            content: const Text('정말 로그아웃 하시겠습니까?',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontFamily: 'Pretendard')),
                             actions: [
                               TextButton(
-                                onPressed: () => Navigator.pop(context, false), 
-                                child: const Text('취소', style: TextStyle(color: AppTheme.textSub, fontWeight: FontWeight.w700))
-                              ),
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text('취소',
+                                      style: TextStyle(
+                                          color: AppTheme.textSub,
+                                          fontWeight: FontWeight.w700))),
                               TextButton(
-                                onPressed: () => Navigator.pop(context, true), 
-                                child: const Text('로그아웃', style: TextStyle(color: AppTheme.error, fontWeight: FontWeight.w900))
-                              ),
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('로그아웃',
+                                      style: TextStyle(
+                                          color: AppTheme.error,
+                                          fontWeight: FontWeight.w900))),
                             ],
                           ),
                         );
@@ -258,7 +295,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                           await PushNotificationService().removeToken();
                           await Supabase.instance.client.auth.signOut();
                           ref.invalidate(userProfileProvider);
-                          ref.invalidate(userProfileFutureProvider); 
+                          ref.invalidate(userProfileFutureProvider);
                           ref.invalidate(userGroupsProvider);
                           ref.invalidate(prayerInteractionsProvider);
                           ref.invalidate(savedPrayersProvider);
@@ -272,16 +309,18 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
 
                           if (context.mounted) {
                             Navigator.pushAndRemoveUntil(
-                              context, 
-                              MaterialPageRoute(builder: (context) => const LoginScreen()),
-                              (route) => false
-                            );
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) => const LoginScreen()),
+                                (route) => false);
                           }
                         }
                       },
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 8),
                       shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+                        borderRadius:
+                            BorderRadius.vertical(bottom: Radius.circular(24)),
                       ),
                     ),
                   ],
@@ -292,7 +331,10 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
             Center(
               child: Text(
                 'v${AppConstants.appVersion}',
-                style: const TextStyle(color: AppTheme.textSub, fontSize: 13, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                    color: AppTheme.textSub,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500),
               ),
             ),
             const SizedBox(height: 60),
@@ -348,16 +390,24 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     skipLoadingOnReload: true,
                     skipError: true,
                     data: (profile) {
-                      if (profile?.avatarUrl != null && profile!.avatarUrl!.isNotEmpty) {
-                        return Image.network(profile.avatarUrl!, fit: BoxFit.cover);
+                      if (profile?.avatarUrl != null &&
+                          profile!.avatarUrl!.isNotEmpty) {
+                        return Image.network(profile.avatarUrl!,
+                            fit: BoxFit.cover);
                       }
                       return Container(
                         color: AppTheme.accentViolet,
-                        child: Icon(lucide.LucideIcons.user, size: 40, color: AppTheme.primaryViolet),
+                        child: Icon(lucide.LucideIcons.user,
+                            size: 40, color: AppTheme.primaryViolet),
                       );
                     },
-                    loading: () => Container(color: AppTheme.accentViolet, child: Center(child: ShadcnSpinner())),
-                    error: (_, __) => Container(color: AppTheme.accentViolet, child: Icon(lucide.LucideIcons.user, size: 40, color: AppTheme.primaryViolet)),
+                    loading: () => Container(
+                        color: AppTheme.accentViolet,
+                        child: Center(child: ShadcnSpinner())),
+                    error: (_, __) => Container(
+                        color: AppTheme.accentViolet,
+                        child: Icon(lucide.LucideIcons.user,
+                            size: 40, color: AppTheme.primaryViolet)),
                   ),
                 ),
               ),
@@ -368,7 +418,8 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white, width: 2),
                 ),
-                child: Icon(lucide.LucideIcons.check, color: Colors.white, size: 10),
+                child: Icon(lucide.LucideIcons.check,
+                    color: Colors.white, size: 10),
               ),
             ],
           ),
@@ -377,10 +428,12 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
             skipLoadingOnRefresh: true,
             skipLoadingOnReload: true,
             skipError: true,
-            data: (profile) => Text(
-              '${profile?.fullName ?? "성도"}님', 
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain, fontFamily: 'Pretendard')
-            ),
+            data: (profile) => Text('${profile?.fullName ?? "성도"}님',
+                style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: AppTheme.textMain,
+                    fontFamily: 'Pretendard')),
             loading: () => const AppSkeleton(width: 80, height: 28),
             error: (_, __) => const AppSkeleton(width: 80, height: 28),
           ),
@@ -392,38 +445,43 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
             skipError: true,
             data: (groups) {
               final profile = profileAsync.value;
-              final isGlobalAdmin = profile != null && (profile.role == 'admin' || profile.isMaster);
+              final isGlobalAdmin = profile != null &&
+                  (profile.role == 'admin' || profile.isMaster);
 
               // [FIX] UI 렌더링 전 데이터 준비
-              UserMembership? activeMembership = ref.watch(activeMembershipProvider);
-              final availableMemberships = ref.watch(availableMembershipsProvider);
+              UserMembership? activeMembership =
+                  ref.watch(activeMembershipProvider);
+              final availableMemberships =
+                  ref.watch(availableMembershipsProvider);
 
               return InkWell(
-                onTap: availableMemberships.length > 1 ? () => _showRoleSelectionSheet(context, ref) : null,
+                onTap: availableMemberships.length > 1
+                    ? () => _showRoleSelectionSheet(context, ref)
+                    : null,
                 borderRadius: BorderRadius.circular(20),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                   child: Column(
                     children: [
                       if (groups.isEmpty && !isGlobalAdmin)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 6),
                           decoration: BoxDecoration(
                             color: AppTheme.divider.withOpacity(0.3),
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: const Text(
-                            '소속 정보 없음', 
-                            style: TextStyle(
-                              color: AppTheme.textSub, 
-                              fontSize: 13, 
-                              fontWeight: FontWeight.w600
-                            )
-                          ),
+                          child: const Text('소속 정보 없음',
+                              style: TextStyle(
+                                  color: AppTheme.textSub,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600)),
                         )
                       else if (activeMembership != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF8FAFC),
                             borderRadius: BorderRadius.circular(24),
@@ -436,9 +494,9 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                activeMembership.groupId == 'global_admin' 
-                                  ? '전체 관리자' 
-                                  : '${activeMembership.groupName} | ${activeMembership.roleLabel}',
+                                activeMembership.groupId == 'global_admin'
+                                    ? '전체 관리자'
+                                    : '${activeMembership.groupName} | ${activeMembership.roleLabel}',
                                 style: const TextStyle(
                                   color: AppTheme.textMain,
                                   fontSize: 14,
@@ -449,7 +507,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                               if (availableMemberships.length > 1) ...[
                                 const SizedBox(width: 8),
                                 Icon(
-                                   lucide.LucideIcons.chevronDown,
+                                  lucide.LucideIcons.chevronDown,
                                   color: AppTheme.textSub,
                                   size: 16,
                                 ),
@@ -462,8 +520,14 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 ),
               );
             },
-            loading: () => const AppSkeleton(width: 120, height: 20, borderRadius: BorderRadius.all(Radius.circular(10))),
-            error: (_, __) => const AppSkeleton(width: 120, height: 20, borderRadius: BorderRadius.all(Radius.circular(10))),
+            loading: () => const AppSkeleton(
+                width: 120,
+                height: 20,
+                borderRadius: BorderRadius.all(Radius.circular(10))),
+            error: (_, __) => const AppSkeleton(
+                width: 120,
+                height: 20,
+                borderRadius: BorderRadius.all(Radius.circular(10))),
           ),
         ],
       ),
@@ -483,7 +547,11 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
         children: [
           Text(
             text,
-            style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w800, fontFamily: 'Pretendard'),
+            style: TextStyle(
+                color: textColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'Pretendard'),
           ),
           const SizedBox(width: 4),
           Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: textColor),
@@ -492,7 +560,10 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
     );
   }
 
-  Widget _buildMenuSection({required BuildContext context, required String title, required List<_MenuItem> items}) {
+  Widget _buildMenuSection(
+      {required BuildContext context,
+      required String title,
+      required List<_MenuItem> items}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
@@ -500,7 +571,13 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 8),
-            child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppTheme.textSub, fontFamily: 'Pretendard', letterSpacing: -0.3)),
+            child: Text(title,
+                style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textSub,
+                    fontFamily: 'Pretendard',
+                    letterSpacing: -0.3)),
           ),
           Container(
             decoration: BoxDecoration(
@@ -530,9 +607,16 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                           color: AppTheme.primaryViolet.withOpacity(0.07),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(item.icon, size: 20, color: AppTheme.primaryViolet),
+                        child: Icon(item.icon,
+                            size: 20, color: AppTheme.primaryViolet),
                       ),
-                      title: Text(item.label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textMain, fontFamily: 'Pretendard', letterSpacing: -0.5)),
+                      title: Text(item.label,
+                          style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textMain,
+                              fontFamily: 'Pretendard',
+                              letterSpacing: -0.5)),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -541,24 +625,32 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                               margin: const EdgeInsets.only(right: 8),
                               width: 8,
                               height: 8,
-                              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                              decoration: const BoxDecoration(
+                                  color: Colors.red, shape: BoxShape.circle),
                             ),
-                          Icon(lucide.LucideIcons.chevronRight, color: AppTheme.textSub, size: 16),
+                          Icon(lucide.LucideIcons.chevronRight,
+                              color: AppTheme.textSub, size: 16),
                         ],
                       ),
                       onTap: item.onTap,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.vertical(
-                          top: index == 0 ? const Radius.circular(24) : Radius.zero,
-                          bottom: isLast ? const Radius.circular(24) : Radius.zero,
+                          top: index == 0
+                              ? const Radius.circular(24)
+                              : Radius.zero,
+                          bottom:
+                              isLast ? const Radius.circular(24) : Radius.zero,
                         ),
                       ),
                     ),
                     if (!isLast)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Divider(height: 1, color: AppTheme.divider.withOpacity(0.5)),
+                        child: Divider(
+                            height: 1,
+                            color: AppTheme.divider.withOpacity(0.5)),
                       ),
                   ],
                 );
@@ -576,7 +668,11 @@ class _MenuItem {
   final String label;
   final bool showBadge;
   final VoidCallback onTap;
-  _MenuItem({required this.icon, required this.label, required this.onTap, this.showBadge = false});
+  _MenuItem(
+      {required this.icon,
+      required this.label,
+      required this.onTap,
+      this.showBadge = false});
 }
 
 extension MoreScreenRoleExtension on _MoreScreenState {
@@ -605,8 +701,16 @@ extension MoreScreenRoleExtension on _MoreScreenState {
         padding: const EdgeInsets.only(bottom: 12),
         child: InkWell(
           onTap: () {
-            ref.read(activeMembershipProvider.notifier).setMembership(membership);
+            ref
+                .read(activeMembershipProvider.notifier)
+                .setMembership(membership);
+            ref.invalidate(selectedWeekDateProvider);
+            ref.invalidate(attendanceSelectedWeekProvider);
+            ref.read(shouldAutoOpenAttendanceCheckProvider.notifier).state =
+                false;
+            ref.read(attendanceActionProvider.notifier).state = null;
             Navigator.pop(context);
+            context.go('/record');
           },
           borderRadius: BorderRadius.circular(20),
           child: Container(
@@ -631,7 +735,8 @@ extension MoreScreenRoleExtension on _MoreScreenState {
                     label,
                     style: TextStyle(
                       fontSize: 16,
-                      fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
+                      fontWeight:
+                          isSelected ? FontWeight.w900 : FontWeight.w700,
                       color: isSelected
                           ? AppTheme.primaryViolet
                           : AppTheme.textMain,
@@ -674,7 +779,10 @@ extension MoreScreenRoleExtension on _MoreScreenState {
             const SizedBox(height: 24),
             const Text(
               '소속 선택',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppTheme.textMain),
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: AppTheme.textMain),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -709,7 +817,8 @@ extension MoreScreenRoleExtension on _MoreScreenState {
                             color: AppTheme.textSub,
                           ),
                         ),
-                        children: pastMemberships.map(buildMembershipTile).toList(),
+                        children:
+                            pastMemberships.map(buildMembershipTile).toList(),
                       ),
                     ),
                 ],
@@ -754,7 +863,10 @@ extension MoreScreenRoleExtension on _MoreScreenState {
               const SizedBox(height: 16),
               const Text(
                 '서비스 가이드',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppTheme.textMain),
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppTheme.textMain),
               ),
               const SizedBox(height: 16),
               Expanded(
@@ -763,30 +875,26 @@ extension MoreScreenRoleExtension on _MoreScreenState {
                   padding: const EdgeInsets.all(24),
                   children: [
                     _buildGuideSection(
-                      '시스템 운영 정책',
-                      '그레이스노트는 교회의 승인을 받은 분들만 이용할 수 있는 폐쇄형 서비스입니다.\n\n'
-                      '• 관리자가 사전에 등록한 성도 정보(이름, 전화번호)가 일치해야 가입 및 이용이 가능합니다.\n'
-                      '• 소속된 조(그룹)가 있어야 앱의 주요 기능을 사용할 수 있습니다.'
-                    ),
+                        '시스템 운영 정책',
+                        '그레이스노트는 교회의 승인을 받은 분들만 이용할 수 있는 폐쇄형 서비스입니다.\n\n'
+                            '• 관리자가 사전에 등록한 성도 정보(이름, 전화번호)가 일치해야 가입 및 이용이 가능합니다.\n'
+                            '• 소속된 조(그룹)가 있어야 앱의 주요 기능을 사용할 수 있습니다.'),
                     _buildGuideSection(
-                      '메인 화면 (나의 기도)',
-                      '나의 기도 제목을 작성하고 AI의 도움을 받아 정제할 수 있습니다.\n\n'
-                      '• AI 정제: 작성한 기도 제목을 더 깊이 있고 은혜로운 문장으로 다듬어줍니다.\n'
-                      '• 공유 설정: 작성한 기도는 소속된 조원들에게만 공유됩니다.'
-                    ),
+                        '메인 화면 (나의 기도)',
+                        '나의 기도 제목을 작성하고 AI의 도움을 받아 정제할 수 있습니다.\n\n'
+                            '• AI 정제: 작성한 기도 제목을 더 깊이 있고 은혜로운 문장으로 다듬어줍니다.\n'
+                            '• 공유 설정: 작성한 기도는 소속된 조원들에게만 공유됩니다.'),
                     _buildGuideSection(
-                      '기도소식',
-                      '우리 조원들과 교회 전체의 기도 제목을 확인하고 함께 기도할 수 있습니다.\n\n'
-                      '• 아멘: 함께 기도하고 있다는 마음을 표현할 수 있습니다.\n'
-                      '• 저장하기: 나중에 다시 보고 싶은 기도 제목을 즐겨찾기에 추가할 수 있습니다.'
-                    ),
+                        '기도소식',
+                        '우리 조원들과 교회 전체의 기도 제목을 확인하고 함께 기도할 수 있습니다.\n\n'
+                            '• 아멘: 함께 기도하고 있다는 마음을 표현할 수 있습니다.\n'
+                            '• 저장하기: 나중에 다시 보고 싶은 기도 제목을 즐겨찾기에 추가할 수 있습니다.'),
                     _buildGuideSection(
-                      '자주 묻는 질문 (FAQ)',
-                      'Q. 회원가입이 안 돼요.\n'
-                      'A. 관리자가 성도님을 사전에 등록하지 않았거나, 입력하신 전화번호가 등록된 정보와 다를 수 있습니다. 관리자에게 문의해 주세요.\n\n'
-                      'Q. 조편성 정보가 달라요.\n'
-                      'A. 관리자(또는 조장)가 조편성을 변경한 후 "변경사항 확정"을 눌러야 앱에 반영됩니다.'
-                    ),
+                        '자주 묻는 질문 (FAQ)',
+                        'Q. 회원가입이 안 돼요.\n'
+                            'A. 관리자가 성도님을 사전에 등록하지 않았거나, 입력하신 전화번호가 등록된 정보와 다를 수 있습니다. 관리자에게 문의해 주세요.\n\n'
+                            'Q. 조편성 정보가 달라요.\n'
+                            'A. 관리자(또는 조장)가 조편성을 변경한 후 "변경사항 확정"을 눌러야 앱에 반영됩니다.'),
                     const SizedBox(height: 40),
                   ],
                 ),
@@ -804,12 +912,16 @@ extension MoreScreenRoleExtension on _MoreScreenState {
       children: [
         Text(
           title,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.primaryViolet),
+          style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.primaryViolet),
         ),
         const SizedBox(height: 12),
         Text(
           content,
-          style: const TextStyle(fontSize: 14, color: AppTheme.textMain, height: 1.6),
+          style: const TextStyle(
+              fontSize: 14, color: AppTheme.textMain, height: 1.6),
         ),
         const SizedBox(height: 32),
       ],

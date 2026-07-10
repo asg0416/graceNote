@@ -10,6 +10,8 @@ import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/features/attendance/presentation/screens/attendance_check_screen.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
 import 'package:grace_note/core/widgets/ai_processing_loader.dart';
+import 'package:grace_note/core/utils/group_record_submission_status.dart';
+import 'package:grace_note/core/utils/prayer_entry_draft_state.dart';
 import 'package:grace_note/core/utils/record_completion_status.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../core/utils/snack_bar_util.dart';
@@ -36,6 +38,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   bool _isLoading = false;
   bool _isFetching = false;
   bool _hasExistingData = false;
+  bool _isNewMemberNoMeetingSubmitted = false;
   bool _isInitialized = false;
   bool _isCheckScreenShowing = false;
   DateTime? _lastCheckedWeek; // [FIX] 주차별 팝업 트리거 방지 (동일 주차 재진입/resume 시 팝업 억제)
@@ -58,7 +61,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   @override
   void dispose() {
     // 미저장 변경사항 best-effort 저장 (화면 이탈 시 데이터 유실 방지)
-    if (_isDirty && _currentChurchId != null && _currentGroupId != null) {
+    if (_isDirty &&
+        !_isNewMemberNoMeetingSubmitted &&
+        _currentChurchId != null &&
+        _currentGroupId != null) {
       _syncMembersFromControllers();
       final repo = ref.read(repositoryProvider);
       final selectedDate = ref.read(attendanceSelectedWeekProvider);
@@ -116,6 +122,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   Future<void> _autoSave() async {
     if (_isLoading || _currentChurchId == null || _currentGroupId == null)
       return;
+    if (_isNewMemberNoMeetingSubmitted) return;
 
     // 모임없는 날 스킵
     final profile = ref.read(userProfileProvider).value;
@@ -216,8 +223,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     final currentWeek = ref.read(attendanceSelectedWeekProvider);
     if (_lastCheckedWeek == currentWeek) return;
 
-    final hasAnyPresence = _members.any((m) => m['isPresent'] == true);
-    if (!hasAnyPresence) {
+    final shouldPrompt = shouldPromptAttendanceCheck(
+      members: _members,
+      attendanceNoMeetingSubmitted: _isNewMemberNoMeetingSubmitted,
+    );
+    if (shouldPrompt) {
       _isCheckScreenShowing = true;
       _lastCheckedWeek = currentWeek; // 이번 주차 팝업 방어막 설정
       Future.microtask(() => _launchAttendanceCheck());
@@ -424,6 +434,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
       final List<Map<String, dynamic>> existingAttendance;
       final List<Map<String, dynamic>> existingPrayers;
+      Map<String, dynamic>? recordSubmission;
 
       if (weekId != null) {
         final weeklyData = await repo.getWeeklyData(
@@ -436,9 +447,13 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             List<Map<String, dynamic>>.from(weeklyData['attendance']);
         existingPrayers =
             List<Map<String, dynamic>>.from(weeklyData['prayers']);
+        recordSubmission = weeklyData['record_submission'] is Map
+            ? Map<String, dynamic>.from(weeklyData['record_submission'])
+            : null;
       } else {
         existingAttendance = [];
         existingPrayers = [];
+        recordSubmission = null;
         debugPrint(
             'AttendancePrayerScreen: weekId is null, showing default members list.');
       }
@@ -456,6 +471,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             'isPresent': false,
             'prayerNote': '',
             'prayerStatus': 'initial',
+            'hasPendingPrayerDraft': false,
             'familyId': _generateFamilyId(
                 m['full_name'], m['spouse_name'], m['family_id'], directoryId),
             'source': 'current',
@@ -478,15 +494,21 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             combinedMembers[directoryId]!['isPresent'] =
                 att['status'] == 'present' || att['status'] == 'late';
             combinedMembers[directoryId]!['prayerNote'] =
-                prayer['content'] ?? '';
+                resolveEditablePrayerContent(prayer);
             combinedMembers[directoryId]!['prayerStatus'] =
                 prayer['status'] ?? 'initial';
+            combinedMembers[directoryId]!['hasPendingPrayerDraft'] =
+                hasPendingPrayerDraft(prayer);
             combinedMembers[directoryId]!['source'] = 'snapshot';
           }
         }
 
         _members = combinedMembers.values.toList();
         _hasExistingData = existingAttendance.isNotEmpty;
+        _isNewMemberNoMeetingSubmitted = isRecordNoMeetingSubmission(
+          recordSubmission,
+          RecordSubmissionKind.attendance,
+        );
 
         for (final m in _members) {
           final directoryId = m['directoryMemberId'];
@@ -574,6 +596,169 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     return activeMembership.isActiveOnWeek(date);
   }
 
+  bool _isCurrentNewMemberGroup() {
+    final currentGroupId = _currentGroupId;
+    if (currentGroupId == null || currentGroupId.isEmpty) return false;
+
+    final groups = ref.read(userGroupsProvider).value ?? [];
+    for (final group in groups) {
+      final groupId = (group['group_id'] ?? group['id'])?.toString();
+      if (groupId == currentGroupId) {
+        return group['is_new_member_group'] == true;
+      }
+    }
+    return false;
+  }
+
+  Future<Map<String, dynamic>?> _submitNewMemberGroupNoMeeting({
+    bool showSnackBar = true,
+  }) async {
+    if (_currentChurchId == null || _currentGroupId == null) {
+      SnackBarUtil.showSnackBar(context,
+          message: '정보를 찾을 수 없습니다.', isError: true);
+      return null;
+    }
+
+    if (!_isCurrentNewMemberGroup()) {
+      SnackBarUtil.showSnackBar(context,
+          message: '새가족 조에서만 사용할 수 있습니다.', isError: true);
+      return null;
+    }
+
+    final selectedDate = ref.read(attendanceSelectedWeekProvider);
+    if (!_isActiveMembershipWeek(selectedDate)) {
+      SnackBarUtil.showSnackBar(context,
+          message: '선택한 주차에는 이 조가 활동 중이 아닙니다.', isError: true);
+      return null;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final repo = ref.read(repositoryProvider);
+      final weekId = await repo.getOrCreateWeek(
+        _currentChurchId!,
+        selectedDate,
+        createIfMissing: true,
+      );
+      if (weekId == null) {
+        throw Exception('주차 정보를 확인하지 못했습니다.');
+      }
+
+      final activeMembership = ref.read(activeMembershipProvider);
+      final profile = ref.read(userProfileProvider).value;
+      final departmentId =
+          activeMembership?.departmentId ?? profile?.departmentId ?? '';
+      if (departmentId.isEmpty) {
+        throw Exception('부서 정보를 확인하지 못했습니다.');
+      }
+
+      final result = await repo.markNewMemberGroupNoMeeting(
+        churchId: _currentChurchId!,
+        departmentId: departmentId,
+        weekId: weekId,
+        groupId: _currentGroupId!,
+      );
+
+      for (final member in _members) {
+        if (member['role_in_group'] == 'leader') continue;
+        member['isPresent'] = false;
+      }
+      _hasExistingData = true;
+      _isNewMemberNoMeetingSubmitted = true;
+      _isDirty = false;
+
+      ref.invalidate(weeklyDataProvider);
+      ref.invalidate(departmentWeeklyDataProvider);
+      ref.invalidate(attendanceHistoryProvider);
+      ref.invalidate(recordCompletionStatusesProvider);
+
+      final absentCount = result?['absent_member_count'];
+      if (mounted && showSnackBar) {
+        SnackBarUtil.showSnackBar(
+          context,
+          message: absentCount is int
+              ? '새가족 모임 없음으로 제출했습니다. ($absentCount명 결석)'
+              : '새가족 모임 없음으로 제출했습니다.',
+        );
+      }
+      return result;
+    } catch (e) {
+      if (mounted) {
+        SnackBarUtil.showSnackBar(context,
+            message: e.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<Map<String, dynamic>?> _cancelNewMemberGroupNoMeeting({
+    bool showSnackBar = true,
+  }) async {
+    if (_currentChurchId == null || _currentGroupId == null) {
+      SnackBarUtil.showSnackBar(context,
+          message: '정보를 찾을 수 없습니다.', isError: true);
+      return null;
+    }
+
+    final selectedDate = ref.read(attendanceSelectedWeekProvider);
+    setState(() => _isLoading = true);
+    try {
+      final repo = ref.read(repositoryProvider);
+      final weekId = await repo.getOrCreateWeek(
+        _currentChurchId!,
+        selectedDate,
+        createIfMissing: true,
+      );
+      if (weekId == null) {
+        throw Exception('주차 정보를 확인하지 못했습니다.');
+      }
+
+      final activeMembership = ref.read(activeMembershipProvider);
+      final profile = ref.read(userProfileProvider).value;
+      final departmentId =
+          activeMembership?.departmentId ?? profile?.departmentId ?? '';
+      if (departmentId.isEmpty) {
+        throw Exception('부서 정보를 확인하지 못했습니다.');
+      }
+
+      final result = await repo.cancelNewMemberGroupNoMeeting(
+        churchId: _currentChurchId!,
+        departmentId: departmentId,
+        weekId: weekId,
+        groupId: _currentGroupId!,
+      );
+
+      for (final member in _members) {
+        member['isPresent'] = false;
+      }
+      _hasExistingData = false;
+      _isNewMemberNoMeetingSubmitted = false;
+      _isDirty = false;
+
+      ref.invalidate(weeklyDataProvider);
+      ref.invalidate(departmentWeeklyDataProvider);
+      ref.invalidate(attendanceHistoryProvider);
+      ref.invalidate(recordCompletionStatusesProvider);
+
+      if (mounted && showSnackBar) {
+        SnackBarUtil.showSnackBar(context, message: '새가족 모임 없음 처리를 취소했습니다.');
+      }
+      return result;
+    } catch (e) {
+      if (mounted) {
+        SnackBarUtil.showSnackBar(context,
+            message: e.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _launchAttendanceCheck() async {
     final selectedDate = ref.read(attendanceSelectedWeekProvider);
     if (!_isActiveMembershipWeek(selectedDate)) {
@@ -612,6 +797,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
           groupId: _currentGroupId,
           isNewFamilyGroup: isNewFamilyGroup,
           hasExistingData: _hasExistingData,
+          isNewMemberNoMeetingSubmitted: _isNewMemberNoMeetingSubmitted,
+          onSubmitNewMemberNoMeeting: () =>
+              _submitNewMemberGroupNoMeeting(showSnackBar: false),
+          onCancelNewMemberNoMeeting: () =>
+              _cancelNewMemberGroupNoMeeting(showSnackBar: false),
         ),
       ),
     );
@@ -641,6 +831,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         _isCheckScreenShowing = false;
       });
       await _saveData(status: 'draft', saveAttendance: true);
+    } else if (result is AttendanceCheckNoMeetingResult) {
+      if (mounted) setState(() => _isCheckScreenShowing = false);
     } else {
       // 취소되거나 완료 없이 닫힌 경우
       if (mounted) setState(() => _isCheckScreenShowing = false);
@@ -1337,9 +1529,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         }
         final note = modelNote.trim();
         if (note.isNotEmpty) {
-          // [FIX] 사용자가 '임시 저장'을 명시적으로 눌렀다면, 기존 상태가 published라도 draft로 변경(Unpublish)해야 함.
-          // Sticky Logic 제거: final newStatus = (status == 'draft' && m['prayerStatus'] == 'published') ? 'published' : status;
-          final newStatus = status;
+          final localStatus = resolveLocalPrayerStatusAfterSave(
+            requestedStatus: status,
+            currentStatus: (m['prayerStatus'] ?? 'initial').toString(),
+          );
 
           prayers.add(PrayerEntryModel(
             weekId: weekId,
@@ -1347,11 +1540,13 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
             memberId: memberId,
             directoryMemberId: dirId,
             content: note,
-            status: newStatus,
+            status: status,
           ));
 
           // [UI UPDATE] 저장 후 즉시 배지를 업데이트하기 위해 로컬 상태 변경
-          m['prayerStatus'] = newStatus;
+          m['prayerStatus'] = localStatus;
+          m['hasPendingPrayerDraft'] =
+              status == 'draft' && localStatus == 'published';
         }
       }
       await repo.saveAttendanceAndPrayers(
@@ -1604,6 +1799,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         ? RecordCompletionStatus.normal
         : recordStatuses[_dateKey(selectedWeek)] ??
             RecordCompletionStatus.normal;
+    final isGroupNoMeeting =
+        noMeeting == null && _isNewMemberNoMeetingSubmitted;
+    final effectiveRecordStatus =
+        isGroupNoMeeting ? RecordCompletionStatus.normal : selectedRecordStatus;
     final hasPendingRecords = recordStatuses.isNotEmpty;
     if (hasPendingRecords && recordStatusKey != null) {
       _triggerDatePromptPulse(recordStatusKey);
@@ -1650,14 +1849,17 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         actions: [
           IconButton(
             icon: Icon(lucide.LucideIcons.clipboardPaste,
-                color: noMeeting != null
+                color: noMeeting != null || isGroupNoMeeting
                     ? AppTheme.border
                     : AppTheme.primaryViolet,
                 size: 20),
             onPressed: () {
-              if (noMeeting != null) {
+              if (noMeeting != null || isGroupNoMeeting) {
                 SnackBarUtil.showSnackBar(context,
-                    message: '모임없는 날에는 메모를 입력할 수 없습니다.', isError: true);
+                    message: isGroupNoMeeting
+                        ? '새가족 모임 없음 처리된 주차에는 메모를 입력할 수 없습니다.'
+                        : '모임없는 날에는 메모를 입력할 수 없습니다.',
+                    isError: true);
                 return;
               }
               _showMemoPasteDialog();
@@ -1686,18 +1888,20 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       // [FIX] 로컬 상태 기반 렌더링 — provider AsyncLoading 전환 시 위젯 트리 교체 방지
       body: _buildBody(
         noMeeting,
+        isGroupNoMeeting,
         departmentId,
         selectedWeek,
-        selectedRecordStatus,
+        effectiveRecordStatus,
         hasPendingRecords,
         recordStatusKey,
       ),
-      bottomNavigationBar: _buildBottomActions(noMeeting),
+      bottomNavigationBar: _buildBottomActions(noMeeting, isGroupNoMeeting),
     );
   }
 
   Widget _buildBody(
     NoMeetingDayModel? noMeeting,
+    bool isGroupNoMeeting,
     String departmentId,
     DateTime selectedWeek,
     RecordCompletionStatus selectedRecordStatus,
@@ -1713,7 +1917,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       );
     }
 
-    if (_members.isEmpty && !_isLoading) {
+    if (_members.isEmpty &&
+        !_isLoading &&
+        noMeeting == null &&
+        !isGroupNoMeeting) {
       return const Center(child: Text('배정된 조가 없습니다.'));
     }
 
@@ -1727,7 +1934,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
               selectedRecordStatus,
             ),
             if (noMeeting != null) _buildNoMeetingBanner(noMeeting),
-            if (noMeeting == null)
+            if (isGroupNoMeeting) _buildGroupNoMeetingBanner(),
+            if (noMeeting == null && !isGroupNoMeeting)
               _buildRecordCompletionNotice(selectedRecordStatus),
             if (_isRefining)
               const LinearProgressIndicator(
@@ -1779,8 +1987,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                     return Container(
                       key: ValueKey(_members[index]['directoryMemberId']),
                       margin: const EdgeInsets.only(bottom: 16),
-                      child:
-                          _buildMemberCard(_members[index], index, noMeeting),
+                      child: _buildMemberCard(_members[index], index, noMeeting,
+                          isGroupNoMeeting: isGroupNoMeeting),
                     );
                   },
                 ),
@@ -2023,23 +2231,24 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   Widget _buildStatusBadge() {
     if (_members.isEmpty) return const SizedBox.shrink();
 
-    final bool hasPublished =
-        _members.any((m) => m['prayerStatus'] == 'published');
-    final bool hasSavedDraft =
-        _members.any((m) => m['prayerStatus'] == 'draft');
+    final badgeStatus = resolvePrayerRecordBadgeStatus(
+      _members,
+      isAutoSaving: _isAutoSaving,
+      isDirty: _isDirty,
+    );
 
     String label = '작성 전';
     Color bgColor = const Color(0xFFF1F5F9);
     Color textColor = const Color(0xFF64748B);
 
-    if (hasPublished) {
-      label = '등록 완료';
-      bgColor = const Color(0xFFECFDF5);
-      textColor = const Color(0xFF10B981);
-    } else if (hasSavedDraft || _isAutoSaving) {
+    if (badgeStatus == PrayerRecordBadgeStatus.draft) {
       label = _isAutoSaving ? '저장 중...' : '임시저장 중';
       bgColor = const Color(0xFFFFF7ED);
       textColor = const Color(0xFFF59E0B);
+    } else if (badgeStatus == PrayerRecordBadgeStatus.published) {
+      label = '등록 완료';
+      bgColor = const Color(0xFFECFDF5);
+      textColor = const Color(0xFF10B981);
     }
 
     return AnimatedSize(
@@ -2090,14 +2299,14 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
+        color: AppTheme.accentViolet,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFB923C).withOpacity(0.4)),
+        border: Border.all(color: AppTheme.primaryViolet.withOpacity(0.18)),
       ),
       child: Row(
         children: [
           const Icon(Icons.event_busy_rounded,
-              color: Color(0xFFF97316), size: 20),
+              color: AppTheme.primaryViolet, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -2106,16 +2315,69 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                 const Text('이번 주는 모임이 없습니다',
                     style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFFEA580C),
+                        color: AppTheme.textMain,
                         fontSize: 14,
                         fontFamily: 'Pretendard')),
                 const SizedBox(height: 2),
                 Text(noMeeting.reason,
                     style: const TextStyle(
-                        color: Color(0xFF9A3412),
+                        color: AppTheme.textSub,
                         fontSize: 13,
                         fontFamily: 'Pretendard')),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupNoMeetingBanner() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F3FF),
+        borderRadius: BorderRadius.circular(12),
+        border:
+            Border.all(color: AppTheme.primaryViolet.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.check_circle_rounded,
+            color: AppTheme.primaryViolet,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              '새가족 모임 없음으로 제출된 주차입니다.',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.primaryViolet,
+                fontFamily: 'Pretendard',
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _launchAttendanceCheck,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(40, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              foregroundColor: AppTheme.textSub,
+            ),
+            child: const Text(
+              '취소/확인',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'Pretendard',
+              ),
             ),
           ),
         ],
@@ -2203,7 +2465,12 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   Widget _buildMemberCard(
-      Map<String, dynamic> member, int index, NoMeetingDayModel? noMeeting) {
+    Map<String, dynamic> member,
+    int index,
+    NoMeetingDayModel? noMeeting, {
+    bool isGroupNoMeeting = false,
+  }) {
+    final isRecordLocked = noMeeting != null || isGroupNoMeeting;
     bool isPresent = member['isPresent'];
     return Container(
       decoration: BoxDecoration(
@@ -2303,13 +2570,13 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                 TextField(
                   controller: _controllers[member['directoryMemberId']],
                   onChanged: (val) => member['prayerNote'] = val,
-                  readOnly: noMeeting != null,
+                  readOnly: isRecordLocked,
                   maxLines: null,
                   minLines: 2,
                   style: TextStyle(
                       fontSize: 14,
                       height: 1.5,
-                      color: noMeeting != null
+                      color: isRecordLocked
                           ? Colors.grey
                           : const Color(0xFF475569),
                       fontFamily: 'Pretendard',
@@ -2425,8 +2692,15 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }
 
   // [기존 _buildCopySpouseButton 삭제됨]
-  Widget _buildBottomActions(NoMeetingDayModel? noMeeting) {
-    final isDisabled = noMeeting != null;
+  Widget _buildBottomActions(
+      NoMeetingDayModel? noMeeting, bool isGroupNoMeeting) {
+    final isDisabled = noMeeting != null || isGroupNoMeeting;
+    final disabledMessage = isGroupNoMeeting
+        ? '새가족 모임 없음 처리된 주차에는 저장할 수 없습니다.'
+        : '모임없는 날에는 저장할 수 없습니다.';
+    final disabledSubmitMessage = isGroupNoMeeting
+        ? '새가족 모임 없음 처리된 주차에는 등록할 수 없습니다.'
+        : '모임없는 날에는 등록할 수 없습니다.';
     return Container(
       padding: EdgeInsets.fromLTRB(
           20, 16, 20, 16 + math.max(12, MediaQuery.of(context).padding.bottom)),
@@ -2440,65 +2714,70 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
               offset: const Offset(0, -5))
         ],
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-              child: OutlinedButton(
-                  onPressed: isDisabled
-                      ? () {
-                          SnackBarUtil.showSnackBar(context,
-                              message: '모임없는 날에는 저장할 수 없습니다.', isError: true);
-                        }
-                      : () {
-                          _isDirty = false;
-                          _saveData(status: 'draft');
-                        },
-                  style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(0, 50),
-                      side: BorderSide(
-                          color: isDisabled
-                              ? const Color(0xFFE2E8F0)
-                              : const Color(0xFFE2E8F0)),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12))),
-                  child: Text('임시 저장',
-                      style: TextStyle(
-                          color: isDisabled
-                              ? const Color(0xFFCBD5E1)
-                              : const Color(0xFF64748B),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          fontFamily: 'Pretendard')))),
-          const SizedBox(width: 12),
-          Expanded(
-              flex: 2,
-              child: SizedBox(
-                  height: 50,
-                  child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: ShadButton(
-                          onPressed: isDisabled
-                              ? () {
-                                  SnackBarUtil.showSnackBar(context,
-                                      message: '모임없는 날에는 등록할 수 없습니다.',
-                                      isError: true);
-                                }
-                              : () {
-                                  _isDirty = false;
-                                  _saveData(status: 'published');
-                                },
-                          backgroundColor: isDisabled
-                              ? const Color(0xFFE2E8F0)
-                              : const Color(0xFF8B5CF6),
-                          size: ShadButtonSize.lg,
-                          child: Text('최종 등록하기',
-                              style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: isDisabled
-                                      ? const Color(0xFF94A3B8)
-                                      : Colors.white,
-                                  fontFamily: 'Pretendard')))))),
+          Row(
+            children: [
+              Expanded(
+                  child: OutlinedButton(
+                      onPressed: isDisabled
+                          ? () {
+                              SnackBarUtil.showSnackBar(context,
+                                  message: disabledMessage, isError: true);
+                            }
+                          : () {
+                              _isDirty = false;
+                              _saveData(status: 'draft');
+                            },
+                      style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 50),
+                          side: BorderSide(
+                              color: isDisabled
+                                  ? const Color(0xFFE2E8F0)
+                                  : const Color(0xFFE2E8F0)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12))),
+                      child: Text('임시 저장',
+                          style: TextStyle(
+                              color: isDisabled
+                                  ? const Color(0xFFCBD5E1)
+                                  : const Color(0xFF64748B),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              fontFamily: 'Pretendard')))),
+              const SizedBox(width: 12),
+              Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                      height: 50,
+                      child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: ShadButton(
+                              onPressed: isDisabled
+                                  ? () {
+                                      SnackBarUtil.showSnackBar(context,
+                                          message: disabledSubmitMessage,
+                                          isError: true);
+                                    }
+                                  : () {
+                                      _isDirty = false;
+                                      _saveData(status: 'published');
+                                    },
+                              backgroundColor: isDisabled
+                                  ? const Color(0xFFE2E8F0)
+                                  : const Color(0xFF8B5CF6),
+                              size: ShadButtonSize.lg,
+                              child: Text('최종 등록하기',
+                                  style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: isDisabled
+                                          ? const Color(0xFF94A3B8)
+                                          : Colors.white,
+                                      fontFamily: 'Pretendard')))))),
+            ],
+          ),
         ],
       ),
     );

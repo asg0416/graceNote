@@ -3,7 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grace_note/core/theme/app_theme.dart';
 import 'package:grace_note/core/providers/data_providers.dart';
 import 'package:grace_note/core/providers/user_role_provider.dart';
+import 'package:grace_note/core/utils/snack_bar_util.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+class AttendanceCheckNoMeetingResult {
+  final bool isActive;
+  const AttendanceCheckNoMeetingResult({required this.isActive});
+}
 
 class AttendanceCheckScreen extends ConsumerStatefulWidget {
   final List<Map<String, dynamic>> initialMembers;
@@ -11,6 +17,9 @@ class AttendanceCheckScreen extends ConsumerStatefulWidget {
   final String? groupId;
   final bool isNewFamilyGroup;
   final bool hasExistingData;
+  final bool isNewMemberNoMeetingSubmitted;
+  final Future<Map<String, dynamic>?> Function()? onSubmitNewMemberNoMeeting;
+  final Future<Map<String, dynamic>?> Function()? onCancelNewMemberNoMeeting;
 
   const AttendanceCheckScreen({
     super.key,
@@ -19,6 +28,9 @@ class AttendanceCheckScreen extends ConsumerStatefulWidget {
     this.groupId,
     this.isNewFamilyGroup = false,
     this.hasExistingData = false,
+    this.isNewMemberNoMeetingSubmitted = false,
+    this.onSubmitNewMemberNoMeeting,
+    this.onCancelNewMemberNoMeeting,
   });
 
   @override
@@ -28,18 +40,232 @@ class AttendanceCheckScreen extends ConsumerStatefulWidget {
 
 class _AttendanceCheckScreenState extends ConsumerState<AttendanceCheckScreen> {
   late List<Map<String, dynamic>> _tempMembers;
+  late bool _isNewMemberNoMeetingSubmitted;
+  bool _isNoMeetingMutationLoading = false;
 
   @override
   void initState() {
     super.initState();
     _tempMembers =
         widget.initialMembers.map((m) => Map<String, dynamic>.from(m)).toList();
+    _isNewMemberNoMeetingSubmitted = widget.isNewMemberNoMeetingSubmitted;
+  }
+
+  Future<void> _submitNewMemberNoMeeting() async {
+    if (widget.onSubmitNewMemberNoMeeting == null ||
+        _isNoMeetingMutationLoading) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('새가족 모임이 없어요'),
+        content: const Text('이번 주 새가족 조모임 없음으로 제출할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('제출'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isNoMeetingMutationLoading = true);
+    final result = await widget.onSubmitNewMemberNoMeeting!();
+    if (!mounted) return;
+    if (result != null) {
+      setState(() {
+        _isNewMemberNoMeetingSubmitted = true;
+        for (final member in _tempMembers) {
+          if (member['role_in_group'] == 'leader') continue;
+          member['isPresent'] = false;
+        }
+      });
+      final absentCount = result['absent_member_count'];
+      SnackBarUtil.showSnackBar(
+        context,
+        message: absentCount is int
+            ? '새가족 모임 없음으로 제출했습니다. ($absentCount명 결석)'
+            : '새가족 모임 없음으로 제출했습니다.',
+      );
+    }
+    if (mounted) setState(() => _isNoMeetingMutationLoading = false);
+  }
+
+  Future<void> _cancelNewMemberNoMeeting() async {
+    if (widget.onCancelNewMemberNoMeeting == null ||
+        _isNoMeetingMutationLoading) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('모임 없음 처리 취소'),
+        content: const Text('이번 주 새가족 모임 없음 처리를 취소할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('닫기'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('취소하기'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isNoMeetingMutationLoading = true);
+    final result = await widget.onCancelNewMemberNoMeeting!();
+    if (!mounted) return;
+    if (result != null) {
+      setState(() {
+        _isNewMemberNoMeetingSubmitted = false;
+        for (final member in _tempMembers) {
+          member['isPresent'] = false;
+        }
+      });
+      SnackBarUtil.showSnackBar(context, message: '새가족 모임 없음 처리를 취소했습니다.');
+    }
+    if (mounted) setState(() => _isNoMeetingMutationLoading = false);
+  }
+
+  Widget _buildNewMemberNoMeetingAction() {
+    final isSubmitted = _isNewMemberNoMeetingSubmitted;
+    final Color surface =
+        isSubmitted ? AppTheme.accentViolet : AppTheme.secondaryBackground;
+    final Color accent = AppTheme.primaryViolet;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isSubmitted || _isNoMeetingMutationLoading
+            ? null
+            : _submitNewMemberNoMeeting,
+        borderRadius: BorderRadius.circular(16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: accent.withOpacity(isSubmitted ? 0.22 : 0.16),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withOpacity(0.05),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: accent.withOpacity(0.12)),
+                ),
+                child: Icon(
+                  isSubmitted ? LucideIcons.circleCheck : LucideIcons.calendarX,
+                  size: 20,
+                  color: accent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isSubmitted ? '새가족 모임 없음으로 제출됨' : '새가족 모임이 없어요',
+                      style: const TextStyle(
+                        color: AppTheme.textMain,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        fontFamily: 'Pretendard',
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      isSubmitted
+                          ? '출석과 기도제목 제출이 완료 처리됐어요.'
+                          : '새가족이 없어 모임을 진행하지 않는 주라면 바로 처리하세요.',
+                      style: const TextStyle(
+                        color: AppTheme.textSub,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Pretendard',
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              if (_isNoMeetingMutationLoading)
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: accent,
+                  ),
+                )
+              else if (isSubmitted)
+                TextButton(
+                  onPressed: _cancelNewMemberNoMeeting,
+                  style: TextButton.styleFrom(
+                    foregroundColor: accent,
+                    minimumSize: const Size(52, 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13,
+                      fontFamily: 'Pretendard',
+                    ),
+                  ),
+                  child: const Text('취소'),
+                )
+              else
+                Icon(LucideIcons.chevronRight, size: 18, color: accent),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     ref.listen(activeRoleProvider, (previous, next) {
       if (previous == null || next == null || next == AppRole.leader) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+      });
+    });
+
+    ref.listen(activeMembershipProvider, (previous, next) {
+      final currentGroupId = widget.groupId;
+      if (currentGroupId == null || currentGroupId.isEmpty) return;
+      if (next != null && next.groupId == currentGroupId) return;
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && Navigator.of(context).canPop()) {
           Navigator.of(context).pop();
@@ -95,23 +321,27 @@ class _AttendanceCheckScreenState extends ConsumerState<AttendanceCheckScreen> {
                       builder: (context) {
                         final bool isAllSelected = _tempMembers.isNotEmpty &&
                             _tempMembers.every((m) => m['isPresent'] == true);
+                        final bool isSelectionDisabled =
+                            _isNewMemberNoMeetingSubmitted;
                         return Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              onPressed: () {
-                                setState(() {
-                                  for (var m in _tempMembers) {
-                                    m['isPresent'] = !isAllSelected;
-                                  }
-                                });
-                              },
+                              onPressed: isSelectionDisabled
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        for (var m in _tempMembers) {
+                                          m['isPresent'] = !isAllSelected;
+                                        }
+                                      });
+                                    },
                               icon: Icon(
                                 isAllSelected
                                     ? LucideIcons.userMinus
                                     : LucideIcons.userPlus,
                                 size: 22,
-                                color: isAllSelected
+                                color: isSelectionDisabled || isAllSelected
                                     ? AppTheme.textSub
                                     : AppTheme.primaryViolet,
                               ),
@@ -130,7 +360,7 @@ class _AttendanceCheckScreenState extends ConsumerState<AttendanceCheckScreen> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: isAllSelected
+                                color: isAllSelected || isSelectionDisabled
                                     ? AppTheme.textSub
                                     : AppTheme.primaryViolet,
                                 fontFamily: 'Pretendard',
@@ -142,6 +372,11 @@ class _AttendanceCheckScreenState extends ConsumerState<AttendanceCheckScreen> {
                     ),
                   ],
                 ),
+                if (widget.isNewFamilyGroup &&
+                    widget.onSubmitNewMemberNoMeeting != null) ...[
+                  const SizedBox(height: 16),
+                  _buildNewMemberNoMeetingAction(),
+                ],
                 const SizedBox(height: 16),
               ],
             ),
@@ -249,8 +484,10 @@ class _AttendanceCheckScreenState extends ConsumerState<AttendanceCheckScreen> {
                           widget.hasExistingData;
 
                       return GestureDetector(
-                        onTap: () =>
-                            setState(() => member['isPresent'] = !isSelected),
+                        onTap: _isNewMemberNoMeetingSubmitted
+                            ? null
+                            : () => setState(
+                                () => member['isPresent'] = !isSelected),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(
@@ -403,8 +640,10 @@ class _AttendanceCheckScreenState extends ConsumerState<AttendanceCheckScreen> {
                               ],
                               ShadCheckbox(
                                 value: isSelected,
-                                onChanged: (val) =>
-                                    setState(() => member['isPresent'] = val),
+                                onChanged: _isNewMemberNoMeetingSubmitted
+                                    ? null
+                                    : (val) => setState(
+                                        () => member['isPresent'] = val),
                               ),
                             ],
                           ),
@@ -427,10 +666,18 @@ class _AttendanceCheckScreenState extends ConsumerState<AttendanceCheckScreen> {
           height: 50,
           child: ShadButton(
             onPressed: () {
+              if (_isNewMemberNoMeetingSubmitted) {
+                Navigator.pop(
+                  context,
+                  const AttendanceCheckNoMeetingResult(isActive: true),
+                );
+                return;
+              }
               Navigator.pop(context, _tempMembers);
             },
             backgroundColor: const Color(0xFF8B5CF6),
-            child: const Text('출석체크 완료',
+            child: Text(
+                _isNewMemberNoMeetingSubmitted ? '기록 화면으로 돌아가기' : '출석체크 완료',
                 style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 15,
