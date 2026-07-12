@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:grace_note/core/constants/app_constants.dart';
 import 'package:grace_note/core/providers/settings_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AIService {
   static final AIService _instance = AIService._internal();
@@ -18,11 +20,12 @@ class AIService {
 
   void init() {}
 
-  Future<List<String>> refinePrayers(List<String> rawPrayers, {AISettings? settings}) async {
+  Future<List<String>> refinePrayers(List<String> rawPrayers,
+      {AISettings? settings}) async {
     if (rawPrayers.isEmpty) return [];
 
-    final indicatorStr = settings?.indicatorType == AIIndicatorType.custom 
-        ? '각 기도제목 항목(주제)마다 "${settings?.customIndicator ?? '💖'}" 기호를 앞에 붙이고 줄바꿈하세요.' 
+    final indicatorStr = settings?.indicatorType == AIIndicatorType.custom
+        ? '각 기도제목 항목(주제)마다 "${settings?.customIndicator ?? '💖'}" 기호를 앞에 붙이고 줄바꿈하세요.'
         : '각 기도제목 항목(주제)마다 "1.", "2."와 같이 번호를 매기고 줄바꿈하세요.';
 
     String endingStyleStr;
@@ -73,51 +76,58 @@ ${jsonEncode(rawPrayers)}
 
     for (final modelId in _modelIds) {
       try {
-        final url = 'https://generativelanguage.googleapis.com/v1beta/models/$modelId:generateContent?key=${AppConstants.geminiApiKey}';
+        final url =
+            'https://generativelanguage.googleapis.com/v1beta/models/$modelId:generateContent?key=${AppConstants.geminiApiKey}';
         print('AI 시도 중: $modelId... (JSON 모드)');
 
-        final response = await http.post(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'contents': [
-              {
-                'parts': [
-                  {'text': prompt}
-                ]
-              }
-            ],
-            'generationConfig': {
-              'temperature': 0.2, // Lower temperature for stricter adherence to format
-              'topK': 40,
-              'topP': 0.95,
-              'maxOutputTokens': 2048,
-              'responseMimeType': 'application/json',
-            }
-          }),
-        );
+        final response = await http
+            .post(
+              Uri.parse(url),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'contents': [
+                  {
+                    'parts': [
+                      {'text': prompt}
+                    ]
+                  }
+                ],
+                'generationConfig': {
+                  'temperature':
+                      0.2, // Lower temperature for stricter adherence to format
+                  'topK': 40,
+                  'topP': 0.95,
+                  'maxOutputTokens': 2048,
+                  'responseMimeType': 'application/json',
+                }
+              }),
+            )
+            .timeout(const Duration(seconds: 25));
 
         if (response.statusCode == 200) {
           final Map<String, dynamic> body = jsonDecode(response.body);
-          final String? text = body['candidates']?[0]?['content']?['parts']?[0]?['text'];
+          final String? text =
+              body['candidates']?[0]?['content']?['parts']?[0]?['text'];
 
           if (text != null) {
             final dynamic decoded = jsonDecode(text);
             if (decoded is List) {
-              final List<String> refined = decoded.map((e) => e.toString()).toList();
-              
+              final List<String> refined =
+                  decoded.map((e) => e.toString()).toList();
+
               // Ensure we have the same number of items
               if (refined.length == rawPrayers.length) {
                 print('AI 성공: $modelId (${refined.length} 건)');
                 return refined;
               } else {
-                print('AI 개수 불일치: 입력 ${rawPrayers.length} vs 출력 ${refined.length}');
+                print(
+                    'AI 개수 불일치: 입력 ${rawPrayers.length} vs 출력 ${refined.length}');
                 lastError = 'Count mismatch';
               }
             }
           }
         }
-        
+
         lastError = 'Status ${response.statusCode}: ${response.body}';
         print('AI $modelId 실패: $lastError');
       } catch (e) {
@@ -135,7 +145,8 @@ ${jsonEncode(rawPrayers)}
   /// [memberNames]: 현재 조원 이름 목록 (매칭 기준)
   /// 반환값: {"조원 전체 이름": "기도제목"} 형태의 Map, 실패 시 빈 Map
   Future<Map<String, String>> parsePrayerMemo(
-      String memoText, List<String> memberNames) async {
+      String memoText, List<String> memberNames,
+      {String? churchId, String? groupId}) async {
     if (memoText.trim().isEmpty || memberNames.isEmpty) return {};
 
     final prompt = '''
@@ -159,63 +170,269 @@ $memoText
 ''';
 
     Object? lastError;
+    final requestId = DateTime.now().toUtc().microsecondsSinceEpoch.toString();
 
-    for (final modelId in _modelIds) {
+    for (var index = 0; index < _modelIds.length; index++) {
+      final modelId = _modelIds[index];
+      final stopwatch = Stopwatch()..start();
       try {
-        final url = 'https://generativelanguage.googleapis.com/v1beta/models/$modelId:generateContent?key=${AppConstants.geminiApiKey}';
+        final url =
+            'https://generativelanguage.googleapis.com/v1beta/models/$modelId:generateContent?key=${AppConstants.geminiApiKey}';
         print('메모 파싱 AI 시도 중: $modelId...');
 
-        final response = await http.post(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'contents': [
-              {
-                'parts': [
-                  {'text': prompt}
-                ]
-              }
-            ],
-            'generationConfig': {
-              'temperature': 0.1,
-              'topK': 40,
-              'topP': 0.95,
-              'maxOutputTokens': 4096,
-              'responseMimeType': 'application/json',
-            }
-          }),
-        );
-
-        if (response.statusCode == 200) {
-          final Map<String, dynamic> body = jsonDecode(response.body);
-          final String? text = body['candidates']?[0]?['content']?['parts']?[0]?['text'];
-
-          if (text != null) {
-            final dynamic decoded = jsonDecode(text);
-            if (decoded is Map) {
-              // 키가 실제 명단에 있는 이름인 것만 필터링
-              final result = <String, String>{};
-              for (final entry in decoded.entries) {
-                final name = entry.key.toString();
-                if (memberNames.contains(name)) {
-                  result[name] = entry.value?.toString() ?? '';
+        final response = await http
+            .post(
+              Uri.parse(url),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'contents': [
+                  {
+                    'parts': [
+                      {'text': prompt}
+                    ]
+                  }
+                ],
+                'generationConfig': {
+                  'temperature': 0.1,
+                  'topK': 40,
+                  'topP': 0.95,
+                  'maxOutputTokens': 4096,
+                  'responseMimeType': 'application/json',
                 }
-              }
-              print('메모 파싱 성공: $modelId (${result.length}명 매칭)');
-              return result;
-            }
-          }
+              }),
+            )
+            .timeout(const Duration(seconds: 25));
+
+        if (response.statusCode != 200) {
+          final errorMessage = _summarizeProviderError(response.body);
+          await _writeMemoDiagnostic(
+            requestId: requestId,
+            churchId: churchId,
+            groupId: groupId,
+            modelId: modelId,
+            attemptNo: index + 1,
+            outcome: 'http_error',
+            statusCode: response.statusCode,
+            durationMs: stopwatch.elapsedMilliseconds,
+            inputChars: memoText.length,
+            memberCount: memberNames.length,
+            errorType: 'http_${response.statusCode}',
+            errorMessage: errorMessage,
+          );
+          print('메모 파싱 $modelId 실패: HTTP ${response.statusCode}');
+          lastError = 'Status ${response.statusCode}: $errorMessage';
+          continue;
         }
 
-        lastError = 'Status ${response.statusCode}: ${response.body}';
-        print('메모 파싱 $modelId 실패: $lastError');
+        final Map<String, dynamic> body;
+        try {
+          body = jsonDecode(response.body) as Map<String, dynamic>;
+        } catch (e) {
+          await _writeMemoDiagnostic(
+            requestId: requestId,
+            churchId: churchId,
+            groupId: groupId,
+            modelId: modelId,
+            attemptNo: index + 1,
+            outcome: 'json_parse_error',
+            statusCode: response.statusCode,
+            durationMs: stopwatch.elapsedMilliseconds,
+            inputChars: memoText.length,
+            memberCount: memberNames.length,
+            errorType: 'provider_response_json',
+            errorMessage: e.toString(),
+          );
+          lastError = e;
+          continue;
+        }
+
+        final String? text =
+            body['candidates']?[0]?['content']?['parts']?[0]?['text'];
+
+        if (text == null || text.trim().isEmpty) {
+          final candidates = body['candidates'];
+          final firstCandidate = candidates is List && candidates.isNotEmpty
+              ? candidates.first
+              : null;
+          await _writeMemoDiagnostic(
+            requestId: requestId,
+            churchId: churchId,
+            groupId: groupId,
+            modelId: modelId,
+            attemptNo: index + 1,
+            outcome: 'provider_empty',
+            statusCode: response.statusCode,
+            durationMs: stopwatch.elapsedMilliseconds,
+            inputChars: memoText.length,
+            memberCount: memberNames.length,
+            errorType: body['promptFeedback'] != null
+                ? 'prompt_feedback'
+                : 'no_candidate_text',
+            errorMessage: _summarizeProviderError(jsonEncode({
+              'promptFeedback': body['promptFeedback'],
+              'finishReason':
+                  firstCandidate is Map ? firstCandidate['finishReason'] : null,
+            })),
+          );
+          lastError = 'Provider returned no candidate text';
+          continue;
+        }
+
+        final dynamic decoded;
+        try {
+          decoded = jsonDecode(text);
+        } catch (e) {
+          await _writeMemoDiagnostic(
+            requestId: requestId,
+            churchId: churchId,
+            groupId: groupId,
+            modelId: modelId,
+            attemptNo: index + 1,
+            outcome: 'json_parse_error',
+            statusCode: response.statusCode,
+            durationMs: stopwatch.elapsedMilliseconds,
+            inputChars: memoText.length,
+            memberCount: memberNames.length,
+            errorType: 'model_output_json',
+            errorMessage: e.toString(),
+          );
+          lastError = e;
+          continue;
+        }
+
+        if (decoded is Map) {
+          // 키가 실제 명단에 있는 이름인 것만 필터링
+          final result = <String, String>{};
+          for (final entry in decoded.entries) {
+            final name = entry.key.toString();
+            if (memberNames.contains(name)) {
+              result[name] = entry.value?.toString() ?? '';
+            }
+          }
+          if (result.isNotEmpty) {
+            await _writeMemoDiagnostic(
+              requestId: requestId,
+              churchId: churchId,
+              groupId: groupId,
+              modelId: modelId,
+              attemptNo: index + 1,
+              outcome: 'success',
+              statusCode: response.statusCode,
+              durationMs: stopwatch.elapsedMilliseconds,
+              inputChars: memoText.length,
+              memberCount: memberNames.length,
+              matchedCount: result.length,
+            );
+            print('메모 파싱 성공: $modelId (${result.length}명 매칭)');
+            return result;
+          }
+
+          await _writeMemoDiagnostic(
+            requestId: requestId,
+            churchId: churchId,
+            groupId: groupId,
+            modelId: modelId,
+            attemptNo: index + 1,
+            outcome: 'invalid_result',
+            statusCode: response.statusCode,
+            durationMs: stopwatch.elapsedMilliseconds,
+            inputChars: memoText.length,
+            memberCount: memberNames.length,
+            matchedCount: 0,
+            errorType: 'no_member_name_matched',
+            errorMessage: 'JSON object returned, but no member name matched',
+          );
+          lastError = 'No member name matched';
+          continue;
+        }
+
+        await _writeMemoDiagnostic(
+          requestId: requestId,
+          churchId: churchId,
+          groupId: groupId,
+          modelId: modelId,
+          attemptNo: index + 1,
+          outcome: 'invalid_result',
+          statusCode: response.statusCode,
+          durationMs: stopwatch.elapsedMilliseconds,
+          inputChars: memoText.length,
+          memberCount: memberNames.length,
+          errorType: 'model_output_not_object',
+          errorMessage: 'Model output was not a JSON object',
+        );
+        lastError = 'Model output was not a JSON object';
       } catch (e) {
+        await _writeMemoDiagnostic(
+          requestId: requestId,
+          churchId: churchId,
+          groupId: groupId,
+          modelId: modelId,
+          attemptNo: index + 1,
+          outcome: 'exception',
+          durationMs: stopwatch.elapsedMilliseconds,
+          inputChars: memoText.length,
+          memberCount: memberNames.length,
+          errorType: e.runtimeType.toString(),
+          errorMessage: e.toString(),
+        );
         print('메모 파싱 $modelId 에러: $e');
         lastError = e;
+      } finally {
+        stopwatch.stop();
       }
     }
 
     print('메모 파싱 모든 시도 실패. 최종 에러: $lastError');
     return {};
+  }
+
+  String _summarizeProviderError(String raw) {
+    final normalized = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.length <= 500) return normalized;
+    return normalized.substring(0, 500);
+  }
+
+  Future<void> _writeMemoDiagnostic({
+    required String requestId,
+    required String? churchId,
+    required String? groupId,
+    required String modelId,
+    required int attemptNo,
+    required String outcome,
+    int? statusCode,
+    required int durationMs,
+    required int inputChars,
+    required int memberCount,
+    int? matchedCount,
+    String? errorType,
+    String? errorMessage,
+  }) async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      await Supabase.instance.client.from('ai_request_logs').insert({
+        'request_id': requestId,
+        'user_id': userId,
+        'church_id': churchId,
+        'group_id': groupId,
+        'feature': 'parse_prayer_memo',
+        'model_id': modelId,
+        'attempt_no': attemptNo,
+        'outcome': outcome,
+        'status_code': statusCode,
+        'duration_ms': durationMs,
+        'input_chars': inputChars,
+        'member_count': memberCount,
+        'matched_count': matchedCount,
+        'error_type': errorType,
+        'error_message':
+            errorMessage == null ? null : _summarizeProviderError(errorMessage),
+        'app_version': AppConstants.appVersion,
+      });
+    } catch (e) {
+      // Diagnostics must never change the user-facing AI flow.
+      print('AI 진단 로그 저장 실패: $e');
+    }
   }
 }

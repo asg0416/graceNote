@@ -1031,8 +1031,13 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                                     phase = 'loading';
                                     errorMsg = null;
                                   });
-                                  final result = await AIService()
-                                      .parsePrayerMemo(memo, memberNames);
+                                  final result =
+                                      await AIService().parsePrayerMemo(
+                                    memo,
+                                    memberNames,
+                                    churchId: _currentChurchId,
+                                    groupId: _currentGroupId,
+                                  );
                                   if (result.isEmpty) {
                                     setDialogState(() {
                                       phase = 'input';
