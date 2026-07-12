@@ -1825,6 +1825,9 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
     return Scaffold(
       backgroundColor: Colors.white,
+      // 키보드가 열려도 하단 액션 바를 키보드 위로 밀어 올리지 않는다.
+      // 입력 중에는 버튼이 키보드 뒤에 머물고, 키보드를 닫으면 다시 사용할 수 있다.
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
