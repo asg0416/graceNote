@@ -1781,6 +1781,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
     // [NEW] 모임없는 날 provider watch
     final profile = ref.watch(userProfileProvider).value;
+    final isKeyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
     final departmentId = profile?.departmentId ?? '';
     final selectedWeek = ref.watch(attendanceSelectedWeekProvider);
     final weekStr =
@@ -1899,20 +1900,25 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         effectiveRecordStatus,
         hasPendingRecords,
         recordStatusKey,
+        keyboardVisible: isKeyboardVisible,
       ),
-      bottomNavigationBar: _buildBottomActions(noMeeting, isGroupNoMeeting),
+      // 키보드가 열릴 때는 하단 액션 바를 숨겨 작성 영역을 확보한다.
+      // 키보드를 닫으면 같은 위치에 임시 저장/최종 등록 버튼이 다시 나타난다.
+      bottomNavigationBar: isKeyboardVisible
+          ? null
+          : _buildBottomActions(noMeeting, isGroupNoMeeting),
     );
   }
 
   Widget _buildBody(
-    NoMeetingDayModel? noMeeting,
-    bool isGroupNoMeeting,
-    String departmentId,
-    DateTime selectedWeek,
-    RecordCompletionStatus selectedRecordStatus,
-    bool hasPendingRecords,
-    String? recordStatusKey,
-  ) {
+      NoMeetingDayModel? noMeeting,
+      bool isGroupNoMeeting,
+      String departmentId,
+      DateTime selectedWeek,
+      RecordCompletionStatus selectedRecordStatus,
+      bool hasPendingRecords,
+      String? recordStatusKey,
+      {required bool keyboardVisible}) {
     if (!_isInitialized || (_members.isEmpty && (_isLoading || _isFetching))) {
       return const Center(
         child: Padding(
@@ -1953,7 +1959,8 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                 onRefresh: _refreshData,
                 color: AppTheme.primaryViolet,
                 child: ReorderableListView.builder(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
+                  padding: EdgeInsets.fromLTRB(
+                      20, 16, 20, keyboardVisible ? 24 : 120),
                   proxyDecorator: (child, index, animation) {
                     return AnimatedBuilder(
                       animation: animation,
@@ -2578,6 +2585,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                   readOnly: isRecordLocked,
                   maxLines: null,
                   minLines: 2,
+                  scrollPadding: const EdgeInsets.only(bottom: 24),
                   style: TextStyle(
                       fontSize: 14,
                       height: 1.5,
