@@ -47,6 +47,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
   List<Map<String, dynamic>> _members = [];
   final Map<String, TextEditingController> _controllers = {};
+  final Map<String, FocusNode> _prayerFocusNodes = {};
   final ShadPopoverController _popoverController = ShadPopoverController();
   String? _currentGroupId;
   Timer? _editingDebounceTimer;
@@ -54,6 +55,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   bool _isCoupleMode = false;
   bool _isDirty = false;
   bool _isAutoSaving = false;
+  bool _isPrayerInputFocused = false;
   late AnimationController _animationController;
   late AnimationController _datePromptController;
   String? _lastDatePromptKey;
@@ -96,6 +98,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
     for (final controller in _controllers.values) {
       controller.removeListener(_onTextChanged);
       controller.dispose();
+    }
+    for (final focusNode in _prayerFocusNodes.values) {
+      focusNode.removeListener(_handlePrayerFocusChanged);
+      focusNode.dispose();
     }
     _popoverController.dispose();
     // 화면을 떠날 때 editing guard 해제
@@ -161,6 +167,25 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   /// 새로 생성된 controller에 editing guard 리스너를 등록
   void _attachEditingGuard(TextEditingController controller) {
     controller.addListener(_onTextChanged);
+  }
+
+  FocusNode _prayerFocusNodeFor(String directoryMemberId) {
+    final existing = _prayerFocusNodes[directoryMemberId];
+    if (existing != null) return existing;
+
+    final focusNode = FocusNode(debugLabel: 'prayer-$directoryMemberId');
+    focusNode.addListener(_handlePrayerFocusChanged);
+    _prayerFocusNodes[directoryMemberId] = focusNode;
+    return focusNode;
+  }
+
+  void _handlePrayerFocusChanged() {
+    if (!mounted) return;
+    final hasPrayerFocus =
+        _prayerFocusNodes.values.any((focusNode) => focusNode.hasFocus);
+    if (hasPrayerFocus == _isPrayerInputFocused) return;
+
+    setState(() => _isPrayerInputFocused = hasPrayerFocus);
   }
 
   /// 저장/공유 직전에 controller -> model 값을 일치시켜
@@ -1825,9 +1850,6 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
 
     return Scaffold(
       backgroundColor: Colors.white,
-      // 키보드가 열려도 하단 액션 바를 키보드 위로 밀어 올리지 않는다.
-      // 입력 중에는 버튼이 키보드 뒤에 머물고, 키보드를 닫으면 다시 사용할 수 있다.
-      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -1903,7 +1925,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
         hasPendingRecords,
         recordStatusKey,
       ),
-      bottomNavigationBar: _buildBottomActions(noMeeting, isGroupNoMeeting),
+      // iOS 웹/PWA는 키보드 높이(viewInsets)를 안정적으로 전달하지 않으므로,
+      // 기도제목 입력 포커스를 기준으로 하단 버튼을 제거한다.
+      bottomNavigationBar: _isPrayerInputFocused
+          ? null
+          : _buildBottomActions(noMeeting, isGroupNoMeeting),
     );
   }
 
@@ -1956,7 +1982,10 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
                 onRefresh: _refreshData,
                 color: AppTheme.primaryViolet,
                 child: ReorderableListView.builder(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
+                  padding: EdgeInsets.fromLTRB(
+                      20, 16, 20, _isPrayerInputFocused ? 24 : 120),
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
                   proxyDecorator: (child, index, animation) {
                     return AnimatedBuilder(
                       animation: animation,
@@ -2480,6 +2509,7 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
   }) {
     final isRecordLocked = noMeeting != null || isGroupNoMeeting;
     bool isPresent = member['isPresent'];
+    final directoryMemberId = member['directoryMemberId'] as String;
     return Container(
       decoration: BoxDecoration(
           color: Colors.white,
@@ -2576,7 +2606,11 @@ class _AttendancePrayerScreenState extends ConsumerState<AttendancePrayerScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 TextField(
-                  controller: _controllers[member['directoryMemberId']],
+                  controller: _controllers[directoryMemberId],
+                  focusNode: _prayerFocusNodeFor(directoryMemberId),
+                  canRequestFocus: !isRecordLocked,
+                  onTapOutside: (_) =>
+                      FocusManager.instance.primaryFocus?.unfocus(),
                   onChanged: (val) => member['prayerNote'] = val,
                   readOnly: isRecordLocked,
                   maxLines: null,
