@@ -50,6 +50,39 @@ void main() {
       expect(result['이세형'], '가족의 건강\n직장 일정');
     });
 
+    test('자녀 기도제목을 부모 두 사람에게 공통으로 합친다', () {
+      final response = jsonEncode({
+        'matches': [
+          {'name': '김다정', 'prayer': '새로 발령 받은 곳에서 업무를 잘 배우도록'},
+          {'name': '김보성', 'prayer': '더운 여름을 안전하게 보내도록'},
+          {
+            'name': '김다정',
+            'prayer': '(수안하늘) 방학 동안 돌봄과 오고 가는 길이 안전하도록',
+          },
+          {
+            'name': '김보성',
+            'prayer': '(수안하늘) 방학 동안 돌봄과 오고 가는 길이 안전하도록',
+          },
+        ],
+      });
+
+      final result = AIService.decodePrayerMemoOutput(
+        response,
+        ['김보성', '김다정'],
+      );
+
+      expect(
+        result['김다정'],
+        '새로 발령 받은 곳에서 업무를 잘 배우도록\n'
+        '(수안하늘) 방학 동안 돌봄과 오고 가는 길이 안전하도록',
+      );
+      expect(
+        result['김보성'],
+        '더운 여름을 안전하게 보내도록\n'
+        '(수안하늘) 방학 동안 돌봄과 오고 가는 길이 안전하도록',
+      );
+    });
+
     test('형식이 깨진 JSON은 재시도할 수 있도록 예외를 발생시킨다', () {
       expect(
         () => AIService.decodePrayerMemoOutput(
