@@ -10,12 +10,11 @@ class AIService {
   factory AIService() => _instance;
   AIService._internal();
 
-  // Target models discovered from ListModels output for this key in 2026
-  final List<String> _modelIds = [
-    'gemini-2.0-flash',
+  // Use explicit stable model IDs so production behavior does not change when
+  // a `latest` alias is moved to another model.
+  static const List<String> _modelIds = [
+    'gemini-3.5-flash',
     'gemini-2.5-flash',
-    'gemini-flash-latest',
-    'gemini-pro-latest',
   ];
 
   void init() {}
@@ -99,6 +98,11 @@ ${jsonEncode(rawPrayers)}
                   'topP': 0.95,
                   'maxOutputTokens': 2048,
                   'responseMimeType': 'application/json',
+                  'responseSchema': {
+                    'type': 'ARRAY',
+                    'items': {'type': 'STRING'},
+                  },
+                  'thinkingConfig': _thinkingConfigFor(modelId),
                 }
               }),
             )
@@ -158,12 +162,15 @@ ${jsonEncode(rawPrayers)}
 
 규칙:
 1. 이름이 일부만 쓰였거나 (예: "진슬" → "임진슬"), 성 없이 이름만 있어도 명단에서 가장 가까운 이름과 매칭하세요.
-2. 매칭이 불확실하면 빈 문자열("")로 두고 억지로 매칭하지 마세요.
-3. 반드시 아래 JSON 형식으로만 응답하세요. 설명 문장은 절대 추가하지 마세요.
-   형식: {"조원이름_전체": "기도제목 내용", ...}
-4. 반환하는 키(이름)는 반드시 조원 명단에 있는 정확한 이름을 사용하세요.
-5. 기도제목은 원문의 표현을 최대한 그대로 보존하세요. 다듬거나 변경하지 마세요.
-6. 명단에 없는 이름은 결과에 포함하지 마세요.
+2. 매칭이 불확실하면 matches 배열에서 생략하고 억지로 매칭하지 마세요.
+3. 두 명 이상의 실제 조원 이름이 구분자 없이 연속으로 붙어 있을 수 있습니다.
+   예: "이세형김영은"은 "이세형", "김영은" 두 사람이며, 이어지는 기도제목을 두 사람 모두에게 동일하게 매칭하세요.
+4. 반드시 아래 JSON 형식으로만 응답하세요. 설명 문장은 절대 추가하지 마세요.
+   형식: {"matches": [{"name": "조원이름_전체", "prayer": "기도제목 내용"}]}
+   메모에서 기도제목을 찾지 못한 조원은 matches 배열에서 생략하세요.
+5. name은 반드시 조원 명단에 있는 정확한 이름을 사용하세요.
+6. 기도제목은 원문의 표현을 최대한 그대로 보존하세요. 다듬거나 변경하지 마세요.
+7. 명단에 없는 이름은 결과에 포함하지 마세요.
 
 메모 내용:
 $memoText
@@ -198,6 +205,8 @@ $memoText
                   'topP': 0.95,
                   'maxOutputTokens': 4096,
                   'responseMimeType': 'application/json',
+                  'responseSchema': _prayerMemoResponseSchema(memberNames),
+                  'thinkingConfig': _thinkingConfigFor(modelId),
                 }
               }),
             )
@@ -278,10 +287,16 @@ $memoText
           continue;
         }
 
-        final dynamic decoded;
+        final Map<String, String> result;
         try {
-          decoded = jsonDecode(text);
+          result = decodePrayerMemoOutput(text, memberNames);
         } catch (e) {
+          final candidates = body['candidates'];
+          final firstCandidate = candidates is List && candidates.isNotEmpty
+              ? candidates.first
+              : null;
+          final finishReason =
+              firstCandidate is Map ? firstCandidate['finishReason'] : null;
           await _writeMemoDiagnostic(
             requestId: requestId,
             churchId: churchId,
@@ -294,73 +309,30 @@ $memoText
             inputChars: memoText.length,
             memberCount: memberNames.length,
             errorType: 'model_output_json',
-            errorMessage: e.toString(),
+            errorMessage:
+                '$e; finishReason=$finishReason; outputChars=${text.length}',
           );
           lastError = e;
           continue;
         }
 
-        if (decoded is Map) {
-          // 키가 실제 명단에 있는 이름인 것만 필터링
-          final result = <String, String>{};
-          for (final entry in decoded.entries) {
-            final name = entry.key.toString();
-            if (memberNames.contains(name)) {
-              result[name] = entry.value?.toString() ?? '';
-            }
-          }
-          if (result.isNotEmpty) {
-            await _writeMemoDiagnostic(
-              requestId: requestId,
-              churchId: churchId,
-              groupId: groupId,
-              modelId: modelId,
-              attemptNo: index + 1,
-              outcome: 'success',
-              statusCode: response.statusCode,
-              durationMs: stopwatch.elapsedMilliseconds,
-              inputChars: memoText.length,
-              memberCount: memberNames.length,
-              matchedCount: result.length,
-            );
-            print('메모 파싱 성공: $modelId (${result.length}명 매칭)');
-            return result;
-          }
-
-          await _writeMemoDiagnostic(
-            requestId: requestId,
-            churchId: churchId,
-            groupId: groupId,
-            modelId: modelId,
-            attemptNo: index + 1,
-            outcome: 'invalid_result',
-            statusCode: response.statusCode,
-            durationMs: stopwatch.elapsedMilliseconds,
-            inputChars: memoText.length,
-            memberCount: memberNames.length,
-            matchedCount: 0,
-            errorType: 'no_member_name_matched',
-            errorMessage: 'JSON object returned, but no member name matched',
-          );
-          lastError = 'No member name matched';
-          continue;
-        }
-
+        final matchedCount =
+            result.values.where((value) => value.trim().isNotEmpty).length;
         await _writeMemoDiagnostic(
           requestId: requestId,
           churchId: churchId,
           groupId: groupId,
           modelId: modelId,
           attemptNo: index + 1,
-          outcome: 'invalid_result',
+          outcome: 'success',
           statusCode: response.statusCode,
           durationMs: stopwatch.elapsedMilliseconds,
           inputChars: memoText.length,
           memberCount: memberNames.length,
-          errorType: 'model_output_not_object',
-          errorMessage: 'Model output was not a JSON object',
+          matchedCount: matchedCount,
         );
-        lastError = 'Model output was not a JSON object';
+        print('메모 파싱 성공: $modelId ($matchedCount명 매칭)');
+        return result;
       } catch (e) {
         await _writeMemoDiagnostic(
           requestId: requestId,
@@ -384,6 +356,80 @@ $memoText
 
     print('메모 파싱 모든 시도 실패. 최종 에러: $lastError');
     return {};
+  }
+
+  static Map<String, dynamic> _thinkingConfigFor(String modelId) {
+    if (modelId.startsWith('gemini-3')) {
+      return {'thinkingLevel': 'minimal'};
+    }
+    return {'thinkingBudget': 0};
+  }
+
+  static Map<String, dynamic> _prayerMemoResponseSchema(
+      List<String> memberNames) {
+    final uniqueNames = memberNames.toSet().toList(growable: false);
+    return {
+      'type': 'OBJECT',
+      'properties': {
+        'matches': {
+          'type': 'ARRAY',
+          'items': {
+            'type': 'OBJECT',
+            'properties': {
+              'name': {
+                'type': 'STRING',
+                'enum': uniqueNames,
+              },
+              'prayer': {
+                'type': 'STRING',
+                'description': '원문 표현을 보존한 해당 조원의 기도제목',
+              },
+            },
+            'required': ['name', 'prayer'],
+          },
+        },
+      },
+      'required': ['matches'],
+    };
+  }
+
+  /// Decodes and validates the structured memo response.
+  ///
+  /// Every roster member is included in the returned map. Members that were
+  /// not matched have an empty prayer so the UI can show "매칭 안됨" instead
+  /// of treating a valid zero-match response as a provider failure.
+  static Map<String, String> decodePrayerMemoOutput(
+      String responseText, List<String> memberNames) {
+    final decoded = jsonDecode(responseText);
+    if (decoded is! Map || decoded['matches'] is! List) {
+      throw const FormatException('Expected an object containing matches');
+    }
+
+    final uniqueNames = memberNames.toSet().toList(growable: false);
+    final result = <String, String>{
+      for (final name in uniqueNames) name: '',
+    };
+
+    for (final item in decoded['matches'] as List) {
+      if (item is! Map ||
+          item['name'] is! String ||
+          item['prayer'] is! String) {
+        throw const FormatException('Each match must contain name and prayer');
+      }
+
+      final name = item['name'] as String;
+      final prayer = (item['prayer'] as String).trim();
+      if (!result.containsKey(name) || prayer.isEmpty) continue;
+
+      final existing = result[name]!;
+      if (existing.isEmpty) {
+        result[name] = prayer;
+      } else if (existing != prayer) {
+        result[name] = '$existing\n$prayer';
+      }
+    }
+
+    return result;
   }
 
   String _summarizeProviderError(String raw) {
